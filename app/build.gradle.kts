@@ -11,8 +11,8 @@ android {
         applicationId = "io.weave.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27
-        versionName = "0.3.0-alpha25"
+        versionCode = 28
+        versionName = "0.3.0-alpha26"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -54,7 +54,9 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-            isUniversalApk = true
+            // A universal APK would bundle all four native cores (~230 MB). Publish
+            // the matching ABI split instead; Android Studio/Play can select it.
+            isUniversalApk = false
         }
     }
 
@@ -82,7 +84,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.zxing:core:3.5.4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

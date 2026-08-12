@@ -17,11 +17,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 
 // A warm mineral palette: less "dashboard white", more paper, olive and ink.
 val Ink = Color(0xFF20221D)
-val Acid = Color(0xFFD6E875)
-val Canvas = Color(0xFFF0EDE4)
-val Paper = Color(0xFFFAF8F1)
+val Acid = Color(0xFFC9D96F)
+val Canvas = Color(0xFFF3F1EA)
+val Paper = Color(0xFFF9F7F0)
 val Muted = Color(0xFF74766D)
-val Stroke = Color(0x1F2B3025)
+val Stroke = Color(0x182B3025)
 val Good = Color(0xFF52765A)
 
 private val LightColors = lightColorScheme(
@@ -35,7 +35,7 @@ private val LightColors = lightColorScheme(
     onBackground = Ink,
     surface = Paper,
     onSurface = Ink,
-    surfaceVariant = Color(0xFFE8E3D8),
+    surfaceVariant = Color(0xFFE9E7DF),
     onSurfaceVariant = Muted,
     outline = Stroke,
     outlineVariant = Color(0x1220242A),

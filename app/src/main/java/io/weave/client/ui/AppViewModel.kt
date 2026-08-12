@@ -134,6 +134,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val subscriptionHealth = mutableSubscriptionHealth.asStateFlow()
     private val mutableDashboardVisible = MutableStateFlow(true)
     private var connectedAtElapsedRealtime: Long? = null
+    private var installedAppsLoaded = false
 
     init {
         if (storedRoutes != initialRoutes) {
@@ -171,11 +172,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            mutableInstalledApps.value = withContext(Dispatchers.IO) {
-                installedAppRepository.listLaunchableApps()
-            }
-        }
-        viewModelScope.launch {
             combine(
                 VpnRuntimeState.snapshot,
                 mutableDashboardVisible,
@@ -201,22 +197,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         engineProbe.queryRuntime()
                     }
                     if (runtime != null) {
-                        mutableDashboard.update {
-                            it.copy(
-                                activeNode = ProxyNode(
-                                    id = "runtime",
-                                    name = runtime.nodeName,
-                                    region = "",
-                                    subscriptionId = "",
-                                    protocol = runtime.protocol,
-                                    latencyMs = runtime.latencyMs,
-                                    selected = true,
-                                ),
-                                uploadBytesPerSecond = runtime.uploadBytesPerSecond,
-                                downloadBytesPerSecond = runtime.downloadBytesPerSecond,
-                                attributedAppConnections = runtime.attributedAppConnections,
-                                sessionDurationSeconds = connectionDurationSeconds(),
-                            )
+                        val current = mutableDashboard.value
+                        val currentNode = current.activeNode
+                        val durationSeconds = connectionDurationSeconds()
+                        val unchanged = currentNode != null &&
+                            currentNode.name == runtime.nodeName &&
+                            currentNode.protocol == runtime.protocol &&
+                            currentNode.latencyMs == runtime.latencyMs &&
+                            current.uploadBytesPerSecond == runtime.uploadBytesPerSecond &&
+                            current.downloadBytesPerSecond == runtime.downloadBytesPerSecond &&
+                            current.attributedAppConnections == runtime.attributedAppConnections &&
+                            current.sessionDurationSeconds == durationSeconds
+                        if (!unchanged) {
+                            mutableDashboard.update {
+                                it.copy(
+                                    activeNode = ProxyNode(
+                                        id = "runtime",
+                                        name = runtime.nodeName,
+                                        region = "",
+                                        subscriptionId = "",
+                                        protocol = runtime.protocol,
+                                        latencyMs = runtime.latencyMs,
+                                        selected = true,
+                                    ),
+                                    uploadBytesPerSecond = runtime.uploadBytesPerSecond,
+                                    downloadBytesPerSecond = runtime.downloadBytesPerSecond,
+                                    attributedAppConnections = runtime.attributedAppConnections,
+                                    sessionDurationSeconds = durationSeconds,
+                                )
+                            }
                         }
                     }
                     delay(RUNTIME_POLL_INTERVAL_MS)
@@ -227,6 +236,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDashboardVisible(visible: Boolean) {
         mutableDashboardVisible.value = visible
+    }
+
+    fun ensureInstalledAppsLoaded() {
+        if (installedAppsLoaded) return
+        installedAppsLoaded = true
+        viewModelScope.launch {
+            mutableInstalledApps.value = withContext(Dispatchers.IO) {
+                installedAppRepository.listLaunchableApps()
+            }
+        }
     }
 
     private fun connectionDurationSeconds(): Long =
@@ -836,6 +855,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private companion object {
-        const val RUNTIME_POLL_INTERVAL_MS = 1_000L
+        const val RUNTIME_POLL_INTERVAL_MS = 2_000L
     }
 }

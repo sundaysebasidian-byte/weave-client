@@ -15,7 +15,6 @@ Design and architecture references:
 | [MetaCubeX meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) | Immutable lite GeoIP/GeoSite data bundled for optional China-direct routing; exact assets and hashes are in `geodata-lock.properties` | Generated data; retain upstream source attribution and audit each pinned release |
 | [sing-box](https://github.com/SagerNet/sing-box) | Candidate second engine and Android package-name routing reference | Verify exact pinned revision before integration |
 | [AndroidX](https://github.com/androidx/androidx) | Android UI and lifecycle libraries | Apache-2.0 |
-| [Google ML Kit barcode scanning](https://developers.google.com/ml-kit/vision/barcode-scanning) | On-device QR image decoding | Google APIs Terms; distributed as a Maven dependency, not relicensed as Weave code |
 | [Google Play services code scanner](https://developers.google.com/ml-kit/vision/barcode-scanning/code-scanner) | Optional system-provided camera QR scanner | Google APIs Terms; may download/use a Play services module |
 | [ZXing](https://github.com/zxing/zxing) | QR generation and payload utilities | Apache-2.0 |
 

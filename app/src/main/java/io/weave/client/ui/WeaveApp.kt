@@ -95,7 +95,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -173,6 +172,9 @@ fun WeaveApp(
 
     LaunchedEffect(destination) {
         viewModel.setDashboardVisible(destination == Destination.HOME)
+        if (destination == Destination.ROUTES) {
+            viewModel.ensureInstalledAppsLoaded()
+        }
     }
 
     LaunchedEffect(dashboard.statusMessage) {
@@ -192,16 +194,7 @@ fun WeaveApp(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
-                    ),
-                ),
-            ),
+            .background(MaterialTheme.colorScheme.background),
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -216,7 +209,7 @@ fun WeaveApp(
                                 .calculateBottomPadding() + 8.dp,
                         )
                         .fillMaxWidth()
-                        .shadow(18.dp, RoundedCornerShape(28.dp)),
+                        .shadow(8.dp, RoundedCornerShape(28.dp)),
                     shape = RoundedCornerShape(28.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, glassBorderColor()),
@@ -1536,7 +1529,7 @@ private fun glassBorderColor(): Color =
     if (MaterialTheme.colorScheme.background.luminance() < 0.35f) {
         Color.White.copy(alpha = 0.12f)
     } else {
-        Color.White.copy(alpha = 0.88f)
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
     }
 
 @Composable
@@ -1547,15 +1540,7 @@ private fun LiquidGlassPanel(
     content: @Composable () -> Unit,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
-    val color = MaterialTheme.colorScheme.surface
-    val paperHighlight = if (dark) {
-        MaterialTheme.colorScheme.surfaceVariant
-    } else {
-        Color(0xFFF0ECE2)
-    }
-    val panelBrush = Brush.linearGradient(
-        colors = listOf(color, paperHighlight),
-    )
+    val color = if (dark) MaterialTheme.colorScheme.surface else Color(0xFFF9F7F0)
     if (onClick != null) {
         Surface(
             onClick = onClick,
@@ -1564,13 +1549,9 @@ private fun LiquidGlassPanel(
             color = color,
             border = BorderStroke(1.dp, glassBorderColor()),
             tonalElevation = 0.dp,
-            shadowElevation = 2.dp,
+            shadowElevation = 1.dp,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(panelBrush, shape),
-            ) { content() }
+            content()
         }
     } else {
         Surface(
@@ -1579,13 +1560,9 @@ private fun LiquidGlassPanel(
             color = color,
             border = BorderStroke(1.dp, glassBorderColor()),
             tonalElevation = 0.dp,
-            shadowElevation = 2.dp,
+            shadowElevation = 1.dp,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(panelBrush, shape),
-            ) { content() }
+            content()
         }
     }
 }
@@ -2679,7 +2656,7 @@ private fun LinkSetting(
     ) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
         ) {
             Icon(
                 icon,
@@ -2723,7 +2700,7 @@ private fun ToggleSetting(
     ) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
         ) {
             Icon(
                 icon,

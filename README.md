@@ -4,7 +4,7 @@
 吸收 Karing 的多订阅、复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性
 放在架构中心。
 
-> 当前里程碑是 **Android 0.3.0-alpha25 / macOS 0.1.0-alpha05**。Android 四个 ABI 的
+> 当前里程碑是 **Android 0.3.0-alpha26 / macOS 0.1.0-alpha05**。Android 四个 ABI 的
 > CMFA/Mihomo
 > 核心已从锁定源码本地复现并接入；Clash YAML 可从 HTTPS、系统文件选择器、相机二维码或
 > 二维码图片安全导入并编译为隔离 provider，
@@ -38,8 +38,8 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
   QUIC 被拒绝后系统瞬间返回 `-1` 的重试窗口；服务停止或规则重载时立即清空。
 - 应用规则可在出口编辑弹窗中删除；删除前二次确认，删除后回落到默认出口。
 - 每个应用可以引用不同订阅中的不同节点，而不要求切换整套配置。
-- 二维码相机扫描在有 Google Play 服务的设备上无需申请相机权限；相册二维码由随包 ML Kit
-  在本机识别，并限制为 20 MiB。
+- 二维码相机扫描在有 Google Play 服务的设备上无需申请相机权限；相册二维码由随包 ZXing
+  在本机识别，并限制为 20 MiB，不依赖额外的 ML Kit 图片模型。
 - Clash YAML 多订阅会生成彼此隔离的 Mihomo file provider；URI/sing-box 转换仍 fail closed。
 - 运行时只加载默认出口和应用规则实际引用的 provider；健康检查按需懒执行，避免大订阅在
   VPN 启动时并发探测全部节点、挤占真实连接。
@@ -88,6 +88,11 @@ AndroidX Core 1.18 / Lifecycle 2.10 暂时固定在仍兼容 API 36 的稳定版
 稳定版需要先把编译 SDK 提升到 API 37。
 
 1. 用 Android Studio 打开仓库。
+
+发布 Android 包时执行 `./gradlew assembleRelease`。为避免把四套原生核心塞进一个约 230 MB
+的 universal APK，构建会分别输出 `arm64-v8a`、`armeabi-v7a`、`x86` 和 `x86_64` 包；现代
+手机通常选择 `app-arm64-v8a-release-unsigned.apk`，签名后再分发。`assembleDebug` 也遵循
+同样的 ABI 拆分规则。
 2. 安装 Android SDK 36、NDK 29.0.14206865 和 CMake 3.31.6。
 3. 使用仓库内经过 SHA-256 固定的 wrapper 构建：
 

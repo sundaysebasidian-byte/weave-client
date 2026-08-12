@@ -1,6 +1,7 @@
 package io.weave.client
 
 import android.app.Activity
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -21,6 +22,7 @@ import io.weave.client.ui.AppViewModel
 import io.weave.client.ui.WeaveApp
 import io.weave.client.ui.theme.WeaveTheme
 
+@SuppressLint("InvalidFragmentVersionForActivityResult")
 class MainActivity : ComponentActivity() {
     private lateinit var vpnDisclosureStore: VpnDisclosureStore
     private var vpnDisclosureAccepted by mutableStateOf(false)
