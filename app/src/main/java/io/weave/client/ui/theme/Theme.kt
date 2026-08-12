@@ -140,25 +140,25 @@ private fun materialColors(tokens: PaletteTokens, dark: Boolean) = if (dark) {
 
 private val WeaveTypography = Typography(
     headlineMedium = TextStyle(
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.Medium,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 30.sp,
         lineHeight = 36.sp,
-        letterSpacing = (-0.2).sp,
+        letterSpacing = (-0.55).sp,
     ),
     headlineSmall = TextStyle(
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.Medium,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 23.sp,
         lineHeight = 29.sp,
-        letterSpacing = (-0.1).sp,
+        letterSpacing = (-0.25).sp,
     ),
     titleLarge = TextStyle(
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.Medium,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 19.sp,
         lineHeight = 25.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.15).sp,
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,

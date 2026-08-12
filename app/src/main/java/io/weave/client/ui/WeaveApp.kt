@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,16 +95,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -194,53 +192,26 @@ fun WeaveApp(
     }
 
     val background = MaterialTheme.colorScheme.background
-    val backdropTint = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(background),
     ) {
-        Image(
-            painter = painterResource(io.weave.client.R.drawable.weave_impression_texture),
-            contentDescription = null,
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    alpha = if (background.luminance() < 0.35f) 0.11f else 0.34f
-                },
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            background.copy(alpha = 0.52f),
-                            background.copy(alpha = 0.42f),
-                            backdropTint.copy(alpha = 0.18f),
-                        ),
-                    ),
-                ),
-        )
+        MonetAtmosphere(Modifier.fillMaxSize())
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                Surface(
+                LiquidGlassPanel(
                     modifier = Modifier
                         .padding(horizontal = 14.dp)
                         .padding(
                             bottom = WindowInsets.navigationBars.asPaddingValues()
                                 .calculateBottomPadding() + 8.dp,
                         )
-                        .fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(28.dp)),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = null,
-                    tonalElevation = 0.dp,
+                        .fillMaxWidth(),
+                    shape = RoundedCornerShape(30.dp),
                 ) {
                     NavigationBar(
                         containerColor = Color.Transparent,
@@ -1714,6 +1685,71 @@ private fun TargetOptionRow(
 }
 
 @Composable
+private fun MonetAtmosphere(modifier: Modifier = Modifier) {
+    val background = MaterialTheme.colorScheme.background
+    val teal = MaterialTheme.colorScheme.primaryContainer
+    val lavender = MaterialTheme.colorScheme.secondaryContainer
+    val sunrise = MaterialTheme.colorScheme.tertiary
+    Canvas(modifier = modifier.background(background)) {
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    background,
+                    lavender.copy(alpha = 0.38f),
+                    background,
+                ),
+                start = androidx.compose.ui.geometry.Offset.Zero,
+                end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+            ),
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(teal.copy(alpha = 0.42f), Color.Transparent),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
+                radius = size.minDimension * 0.72f,
+            ),
+            radius = size.minDimension * 0.72f,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(lavender.copy(alpha = 0.46f), Color.Transparent),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
+                radius = size.minDimension * 0.78f,
+            ),
+            radius = size.minDimension * 0.78f,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(sunrise.copy(alpha = 0.30f), Color.Transparent),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
+                radius = size.minDimension * 0.38f,
+            ),
+            radius = size.minDimension * 0.38f,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
+        )
+        drawOval(
+            brush = Brush.radialGradient(
+                colors = listOf(teal.copy(alpha = 0.18f), Color.Transparent),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.52f, size.height * 0.78f),
+                radius = size.width * 0.72f,
+            ),
+            topLeft = androidx.compose.ui.geometry.Offset(-size.width * 0.18f, size.height * 0.66f),
+            size = androidx.compose.ui.geometry.Size(size.width * 1.4f, size.height * 0.24f),
+        )
+    }
+}
+
+@Composable
+private fun liquidGlassEdge(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.35f) {
+        Color.White.copy(alpha = 0.17f)
+    } else {
+        Color.White.copy(alpha = 0.72f)
+    }
+
+@Composable
 private fun WeaveDivider(modifier: Modifier = Modifier) {
     HorizontalDivider(
         modifier = modifier.padding(horizontal = 16.dp),
@@ -1730,36 +1766,56 @@ private fun LiquidGlassPanel(
     content: @Composable () -> Unit,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
-    val color = if (dark) {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
-    } else {
-        // One continuous painted canvas, with translucent paper layers rather
-        // than opaque white tiles and grey outlines.
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.68f)
-    }
-    if (onClick != null) {
-        Surface(
-            onClick = onClick,
-            modifier = modifier,
-            shape = shape,
-            color = color,
-            border = null,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.8.dp,
-        ) {
-            content()
-        }
-    } else {
-        Surface(
-            modifier = modifier,
-            shape = shape,
-            color = color,
-            border = null,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.8.dp,
-        ) {
-            content()
-        }
+    val surface = MaterialTheme.colorScheme.surface
+    val glassBrush = Brush.linearGradient(
+        colors = if (dark) {
+            listOf(
+                surface,
+                androidx.compose.ui.graphics.lerp(
+                    surface,
+                    MaterialTheme.colorScheme.secondaryContainer,
+                    0.14f,
+                ),
+                androidx.compose.ui.graphics.lerp(
+                    surface,
+                    MaterialTheme.colorScheme.primaryContainer,
+                    0.18f,
+                ),
+                surface,
+            )
+        } else {
+            listOf(
+                androidx.compose.ui.graphics.lerp(surface, Color.White, 0.30f),
+                androidx.compose.ui.graphics.lerp(
+                    surface,
+                    MaterialTheme.colorScheme.primaryContainer,
+                    0.15f,
+                ),
+                androidx.compose.ui.graphics.lerp(
+                    surface,
+                    MaterialTheme.colorScheme.secondaryContainer,
+                    0.16f,
+                ),
+                androidx.compose.ui.graphics.lerp(
+                    surface,
+                    MaterialTheme.colorScheme.tertiary,
+                    0.07f,
+                ),
+                surface,
+            )
+        },
+    )
+    Box(
+        modifier = modifier
+            .shadow(8.dp, shape, clip = false)
+            .clip(shape)
+            .background(glassBrush)
+            .border(1.dp, liquidGlassEdge(), shape)
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+            ),
+    ) {
+        content()
     }
 }
 
@@ -1820,9 +1876,12 @@ private fun HomeScreen(
                 action = {
                     Surface(
                         onClick = onMoreClick,
-                        color = MaterialTheme.colorScheme.surface,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = CircleShape,
-                        border = null,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            liquidGlassEdge(),
+                        ),
                     ) {
                         Icon(
                             Icons.Rounded.MoreHoriz,
@@ -1943,14 +2002,7 @@ private fun ConnectionHero(
             .fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
     ) {
-        Box {
-            MonetWash(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(RoundedCornerShape(32.dp))
-                    .alpha(0.32f),
-            )
-            Column(modifier = Modifier.padding(22.dp)) {
+        Column(modifier = Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = CircleShape,
@@ -2023,7 +2075,7 @@ private fun ConnectionHero(
                 shape = RoundedCornerShape(22.dp),
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                     containerColor = if (state.connectionState == ConnectionState.CONNECTED) {
-                        MaterialTheme.colorScheme.surfaceVariant
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                     } else {
                         MaterialTheme.colorScheme.primary
                     },
@@ -2046,73 +2098,6 @@ private fun ConnectionHero(
                     fontSize = 16.sp,
                 )
             }
-            }
-        }
-    }
-}
-
-/**
- * A restrained impressionist wash: broad translucent daubs rather than a
- * generic linear gradient. It stays behind content and changes with the
- * selected Material palette, so the app feels painted instead of recolored.
- */
-@Composable
-private fun MonetWash(modifier: Modifier = Modifier) {
-    val primary = MaterialTheme.colorScheme.primaryContainer
-    val secondary = MaterialTheme.colorScheme.secondaryContainer
-    val tertiary = MaterialTheme.colorScheme.tertiary
-    Canvas(modifier = modifier) {
-        val short = size.minDimension
-        fun washPath(
-            startX: Float,
-            startY: Float,
-            width: Float,
-            height: Float,
-            sway: Float,
-        ) = androidx.compose.ui.graphics.Path().apply {
-            moveTo(size.width * startX, size.height * startY)
-            cubicTo(
-                size.width * (startX + width * 0.20f), size.height * (startY - sway),
-                size.width * (startX + width * 0.70f), size.height * (startY + sway),
-                size.width * (startX + width), size.height * (startY + height * 0.18f),
-            )
-            cubicTo(
-                size.width * (startX + width * 0.78f), size.height * (startY + height),
-                size.width * (startX + width * 0.24f), size.height * (startY + height * 0.86f),
-                size.width * startX, size.height * (startY + height),
-            )
-            close()
-        }
-        drawPath(
-            path = washPath(0.62f, 0.02f, 0.45f, 0.38f, 0.035f),
-            color = secondary.copy(alpha = 0.24f),
-        )
-        drawPath(
-            path = washPath(-0.08f, 0.64f, 0.44f, 0.42f, -0.025f),
-            color = primary.copy(alpha = 0.18f),
-        )
-        drawPath(
-            path = washPath(0.52f, 0.76f, 0.36f, 0.30f, 0.020f),
-            color = tertiary.copy(alpha = 0.12f),
-        )
-        val strokeWidth = short * 0.045f
-        repeat(8) { index ->
-            val y = size.height * (0.16f + index * 0.095f)
-            val startX = size.width * (0.06f + (index % 3) * 0.035f)
-            drawLine(
-                color = when (index % 3) {
-                    0 -> primary.copy(alpha = 0.16f)
-                    1 -> secondary.copy(alpha = 0.13f)
-                    else -> tertiary.copy(alpha = 0.10f)
-                },
-                start = androidx.compose.ui.geometry.Offset(startX, y),
-                end = androidx.compose.ui.geometry.Offset(
-                    size.width * (0.42f + (index % 4) * 0.13f),
-                    y + strokeWidth * 0.8f,
-                ),
-                strokeWidth = strokeWidth,
-                cap = androidx.compose.ui.graphics.StrokeCap.Round,
-            )
         }
     }
 }
@@ -2240,8 +2225,11 @@ private fun RoutesScreen(
                     Surface(
                         onClick = onAdd,
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = null,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            liquidGlassEdge(),
+                        ),
                     ) {
                         Icon(
                             Icons.Rounded.Add,
