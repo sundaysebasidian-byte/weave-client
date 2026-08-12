@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.core.vpn.WeaveVpnService
 import io.weave.client.data.VpnDisclosureStore
@@ -43,9 +44,11 @@ class MainActivity : ComponentActivity() {
         vpnDisclosureAccepted = vpnDisclosureStore.isAccepted()
         enableEdgeToEdge()
         setContent {
-            WeaveTheme {
+            val appViewModel: AppViewModel = viewModel()
+            val networkPreferences by appViewModel.networkPreferences.collectAsStateWithLifecycle()
+            WeaveTheme(palette = networkPreferences.weavePalette) {
                 WeaveApp(
-                    viewModel = viewModel<AppViewModel>(),
+                    viewModel = appViewModel,
                     onRequestConnection = ::requestVpnPermission,
                     onRequestDisconnection = { WeaveVpnService.stop(this) },
                     onOpenVpnSettings = ::openSystemVpnSettings,

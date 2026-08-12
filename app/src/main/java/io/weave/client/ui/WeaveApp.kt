@@ -128,9 +128,7 @@ import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
 import io.weave.client.transfer.QrCodeGenerator
-import io.weave.client.ui.theme.Accent
-import io.weave.client.ui.theme.Good
-import io.weave.client.ui.theme.Ink
+import io.weave.client.domain.WeavePalette
 
 private enum class Destination(
     val label: String,
@@ -193,11 +191,7 @@ fun WeaveApp(
     }
 
     val background = MaterialTheme.colorScheme.background
-    val backdropTint = if (background.luminance() < 0.35f) {
-        Color(0xFF22283B)
-    } else {
-        Color(0xFFF0E8F0)
-    }
+    val backdropTint = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -243,9 +237,9 @@ fun WeaveApp(
                                 icon = { Icon(item.icon, contentDescription = item.label) },
                                 label = { Text(item.label, fontWeight = FontWeight.Medium) },
                                 colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Ink,
+                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                    indicatorColor = Accent,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
@@ -307,6 +301,7 @@ fun WeaveApp(
                 onIpv6ModeSelected = viewModel::setIpv6Mode,
                 onBlockUdpStunChanged = viewModel::setBlockUdpStun,
                 onDomesticDirectChanged = viewModel::setDomesticDirect,
+                onPaletteSelected = viewModel::setWeavePalette,
                 onShowVpnDisclosure = { showVpnDisclosure = true },
             )
             }
@@ -1189,7 +1184,7 @@ private fun SubscriptionNodeRow(
             color = when {
                 health?.latencyMs != null && health.packetLossPercent > 0 ->
                     MaterialTheme.colorScheme.tertiary
-                health?.latencyMs != null -> Good
+                health?.latencyMs != null -> MaterialTheme.colorScheme.secondary
                 health != null && checked -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
@@ -1259,7 +1254,7 @@ private fun AppPickerDialog(
                                 ) {
                                     Text(
                                         app.monogram,
-                                        color = Ink,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 13.sp,
                                     )
@@ -1634,7 +1629,7 @@ private fun SelectableNodeOptionRow(
             color = when {
                 health?.latencyMs != null && health.packetLossPercent > 0 ->
                     MaterialTheme.colorScheme.tertiary
-                health?.latencyMs != null -> Good
+                health?.latencyMs != null -> MaterialTheme.colorScheme.secondary
                 health != null && checked -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
@@ -1702,11 +1697,7 @@ private fun TargetOptionRow(
 
 @Composable
 private fun glassBorderColor(): Color =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.35f) {
-        Color(0x2AF2EFD9)
-    } else {
-        Color(0x1A6B6A5F)
-    }
+    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f)
 
 @Composable
 private fun WeaveDivider(modifier: Modifier = Modifier) {
@@ -1854,7 +1845,7 @@ private fun HomeScreen(
                                 onClick = { onModeSelected(mode) },
                                 modifier = Modifier.weight(1f),
                                 color = if (mode == state.routingMode) {
-                                    Accent
+                                    MaterialTheme.colorScheme.primaryContainer
                                 } else {
                                     Color.Transparent
                                 },
@@ -1869,7 +1860,7 @@ private fun HomeScreen(
                                         FontWeight.Medium
                                     },
                                     color = if (mode == state.routingMode) {
-                                        Ink
+                                        MaterialTheme.colorScheme.onPrimaryContainer
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     },
@@ -1943,7 +1934,7 @@ private fun ConnectionHero(
                 Surface(
                     shape = CircleShape,
                     color = if (state.connectionState == ConnectionState.CONNECTED) {
-                        Accent.copy(alpha = 0.30f)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f)
                     } else {
                         MaterialTheme.colorScheme.surfaceVariant
                     },
@@ -1957,7 +1948,9 @@ private fun ConnectionHero(
                                 .size(7.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    if (state.connectionState == ConnectionState.CONNECTED) Good
+                                    if (state.connectionState == ConnectionState.CONNECTED) {
+                                        MaterialTheme.colorScheme.secondary
+                                    }
                                     else MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                         )
@@ -2011,12 +2004,12 @@ private fun ConnectionHero(
                     containerColor = if (state.connectionState == ConnectionState.CONNECTED) {
                         MaterialTheme.colorScheme.surfaceVariant
                     } else {
-                        Ink
+                        MaterialTheme.colorScheme.primary
                     },
                     contentColor = if (state.connectionState == ConnectionState.CONNECTED) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
-                        Color.White
+                        MaterialTheme.colorScheme.onPrimary
                     },
                 ),
             ) {
@@ -2129,7 +2122,7 @@ private fun StatCard(
             Spacer(Modifier.height(18.dp))
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Text(value, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            Text(supporting, color = Good, fontSize = 11.sp)
+            Text(supporting, color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp)
         }
     }
 }
@@ -2265,7 +2258,11 @@ private fun AppRouteRow(
                     .background(Color(route.tint)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(route.monogram, color = Ink, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    route.monogram,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.ExtraBold,
+                )
             }
             Spacer(Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -2273,7 +2270,7 @@ private fun AppRouteRow(
                 Text(
                     text = route.target.label,
                     color = when (route.target.kind) {
-                        RouteKind.DIRECT -> Good
+                        RouteKind.DIRECT -> MaterialTheme.colorScheme.secondary
                         RouteKind.BLOCK -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -2329,7 +2326,7 @@ private fun SubscriptionsScreen(
                         }
                         Surface(
                             onClick = onAdd,
-                            color = Accent,
+                            color = MaterialTheme.colorScheme.primaryContainer,
                             shape = CircleShape,
                             border = BorderStroke(0.75.dp, glassBorderColor()),
                         ) {
@@ -2337,7 +2334,7 @@ private fun SubscriptionsScreen(
                                 Icons.Rounded.Add,
                                 contentDescription = "添加订阅",
                                 modifier = Modifier.padding(10.dp),
-                                tint = Ink,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                     }
@@ -2357,7 +2354,7 @@ private fun SubscriptionsScreen(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = Accent.copy(alpha = 0.34f),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
                     ) {
                         Icon(
                             Icons.Rounded.Sync,
@@ -2511,8 +2508,10 @@ private fun SettingsScreen(
     onIpv6ModeSelected: (Ipv6Mode) -> Unit,
     onBlockUdpStunChanged: (Boolean) -> Unit,
     onDomesticDirectChanged: (Boolean) -> Unit,
+    onPaletteSelected: (WeavePalette) -> Unit,
     onShowVpnDisclosure: () -> Unit,
 ) {
+    var showPalette by remember { mutableStateOf(false) }
     var showAutomaticStrategy by remember { mutableStateOf(false) }
     var showDnsSettings by remember { mutableStateOf(false) }
     var showIpv6Mode by remember { mutableStateOf(false) }
@@ -2532,6 +2531,17 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ScreenHeader(eyebrow = "连接与隐私", title = "设置") }
+        item { SettingsSectionLabel("外观") }
+        item {
+            SettingsGroup {
+                LinkSetting(
+                    icon = Icons.Rounded.AutoAwesome,
+                    title = "艺术主题",
+                    subtitle = "${preferences.weavePalette.label} · 仅改变界面颜色",
+                    onClick = { showPalette = true },
+                )
+            }
+        }
         item { SettingsSectionLabel("连接") }
         item {
             SettingsGroup {
@@ -2643,6 +2653,20 @@ private fun SettingsScreen(
             onSelect = {
                 onAutomaticStrategySelected(it)
                 showAutomaticStrategy = false
+            },
+        )
+    }
+    if (showPalette) {
+        SettingChoiceDialog(
+            title = "艺术主题",
+            options = WeavePalette.entries,
+            selected = preferences.weavePalette,
+            label = WeavePalette::label,
+            description = WeavePalette::description,
+            onDismiss = { showPalette = false },
+            onSelect = {
+                onPaletteSelected(it)
+                showPalette = false
             },
         )
     }
@@ -2768,7 +2792,7 @@ private fun DisclosurePoint(title: String, body: String) {
                 .padding(top = 7.dp)
                 .size(7.dp)
                 .clip(CircleShape)
-                .background(Good),
+                .background(MaterialTheme.colorScheme.secondary),
         )
         Spacer(Modifier.width(10.dp))
         Column {
@@ -2966,7 +2990,11 @@ private fun DnsSettingsDialog(
                                 )
                             }
                             if (transport == preferences.dnsTransport) {
-                                Icon(Icons.Rounded.CheckCircle, contentDescription = "已选择", tint = Good)
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = "已选择",
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                )
                             }
                         }
                         if (index != DnsTransport.entries.lastIndex) WeaveDivider()
@@ -3020,7 +3048,11 @@ private fun DnsSettingsDialog(
                                 )
                             }
                             if (profile == preferences.dnsProfile) {
-                                Icon(Icons.Rounded.CheckCircle, contentDescription = "已选择", tint = Good)
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = "已选择",
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                )
                             }
                         }
                         if (index != DnsProfile.entries.lastIndex) WeaveDivider()
@@ -3101,12 +3133,15 @@ private fun <T> SettingChoiceDialog(
                                 lineHeight = 17.sp,
                             )
                         }
+                        if (option is WeavePalette) {
+                            PaletteSwatch(option)
+                        }
                         if (option == selected) {
                             Spacer(Modifier.width(12.dp))
                             Icon(
                                 Icons.Rounded.CheckCircle,
                                 contentDescription = "已选择",
-                                tint = Good,
+                                tint = MaterialTheme.colorScheme.secondary,
                             )
                         }
                     }
@@ -3119,4 +3154,32 @@ private fun <T> SettingChoiceDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
+}
+
+@Composable
+private fun PaletteSwatch(palette: WeavePalette) {
+    val colors = when (palette) {
+        WeavePalette.IMPRESSION_SUNRISE -> listOf(
+            Color(0xFF3E5875), Color(0xFFA0BAB1), Color(0xFFDF9A7D),
+        )
+        WeavePalette.WATER_LILIES -> listOf(
+            Color(0xFF405D6B), Color(0xFF97BDB5), Color(0xFFAAA1C3),
+        )
+        WeavePalette.POPPY_FIELD -> listOf(
+            Color(0xFF5A5260), Color(0xFFAAB8A0), Color(0xFFD88970),
+        )
+        WeavePalette.TWILIGHT_GARDEN -> listOf(
+            Color(0xFF3C456E), Color(0xFF9CAFC0), Color(0xFFD8947C),
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        colors.forEach { color ->
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+    }
 }

@@ -5,6 +5,7 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+- Android：新增 4 套低饱和莫奈风艺术主题（“日出·印象”“睡莲”“罂粟田”“暮色花园”），设置中可切换并持久化；画布、纸张、浮层、描边和状态色会随主题成组变化，避免白色与浅灰模块混用。
 - Android / macOS：内部 UI 与新版编织结图标统一为暖象牙、深靛蓝、海玻璃青绿、淡紫和珊瑚配色；Android 面板增加轻微透纸层次与柔和背景渐变，macOS 同步降低分割线和纯白块的突兀感。
 - Android / macOS：应用图标改为“编织结”艺术标记，使用深靛蓝、雾青、淡紫和珊瑚节点的柔和印象派配色，去除直白的 W/V、斜线和荧光色；Android 保留单色主题回退轮廓。
 - Android：订阅导入统一支持 HTTPS、粘贴 URI/Base64、Clash YAML、sing-box JSON、基础 V2Ray JSON、二维码和文件；URI/JSON 会在本机转换为 Mihomo provider，复杂或缺字段协议 fail-closed。

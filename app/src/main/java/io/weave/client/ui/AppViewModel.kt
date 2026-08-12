@@ -31,6 +31,7 @@ import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.Subscription
 import io.weave.client.domain.SubscriptionDeletionReconciler
 import io.weave.client.domain.SubscriptionTargetReconciler
+import io.weave.client.domain.WeavePalette
 import io.weave.client.subscription.SubscriptionRepository
 import io.weave.client.subscription.QrCodeImageReader
 import io.weave.client.transfer.LanTransferClient
@@ -382,6 +383,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         reloadIfConnected(
             if (enabled) "正在启用国内域名与 IP 直连" else "正在关闭国内智能直连",
         )
+    }
+
+    fun setWeavePalette(palette: WeavePalette) {
+        if (mutableNetworkPreferences.value.weavePalette == palette) return
+        settingsStore.setWeavePalette(palette)
+        mutableNetworkPreferences.update { it.copy(weavePalette = palette) }
     }
 
     fun addAppRoute(packageName: String) {

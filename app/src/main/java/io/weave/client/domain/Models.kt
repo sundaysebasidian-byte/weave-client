@@ -57,6 +57,20 @@ enum class Ipv6Mode(
     IPV4_ONLY("仅 IPv4", "停用 IPv6 解析并在隧道内拒绝 IPv6，防止旁路"),
 }
 
+/**
+ * A small set of curated, low-saturation palettes. They change presentation
+ * only; routing, DNS and the proxy core never depend on this value.
+ */
+enum class WeavePalette(
+    val label: String,
+    val description: String,
+) {
+    IMPRESSION_SUNRISE("日出·印象", "雾蓝、海玻璃与一笔暖橙"),
+    WATER_LILIES("睡莲", "青绿、薰衣草与水面灰蓝"),
+    POPPY_FIELD("罂粟田", "鼠尾草、奶油纸与柔珊瑚"),
+    TWILIGHT_GARDEN("暮色花园", "靛紫、雾青与黄昏粉棕"),
+}
+
 data class NetworkPreferences(
     val automaticStrategy: AutomaticStrategy = AutomaticStrategy.LOWEST_LATENCY,
     val dnsTransport: DnsTransport = DnsTransport.DOH,
@@ -65,6 +79,7 @@ data class NetworkPreferences(
     val ipv6Mode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
     val blockUdpStun: Boolean = false,
     val domesticDirect: Boolean = false,
+    val weavePalette: WeavePalette = WeavePalette.IMPRESSION_SUNRISE,
 )
 
 enum class RouteKind {

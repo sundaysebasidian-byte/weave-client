@@ -10,6 +10,7 @@ import io.weave.client.domain.NetworkPreferences
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
+import io.weave.client.domain.WeavePalette
 
 class RuntimeSettingsStore(context: Context) {
     private val preferences =
@@ -34,6 +35,7 @@ class RuntimeSettingsStore(context: Context) {
         ipv6Mode = enumPreference(KEY_IPV6_MODE, Ipv6Mode.DUAL_STACK),
         blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
         domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, false),
+        weavePalette = enumPreference(KEY_WEAVE_PALETTE, WeavePalette.IMPRESSION_SUNRISE),
     )
 
     fun setAutomaticStrategy(strategy: AutomaticStrategy) {
@@ -63,6 +65,10 @@ class RuntimeSettingsStore(context: Context) {
 
     fun setDomesticDirect(enabled: Boolean) {
         preferences.edit { putBoolean(KEY_DOMESTIC_DIRECT, enabled) }
+    }
+
+    fun setWeavePalette(palette: WeavePalette) {
+        preferences.edit { putString(KEY_WEAVE_PALETTE, palette.name) }
     }
 
     fun defaultRouteTarget(): RouteTarget? {
@@ -105,5 +111,6 @@ class RuntimeSettingsStore(context: Context) {
         const val KEY_IPV6_MODE = "ipv6_mode"
         const val KEY_BLOCK_UDP_STUN = "block_udp_stun"
         const val KEY_DOMESTIC_DIRECT = "domestic_direct"
+        const val KEY_WEAVE_PALETTE = "weave_palette"
     }
 }
