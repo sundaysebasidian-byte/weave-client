@@ -1,5 +1,6 @@
 package io.weave.client.subscription
 
+import android.annotation.SuppressLint
 import android.content.Context
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
@@ -123,6 +124,7 @@ class SubscriptionSecretStore(
 
     fun get(id: String): StoredSubscription? = list().firstOrNull { it.id == id }
 
+    @SuppressLint("UseKtx") // commit() is required here because rename must report persistence failure.
     fun rename(id: String, name: String): StoredSubscription {
         val record = get(id) ?: throw NoSuchElementException("订阅不存在")
         val normalizedName = normalizeName(name)
