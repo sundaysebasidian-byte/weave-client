@@ -4,7 +4,7 @@
 吸收 Karing 的多订阅、复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性
 放在架构中心。
 
-> 当前里程碑是 **Android 0.3.0-alpha30 / macOS 0.1.0-alpha05**。Android 四个 ABI 的
+> 当前里程碑是 **Android 0.3.0-alpha31 / macOS 0.1.0-alpha05**。Android 四个 ABI 的
 > CMFA/Mihomo
 > 核心已从锁定源码本地复现并接入；Clash YAML 可从 HTTPS、系统文件选择器、相机二维码或
 > 二维码图片安全导入并编译为隔离 provider，

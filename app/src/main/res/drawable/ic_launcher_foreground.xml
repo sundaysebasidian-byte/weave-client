@@ -4,26 +4,22 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Two interlocked arcs form a quiet woven loop rather than a literal W. -->
+    <!-- An open halo and an orbital path form a non-letter private-network seal. -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M28,70 C28,43 39,26 54,26 C69,26 80,43 80,70"
+        android:pathData="M78,39 C70,27 56,22 43,27 C28,32 21,47 26,62 C31,78 48,85 63,78 C71,74 76,68 79,60"
         android:strokeColor="#F7F1DF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="14" />
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M28,38 C28,65 39,82 54,82 C69,82 80,65 80,38"
+        android:pathData="M29,73 C43,65 57,50 78,34"
         android:strokeColor="#C9D96F"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="8" />
     <path
-        android:fillColor="@android:color/transparent"
-        android:pathData="M31,62 C31,43 39,31 50,29"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="3" />
+        android:fillColor="#C9D96F"
+        android:pathData="M78,30a4,4 0,1 0,0 8a4,4 0,1 0,0 -8" />
 </vector>

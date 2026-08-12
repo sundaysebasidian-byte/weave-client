@@ -5,6 +5,10 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+## 0.3.0-alpha31 — 2026-08-12
+
+- Android / macOS：品牌图标改为非字母的“日蚀轨道”符号，由开放光环、酸橙轨道和单一节点组成，减少视觉噪声并提升小尺寸识别度。
+
 ## 0.3.0-alpha30 — 2026-08-12
 
 - Android / macOS：再次重做品牌标记，采用上下交叠的织环弧线，去除直白的 W 轮廓和多余装饰，适配小尺寸启动器图标。
