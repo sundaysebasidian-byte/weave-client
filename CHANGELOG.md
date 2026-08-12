@@ -5,6 +5,12 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+## 0.3.0-alpha28 — 2026-08-12
+
+- Android：广告过滤和家庭过滤现在会在 AdGuard DoH/DoT 之外，使用内置广告、跟踪器和成人域名规则；规则位于分流链最前面，能拦截浏览器和应用发起的域名连接。
+- Android：fake-IP 对局域网、`.local` 和 `home.arpa` 使用真实地址，减少局域网服务被错误映射造成的卡顿。
+- Android：设置页明确显示“DNS + 本地规则”，避免把 DNS 过滤误解成浏览器级元素隐藏。
+
 ## 0.3.0-alpha27 — 2026-08-12
 
 ### Fixed

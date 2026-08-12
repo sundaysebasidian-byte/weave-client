@@ -73,7 +73,17 @@ class MihomoFeatureCompilerTest {
         )
         org.junit.Assert.assertTrue("DOMAIN-SUFFIX,dns.google,REJECT" in rules)
         org.junit.Assert.assertTrue("DOMAIN-SUFFIX,cloudflare-dns.com,REJECT" in rules)
+        org.junit.Assert.assertTrue("DOMAIN-SUFFIX,chrome.cloudflare-dns.com,REJECT" in rules)
         org.junit.Assert.assertTrue("IP-CIDR,1.1.1.1/32,REJECT,no-resolve" in rules)
+        org.junit.Assert.assertTrue("DOMAIN-SUFFIX,doubleclick.net,REJECT" in rules)
+        org.junit.Assert.assertTrue("DOMAIN-SUFFIX,scorecardresearch.com,REJECT" in rules)
+        org.junit.Assert.assertTrue(
+            "DOMAIN-SUFFIX,pornhub.com,REJECT" !in rules,
+        )
+        val familyRules = MihomoFeatureCompiler.dnsFilterBypassRules(
+            NetworkPreferences(dnsProfile = DnsProfile.FAMILY),
+        )
+        org.junit.Assert.assertTrue("DOMAIN-SUFFIX,pornhub.com,REJECT" in familyRules)
         org.junit.Assert.assertTrue(
             MihomoFeatureCompiler.dnsFilterBypassRules(
                 NetworkPreferences(dnsProfile = DnsProfile.PRIVACY),

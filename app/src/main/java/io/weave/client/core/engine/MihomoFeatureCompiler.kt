@@ -17,6 +17,125 @@ data class AutomaticGroupConfig(
  * Converts persisted, user-visible network settings into auditable Mihomo fragments.
  */
 object MihomoFeatureCompiler {
+    /**
+     * A DNS profile is deliberately conservative: it blocks ad/telemetry endpoints, not whole
+     * first-party platforms. This fills the gap between an encrypted filtering resolver and a
+     * browser extension's cosmetic filters without making common apps unusable.
+     */
+    private val localAdBlockDomains = listOf(
+        "doubleclick.net",
+        "doubleclick.com",
+        "doubleclick-cn.net",
+        "googlesyndication.com",
+        "googlesyndication-cn.com",
+        "googleadservices.com",
+        "googleadservices-cn.com",
+        "googleads.com",
+        "googleads.g.doubleclick.net",
+        "googlevads-cn.com",
+        "googleadapis.com",
+        "adsense.com",
+        "adsensecustomsearchads.com",
+        "adsenseformobileapps.com",
+        "adservice.google.com",
+        "adservice.google.cn",
+        "clickserver.googleads.com",
+        "2mdn.net",
+        "adnxs.com",
+        "adsrvr.org",
+        "advertising.com",
+        "adcolony.com",
+        "adform.net",
+        "admob.com",
+        "adroll.com",
+        "adsafeprotected.com",
+        "adzerk.net",
+        "amazon-adsystem.com",
+        "appier.net",
+        "bidvertiser.com",
+        "bidswitch.net",
+        "bluekai.com",
+        "casalemedia.com",
+        "comscore.com",
+        "contextweb.com",
+        "criteo.com",
+        "criteo.net",
+        "districtm.io",
+        "demdex.net",
+        "doubleverify.com",
+        "exoclick.com",
+        "gemini.yahoo.com",
+        "gumgum.com",
+        "inmobi.com",
+        "imasdk.googleapis.com",
+        "integralads.com",
+        "lijit.com",
+        "mathtag.com",
+        "media.net",
+        "mgid.com",
+        "moatads.com",
+        "nativo.com",
+        "nexage.com",
+        "openx.net",
+        "outbrain.com",
+        "pangle.io",
+        "pippio.com",
+        "pubmatic.com",
+        "purch.com",
+        "quantserve.com",
+        "revcontent.com",
+        "rubiconproject.com",
+        "scorecardresearch.com",
+        "serving-sys.com",
+        "sharethrough.com",
+        "smaato.net",
+        "smartadserver.com",
+        "sonobi.com",
+        "spotxchange.com",
+        "taboola.com",
+        "thetradedesk.com",
+        "trafficjunky.com",
+        "triplelift.com",
+        "unityads.unity3d.com",
+        "undertone.com",
+        "vungle.com",
+        "weborama.com",
+        "widespace.com",
+        "yieldmo.com",
+        "yandexadexchange.net",
+        "zedo.com",
+        "ads-twitter.com",
+        "analytics.twitter.com",
+        "bat.bing.com",
+        "bingads.com",
+        "clarity.ms",
+        "hotjar.com",
+        "mouseflow.com",
+        "quantummetric.com",
+        "segment.io",
+        "segment.com",
+        "sentry.io",
+        "fullstory.com",
+        "heap.io",
+        "amplitude.com",
+        "mixpanel.com",
+        "app-measurement.com",
+        "branch.io",
+        "adjust.com",
+        "appsflyer.com",
+        "kochava.com",
+    )
+
+    private val familyFilterDomains = listOf(
+        "pornhub.com",
+        "xvideos.com",
+        "xnxx.com",
+        "xhamster.com",
+        "redtube.com",
+        "youporn.com",
+        "spankbang.com",
+    )
+
     fun automaticGroup(strategy: AutomaticStrategy): AutomaticGroupConfig = when (strategy) {
         AutomaticStrategy.LOWEST_LATENCY -> AutomaticGroupConfig(
             type = "url-test",
@@ -93,18 +212,32 @@ object MihomoFeatureCompiler {
     fun dnsFilterBypassRules(preferences: NetworkPreferences): List<String> = when (
         preferences.dnsProfile
     ) {
-        DnsProfile.AD_BLOCK, DnsProfile.FAMILY -> listOf(
-            "DOMAIN-SUFFIX,dns.google,REJECT",
-            "DOMAIN-SUFFIX,cloudflare-dns.com,REJECT",
-            "DOMAIN-SUFFIX,mozilla.cloudflare-dns.com,REJECT",
-            "DOMAIN-SUFFIX,quad9.net,REJECT",
-            "DOMAIN-SUFFIX,cleanbrowsing.org,REJECT",
-            "IP-CIDR,8.8.8.8/32,REJECT,no-resolve",
-            "IP-CIDR,8.8.4.4/32,REJECT,no-resolve",
-            "IP-CIDR,1.1.1.1/32,REJECT,no-resolve",
-            "IP-CIDR,1.0.0.1/32,REJECT,no-resolve",
-            "IP-CIDR,9.9.9.9/32,REJECT,no-resolve",
-        )
+        DnsProfile.AD_BLOCK, DnsProfile.FAMILY -> buildList {
+            add("DOMAIN-SUFFIX,dns.google,REJECT")
+            add("DOMAIN-SUFFIX,cloudflare-dns.com,REJECT")
+            add("DOMAIN-SUFFIX,chrome.cloudflare-dns.com,REJECT")
+            add("DOMAIN-SUFFIX,mozilla.cloudflare-dns.com,REJECT")
+            add("DOMAIN-SUFFIX,quad9.net,REJECT")
+            add("DOMAIN-SUFFIX,dns.quad9.net,REJECT")
+            add("DOMAIN-SUFFIX,cleanbrowsing.org,REJECT")
+            add("DOMAIN-SUFFIX,doh.cleanbrowsing.org,REJECT")
+            add("DOMAIN-SUFFIX,doh.opendns.com,REJECT")
+            add("DOMAIN-SUFFIX,doh.umbrella.com,REJECT")
+            add("DOMAIN-SUFFIX,dns.nextdns.io,REJECT")
+            add("IP-CIDR,8.8.8.8/32,REJECT,no-resolve")
+            add("IP-CIDR,8.8.4.4/32,REJECT,no-resolve")
+            add("IP-CIDR,1.1.1.1/32,REJECT,no-resolve")
+            add("IP-CIDR,1.0.0.1/32,REJECT,no-resolve")
+            add("IP-CIDR,9.9.9.9/32,REJECT,no-resolve")
+            localAdBlockDomains.forEach { domain ->
+                add("DOMAIN-SUFFIX,$domain,REJECT")
+            }
+            if (preferences.dnsProfile == DnsProfile.FAMILY) {
+                familyFilterDomains.forEach { domain ->
+                    add("DOMAIN-SUFFIX,$domain,REJECT")
+                }
+            }
+        }
         else -> emptyList()
     }
 

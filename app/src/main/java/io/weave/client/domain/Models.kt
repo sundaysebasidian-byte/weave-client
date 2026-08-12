@@ -44,8 +44,8 @@ enum class DnsProfile(
     val description: String,
 ) {
     PRIVACY("普通隐私", "AliDNS / 腾讯 DoH 或 DoT，不主动过滤内容"),
-    AD_BLOCK("屏蔽广告", "AdGuard DNS：过滤广告、跟踪器与恶意域名"),
-    FAMILY("家庭过滤", "AdGuard Family：广告、跟踪器与成人内容过滤"),
+    AD_BLOCK("屏蔽广告", "AdGuard DNS + 本地规则：过滤广告、跟踪器与恶意域名"),
+    FAMILY("家庭过滤", "AdGuard Family + 本地规则：广告、跟踪器与成人内容过滤"),
     CUSTOM("自定义", "填写自己的加密 DoH 或 DoT 地址"),
 }
 

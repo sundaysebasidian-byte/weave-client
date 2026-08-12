@@ -2383,7 +2383,7 @@ private fun SettingsScreen(
                         preferences.dnsProfile == DnsProfile.AD_BLOCK ||
                         preferences.dnsProfile == DnsProfile.FAMILY
                     ) {
-                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · 已阻止常见浏览器 DoH"
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · DNS + 本地规则"
                     } else {
                         "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · fake-IP"
                     },

@@ -18,7 +18,7 @@
 | 海外服务分类与自定义 Geo 规则 | 后续 | 需要规则命中解释、冲突预览和可回滚的数据更新机制后再开放入口 |
 | 自定义域名、远程规则集 | 后续 | 尚无入口；需要哈希固定、原子更新和命中解释器 |
 | DNS | 已实现 | fake-IP 全隧道接管，可选 DoH 或 DoT；代理服务器域名使用相同加密上游，明文 DNS 仅用于加密上游域名引导 |
-| 自定义 DNS / DoQ / 分流 DNS | 部分实现 | 设置页支持广告过滤、家庭过滤和自定义 DoH/DoT；DoQ 与分流 DNS 尚未开放 |
+| 自定义 DNS / DoQ / 分流 DNS | 部分实现 | 设置页支持广告过滤（AdGuard DoH/DoT + 内置域名规则）、家庭过滤和自定义 DoH/DoT；DoQ 与分流 DNS 尚未开放 |
 | IPv6 | 已实现 | 双栈或仅 IPv4；仅 IPv4 会关闭内核/DNS IPv6，并在 TUN 中拒绝 IPv6 |
 | 速度优化 | 部分实现 | `tcp-concurrent`、`unified-delay` 与懒测速已启用；未宣称未经设备矩阵验证的 TCP Fast Open |
 | 后台稳定 | 已实现基础 | Android 前台 `VpnService`、`START_STICKY`、非 VPN 底层网络监听和 1.5 秒去抖事务恢复；仍需真机长时测试 |
