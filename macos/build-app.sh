@@ -27,6 +27,9 @@ cp "$build_root/arm64-apple-macosx/release/WeaveMac" "$app_bundle/Contents/MacOS
 if [[ -f "$macos_root/Resources/Weave.icns" ]]; then
   cp "$macos_root/Resources/Weave.icns" "$app_bundle/Contents/Resources/Weave.icns"
 fi
+if [[ -f "$macos_root/Resources/WeaveImpressionTexture.webp" ]]; then
+  cp "$macos_root/Resources/WeaveImpressionTexture.webp" "$app_bundle/Contents/Resources/WeaveImpressionTexture.webp"
+fi
 if [[ -x "$core_binary" ]]; then
   core_actual_sha="$(shasum -a 256 "$core_binary" | awk '{print $1}')"
   if [[ -z "$core_expected_sha" || "$core_actual_sha" != "$core_expected_sha" ]]; then

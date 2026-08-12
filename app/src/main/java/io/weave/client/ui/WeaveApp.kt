@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -94,13 +95,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -195,16 +199,31 @@ fun WeaveApp(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        background,
-                        background,
-                        backdropTint,
+            .background(background),
+    ) {
+        Image(
+            painter = painterResource(io.weave.client.R.drawable.weave_impression_texture),
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = if (background.luminance() < 0.35f) 0.08f else 0.23f
+                },
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            background.copy(alpha = 0.76f),
+                            background.copy(alpha = 0.68f),
+                            backdropTint.copy(alpha = 0.30f),
+                        ),
                     ),
                 ),
-            ),
-    ) {
+        )
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
@@ -1929,7 +1948,14 @@ private fun ConnectionHero(
             .fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
     ) {
-        Column(modifier = Modifier.padding(22.dp)) {
+        Box {
+            MonetWash(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(32.dp))
+                    .alpha(0.40f),
+            )
+            Column(modifier = Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = CircleShape,
@@ -2025,6 +2051,56 @@ private fun ConnectionHero(
                     fontSize = 16.sp,
                 )
             }
+            }
+        }
+    }
+}
+
+/**
+ * A restrained impressionist wash: broad translucent daubs rather than a
+ * generic linear gradient. It stays behind content and changes with the
+ * selected Material palette, so the app feels painted instead of recolored.
+ */
+@Composable
+private fun MonetWash(modifier: Modifier = Modifier) {
+    val primary = MaterialTheme.colorScheme.primaryContainer
+    val secondary = MaterialTheme.colorScheme.secondaryContainer
+    val tertiary = MaterialTheme.colorScheme.tertiary
+    Canvas(modifier = modifier) {
+        val short = size.minDimension
+        drawCircle(
+            color = secondary.copy(alpha = 0.34f),
+            radius = short * 0.50f,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.08f),
+        )
+        drawCircle(
+            color = primary.copy(alpha = 0.25f),
+            radius = short * 0.42f,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.10f, size.height * 0.82f),
+        )
+        drawCircle(
+            color = tertiary.copy(alpha = 0.16f),
+            radius = short * 0.26f,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.86f),
+        )
+        val strokeWidth = short * 0.045f
+        repeat(8) { index ->
+            val y = size.height * (0.16f + index * 0.095f)
+            val startX = size.width * (0.06f + (index % 3) * 0.035f)
+            drawLine(
+                color = when (index % 3) {
+                    0 -> primary.copy(alpha = 0.16f)
+                    1 -> secondary.copy(alpha = 0.13f)
+                    else -> tertiary.copy(alpha = 0.10f)
+                },
+                start = androidx.compose.ui.geometry.Offset(startX, y),
+                end = androidx.compose.ui.geometry.Offset(
+                    size.width * (0.42f + (index % 4) * 0.13f),
+                    y + strokeWidth * 0.8f,
+                ),
+                strokeWidth = strokeWidth,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            )
         }
     }
 }

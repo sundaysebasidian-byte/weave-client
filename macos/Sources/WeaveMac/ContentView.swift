@@ -29,20 +29,23 @@ struct ContentView: View {
     @State private var destination: MacDestination = .connection
 
     var body: some View {
-        HStack(spacing: 0) {
-            WeaveSidebar(destination: $destination)
-                .frame(width: 190)
-            Rectangle()
-                .fill(Color.weaveStroke)
-                .frame(width: 1)
-            ZStack {
-                retainedPage(ConnectionView(), for: .connection)
-                retainedPage(SubscriptionListView(), for: .subscriptions)
-                retainedPage(TransferView(), for: .transfer)
-                retainedPage(SettingsView(), for: .settings)
+        ZStack {
+            WeaveImpressionBackdrop()
+            HStack(spacing: 0) {
+                WeaveSidebar(destination: $destination)
+                    .frame(width: 190)
+                Rectangle()
+                    .fill(Color.weaveStroke.opacity(0.68))
+                    .frame(width: 1)
+                ZStack {
+                    retainedPage(ConnectionView(), for: .connection)
+                    retainedPage(SubscriptionListView(), for: .subscriptions)
+                    retainedPage(TransferView(), for: .transfer)
+                    retainedPage(SettingsView(), for: .settings)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.weaveCanvas.opacity(0.82))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.weaveCanvas)
         }
         .tint(.weaveAcid)
         .transaction { transaction in
@@ -64,6 +67,31 @@ struct ContentView: View {
             .allowsHitTesting(destination == item)
             .accessibilityHidden(destination != item)
             .zIndex(destination == item ? 1 : 0)
+    }
+}
+
+private struct WeaveImpressionBackdrop: View {
+    private var image: NSImage? {
+        guard let url = Bundle.main.url(
+            forResource: "WeaveImpressionTexture",
+            withExtension: "webp",
+        ) else { return nil }
+        return NSImage(contentsOf: url)
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .opacity(0.18)
+                    .blendMode(.multiply)
+            } else {
+                Color.weaveCanvas
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 
