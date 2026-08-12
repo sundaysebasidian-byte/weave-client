@@ -7,7 +7,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -208,7 +207,7 @@ fun WeaveApp(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    alpha = if (background.luminance() < 0.35f) 0.08f else 0.23f
+                    alpha = if (background.luminance() < 0.35f) 0.11f else 0.34f
                 },
         )
         Box(
@@ -217,9 +216,9 @@ fun WeaveApp(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            background.copy(alpha = 0.76f),
-                            background.copy(alpha = 0.68f),
-                            backdropTint.copy(alpha = 0.30f),
+                            background.copy(alpha = 0.52f),
+                            background.copy(alpha = 0.42f),
+                            backdropTint.copy(alpha = 0.18f),
                         ),
                     ),
                 ),
@@ -240,7 +239,7 @@ fun WeaveApp(
                         .shadow(8.dp, RoundedCornerShape(28.dp)),
                     shape = RoundedCornerShape(28.dp),
                     color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(0.75.dp, glassBorderColor()),
+                    border = null,
                     tonalElevation = 0.dp,
                 ) {
                     NavigationBar(
@@ -1715,10 +1714,6 @@ private fun TargetOptionRow(
 }
 
 @Composable
-private fun glassBorderColor(): Color =
-    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f)
-
-@Composable
 private fun WeaveDivider(modifier: Modifier = Modifier) {
     HorizontalDivider(
         modifier = modifier.padding(horizontal = 16.dp),
@@ -1736,11 +1731,11 @@ private fun LiquidGlassPanel(
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
     val color = if (dark) {
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
     } else {
-        // Keep a hint of the ivory backdrop visible through each panel, like the
-        // translucent paper layers in the woven icon.
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.90f)
+        // One continuous painted canvas, with translucent paper layers rather
+        // than opaque white tiles and grey outlines.
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.68f)
     }
     if (onClick != null) {
         Surface(
@@ -1748,9 +1743,9 @@ private fun LiquidGlassPanel(
             modifier = modifier,
             shape = shape,
             color = color,
-            border = BorderStroke(0.75.dp, glassBorderColor()),
+            border = null,
             tonalElevation = 0.dp,
-            shadowElevation = 2.dp,
+            shadowElevation = 0.8.dp,
         ) {
             content()
         }
@@ -1759,9 +1754,9 @@ private fun LiquidGlassPanel(
             modifier = modifier,
             shape = shape,
             color = color,
-            border = BorderStroke(0.75.dp, glassBorderColor()),
+            border = null,
             tonalElevation = 0.dp,
-            shadowElevation = 2.dp,
+            shadowElevation = 0.8.dp,
         ) {
             content()
         }
@@ -1827,7 +1822,7 @@ private fun HomeScreen(
                         onClick = onMoreClick,
                         color = MaterialTheme.colorScheme.surface,
                         shape = CircleShape,
-                        border = BorderStroke(0.75.dp, glassBorderColor()),
+                        border = null,
                     ) {
                         Icon(
                             Icons.Rounded.MoreHoriz,
@@ -1953,7 +1948,7 @@ private fun ConnectionHero(
                 modifier = Modifier
                     .matchParentSize()
                     .clip(RoundedCornerShape(32.dp))
-                    .alpha(0.40f),
+                    .alpha(0.32f),
             )
             Column(modifier = Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2068,20 +2063,37 @@ private fun MonetWash(modifier: Modifier = Modifier) {
     val tertiary = MaterialTheme.colorScheme.tertiary
     Canvas(modifier = modifier) {
         val short = size.minDimension
-        drawCircle(
-            color = secondary.copy(alpha = 0.34f),
-            radius = short * 0.50f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.08f),
+        fun washPath(
+            startX: Float,
+            startY: Float,
+            width: Float,
+            height: Float,
+            sway: Float,
+        ) = androidx.compose.ui.graphics.Path().apply {
+            moveTo(size.width * startX, size.height * startY)
+            cubicTo(
+                size.width * (startX + width * 0.20f), size.height * (startY - sway),
+                size.width * (startX + width * 0.70f), size.height * (startY + sway),
+                size.width * (startX + width), size.height * (startY + height * 0.18f),
+            )
+            cubicTo(
+                size.width * (startX + width * 0.78f), size.height * (startY + height),
+                size.width * (startX + width * 0.24f), size.height * (startY + height * 0.86f),
+                size.width * startX, size.height * (startY + height),
+            )
+            close()
+        }
+        drawPath(
+            path = washPath(0.62f, 0.02f, 0.45f, 0.38f, 0.035f),
+            color = secondary.copy(alpha = 0.24f),
         )
-        drawCircle(
-            color = primary.copy(alpha = 0.25f),
-            radius = short * 0.42f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.10f, size.height * 0.82f),
+        drawPath(
+            path = washPath(-0.08f, 0.64f, 0.44f, 0.42f, -0.025f),
+            color = primary.copy(alpha = 0.18f),
         )
-        drawCircle(
-            color = tertiary.copy(alpha = 0.16f),
-            radius = short * 0.26f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.86f),
+        drawPath(
+            path = washPath(0.52f, 0.76f, 0.36f, 0.30f, 0.020f),
+            color = tertiary.copy(alpha = 0.12f),
         )
         val strokeWidth = short * 0.045f
         repeat(8) { index ->
@@ -2229,7 +2241,7 @@ private fun RoutesScreen(
                         onClick = onAdd,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(0.75.dp, glassBorderColor()),
+                        border = null,
                     ) {
                         Icon(
                             Icons.Rounded.Add,
@@ -2404,7 +2416,7 @@ private fun SubscriptionsScreen(
                             onClick = onAdd,
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = CircleShape,
-                            border = BorderStroke(0.75.dp, glassBorderColor()),
+                            border = null,
                         ) {
                             Icon(
                                 Icons.Rounded.Add,
