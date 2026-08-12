@@ -25,6 +25,7 @@ import io.weave.client.domain.NetworkPreferences
 import io.weave.client.domain.NodeDisplayName
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.RouteKind
+import io.weave.client.domain.RouteReferenceSanitizer
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.Subscription
@@ -88,21 +89,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val initialSubscriptions = subscriptionRepository.loadMetadata()
     private val initialNodes = subscriptionRepository.loadNodes()
     private val storedRoutes = routeStore.load()
-    private val initialRoutes = storedRoutes.map(::normalizeRouteLabel)
+    private val initialRoutes: List<AppRoute> = RouteReferenceSanitizer.routes(
+        routes = storedRoutes,
+        subscriptions = initialSubscriptions,
+        nodes = initialNodes,
+    )
+    private val storedDefaultTarget = settingsStore.defaultRouteTarget()
+    private val initialDefaultTarget: RouteTarget? = RouteReferenceSanitizer.defaultTarget(
+        target = storedDefaultTarget,
+        subscriptions = initialSubscriptions,
+        nodes = initialNodes,
+    )
 
     private val mutableDashboard = MutableStateFlow(
         DashboardState(
             routingMode = settingsStore.routingMode(),
-            defaultRouteTarget = resolveDefaultRouteTarget(
-                settingsStore.defaultRouteTarget(),
-                initialSubscriptions,
-                initialNodes,
-            ),
+            defaultRouteTarget = initialDefaultTarget,
         ),
     )
     val dashboard = mutableDashboard.asStateFlow()
 
-    private val mutableRoutes = MutableStateFlow(
+    private val mutableRoutes = MutableStateFlow<List<AppRoute>>(
         initialRoutes,
     )
     val routes = mutableRoutes.asStateFlow()
@@ -139,6 +146,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     init {
         if (storedRoutes != initialRoutes) {
             routeStore.save(initialRoutes)
+        }
+        if (storedDefaultTarget != initialDefaultTarget && initialDefaultTarget != null) {
+            settingsStore.setDefaultRouteTarget(initialDefaultTarget)
         }
         viewModelScope.launch {
             VpnRuntimeState.snapshot.collect { runtime ->
@@ -779,74 +789,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return
         mutableDashboard.update { it.copy(statusMessage = message) }
         WeaveVpnService.reload(getApplication())
-    }
-
-    private fun resolveDefaultRouteTarget(
-        stored: RouteTarget?,
-        subscriptions: List<Subscription>,
-        nodes: List<ProxyNode>,
-    ): RouteTarget? {
-        stored ?: return null
-        return when (stored.kind) {
-            RouteKind.DIRECT -> stored.copy(label = "直连")
-            RouteKind.BLOCK -> null
-            RouteKind.AUTO -> {
-                val subscription = subscriptions.firstOrNull {
-                    it.id == stored.subscriptionId
-                }
-                stored.copy(
-                    label = subscription?.let { "自动选择" }
-                        ?: "目标订阅已失效",
-                )
-            }
-            RouteKind.FIXED -> {
-                val subscription = subscriptions.firstOrNull {
-                    it.id == stored.subscriptionId
-                }
-                val node = nodes.firstOrNull {
-                    it.subscriptionId == stored.subscriptionId && it.id == stored.nodeId
-                }
-                stored.copy(
-                    label = if (subscription != null && node != null) {
-                        NodeDisplayName.core(node.name)
-                    } else {
-                        "目标节点已失效"
-                    },
-                )
-            }
-        }
-    }
-
-    private fun normalizeRouteLabel(route: AppRoute): AppRoute {
-        val target = route.target
-        val normalizedTarget = when (target.kind) {
-            RouteKind.DIRECT -> target.copy(label = "直连")
-            RouteKind.BLOCK -> target.copy(label = "阻止联网")
-            RouteKind.AUTO, RouteKind.FIXED -> {
-                val subscription = initialSubscriptions.firstOrNull {
-                    it.id == target.subscriptionId
-                }
-                if (subscription == null) {
-                    target.copy(
-                        label = if (target.kind == RouteKind.AUTO) {
-                            "目标订阅已失效"
-                        } else {
-                            "目标节点已失效"
-                        },
-                    )
-                } else {
-                    SubscriptionTargetReconciler.refresh(
-                        target = target,
-                        subscription = subscription,
-                        nodes = initialNodes.filter {
-                            it.subscriptionId == subscription.id
-                        },
-                        allowBlock = true,
-                    )
-                }
-            }
-        }
-        return route.copy(target = normalizedTarget)
     }
 
     override fun onCleared() {

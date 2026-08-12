@@ -12,6 +12,9 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
+import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,7 +35,67 @@ data class NodeHealthSnapshot(
     val name: String,
     val protocol: String,
     val latencyMs: Int?,
-)
+    /** Number of completed probe rounds included in this snapshot. */
+    val samples: Int = 1,
+    /** Number of rounds that returned a usable delay. */
+    val successfulSamples: Int = latencyMs?.let { 1 } ?: 0,
+    /** Average absolute change between consecutive successful probes. */
+    val jitterMs: Int? = null,
+    /** Percentage of probe rounds that did not return a usable delay. */
+    val packetLossPercent: Int = if (latencyMs == null) 100 else 0,
+    /** 95th percentile of the successful probe delays. */
+    val p95LatencyMs: Int? = latencyMs,
+) {
+    /** A stable, explainable ordering score; lower is better. */
+    val qualityScoreMs: Int?
+        get() = latencyMs?.let {
+            it + (jitterMs ?: 0) * 2 + packetLossPercent * 4
+        }
+}
+
+/** Pure aggregation logic kept separate so the multi-round probe can be regression-tested. */
+internal object NodeHealthAggregator {
+    fun aggregate(rounds: List<List<NodeHealthSnapshot>>): List<NodeHealthSnapshot> {
+        if (rounds.isEmpty()) return emptyList()
+        return rounds
+            .asSequence()
+            .flatten()
+            .groupBy { it.name }
+            .map { (name, snapshots) ->
+                val delays = snapshots.mapNotNull { it.latencyMs }
+                val expected = rounds.size
+                val successful = delays.size
+                val ordered = delays.sorted()
+                val protocol = snapshots.lastOrNull()?.protocol ?: "Mihomo"
+                NodeHealthSnapshot(
+                    name = name,
+                    protocol = protocol,
+                    latencyMs = ordered.getOrNull(ordered.size / 2),
+                    samples = expected,
+                    successfulSamples = successful,
+                    jitterMs = averageJitter(delays),
+                    packetLossPercent = ((expected - successful) * 100 / expected)
+                        .coerceIn(0, 100),
+                    p95LatencyMs = percentile(ordered, 95),
+                )
+            }
+            .sortedBy { it.name }
+    }
+
+    private fun averageJitter(delays: List<Int>): Int? {
+        if (delays.size < 2) return null
+        val total = delays.zipWithNext().sumOf { (previous, current) ->
+            abs(current - previous)
+        }
+        return (total.toDouble() / (delays.size - 1)).toInt()
+    }
+
+    private fun percentile(sorted: List<Int>, percentile: Int): Int? {
+        if (sorted.isEmpty()) return null
+        val index = (((sorted.size - 1) * percentile) + 99) / 100
+        return sorted[index.coerceAtMost(sorted.lastIndex)]
+    }
+}
 
 /**
  * Narrow, fail-closed adapter around the pinned CMFA/Mihomo native bridge.
@@ -211,10 +274,29 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             check(NativeBridge.queryGroup(group) != null) {
                 "该订阅未被当前运行配置加载，请先把它设为默认出口或应用出口"
             }
-            NativeBridge.healthCheck(group).getOrThrow()
-            checkNotNull(querySubscriptionHealthUnlocked(subscriptionId)) {
-                "测速完成后无法读取节点状态"
+            var lastFailure: Throwable? = null
+            val rounds = buildList {
+                repeat(HEALTH_ROUNDS) { round ->
+                    runCatching {
+                        NativeBridge.healthCheck(group).getOrThrow()
+                        checkNotNull(querySubscriptionHealthUnlocked(subscriptionId)) {
+                            "测速完成后无法读取节点状态"
+                        }
+                    }.onSuccess { add(it) }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        lastFailure = error
+                    }
+                    if (round < HEALTH_ROUNDS - 1) {
+                        // Give the core a short breather so consecutive HTTP probes do not
+                        // contend with each other on mobile radios.
+                        delay(HEALTH_ROUND_GAP_MS)
+                    }
+                }
             }
+            check(rounds.isNotEmpty()) {
+                lastFailure?.message ?: "节点检测失败，请稍后重试"
+            }
+            NodeHealthAggregator.aggregate(rounds)
         }
     }
 
@@ -235,6 +317,8 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         const val CORE_UNAVAILABLE = "Mihomo 原生库无法加载或初始化"
         const val LOG_TAG = "WeaveEngine"
         const val DEFAULT_GROUP = "DEFAULT"
+        const val HEALTH_ROUNDS = 3
+        const val HEALTH_ROUND_GAP_MS = 250L
         val NODE_PREFIX = Regex("""^weave:[^:]+:""")
         val ATTRIBUTION_QUERIES = AtomicLong()
         val ATTRIBUTION_MATCHES = AtomicLong()

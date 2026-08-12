@@ -800,9 +800,9 @@ private fun SubscriptionManagerDialog(
     val orderedNodes = remember(filteredNodes, health.nodes, health.checkedAtMillis) {
         filteredNodes.sortedWith(
             compareBy<ProxyNode> {
-                healthByName[NodeDisplayName.core(it.name)]?.latencyMs == null
+                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs == null
             }.thenBy {
-                healthByName[NodeDisplayName.core(it.name)]?.latencyMs ?: Int.MAX_VALUE
+                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs ?: Int.MAX_VALUE
             }.thenBy { it.name },
         )
     }
@@ -1014,9 +1014,15 @@ private fun SubscriptionManagerDialog(
                                 )
                                 Spacer(Modifier.width(7.dp))
                             }
-                            Text(if (health.running) "测速中" else "测速并排序")
+                            Text(if (health.running) "测速中" else "多次测速并排序")
                         }
                     }
+                    Text(
+                        "连续 3 轮探测，按中位延迟、抖动与丢包综合排序",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                    )
                     health.error?.let {
                         Text(
                             it,
@@ -1027,11 +1033,16 @@ private fun SubscriptionManagerDialog(
                     }
                     if (health.checkedAtMillis != null && health.nodes.isNotEmpty()) {
                         val measured = health.nodes.mapNotNull { it.latencyMs }.sorted()
-                        val available = measured.size
+                        val available = health.nodes.count { it.successfulSamples > 0 }
                         val median = measured.getOrNull(measured.size / 2)
+                        val worstP95 = health.nodes.mapNotNull { it.p95LatencyMs }.maxOrNull()
+                        val averageLoss = health.nodes
+                            .map { it.packetLossPercent }
+                            .average()
+                            .toInt()
                         Text(
                             if (median != null) {
-                                "最近一次：可用 $available/${health.nodes.size} · 最快 ${measured.first()} ms · 中位 ${median} ms"
+                                "最近一次：可用 $available/${health.nodes.size} · 中位 ${median} ms · P95 ${worstP95 ?: median} ms · 平均丢包 $averageLoss%"
                             } else {
                                 "最近一次：未发现可用节点"
                             },
@@ -1143,12 +1154,18 @@ private fun SubscriptionNodeRow(
         }
         Text(
             text = when {
+                health?.latencyMs != null && health.packetLossPercent > 0 ->
+                    "${health.latencyMs} ms · 丢${health.packetLossPercent}%"
+                health?.latencyMs != null && (health.jitterMs ?: 0) >= 25 ->
+                    "${health.latencyMs} ms · 抖${health.jitterMs}"
                 health?.latencyMs != null -> "${health.latencyMs} ms"
                 health != null && checked -> "超时"
                 health != null -> "未检测"
                 else -> "—"
             },
             color = when {
+                health?.latencyMs != null && health.packetLossPercent > 0 ->
+                    MaterialTheme.colorScheme.tertiary
                 health?.latencyMs != null -> Good
                 health != null && checked -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
