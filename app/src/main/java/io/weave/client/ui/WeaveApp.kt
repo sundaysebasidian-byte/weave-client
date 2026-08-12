@@ -212,7 +212,7 @@ fun WeaveApp(
                         .shadow(8.dp, RoundedCornerShape(28.dp)),
                     shape = RoundedCornerShape(28.dp),
                     color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, glassBorderColor()),
+                    border = BorderStroke(0.75.dp, glassBorderColor()),
                     tonalElevation = 0.dp,
                 ) {
                     NavigationBar(
@@ -676,7 +676,7 @@ private fun LanTransferDialog(
                         }
                     }
                 }
-                item { HorizontalDivider() }
+                item { WeaveDivider() }
                 item { TargetSectionLabel("从另一台设备导入") }
                 item {
                     OutlinedTextField(
@@ -992,7 +992,7 @@ private fun SubscriptionManagerDialog(
                             )
                         }
                     }
-                    HorizontalDivider()
+                    WeaveDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1527,10 +1527,19 @@ private fun TargetOptionRow(
 @Composable
 private fun glassBorderColor(): Color =
     if (MaterialTheme.colorScheme.background.luminance() < 0.35f) {
-        Color.White.copy(alpha = 0.12f)
+        Color(0x2AF2EFD9)
     } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+        Color(0x1A6B6A5F)
     }
+
+@Composable
+private fun WeaveDivider(modifier: Modifier = Modifier) {
+    HorizontalDivider(
+        modifier = modifier.padding(horizontal = 16.dp),
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+    )
+}
 
 @Composable
 private fun LiquidGlassPanel(
@@ -1547,7 +1556,7 @@ private fun LiquidGlassPanel(
             modifier = modifier,
             shape = shape,
             color = color,
-            border = BorderStroke(1.dp, glassBorderColor()),
+            border = BorderStroke(0.75.dp, glassBorderColor()),
             tonalElevation = 0.dp,
             shadowElevation = 1.dp,
         ) {
@@ -1558,7 +1567,7 @@ private fun LiquidGlassPanel(
             modifier = modifier,
             shape = shape,
             color = color,
-            border = BorderStroke(1.dp, glassBorderColor()),
+            border = BorderStroke(0.75.dp, glassBorderColor()),
             tonalElevation = 0.dp,
             shadowElevation = 1.dp,
         ) {
@@ -1626,7 +1635,7 @@ private fun HomeScreen(
                         onClick = onMoreClick,
                         color = MaterialTheme.colorScheme.surface,
                         shape = CircleShape,
-                        border = BorderStroke(1.dp, glassBorderColor()),
+                        border = BorderStroke(0.75.dp, glassBorderColor()),
                     ) {
                         Icon(
                             Icons.Rounded.MoreHoriz,
@@ -1969,7 +1978,7 @@ private fun RoutesScreen(
                         onClick = onAdd,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, glassBorderColor()),
+                        border = BorderStroke(0.75.dp, glassBorderColor()),
                     ) {
                         Icon(
                             Icons.Rounded.Add,
@@ -2140,7 +2149,7 @@ private fun SubscriptionsScreen(
                             onClick = onAdd,
                             color = Acid,
                             shape = CircleShape,
-                            border = BorderStroke(1.dp, glassBorderColor()),
+                            border = BorderStroke(0.75.dp, glassBorderColor()),
                         ) {
                             Icon(
                                 Icons.Rounded.Add,
@@ -2350,21 +2359,21 @@ private fun SettingsScreen(
                     subtitle = preferences.automaticStrategy.label,
                     onClick = { showAutomaticStrategy = true },
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Bolt,
                     title = "Always-on 与断网保护",
                     subtitle = "前往 Android 系统 VPN 设置启用",
                     onClick = onOpenVpnSettings,
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Language,
                     title = "IPv4 / IPv6",
                     subtitle = preferences.ipv6Mode.label,
                     onClick = { showIpv6Mode = true },
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Apps,
                     title = "局域网共享",
@@ -2389,14 +2398,14 @@ private fun SettingsScreen(
                     },
                     onClick = { showDnsSettings = true },
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Tune,
                     title = "高级路由",
                     subtitle = "应用规则优先 · 修改后安全热重载",
                     onClick = { showRoutingDetails = true },
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 ToggleSetting(
                     icon = Icons.Rounded.Language,
                     title = "国内智能直连",
@@ -2404,14 +2413,14 @@ private fun SettingsScreen(
                     checked = preferences.domesticDirect,
                     onCheckedChange = onDomesticDirectChanged,
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Security,
                     title = "安全与隐私",
                     subtitle = "Keystore 加密 · 明文按会话清理",
                     onClick = { showSecurityDetails = true },
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 ToggleSetting(
                     icon = Icons.Rounded.Block,
                     title = "阻止 UDP STUN",
@@ -2430,7 +2439,7 @@ private fun SettingsScreen(
                     subtitle = "开源许可、第三方组件与无担保声明",
                     onClick = { showOpenSourceDetails = true },
                 )
-                HorizontalDivider()
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Security,
                     title = "VPN 数据路径说明",
@@ -2778,7 +2787,7 @@ private fun DnsSettingsDialog(
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = "已选择", tint = Good)
                             }
                         }
-                        if (index != DnsTransport.entries.lastIndex) HorizontalDivider()
+                        if (index != DnsTransport.entries.lastIndex) WeaveDivider()
                     }
                 }
                 editingCustom -> Column {
@@ -2832,7 +2841,7 @@ private fun DnsSettingsDialog(
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = "已选择", tint = Good)
                             }
                         }
-                        if (index != DnsProfile.entries.lastIndex) HorizontalDivider()
+                        if (index != DnsProfile.entries.lastIndex) WeaveDivider()
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(
@@ -2919,7 +2928,7 @@ private fun <T> SettingChoiceDialog(
                             )
                         }
                     }
-                    if (index != options.lastIndex) HorizontalDivider()
+                    if (index != options.lastIndex) WeaveDivider()
                 }
             }
         },

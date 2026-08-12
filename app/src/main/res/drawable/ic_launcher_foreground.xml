@@ -4,25 +4,26 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Two calm, crossing ribbons form an abstract network knot rather than a literal W. -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M27,31 L42,75 Q44,81 47,75 L54,56 Q56,50 59,56 L66,75 Q68,81 71,75 L84,31"
+        android:pathData="M29,31 C39,18 49,22 54,35 L69,73 C72,81 79,80 84,69"
         android:strokeColor="#F7F1DF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="14" />
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M27,31 L42,75 Q44,81 47,75 L54,56"
-        android:strokeColor="#D6E875"
+        android:pathData="M79,31 C69,18 59,22 54,35 L39,73 C36,81 29,80 24,69"
+        android:strokeColor="#C9D96F"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="8" />
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M59,56 L66,75 Q68,81 71,75 L84,31"
-        android:strokeColor="#8EAB82"
+        android:pathData="M29,31 C39,18 49,22 54,35"
+        android:strokeColor="#FFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="8" />
+        android:strokeWidth="3" />
 </vector>

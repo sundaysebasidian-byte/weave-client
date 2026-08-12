@@ -5,6 +5,11 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+## 0.3.0-alpha29 — 2026-08-12
+
+- Android：重做浅色主题的描边和分隔线，改用暖灰、半像素和内缩留白，减少黑线带来的突兀感。
+- Android / macOS：将直白的编织 W 标记改为两条交叠丝带组成的抽象网络结，统一启动图标和侧边栏品牌标记。
+
 ## 0.3.0-alpha28 — 2026-08-12
 
 - Android：广告过滤和家庭过滤现在会在 AdGuard DoH/DoT 之外，使用内置广告、跟踪器和成人域名规则；规则位于分流链最前面，能拦截浏览器和应用发起的域名连接。

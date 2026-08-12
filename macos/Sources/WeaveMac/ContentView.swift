@@ -77,7 +77,10 @@ private struct WeaveSidebar: View {
                     RoundedRectangle(cornerRadius: 11)
                         .fill(Color.weaveInk)
                     WeaveMark()
-                        .fill(Color.weaveAcid)
+                        .stroke(
+                            Color.weaveAcid,
+                            style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round),
+                        )
                         .padding(9)
                 }
                 .frame(width: 38, height: 38)
@@ -142,28 +145,16 @@ private struct WeaveSidebar: View {
 
 private struct WeaveMark: Shape {
     func path(in rect: CGRect) -> Path {
-        let points = [
-            CGPoint(x: 0.16, y: 0.12),
-            CGPoint(x: 0.36, y: 0.12),
-            CGPoint(x: 0.50, y: 0.68),
-            CGPoint(x: 0.64, y: 0.12),
-            CGPoint(x: 0.84, y: 0.12),
-            CGPoint(x: 0.61, y: 0.88),
-            CGPoint(x: 0.39, y: 0.88),
-        ]
         var path = Path()
-        for (index, point) in points.enumerated() {
-            let resolved = CGPoint(
-                x: rect.minX + point.x * rect.width,
-                y: rect.minY + point.y * rect.height
-            )
-            if index == 0 {
-                path.move(to: resolved)
-            } else {
-                path.addLine(to: resolved)
-            }
+        let p = { (x: CGFloat, y: CGFloat) in
+            CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
         }
-        path.closeSubpath()
+        path.move(to: p(0.18, 0.22))
+        path.addCurve(to: p(0.50, 0.48), control1: p(0.30, 0.04), control2: p(0.44, 0.18))
+        path.addCurve(to: p(0.82, 0.78), control1: p(0.56, 0.78), control2: p(0.72, 0.98))
+        path.move(to: p(0.82, 0.22))
+        path.addCurve(to: p(0.50, 0.48), control1: p(0.70, 0.04), control2: p(0.56, 0.18))
+        path.addCurve(to: p(0.18, 0.78), control1: p(0.44, 0.78), control2: p(0.28, 0.98))
         return path
     }
 }
