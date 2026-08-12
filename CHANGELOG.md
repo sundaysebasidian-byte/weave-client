@@ -5,6 +5,10 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+- Android：订阅导入统一支持 HTTPS、粘贴 URI/Base64、Clash YAML、sing-box JSON、基础 V2Ray JSON、二维码和文件；URI/JSON 会在本机转换为 Mihomo provider，复杂或缺字段协议 fail-closed。
+- Android：手动节点测速继续保持按订阅懒加载，新增 SOCKS5/HTTP/SSR/AnyTLS 基础 URI 字段、V2Ray VMess/VLESS/Trojan/SS 基础 JSON 转换，并为旧版本记录增加运行时兼容转换。
+- Docs：同步更新格式边界、能力矩阵和开源路线图，避免把尚未接通的入口标为已实现。
+
 ## 0.3.0-alpha31 — 2026-08-12
 
 - Android / macOS：品牌图标改为非字母的“日蚀轨道”符号，由开放光环、酸橙轨道和单一节点组成，减少视觉噪声并提升小尺寸识别度。

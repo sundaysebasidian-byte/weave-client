@@ -85,7 +85,7 @@ class SubscriptionRepository(
         items: List<TransferSubscription>,
     ): List<Subscription> = withContext(Dispatchers.IO) {
         val validated = items.map { item ->
-            item to parser.parse(item.payload).also { parsed ->
+            item to prepareRuntimePayload(item.payload).also { (_, parsed) ->
                 if (parsed.nodeCount == 0) {
                     throw SubscriptionImportException("订阅中没有可用节点")
                 }
@@ -98,8 +98,8 @@ class SubscriptionRepository(
                     store.save(
                         name = item.name,
                         url = item.source,
-                        payload = item.payload,
-                        parsed = parsed,
+                        payload = parsed.first,
+                        parsed = parsed.second,
                     ),
                 )
             }
@@ -143,6 +143,20 @@ class SubscriptionRepository(
         importPayload(name, fetched.finalUri.toString(), fetched.body)
     }
 
+    /** Accepts either a remote HTTPS subscription or pasted URI/Base64/JSON content. */
+    suspend fun importText(name: String, input: String): Subscription = withContext(Dispatchers.IO) {
+        val value = input.trim()
+        if (value.toByteArray(Charsets.UTF_8).size > MAX_INLINE_BYTES) {
+            throw SubscriptionImportException("粘贴内容超过 ${MAX_INLINE_BYTES / (1024 * 1024)} MiB 限制")
+        }
+        if (value.startsWith("https://", ignoreCase = true)) {
+            val fetched = fetcher.fetch(value)
+            importPayload(name, fetched.finalUri.toString(), fetched.body)
+        } else {
+            importPayload(name, INLINE_IMPORT_SOURCE, value)
+        }
+    }
+
     suspend fun importFile(name: String, uri: Uri): Subscription = withContext(Dispatchers.IO) {
         val payload = contentResolver.openInputStream(uri)?.use(localReader::read)
             ?: throw SubscriptionImportException("无法读取所选订阅文件")
@@ -170,7 +184,7 @@ class SubscriptionRepository(
         source: String,
         payload: String,
     ): Subscription {
-        val parsed = parser.parse(payload)
+        val (runtimePayload, parsed) = prepareRuntimePayload(payload)
         if (parsed.nodeCount == 0) {
             throw SubscriptionImportException("订阅中没有可用节点")
         }
@@ -178,7 +192,7 @@ class SubscriptionRepository(
             store.save(
                 name = name,
                 url = source,
-                payload = payload,
+                payload = runtimePayload,
                 parsed = parsed,
                 id = subscriptionId ?: java.util.UUID.randomUUID().toString(),
             ),
@@ -193,7 +207,7 @@ class SubscriptionRepository(
     ): SubscriptionUpdate {
         val previous = store.get(subscriptionId)
             ?: throw SubscriptionImportException("订阅不存在")
-        val parsed = parser.parse(payload)
+        val (runtimePayload, parsed) = prepareRuntimePayload(payload)
         if (parsed.nodeCount == 0) {
             throw SubscriptionImportException("订阅中没有可用节点")
         }
@@ -201,7 +215,7 @@ class SubscriptionRepository(
         val updated = store.save(
             name = name,
             url = source,
-            payload = payload,
+            payload = runtimePayload,
             parsed = parsed,
             id = subscriptionId,
         )
@@ -212,6 +226,14 @@ class SubscriptionRepository(
         if (store.get(subscriptionId) == null) {
             throw SubscriptionImportException("订阅不存在")
         }
+    }
+
+    private fun prepareRuntimePayload(payload: String): Pair<String, ParsedSubscription> {
+        val parsed = parser.parse(payload)
+        val normalized = parser.normalizeForMihomo(payload, parsed)
+        // Reparse the generated provider so metadata, stable node IDs, and the runtime payload
+        // always describe the exact same node set.
+        return normalized to parser.parse(normalized)
     }
 
     private fun toDomain(record: StoredSubscription) = Subscription(
@@ -226,6 +248,8 @@ class SubscriptionRepository(
     private companion object {
         const val LOCAL_IMPORT_SOURCE = "local://user-selected-file"
         const val QR_IMPORT_SOURCE = "qr://locally-scanned-payload"
+        const val INLINE_IMPORT_SOURCE = "inline://pasted-payload"
+        const val MAX_INLINE_BYTES = 5 * 1024 * 1024
     }
 }
 

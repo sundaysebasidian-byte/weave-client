@@ -6,7 +6,7 @@
 | 能力 | alpha22 状态 | 实现边界 |
 |---|---|---|
 | Clash YAML 协议节点 | 已实现 | Mihomo provider 可承载 VLESS/Reality、VMess、Trojan、Hysteria/Hysteria2、TUIC、WireGuard、Shadowsocks/SSR、SOCKS5、HTTP、AnyTLS 与 OpenVPN；实际字段兼容性由锁定的内核版本决定 |
-| URI / Base64 / sing-box JSON | 仅安全解析元数据 | 可以识别并展示；尚未通过协议完整转换测试，因此不会拿去启动内核 |
+| URI / Base64 / sing-box / V2Ray JSON | 已实现基础运行转换 | 导入、二维码、粘贴文本和文件统一转换为本地 Clash provider；不支持的复杂字段 fail-closed，原始 Clash YAML 不改写 |
 | 多订阅 | 已实现 | 不同订阅隔离为不同 provider，可让不同应用引用不同订阅的自动组或固定节点 |
 | 订阅差异与安全更新 | 已实现 | 版本化加密 payload 原子切换，提交后显示新增/移除/保留；保留节点 ID，避免重排破坏固定引用 |
 | 订阅合并与跨订阅节点去重 | 后续 | 同名同协议只标记可能重复；解析器取得完整参数指纹前不会误删参数不同的节点 |

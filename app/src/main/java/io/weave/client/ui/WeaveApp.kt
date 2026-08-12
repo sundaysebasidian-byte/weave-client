@@ -473,7 +473,7 @@ private fun ImportSubscriptionDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "HTTPS 地址或本地文件都会在本机校验，并用 Android Keystore 加密保存。当前 Clash YAML 可直接连接。",
+                    "支持 HTTPS、URI/Base64、Clash YAML、sing-box JSON、二维码和本地文件；内容仅在本机校验并用 Android Keystore 加密保存。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                 )
@@ -488,7 +488,7 @@ private fun ImportSubscriptionDialog(
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("https://…") },
+                    label = { Text("订阅链接或节点文本") },
                     singleLine = true,
                     enabled = !state.running,
                     isError = state.error != null || scannerError != null,
@@ -564,6 +564,7 @@ private fun ImportSubscriptionDialog(
                         filePicker.launch(
                             arrayOf(
                                 "text/*",
+                                "application/json",
                                 "application/yaml",
                                 "application/x-yaml",
                                 "application/octet-stream",
@@ -963,6 +964,7 @@ private fun SubscriptionManagerDialog(
                                 filePicker.launch(
                                     arrayOf(
                                         "text/*",
+                                        "application/json",
                                         "application/yaml",
                                         "application/x-yaml",
                                         "application/octet-stream",

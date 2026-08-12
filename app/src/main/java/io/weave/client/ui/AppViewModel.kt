@@ -416,7 +416,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun importSubscription(name: String, url: String) {
         runSubscriptionImport {
-            subscriptionRepository.import(name, url)
+            subscriptionRepository.importText(name, url)
         }
     }
 

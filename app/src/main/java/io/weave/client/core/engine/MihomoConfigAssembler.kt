@@ -8,7 +8,7 @@ import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.subscription.StoredSubscription
-import io.weave.client.subscription.SubscriptionFormat
+import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
 import java.io.File
 
@@ -21,14 +21,15 @@ data class AssembledMihomoConfig(
  * Builds a minimal Mihomo control plane around encrypted Clash providers.
  *
  * Provider payloads are decrypted only into the app-private Mihomo home while the service runs.
- * URI lists and sing-box JSON remain importable for metadata, but are rejected as engine inputs
- * until their converters have protocol-complete tests.
+ * URI lists, sing-box JSON and basic V2Ray JSON are normalized at the import boundary (and lazily for records from
+ * older builds) so a stale pre-converter subscription cannot silently enter the runtime.
  */
 class MihomoConfigAssembler(
     context: Context,
     private val secretStore: SubscriptionSecretStore = SubscriptionSecretStore(context),
     private val routeCompiler: RouteConfigCompiler = RouteConfigCompiler(),
 ) {
+    private val payloadParser = SubscriptionPayloadParser()
     private val providerDirectory = File(context.cacheDir, "mihomo-runtime/providers")
 
     fun assemble(
@@ -40,15 +41,13 @@ class MihomoConfigAssembler(
         additionalSubscriptionIds: Set<String> = emptySet(),
     ): AssembledMihomoConfig {
         val subscriptions = secretStore.list()
-        val usable = subscriptions.filter {
-            it.format == SubscriptionFormat.CLASH_YAML && it.hasPayload
-        }
+        val usable = subscriptions.filter { it.hasPayload }
         require(
             mode == RoutingMode.DIRECT ||
                 subscriptions.isEmpty() ||
                 usable.isNotEmpty(),
         ) {
-            "已导入的订阅尚不能转换为 Mihomo 配置；当前连接格式仅支持 Clash YAML"
+            "已导入的订阅没有可用配置内容，请重新导入"
         }
         val byId = usable.associateBy(StoredSubscription::id)
         val plan = MihomoRuntimePlanner.plan(
@@ -257,7 +256,10 @@ class MihomoConfigAssembler(
         subscriptions.forEach { subscription ->
             val destination = providerFile(subscription)
             val pending = File(providerDirectory, "${destination.name}.pending")
-            pending.writeText(secretStore.readPayload(subscription.id), Charsets.UTF_8)
+            val rawPayload = secretStore.readPayload(subscription.id)
+            val parsed = payloadParser.parse(rawPayload)
+            val runtimePayload = payloadParser.normalizeForMihomo(rawPayload, parsed)
+            pending.writeText(runtimePayload, Charsets.UTF_8)
             check(pending.renameTo(destination)) {
                 "无法写入订阅 ${subscription.name} 的运行时副本"
             }

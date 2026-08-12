@@ -66,8 +66,9 @@ Android 连接映射到包名。该语义仍必须在真机矩阵验证，不能
 
 - Clash YAML 会作为 app-private `file` proxy-provider 加载。
 - 每个 provider 使用独立名称前缀，避免不同订阅出现同名节点。
-- URI 列表和 sing-box JSON 当前只做安全导入和元数据展示；路由引用这两类订阅时配置阶段会
-  明确拒绝，避免不完整转换导致凭据或协议参数丢失。
+- URI/Base64、sing-box JSON 和基础 V2Ray JSON 在导入边界转换成临时 Clash provider；复杂或
+  缺字段的协议会 fail closed。旧版本留下的原始 payload 在运行时也会经过同一转换器，不会
+  因历史记录绕过校验。
 
 ## 测试清单
 

@@ -6,8 +6,8 @@
 
 > 当前里程碑是 **Android 0.3.0-alpha33 / macOS 0.1.0-alpha05**。Android 四个 ABI 的
 > CMFA/Mihomo
-> 核心已从锁定源码本地复现并接入；Clash YAML 可从 HTTPS、系统文件选择器、相机二维码或
-> 二维码图片安全导入并编译为隔离 provider，
+> 核心已从锁定源码本地复现并接入；Clash YAML、URI/Base64、sing-box JSON 与基础 V2Ray JSON
+> 可从 HTTPS、粘贴文本、系统文件选择器、相机二维码或二维码图片安全导入，并编译为隔离 provider，
 > Android `VpnService` 会把 TUN fd 交给核心，并通过 `protect(fd)` 与 UID/包名回调完成出站
 > 和按应用路由。Android 16 ARM64 模拟器与 Pixel 8 / Android 17 真机均已用真实 OpenVPN
 > 订阅完成双栈 TUN、固定节点、Chrome 应用归属、系统网络验证、Wi‑Fi/蜂窝切换和断开清理
@@ -41,7 +41,7 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
 - 每个应用可以引用不同订阅中的不同节点，而不要求切换整套配置。
 - 二维码相机扫描在有 Google Play 服务的设备上无需申请相机权限；相册二维码由随包 ZXing
   在本机识别，并限制为 20 MiB，不依赖额外的 ML Kit 图片模型。
-- Clash YAML 多订阅会生成彼此隔离的 Mihomo file provider；URI/sing-box 转换仍 fail closed。
+- 多订阅会生成彼此隔离的 Mihomo file provider；URI/Base64、sing-box 与基础 V2Ray JSON 在导入边界转换，复杂或缺字段协议继续 fail closed。
 - 运行时只加载默认出口和应用规则实际引用的 provider；健康检查按需懒执行，避免大订阅在
   VPN 启动时并发探测全部节点、挤占真实连接。
 - 自动订阅策略可在最低延迟（`url-test`）、按顺序故障切换（`fallback`）与一致性哈希
