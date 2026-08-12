@@ -149,12 +149,12 @@ private struct WeaveMark: Shape {
         let p = { (x: CGFloat, y: CGFloat) in
             CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
         }
-        path.move(to: p(0.18, 0.22))
-        path.addCurve(to: p(0.50, 0.48), control1: p(0.30, 0.04), control2: p(0.44, 0.18))
-        path.addCurve(to: p(0.82, 0.78), control1: p(0.56, 0.78), control2: p(0.72, 0.98))
-        path.move(to: p(0.82, 0.22))
-        path.addCurve(to: p(0.50, 0.48), control1: p(0.70, 0.04), control2: p(0.56, 0.18))
-        path.addCurve(to: p(0.18, 0.78), control1: p(0.44, 0.78), control2: p(0.28, 0.98))
+        path.move(to: p(0.22, 0.72))
+        path.addCurve(to: p(0.50, 0.20), control1: p(0.22, 0.46), control2: p(0.32, 0.20))
+        path.addCurve(to: p(0.78, 0.72), control1: p(0.68, 0.20), control2: p(0.78, 0.46))
+        path.move(to: p(0.22, 0.28))
+        path.addCurve(to: p(0.50, 0.80), control1: p(0.22, 0.54), control2: p(0.32, 0.80))
+        path.addCurve(to: p(0.78, 0.28), control1: p(0.68, 0.80), control2: p(0.78, 0.54))
         return path
     }
 }

@@ -5,6 +5,10 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+## 0.3.0-alpha30 — 2026-08-12
+
+- Android / macOS：再次重做品牌标记，采用上下交叠的织环弧线，去除直白的 W 轮廓和多余装饰，适配小尺寸启动器图标。
+
 ## 0.3.0-alpha29 — 2026-08-12
 
 - Android：重做浅色主题的描边和分隔线，改用暖灰、半像素和内缩留白，减少黑线带来的突兀感。

@@ -56,16 +56,16 @@ context.setShadow(offset: CGSize(width: 0, height: -8), blur: 22, color: CGColor
 context.setStrokeColor(CGColor(red: 247 / 255, green: 241 / 255, blue: 223 / 255, alpha: 1))
 context.setLineWidth(116)
 context.addPath(ribbonPath { path in
-    path.move(to: CGPoint(x: 276, y: 300))
+    path.move(to: CGPoint(x: 280, y: 710))
     path.addCurve(
-        to: CGPoint(x: 512, y: 430),
-        control1: CGPoint(x: 360, y: 165),
-        control2: CGPoint(x: 470, y: 205),
+        to: CGPoint(x: 512, y: 250),
+        control1: CGPoint(x: 280, y: 485),
+        control2: CGPoint(x: 372, y: 250),
     )
     path.addCurve(
-        to: CGPoint(x: 754, y: 724),
-        control1: CGPoint(x: 560, y: 690),
-        control2: CGPoint(x: 682, y: 850),
+        to: CGPoint(x: 744, y: 710),
+        control1: CGPoint(x: 652, y: 250),
+        control2: CGPoint(x: 744, y: 485),
     )
 })
 context.strokePath()
@@ -74,16 +74,16 @@ context.setShadow(offset: .zero, blur: 0, color: nil)
 context.setStrokeColor(CGColor(red: 201 / 255, green: 217 / 255, blue: 111 / 255, alpha: 1))
 context.setLineWidth(72)
 context.addPath(ribbonPath { path in
-    path.move(to: CGPoint(x: 732, y: 300))
+    path.move(to: CGPoint(x: 280, y: 290))
     path.addCurve(
-        to: CGPoint(x: 512, y: 430),
-        control1: CGPoint(x: 648, y: 165),
-        control2: CGPoint(x: 554, y: 205),
+        to: CGPoint(x: 512, y: 750),
+        control1: CGPoint(x: 280, y: 515),
+        control2: CGPoint(x: 372, y: 750),
     )
     path.addCurve(
-        to: CGPoint(x: 282, y: 724),
-        control1: CGPoint(x: 464, y: 690),
-        control2: CGPoint(x: 346, y: 850),
+        to: CGPoint(x: 744, y: 290),
+        control1: CGPoint(x: 652, y: 750),
+        control2: CGPoint(x: 744, y: 515),
     )
 })
 context.strokePath()
@@ -91,11 +91,11 @@ context.strokePath()
 context.setStrokeColor(CGColor(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.72))
 context.setLineWidth(13)
 context.addPath(ribbonPath { path in
-    path.move(to: CGPoint(x: 276, y: 300))
+    path.move(to: CGPoint(x: 310, y: 620))
     path.addCurve(
-        to: CGPoint(x: 512, y: 430),
-        control1: CGPoint(x: 360, y: 165),
-        control2: CGPoint(x: 470, y: 205),
+        to: CGPoint(x: 500, y: 285),
+        control1: CGPoint(x: 310, y: 450),
+        control2: CGPoint(x: 380, y: 305),
     )
 })
 context.strokePath()
