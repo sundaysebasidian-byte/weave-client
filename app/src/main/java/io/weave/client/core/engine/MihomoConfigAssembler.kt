@@ -37,6 +37,7 @@ class MihomoConfigAssembler(
         defaultTarget: RouteTarget? = null,
         packageUids: Map<String, Int> = emptyMap(),
         networkPreferences: NetworkPreferences = NetworkPreferences(),
+        additionalSubscriptionIds: Set<String> = emptySet(),
     ): AssembledMihomoConfig {
         val subscriptions = secretStore.list()
         val usable = subscriptions.filter {
@@ -55,6 +56,7 @@ class MihomoConfigAssembler(
             mode = mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
+            additionalSubscriptionIds = additionalSubscriptionIds,
         )
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
         val effectiveRoutes = plan.effectiveRoutes

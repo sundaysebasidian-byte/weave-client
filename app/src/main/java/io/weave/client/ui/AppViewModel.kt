@@ -493,24 +493,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) {
                 engineProbe.healthCheckSubscription(subscriptionId)
             }.onSuccess { nodes ->
-                if (mutableEditorState.value.subscriptionId == subscriptionId) {
-                    mutableSubscriptionHealth.value = SubscriptionHealthState(
-                        subscriptionId = subscriptionId,
-                        nodes = nodes,
-                        checkedAtMillis = System.currentTimeMillis(),
-                    )
-                }
+                mutableSubscriptionHealth.value = SubscriptionHealthState(
+                    subscriptionId = subscriptionId,
+                    nodes = nodes,
+                    checkedAtMillis = System.currentTimeMillis(),
+                )
             }.onFailure { error ->
-                if (mutableEditorState.value.subscriptionId == subscriptionId) {
-                    // Keep the last successful measurements visible when a later manual run
-                    // fails (for example during a transient captive portal or weak signal).
-                    mutableSubscriptionHealth.update { previous ->
-                        previous.copy(
-                            subscriptionId = subscriptionId,
-                            running = false,
-                            error = error.message ?: "节点检测失败，已保留上次结果",
-                        )
-                    }
+                // Keep the last successful measurements visible when a later manual run
+                // fails (for example during a transient captive portal or weak signal).
+                val needsProbeLoad = error.message?.contains("未被当前运行配置加载") == true
+                if (needsProbeLoad) {
+                    WeaveVpnService.reload(getApplication(), probeSubscriptionId = subscriptionId)
+                }
+                mutableSubscriptionHealth.update { previous ->
+                    previous.copy(
+                        subscriptionId = subscriptionId,
+                        running = false,
+                        error = if (needsProbeLoad) {
+                            "正在载入该订阅，运行配置更新后请再次测速"
+                        } else {
+                            error.message ?: "节点检测失败，已保留上次结果"
+                        },
+                    )
                 }
             }
         }

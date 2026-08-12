@@ -71,6 +71,19 @@ class MihomoRuntimePlannerTest {
         assertEquals(setOf("first"), plan.automaticSubscriptionIds)
     }
 
+    @Test
+    fun manualProbeTemporarilyAddsAnOtherwiseUnusedSubscription() {
+        val plan = MihomoRuntimePlanner.plan(
+            routes = emptyList(),
+            mode = RoutingMode.RULE,
+            defaultTarget = target(RouteKind.FIXED, "active", "node-1"),
+            usableSubscriptionIds = listOf("active", "probe", "unused"),
+            additionalSubscriptionIds = setOf("probe"),
+        )
+
+        assertEquals(setOf("active", "probe"), plan.activeSubscriptionIds)
+    }
+
     private fun route(packageName: String, target: RouteTarget) = AppRoute(
         packageName = packageName,
         appName = packageName,

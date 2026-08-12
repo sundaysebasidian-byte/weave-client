@@ -356,11 +356,14 @@ fun WeaveApp(
     }
 
     editingRoute?.let { route ->
-        RouteTargetDialog(
-            route = route,
-            subscriptions = subscriptions,
-            nodes = nodes,
-            onDismiss = { editingRoute = null },
+            RouteTargetDialog(
+                route = route,
+                subscriptions = subscriptions,
+                nodes = nodes,
+                health = subscriptionHealth,
+                vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
+                onCheckHealth = viewModel::checkSubscriptionHealth,
+                onDismiss = { editingRoute = null },
             onSelect = { target ->
                 viewModel.setRouteTarget(route.packageName, target)
                 editingRoute = null
@@ -377,6 +380,9 @@ fun WeaveApp(
             selectedTarget = dashboard.defaultRouteTarget,
             subscriptions = subscriptions,
             nodes = nodes,
+            health = subscriptionHealth,
+            vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
+            onCheckHealth = viewModel::checkSubscriptionHealth,
             onDismiss = { showDefaultRoutePicker = false },
             onSelect = { target ->
                 viewModel.setDefaultRouteTarget(target)
@@ -1274,6 +1280,9 @@ private fun RouteTargetDialog(
     route: AppRoute,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
+    health: SubscriptionHealthState,
+    vpnConnected: Boolean,
+    onCheckHealth: (String) -> Unit,
     onDismiss: () -> Unit,
     onSelect: (RouteTarget) -> Unit,
     onDelete: () -> Unit,
@@ -1306,6 +1315,9 @@ private fun RouteTargetDialog(
         selectedTarget = route.target,
         subscriptions = subscriptions,
         nodes = nodes,
+        health = health,
+        vpnConnected = vpnConnected,
+        onCheckHealth = onCheckHealth,
         allowBlock = true,
         directSubtitle = "不使用任何代理节点",
         onDismiss = onDismiss,
@@ -1319,6 +1331,9 @@ private fun DefaultRouteTargetDialog(
     selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
+    health: SubscriptionHealthState,
+    vpnConnected: Boolean,
+    onCheckHealth: (String) -> Unit,
     onDismiss: () -> Unit,
     onSelect: (RouteTarget) -> Unit,
 ) {
@@ -1327,6 +1342,9 @@ private fun DefaultRouteTargetDialog(
         selectedTarget = selectedTarget,
         subscriptions = subscriptions,
         nodes = nodes,
+        health = health,
+        vpnConnected = vpnConnected,
+        onCheckHealth = onCheckHealth,
         allowBlock = false,
         directSubtitle = "未命中应用规则时不使用代理",
         onDismiss = onDismiss,
@@ -1340,6 +1358,9 @@ private fun ConditionalTargetDialog(
     selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
+    health: SubscriptionHealthState,
+    vpnConnected: Boolean,
+    onCheckHealth: (String) -> Unit,
     allowBlock: Boolean,
     directSubtitle: String,
     onDismiss: () -> Unit,
@@ -1352,6 +1373,21 @@ private fun ConditionalTargetDialog(
     }
     val subscriptionNodes = remember(nodes, selectedSubscriptionId) {
         nodes.filter { it.subscriptionId == selectedSubscriptionId }
+    }
+    val selectedHealth = health.takeIf {
+        it.subscriptionId == selectedSubscriptionId
+    }
+    val healthByName = remember(selectedHealth?.nodes) {
+        selectedHealth?.nodes.orEmpty().associateBy { NodeDisplayName.core(it.name) }
+    }
+    val orderedNodes = remember(subscriptionNodes, selectedHealth?.nodes) {
+        subscriptionNodes.sortedWith(
+            compareBy<ProxyNode> {
+                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs == null
+            }.thenBy {
+                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs ?: Int.MAX_VALUE
+            }.thenBy { it.name },
+        )
     }
 
     AlertDialog(
@@ -1432,13 +1468,57 @@ private fun ConditionalTargetDialog(
                             },
                         )
                     }
-                    item { TargetSectionLabel("节点") }
-                    items(subscriptionNodes, key = { "node.${it.id}" }) { node ->
-                        TargetOptionRow(
-                            icon = Icons.Rounded.Language,
-                            title = NodeDisplayName.core(node.name),
-                            subtitle = null,
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "手动选择节点",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                letterSpacing = 0.8.sp,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = { onCheckHealth(selectedSubscription.id) },
+                                enabled = vpnConnected && selectedHealth?.running != true,
+                            ) {
+                                if (selectedHealth?.running == true) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(15.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    when {
+                                        selectedHealth?.running == true -> "测速中"
+                                        !vpnConnected -> "连接后测速"
+                                        else -> "测速并排序"
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        selectedHealth?.error?.let { error ->
+                            Text(
+                                error,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                            )
+                        }
+                    }
+                    items(orderedNodes, key = { "node.${it.id}" }) { node ->
+                        SelectableNodeOptionRow(
+                            node = node,
+                            health = healthByName[NodeDisplayName.core(node.name)],
+                            checked = selectedHealth?.checkedAtMillis != null,
                             selected = selectedTarget?.kind == RouteKind.FIXED &&
+                                selectedTarget.subscriptionId == selectedSubscription.id &&
                                 selectedTarget.nodeId == node.id,
                             onClick = {
                                 onSelect(
@@ -1483,6 +1563,68 @@ private fun ConditionalTargetDialog(
             }
         },
     )
+}
+
+@Composable
+private fun SelectableNodeOptionRow(
+    node: ProxyNode,
+    health: io.weave.client.core.engine.NodeHealthSnapshot?,
+    checked: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Rounded.Language,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                NodeDisplayName.core(node.name),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                node.protocol,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+            )
+        }
+        Text(
+            when {
+                health?.latencyMs != null && health.packetLossPercent > 0 ->
+                    "${health.latencyMs} ms · 丢${health.packetLossPercent}%"
+                health?.latencyMs != null && (health.jitterMs ?: 0) >= 25 ->
+                    "${health.latencyMs} ms · 抖${health.jitterMs}"
+                health?.latencyMs != null -> "${health.latencyMs} ms"
+                health != null && checked -> "超时"
+                else -> "—"
+            },
+            color = when {
+                health?.latencyMs != null && health.packetLossPercent > 0 ->
+                    MaterialTheme.colorScheme.tertiary
+                health?.latencyMs != null -> Good
+                health != null && checked -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
 }
 
 @Composable

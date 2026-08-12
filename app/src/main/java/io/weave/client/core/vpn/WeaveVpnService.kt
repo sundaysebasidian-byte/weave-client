@@ -59,6 +59,8 @@ class WeaveVpnService : VpnService() {
     private var startInProgress = false
     @Volatile
     private var reloadPending = false
+    @Volatile
+    private var probeSubscriptionId: String? = null
     private var networkRecoveryJob: Job? = null
     private var lastSuccessfulRuntime: PreparedRuntime? = null
 
@@ -86,6 +88,11 @@ class WeaveVpnService : VpnService() {
 
         createNotificationChannel()
         val reloading = intent?.action == ACTION_RELOAD
+        if (reloading) {
+            intent.getStringExtra(EXTRA_PROBE_SUBSCRIPTION_ID)
+                ?.takeIf(String::isNotBlank)
+                ?.let { probeSubscriptionId = it }
+        }
         val notification = buildNotification(
             if (reloading) "正在应用新规则" else "正在验证配置",
         )
@@ -266,6 +273,7 @@ class WeaveVpnService : VpnService() {
     private fun prepareCurrentRuntime(): PreparedRuntime {
         val routes = routeStore.load()
         val installedApps = installedAppMappings(routes.map { it.packageName })
+        val probeId = probeSubscriptionId.also { probeSubscriptionId = null }
         return PreparedRuntime(
             assembled = configAssembler.assemble(
                 routes = routes,
@@ -275,6 +283,7 @@ class WeaveVpnService : VpnService() {
                     packageName to uid
                 },
                 networkPreferences = settingsStore.networkPreferences(),
+                additionalSubscriptionIds = setOfNotNull(probeId),
             ),
             installedApps = installedApps,
         )
@@ -429,6 +438,7 @@ class WeaveVpnService : VpnService() {
         const val ACTION_START = "io.weave.client.action.START"
         const val ACTION_STOP = "io.weave.client.action.STOP"
         const val ACTION_RELOAD = "io.weave.client.action.RELOAD"
+        private const val EXTRA_PROBE_SUBSCRIPTION_ID = "probe_subscription_id"
         private const val CHANNEL_ID = "proxy_connection"
         private const val NOTIFICATION_ID = 1107
         private const val TUN_MTU = 9000
@@ -454,10 +464,15 @@ class WeaveVpnService : VpnService() {
             )
         }
 
-        fun reload(context: android.content.Context) {
+        fun reload(context: android.content.Context, probeSubscriptionId: String? = null) {
+            val intent = Intent(context, WeaveVpnService::class.java)
+                .setAction(ACTION_RELOAD)
+            probeSubscriptionId
+                ?.takeIf(String::isNotBlank)
+                ?.let { intent.putExtra(EXTRA_PROBE_SUBSCRIPTION_ID, it) }
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, WeaveVpnService::class.java).setAction(ACTION_RELOAD),
+                intent,
             )
         }
     }

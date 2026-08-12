@@ -25,6 +25,7 @@ object MihomoRuntimePlanner {
         mode: RoutingMode,
         defaultTarget: RouteTarget?,
         usableSubscriptionIds: List<String>,
+        additionalSubscriptionIds: Set<String> = emptySet(),
     ): MihomoRuntimePlan {
         val effectiveRoutes = routes.takeIf { mode == RoutingMode.RULE }.orEmpty()
         val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT }
@@ -41,6 +42,7 @@ object MihomoRuntimePlanner {
                         effectiveDefaultTarget.kind == RouteKind.FIXED
                 }
                 ?.let(::add)
+            addAll(additionalSubscriptionIds)
             retainAll(usableIds)
             if (isEmpty() && mode != RoutingMode.DIRECT) {
                 usableSubscriptionIds.firstOrNull()?.let(::add)
