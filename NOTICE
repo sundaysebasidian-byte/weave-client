@@ -1,0 +1,20 @@
+Weave open-source preview
+Copyright (C) 2026 Weave contributors
+
+Weave original source is provided under GPL-3.0-or-later. The complete license
+is in LICENSE. This software is provided without warranty.
+
+Distributed preview artifacts include a modified CMFA/Mihomo core under GPL-3.0.
+The exact source commits, Weave patch, build inputs, and artifact hashes are in
+core-lock.properties and docs/CORE_PROVENANCE.md. Corresponding source and build
+instructions must remain available with every distributed binary.
+
+Bundled GeoIP/GeoSite lite data is derived from MetaCubeX meta-rules-dat. Its
+release coordinate and artifact hashes are in geodata-lock.properties.
+
+AndroidX and ZXing components are licensed under Apache-2.0. Google Play
+services and ML Kit artifacts are subject to their applicable Google terms.
+Additional project roles and links are listed in THIRD_PARTY.md. A production
+distributor must generate and ship the complete transitive dependency copyright,
+license, and SBOM bundle for the exact release; this preview notice is not a
+substitute for that generated bundle.

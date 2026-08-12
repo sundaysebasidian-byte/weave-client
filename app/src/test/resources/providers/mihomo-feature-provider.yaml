@@ -1,0 +1,5 @@
+proxies:
+  - name: PROVIDER-DIRECT-A
+    type: direct
+  - name: PROVIDER-DIRECT-B
+    type: direct

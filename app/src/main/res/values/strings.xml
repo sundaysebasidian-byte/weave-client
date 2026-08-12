@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Weave</string>
+    <string name="vpn_channel_name">代理连接</string>
+    <string name="vpn_channel_description">显示 Weave 的代理连接状态</string>
+</resources>
+

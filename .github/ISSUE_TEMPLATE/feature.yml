@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a concrete behavior without implying unsupported security guarantees.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What cannot be done safely or clearly today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security, privacy, battery, and compatibility tradeoffs
+    validations:
+      required: true

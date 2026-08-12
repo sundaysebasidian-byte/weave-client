@@ -1,0 +1,42 @@
+name: Android integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install locked Android toolchain
+        run: sdkmanager "platforms;android-36" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
+      - name: Android lint
+        timeout-minutes: 15
+        run: ./gradlew lintDebug --no-daemon --no-configuration-cache
+      - name: Debug build
+        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache
+      - name: Verify bundled core hashes
+        run: |
+          test "$(sha256sum app/src/main/jniLibs/arm64-v8a/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.arm64-v8a.sha256=//p' core-lock.properties)"
+          test "$(sha256sum app/src/main/jniLibs/armeabi-v7a/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.armeabi-v7a.sha256=//p' core-lock.properties)"
+          test "$(sha256sum app/src/main/jniLibs/x86/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.x86.sha256=//p' core-lock.properties)"
+          test "$(sha256sum app/src/main/jniLibs/x86_64/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.x86_64.sha256=//p' core-lock.properties)"

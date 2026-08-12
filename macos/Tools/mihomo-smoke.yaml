@@ -1,0 +1,14 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: warning
+proxies:
+  - name: WEAVE-DIRECT
+    type: direct
+proxy-groups:
+  - name: DEFAULT
+    type: select
+    proxies:
+      - WEAVE-DIRECT
+rules:
+  - MATCH,DEFAULT
