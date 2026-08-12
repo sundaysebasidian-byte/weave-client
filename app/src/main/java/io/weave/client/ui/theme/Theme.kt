@@ -15,49 +15,61 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 
-// A warm mineral palette: less "dashboard white", more paper, olive and ink.
-val Ink = Color(0xFF252720)
-val Acid = Color(0xFFC9D96F)
-val Canvas = Color(0xFFF4F2EB)
-val Paper = Color(0xFFFAF8F2)
-val Muted = Color(0xFF7B7C73)
-// Warm translucent strokes keep structure visible without introducing hard black rules.
-val Stroke = Color(0x166B6A5F)
-val Good = Color(0xFF52765A)
+// Monet-inspired woven palette shared with the Android adaptive icon:
+// warm ivory paper, indigo ink, sea-glass teal and a small coral accent.
+val Ink = Color(0xFF24385C)
+val Accent = Color(0xFF7AA9A1)
+val Lavender = Color(0xFF9A8CB7)
+val Coral = Color(0xFFD98676)
+val Canvas = Color(0xFFF1EBDD)
+val Paper = Color(0xFFFFFCF5)
+val Muted = Color(0xFF6D7180)
+// Soft translucent strokes keep structure visible without introducing hard black rules.
+val Stroke = Color(0x246D7180)
+val Good = Color(0xFF3F716B)
 
 private val LightColors = lightColorScheme(
     primary = Ink,
     onPrimary = Color.White,
-    primaryContainer = Acid,
+    primaryContainer = Accent,
     onPrimaryContainer = Ink,
     secondary = Good,
     onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE3DDEE),
+    onSecondaryContainer = Ink,
+    tertiary = Coral,
+    onTertiary = Color.White,
     background = Canvas,
     onBackground = Ink,
     surface = Paper,
     onSurface = Ink,
-    surfaceVariant = Color(0xFFE9E7DF),
+    surfaceVariant = Color(0xFFE5DED4),
     onSurfaceVariant = Muted,
     outline = Stroke,
-    outlineVariant = Color(0x106B6A5F),
-    error = Color(0xFF9B4B3E),
+    outlineVariant = Color(0x166D7180),
+    error = Coral,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Acid,
+    primary = Color(0xFF9CC7BF),
     onPrimary = Ink,
-    primaryContainer = Color(0xFF3D4824),
-    onPrimaryContainer = Color(0xFFF0F6B5),
-    secondary = Color(0xFF96B58B),
-    background = Color(0xFF090B0E),
-    onBackground = Color(0xFFF4F5F7),
-    surface = Color(0xFF1B1D18),
-    onSurface = Color(0xFFF4F5F7),
-    surfaceVariant = Color(0xFF2D3027),
-    onSurfaceVariant = Color(0xFFC0C2B5),
-    outline = Color(0x24F2EFD9),
-    outlineVariant = Color(0x16F2EFD9),
-    error = Color(0xFFFFB8AA),
+    primaryContainer = Color(0xFF31514E),
+    onPrimaryContainer = Color(0xFFD9F2EC),
+    secondary = Color(0xFFC4B7E0),
+    onSecondary = Color(0xFF262035),
+    secondaryContainer = Color(0xFF423B54),
+    onSecondaryContainer = Color(0xFFE8DFFF),
+    tertiary = Color(0xFFFFB7A8),
+    onTertiary = Color(0xFF4C1D18),
+    background = Color(0xFF151B28),
+    onBackground = Color(0xFFF5F1E8),
+    surface = Color(0xFF1D2637),
+    onSurface = Color(0xFFF5F1E8),
+    surfaceVariant = Color(0xFF303B50),
+    onSurfaceVariant = Color(0xFFC2C7D3),
+    outline = Color(0x3AC2C7D3),
+    outlineVariant = Color(0x24C2C7D3),
+    error = Color(0xFFFFB7A8),
 )
 
 private val WeaveTypography = Typography(

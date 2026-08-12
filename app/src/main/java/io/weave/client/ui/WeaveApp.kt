@@ -96,6 +96,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -127,7 +128,7 @@ import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
 import io.weave.client.transfer.QrCodeGenerator
-import io.weave.client.ui.theme.Acid
+import io.weave.client.ui.theme.Accent
 import io.weave.client.ui.theme.Good
 import io.weave.client.ui.theme.Ink
 
@@ -191,10 +192,24 @@ fun WeaveApp(
         }
     }
 
+    val background = MaterialTheme.colorScheme.background
+    val backdropTint = if (background.luminance() < 0.35f) {
+        Color(0xFF22283B)
+    } else {
+        Color(0xFFF0E8F0)
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        background,
+                        background,
+                        backdropTint,
+                    ),
+                ),
+            ),
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -230,7 +245,7 @@ fun WeaveApp(
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = Ink,
                                     selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                    indicatorColor = Acid,
+                                    indicatorColor = Accent,
                                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
@@ -1710,7 +1725,13 @@ private fun LiquidGlassPanel(
     content: @Composable () -> Unit,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
-    val color = if (dark) MaterialTheme.colorScheme.surface else Color(0xFFF9F7F0)
+    val color = if (dark) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        // Keep a hint of the ivory backdrop visible through each panel, like the
+        // translucent paper layers in the woven icon.
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.90f)
+    }
     if (onClick != null) {
         Surface(
             onClick = onClick,
@@ -1719,7 +1740,7 @@ private fun LiquidGlassPanel(
             color = color,
             border = BorderStroke(0.75.dp, glassBorderColor()),
             tonalElevation = 0.dp,
-            shadowElevation = 1.dp,
+            shadowElevation = 2.dp,
         ) {
             content()
         }
@@ -1730,7 +1751,7 @@ private fun LiquidGlassPanel(
             color = color,
             border = BorderStroke(0.75.dp, glassBorderColor()),
             tonalElevation = 0.dp,
-            shadowElevation = 1.dp,
+            shadowElevation = 2.dp,
         ) {
             content()
         }
@@ -1833,7 +1854,7 @@ private fun HomeScreen(
                                 onClick = { onModeSelected(mode) },
                                 modifier = Modifier.weight(1f),
                                 color = if (mode == state.routingMode) {
-                                    Acid
+                                    Accent
                                 } else {
                                     Color.Transparent
                                 },
@@ -1922,7 +1943,7 @@ private fun ConnectionHero(
                 Surface(
                     shape = CircleShape,
                     color = if (state.connectionState == ConnectionState.CONNECTED) {
-                        Acid.copy(alpha = 0.30f)
+                        Accent.copy(alpha = 0.30f)
                     } else {
                         MaterialTheme.colorScheme.surfaceVariant
                     },
@@ -2308,7 +2329,7 @@ private fun SubscriptionsScreen(
                         }
                         Surface(
                             onClick = onAdd,
-                            color = Acid,
+                            color = Accent,
                             shape = CircleShape,
                             border = BorderStroke(0.75.dp, glassBorderColor()),
                         ) {
@@ -2336,7 +2357,7 @@ private fun SubscriptionsScreen(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = Acid.copy(alpha = 0.34f),
+                        color = Accent.copy(alpha = 0.34f),
                     ) {
                         Icon(
                             Icons.Rounded.Sync,

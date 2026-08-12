@@ -1114,31 +1114,32 @@ private extension NSColor {
 private extension Color {
     static let weaveInk = Color(nsColor: .weaveDynamic(
         name: "WeaveInk",
-        light: (21, 23, 27),
-        dark: (242, 243, 237)
+        light: (36, 56, 92),
+        dark: (239, 242, 235)
     ))
-    static let weaveAcid = Color(red: 200 / 255, green: 240 / 255, blue: 90 / 255)
+    // Sea-glass teal is the shared accent in the woven mark and the controls.
+    static let weaveAcid = Color(red: 122 / 255, green: 169 / 255, blue: 161 / 255)
     static let weaveTeal = Color(red: 122 / 255, green: 169 / 255, blue: 161 / 255)
     static let weaveCanvas = Color(nsColor: .weaveDynamic(
         name: "WeaveCanvas",
-        light: (245, 245, 240),
-        dark: (16, 18, 20)
+        light: (241, 235, 221),
+        dark: (21, 27, 40)
     ))
     static let weavePaper = Color(nsColor: .weaveDynamic(
         name: "WeavePaper",
-        light: (255, 255, 255),
-        dark: (24, 26, 29)
+        light: (255, 252, 245),
+        dark: (29, 38, 55)
     ))
     static let weaveMuted = Color(nsColor: .weaveDynamic(
         name: "WeaveMuted",
-        light: (105, 109, 117),
-        dark: (184, 187, 193)
+        light: (109, 113, 128),
+        dark: (194, 199, 211)
     ))
     static let weaveStroke = Color(nsColor: .weaveDynamic(
         name: "WeaveStroke",
-        light: (229, 230, 223),
-        dark: (54, 57, 62)
+        light: (218, 210, 198),
+        dark: (58, 67, 84)
     ))
-    static let weaveGood = Color(red: 45 / 255, green: 118 / 255, blue: 81 / 255)
-    static let weaveError = Color(red: 179 / 255, green: 38 / 255, blue: 30 / 255)
+    static let weaveGood = Color(red: 63 / 255, green: 113 / 255, blue: 107 / 255)
+    static let weaveError = Color(red: 217 / 255, green: 134 / 255, blue: 118 / 255)
 }

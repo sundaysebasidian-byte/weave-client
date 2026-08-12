@@ -4,6 +4,7 @@
 .idea/
 build/
 **/build/
+macos/.build/
 local.properties
 *.iml
 *.jks
