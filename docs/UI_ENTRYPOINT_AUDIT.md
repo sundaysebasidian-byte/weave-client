@@ -1,6 +1,6 @@
 # UI 入口审计
 
-审计基线：Android `0.3.0-alpha26` / macOS `0.1.0-alpha05`。原则是只有已经接通状态、存储或系统页面的控件才显示点击反馈；
+审计基线：Android `0.3.0-alpha27` / macOS `0.1.0-alpha05`。原则是只有已经接通状态、存储或系统页面的控件才显示点击反馈；
 尚未实现的能力不放开入口、不显示箭头或开关。
 
 | 页面 | 可操作入口 | 实际行为 | 验证 |
@@ -24,7 +24,7 @@
 | 设置 | Always-on 与断网保护 | 打开 Android 系统 VPN 设置 | 模拟器及 Pixel 8 |
 | 设置 | 自动节点策略 | 切换并持久化 `url-test` / `fallback` / 一致性哈希 `load-balance`，连接中安全热重载 | 单测、锁定 Mihomo 配置解析 |
 | 设置 | IPv4 / IPv6 | 双栈或仅 IPv4；仅 IPv4 时关闭内核/DNS IPv6 并在 TUN 内拒绝 `::/0` | 单测、锁定 Mihomo 配置解析 |
-| 设置 | DNS | 切换 DoH / DoT 加密上游并保留 fake-IP 接管 | 单测、锁定 Mihomo 配置解析 |
+| 设置 | DNS | 切换 DoH / DoT；过滤模式阻断常见浏览器 Secure DNS，并在重载时清空 DNS/fake-IP 缓存 | 单测、锁定 Mihomo 配置解析 |
 | 设置 | 阻止 UDP STUN | 在所有运行模式的应用规则前拒绝常见 STUN UDP 端口；界面提示通话兼容性影响 | 单测、锁定 Mihomo 配置解析 |
 | 设置 | 国内智能直连 | 启用随包固定哈希的 lite GeoSite/GeoIP CN 规则；应用分流保持更高优先级 | 单测、锁定 Mihomo 配置解析 |
 

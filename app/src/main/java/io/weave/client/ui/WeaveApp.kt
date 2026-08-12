@@ -2379,7 +2379,14 @@ private fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Dns,
                     title = "DNS",
-                    subtitle = "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · fake-IP",
+                    subtitle = if (
+                        preferences.dnsProfile == DnsProfile.AD_BLOCK ||
+                        preferences.dnsProfile == DnsProfile.FAMILY
+                    ) {
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · 已阻止常见浏览器 DoH"
+                    } else {
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · fake-IP"
+                    },
                     onClick = { showDnsSettings = true },
                 )
                 HorizontalDivider()
@@ -2493,7 +2500,7 @@ private fun SettingsScreen(
                 "Weave" to "GPL-3.0-or-later。你可以运行、研究、修改和重新分发；本软件不提供任何担保。",
                 "CMFA / Mihomo" to "GPL-3.0。发行内核来自仓库锁定的源码提交，并记录构建补丁与 SHA-256。",
                 "AndroidX" to "Apache-2.0。用于 Android UI、生命周期和系统兼容。",
-                "ML Kit / ZXing" to "用于本机二维码识别与生成；Weave 不把二维码内容发送到自己的服务器。",
+                "Google Code Scanner / ZXing" to "相机扫码使用系统 Google Code Scanner；图片二维码由随包 ZXing 本机识别，Weave 不把二维码内容发送到自己的服务器。",
                 "对应源码" to "每个公开发行版应在同一 GitHub Release 附近提供对应源码、构建说明、校验和与第三方清单。",
             ),
             onDismiss = { showOpenSourceDetails = false },

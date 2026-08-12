@@ -5,6 +5,15 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+## 0.3.0-alpha27 — 2026-08-12
+
+### Fixed
+
+- Filtering DNS profiles now block common browser Secure DNS endpoints so Chrome/Firefox cannot
+  silently bypass the selected AdGuard resolver over HTTPS.
+- DNS and fake-IP state is cleared when a runtime profile is reloaded, so changing from privacy DNS
+  to ad/family filtering takes effect immediately instead of retaining old cached mappings.
+
 ## 0.3.0-alpha26 — 2026-08-12
 
 ### Changed

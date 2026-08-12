@@ -67,6 +67,21 @@ class MihomoFeatureCompilerTest {
     }
 
     @Test
+    fun `filtering profiles block common browser DoH bypasses`() {
+        val rules = MihomoFeatureCompiler.dnsFilterBypassRules(
+            NetworkPreferences(dnsProfile = DnsProfile.AD_BLOCK),
+        )
+        org.junit.Assert.assertTrue("DOMAIN-SUFFIX,dns.google,REJECT" in rules)
+        org.junit.Assert.assertTrue("DOMAIN-SUFFIX,cloudflare-dns.com,REJECT" in rules)
+        org.junit.Assert.assertTrue("IP-CIDR,1.1.1.1/32,REJECT,no-resolve" in rules)
+        org.junit.Assert.assertTrue(
+            MihomoFeatureCompiler.dnsFilterBypassRules(
+                NetworkPreferences(dnsProfile = DnsProfile.PRIVACY),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun `custom DNS accepts only encrypted endpoints`() {
         assertEquals(
             "https://dns.example/dns-query",

@@ -221,6 +221,10 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
     override suspend fun stop() = lifecycleMutex.withLock {
         if (NativeBridge.isAvailable) {
             runCatching { NativeBridge.stopTun() }
+            // DNS and fake-IP caches live in the process-wide Mihomo core. Clear them between
+            // candidate profiles so switching to a filtering resolver cannot retain mappings
+            // created by the previous DNS profile.
+            runCatching { NativeBridge.reset() }
         }
         runtimeDirectory.deleteRecursively()
         validatedDigest = null

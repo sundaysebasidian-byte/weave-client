@@ -73,6 +73,7 @@ object MihomoFeatureCompiler {
     }
 
     fun leadingRules(preferences: NetworkPreferences): List<String> = buildList {
+        addAll(dnsFilterBypassRules(preferences))
         if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
             // The VpnService keeps ::/0 inside the TUN even in IPv4-only mode. Rejecting here
             // prevents literal IPv6 destinations from escaping through the physical network.
@@ -82,6 +83,29 @@ object MihomoFeatureCompiler {
             add("AND,((NETWORK,UDP),(DST-PORT,3478-3479)),REJECT")
             add("AND,((NETWORK,UDP),(DST-PORT,19302-19309)),REJECT")
         }
+    }
+
+    /**
+     * Browser "secure DNS" uses HTTPS, so it is not visible as a port-53 DNS leak and can
+     * otherwise bypass the selected filtering resolver. Only filtering profiles block the
+     * well-known public DoH endpoints; privacy and custom profiles leave browser DNS untouched.
+     */
+    fun dnsFilterBypassRules(preferences: NetworkPreferences): List<String> = when (
+        preferences.dnsProfile
+    ) {
+        DnsProfile.AD_BLOCK, DnsProfile.FAMILY -> listOf(
+            "DOMAIN-SUFFIX,dns.google,REJECT",
+            "DOMAIN-SUFFIX,cloudflare-dns.com,REJECT",
+            "DOMAIN-SUFFIX,mozilla.cloudflare-dns.com,REJECT",
+            "DOMAIN-SUFFIX,quad9.net,REJECT",
+            "DOMAIN-SUFFIX,cleanbrowsing.org,REJECT",
+            "IP-CIDR,8.8.8.8/32,REJECT,no-resolve",
+            "IP-CIDR,8.8.4.4/32,REJECT,no-resolve",
+            "IP-CIDR,1.1.1.1/32,REJECT,no-resolve",
+            "IP-CIDR,1.0.0.1/32,REJECT,no-resolve",
+            "IP-CIDR,9.9.9.9/32,REJECT,no-resolve",
+        )
+        else -> emptyList()
     }
 
     fun domesticDirectRules(preferences: NetworkPreferences): List<String> =
