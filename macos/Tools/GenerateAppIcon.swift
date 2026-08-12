@@ -21,7 +21,11 @@ guard let context = CGContext(
     fatalError("cannot create icon context")
 }
 
-context.setFillColor(CGColor(red: 23 / 255, green: 26 / 255, blue: 24 / 255, alpha: 1))
+func color(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, _ alpha: CGFloat = 1) -> CGColor {
+    CGColor(red: red / 255, green: green / 255, blue: blue / 255, alpha: alpha)
+}
+
+context.setFillColor(color(241, 235, 221))
 context.addPath(
     CGPath(
         roundedRect: CGRect(x: 48, y: 48, width: 928, height: 928),
@@ -32,7 +36,7 @@ context.addPath(
 )
 context.fillPath()
 
-context.setStrokeColor(CGColor(red: 64 / 255, green: 80 / 255, blue: 65 / 255, alpha: 1))
+context.setStrokeColor(color(216, 207, 191, 0.92))
 context.setLineWidth(3)
 context.addPath(
     CGPath(
@@ -50,51 +54,48 @@ func ribbonPath(_ builder: (CGMutablePath) -> Void) -> CGPath {
     return path
 }
 
+func stroke(_ path: CGPath, color: CGColor, width: CGFloat) {
+    context.setStrokeColor(color)
+    context.setLineWidth(width)
+    context.addPath(path)
+    context.strokePath()
+}
+
 context.setLineCap(.round)
 context.setLineJoin(.round)
-context.setShadow(offset: CGSize(width: 0, height: -8), blur: 22, color: CGColor(gray: 0, alpha: 0.30))
-context.setStrokeColor(CGColor(red: 247 / 255, green: 241 / 255, blue: 223 / 255, alpha: 1))
-context.setLineWidth(116)
-context.addPath(ribbonPath { path in
-    path.move(to: CGPoint(x: 744, y: 300))
-    path.addCurve(
-        to: CGPoint(x: 440, y: 250),
-        control1: CGPoint(x: 648, y: 180),
-        control2: CGPoint(x: 500, y: 200),
-    )
-    path.addCurve(
-        to: CGPoint(x: 258, y: 614),
-        control1: CGPoint(x: 345, y: 330),
-        control2: CGPoint(x: 235, y: 480),
-    )
-    path.addCurve(
-        to: CGPoint(x: 585, y: 790),
-        control1: CGPoint(x: 300, y: 770),
-        control2: CGPoint(x: 500, y: 870),
-    )
-    path.addCurve(
-        to: CGPoint(x: 756, y: 590),
-        control1: CGPoint(x: 690, y: 730),
-        control2: CGPoint(x: 740, y: 650),
-    )
-})
-context.strokePath()
+context.setShadow(offset: CGSize(width: 0, height: -8), blur: 22, color: CGColor(gray: 0, alpha: 0.18))
+let indigo = color(36, 56, 92)
+stroke(ribbonPath { path in
+    path.move(to: CGPoint(x: 560, y: 515))
+    path.addCurve(to: CGPoint(x: 460, y: 250), control1: CGPoint(x: 465, y: 445), control2: CGPoint(x: 395, y: 320))
+    path.addCurve(to: CGPoint(x: 685, y: 285), control1: CGPoint(x: 525, y: 180), control2: CGPoint(x: 635, y: 210))
+    path.addCurve(to: CGPoint(x: 630, y: 505), control1: CGPoint(x: 745, y: 375), control2: CGPoint(x: 690, y: 455))
+}, color: indigo, width: 116)
+stroke(ribbonPath { path in
+    path.move(to: CGPoint(x: 520, y: 480))
+    path.addCurve(to: CGPoint(x: 235, y: 500), control1: CGPoint(x: 430, y: 405), control2: CGPoint(x: 285, y: 390))
+    path.addCurve(to: CGPoint(x: 420, y: 700), control1: CGPoint(x: 180, y: 625), control2: CGPoint(x: 300, y: 735))
+    path.addCurve(to: CGPoint(x: 560, y: 535), control1: CGPoint(x: 520, y: 675), control2: CGPoint(x: 555, y: 590))
+}, color: indigo, width: 116)
+stroke(ribbonPath { path in
+    path.move(to: CGPoint(x: 610, y: 500))
+    path.addCurve(to: CGPoint(x: 850, y: 610), control1: CGPoint(x: 730, y: 445), control2: CGPoint(x: 845, y: 495))
+    path.addCurve(to: CGPoint(x: 625, y: 760), control1: CGPoint(x: 855, y: 730), control2: CGPoint(x: 735, y: 820))
+    path.addCurve(to: CGPoint(x: 540, y: 550), control1: CGPoint(x: 535, y: 710), control2: CGPoint(x: 515, y: 625))
+}, color: indigo, width: 116)
 context.setShadow(offset: .zero, blur: 0, color: nil)
 
-context.setStrokeColor(CGColor(red: 201 / 255, green: 217 / 255, blue: 111 / 255, alpha: 1))
-context.setLineWidth(72)
-context.addPath(ribbonPath { path in
-    path.move(to: CGPoint(x: 270, y: 720))
-    path.addCurve(
-        to: CGPoint(x: 748, y: 270),
-        control1: CGPoint(x: 430, y: 520),
-        control2: CGPoint(x: 600, y: 350),
-    )
-})
-context.strokePath()
+stroke(ribbonPath { path in
+    path.move(to: CGPoint(x: 300, y: 420))
+    path.addCurve(to: CGPoint(x: 745, y: 760), control1: CGPoint(x: 430, y: 515), control2: CGPoint(x: 560, y: 650))
+}, color: color(122, 169, 161), width: 72)
+stroke(ribbonPath { path in
+    path.move(to: CGPoint(x: 395, y: 760))
+    path.addCurve(to: CGPoint(x: 760, y: 300), control1: CGPoint(x: 480, y: 620), control2: CGPoint(x: 605, y: 455))
+}, color: color(181, 168, 200), width: 72)
 
-context.setFillColor(CGColor(red: 201 / 255, green: 217 / 255, blue: 111 / 255, alpha: 1))
-context.fillEllipse(in: CGRect(x: 730, y: 250, width: 36, height: 36))
+context.setFillColor(color(220, 157, 146))
+context.fillEllipse(in: CGRect(x: 745, y: 245, width: 50, height: 50))
 
 guard
     let image = context.makeImage(),

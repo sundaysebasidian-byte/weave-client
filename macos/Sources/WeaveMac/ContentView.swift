@@ -78,7 +78,7 @@ private struct WeaveSidebar: View {
                         .fill(Color.weaveInk)
                     WeaveMark()
                         .stroke(
-                            Color.weaveAcid,
+                            Color.weaveTeal,
                             style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round),
                         )
                         .padding(9)
@@ -149,13 +149,18 @@ private struct WeaveMark: Shape {
         let p = { (x: CGFloat, y: CGFloat) in
             CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
         }
-        path.move(to: p(0.78, 0.30))
-        path.addCurve(to: p(0.43, 0.25), control1: p(0.68, 0.18), control2: p(0.50, 0.20))
-        path.addCurve(to: p(0.24, 0.60), control1: p(0.32, 0.30), control2: p(0.20, 0.47))
-        path.addCurve(to: p(0.58, 0.78), control1: p(0.28, 0.76), control2: p(0.48, 0.86))
-        path.addCurve(to: p(0.79, 0.58), control1: p(0.71, 0.71), control2: p(0.77, 0.65))
-        path.move(to: p(0.27, 0.72))
-        path.addCurve(to: p(0.78, 0.27), control1: p(0.46, 0.57), control2: p(0.64, 0.40))
+        path.move(to: p(0.52, 0.52))
+        path.addCurve(to: p(0.39, 0.18), control1: p(0.42, 0.43), control2: p(0.33, 0.28))
+        path.addCurve(to: p(0.68, 0.23), control1: p(0.49, 0.09), control2: p(0.62, 0.13))
+        path.addCurve(to: p(0.61, 0.51), control1: p(0.76, 0.32), control2: p(0.70, 0.42))
+        path.move(to: p(0.48, 0.46))
+        path.addCurve(to: p(0.12, 0.43), control1: p(0.39, 0.37), control2: p(0.22, 0.36))
+        path.addCurve(to: p(0.35, 0.76), control1: p(0.05, 0.65), control2: p(0.20, 0.82))
+        path.addCurve(to: p(0.52, 0.51), control1: p(0.45, 0.72), control2: p(0.52, 0.59))
+        path.move(to: p(0.56, 0.48))
+        path.addCurve(to: p(0.88, 0.60), control1: p(0.70, 0.42), control2: p(0.86, 0.48))
+        path.addCurve(to: p(0.59, 0.80), control1: p(0.93, 0.78), control2: p(0.72, 0.88))
+        path.addCurve(to: p(0.50, 0.53), control1: p(0.50, 0.77), control2: p(0.47, 0.63))
         return path
     }
 }
@@ -1113,6 +1118,7 @@ private extension Color {
         dark: (242, 243, 237)
     ))
     static let weaveAcid = Color(red: 200 / 255, green: 240 / 255, blue: 90 / 255)
+    static let weaveTeal = Color(red: 122 / 255, green: 169 / 255, blue: 161 / 255)
     static let weaveCanvas = Color(nsColor: .weaveDynamic(
         name: "WeaveCanvas",
         light: (245, 245, 240),

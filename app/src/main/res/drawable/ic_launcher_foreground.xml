@@ -4,22 +4,26 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- An open halo and an orbital path form a non-letter private-network seal. -->
+    <!-- Monochrome fallback: three interlocking loops preserve the woven-knot silhouette. -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M78,39 C70,27 56,22 43,27 C28,32 21,47 26,62 C31,78 48,85 63,78 C71,74 76,68 79,60"
-        android:strokeColor="#F7F1DF"
+        android:pathData="M55,55 C45,47 39,35 46,27 C53,18 67,22 73,31 C80,42 73,52 64,58"
+        android:strokeColor="#24385C"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="14" />
+        android:strokeWidth="10" />
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M29,73 C43,65 57,50 78,34"
-        android:strokeColor="#C9D96F"
+        android:pathData="M51,53 C41,45 27,44 22,54 C17,64 24,75 35,78 C47,81 55,73 59,64"
+        android:strokeColor="#24385C"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="8" />
+        android:strokeWidth="10" />
     <path
-        android:fillColor="#C9D96F"
-        android:pathData="M78,30a4,4 0,1 0,0 8a4,4 0,1 0,0 -8" />
+        android:fillColor="@android:color/transparent"
+        android:pathData="M59,54 C70,49 84,53 87,64 C90,75 80,83 69,83 C58,83 51,75 51,65"
+        android:strokeColor="#24385C"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="10" />
 </vector>

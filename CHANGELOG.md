@@ -5,6 +5,7 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+- Android / macOS：应用图标改为“编织结”艺术标记，使用深靛蓝、雾青、淡紫和珊瑚节点的柔和印象派配色，去除直白的 W/V、斜线和荧光色；Android 保留单色主题回退轮廓。
 - Android：订阅导入统一支持 HTTPS、粘贴 URI/Base64、Clash YAML、sing-box JSON、基础 V2Ray JSON、二维码和文件；URI/JSON 会在本机转换为 Mihomo provider，复杂或缺字段协议 fail-closed。
 - Android：手动节点测速继续保持按订阅懒加载，新增 SOCKS5/HTTP/SSR/AnyTLS 基础 URI 字段、V2Ray VMess/VLESS/Trojan/SS 基础 JSON 转换，并为旧版本记录增加运行时兼容转换。
 - Docs：同步更新格式边界、能力矩阵和开源路线图，避免把尚未接通的入口标为已实现。
