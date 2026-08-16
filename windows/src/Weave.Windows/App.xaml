@@ -1,0 +1,26 @@
+<Application
+    x:Class="Weave.Windows.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Weave.Windows">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F5F7F9" />
+                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#18212B" />
+                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#6E7A86" />
+                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#B9ED4A" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#11171C" />
+                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#1B242B" />
+                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#F0F4F6" />
+                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#A7B4BC" />
+                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#C4F45A" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

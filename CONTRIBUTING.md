@@ -10,6 +10,9 @@ traffic, so correctness and privacy take priority over feature count.
   key, provisioning profile, or unredacted device log.
 - Keep user-visible entries functional. Do not add placeholder controls that
   imply an unsupported protocol, privacy property, or successful VPN state.
+- Any new network endpoint, hosted dependency, updater, telemetry, or remote
+  configuration must update the privacy notice, endpoint inventory, local-open-source
+  profile, and release audit before it is merged.
 - Preserve GPL and third-party attribution when adapting code.
 
 ## Local checks

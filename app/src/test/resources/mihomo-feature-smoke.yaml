@@ -1,5 +1,5 @@
 mode: rule
-log-level: warning
+log-level: error
 allow-lan: false
 ipv6: false
 geodata-mode: true
@@ -12,15 +12,40 @@ dns:
   ipv6: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter-mode: blacklist
+  fake-ip-filter:
+    - 'geosite:private'
+    - '*.lan'
+    - '*.local'
+    - '*.home.arpa'
+    - 'geosite:cn'
   default-nameserver:
     - 223.5.5.5
     - 119.29.29.29
   nameserver:
     - tls://dns.alidns.com
     - tls://dot.pub
+  fallback:
+    - tls://dot.pub
+    - tls://dns.alidns.com
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
   proxy-server-nameserver:
     - tls://dns.alidns.com
     - tls://dot.pub
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: false
+  sniff:
+    TLS:
+      ports: [443, 8443]
+    HTTP:
+      ports: [80, 8080-8880]
+    QUIC:
+      ports: [443, 8443]
 proxies:
   - name: WEAVE-DIRECT-A
     type: direct
@@ -61,9 +86,18 @@ proxy-groups:
       - FAILOVER
       - BALANCED
 rules:
+  - AND,((NETWORK,TCP),(DST-PORT,53)),REJECT
+  - AND,((NETWORK,UDP),(DST-PORT,53)),REJECT
+  - AND,((NETWORK,TCP),(DST-PORT,853)),REJECT
+  - AND,((NETWORK,UDP),(DST-PORT,853)),REJECT
+  - DOMAIN-SUFFIX,dns.google,REJECT
+  - IP-CIDR,1.1.1.1/32,REJECT,no-resolve
+  - IP-CIDR6,2606:4700:4700::1111/128,REJECT,no-resolve
   - IP-CIDR6,::/0,REJECT,no-resolve
   - AND,((NETWORK,UDP),(DST-PORT,3478-3479)),REJECT
   - AND,((NETWORK,UDP),(DST-PORT,19302-19309)),REJECT
+  - GEOSITE,private,DIRECT
+  - GEOIP,LAN,DIRECT,no-resolve
   - GEOSITE,cn,DIRECT
   - GEOIP,CN,DIRECT,no-resolve
   - MATCH,DEFAULT

@@ -7,7 +7,10 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 object QrCodeGenerator {
-    fun create(value: String, size: Int = 720): Bitmap {
+    // 512px is sufficient for the in-app 240dp preview and keeps the retained bitmap around
+    // 0.5 MiB on RGB_565 devices (720px ARGB_8888 was roughly 2 MiB). The payload itself is
+    // unchanged; this only reduces the presentation surface's memory peak.
+    fun create(value: String, size: Int = 512): Bitmap {
         val matrix = QRCodeWriter().encode(
             value,
             BarcodeFormat.QR_CODE,
@@ -25,6 +28,6 @@ object QrCodeGenerator {
                 pixels[y * size + x] = if (matrix[x, y]) 0xFF111317.toInt() else 0xFFFFFFFF.toInt()
             }
         }
-        return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.RGB_565)
     }
 }

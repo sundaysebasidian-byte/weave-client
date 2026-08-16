@@ -34,7 +34,10 @@ final class SubscriptionVault: ObservableObject {
             throw WeaveMacError.message("订阅节点校验结果不完整")
         }
         let imported = try items.enumerated().map { index, item in
-            let nodes = nodeNames?[index] ?? ClashNodeNames.parse(item.payload)
+            let sanitized = try ClashProviderSanitizer.sanitize(item.payload)
+            // Re-parse the sanitized provider instead of trusting names supplied by another
+            // device. The runtime and persisted node count must come from the bytes we accept.
+            let nodes = ClashNodeNames.parse(sanitized)
             guard !nodes.isEmpty else {
                 throw WeaveMacError.message("“\(item.name)”不是包含有效节点的 Clash 订阅")
             }
@@ -43,13 +46,48 @@ final class SubscriptionVault: ObservableObject {
                 name: item.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? "未命名订阅" : String(item.name.prefix(80)),
                 source: item.source,
-                payload: item.payload,
+                payload: sanitized,
                 nodeCount: nodes.count,
                 updatedAt: now
             )
         }
         let previous = subscriptions
         subscriptions.append(contentsOf: imported)
+        do {
+            try persist()
+        } catch {
+            subscriptions = previous
+            throw error
+        }
+    }
+
+    func update(
+        id: UUID,
+        name: String,
+        source: String,
+        payload: String,
+    ) throws {
+        guard let index = subscriptions.firstIndex(where: { $0.id == id }) else {
+            throw WeaveMacError.message("订阅不存在")
+        }
+        let sanitized = try ClashProviderSanitizer.sanitize(payload)
+        let nodes = ClashNodeNames.parse(sanitized)
+        guard !nodes.isEmpty else {
+            throw WeaveMacError.message("订阅中没有有效节点")
+        }
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw WeaveMacError.message("订阅名称不能为空")
+        }
+        let previous = subscriptions
+        subscriptions[index] = MacSubscription(
+            id: id,
+            name: String(trimmedName.prefix(80)),
+            source: String(source.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8_192)),
+            payload: sanitized,
+            nodeCount: nodes.count,
+            updatedAt: Date(),
+        )
         do {
             try persist()
         } catch {

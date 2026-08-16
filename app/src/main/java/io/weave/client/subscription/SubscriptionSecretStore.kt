@@ -33,6 +33,10 @@ class SubscriptionSecretStore(
         mkdirs()
     }.also(::cleanPayloadDirectory)
 
+    init {
+        migrateLegacyNodeMetadata()
+    }
+
     @Synchronized
     fun save(
         name: String,
@@ -70,6 +74,7 @@ class SubscriptionSecretStore(
         val oldPayload = payloadFile(id).takeIf(File::isFile)
         val generation = UUID.randomUUID().toString().replace("-", "")
         val candidatePayload = writePayloadCandidate(id, generation, encryptedPayload)
+        val encryptedNodeMetadata = encryptNodeMetadata(id, nodes)
 
         val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
         ids += id
@@ -79,7 +84,8 @@ class SubscriptionSecretStore(
             .putString(key(id, "url"), encryptedUrl)
             .putInt(key(id, "nodes"), parsed.nodeCount)
             .putString(key(id, "format"), parsed.format.name)
-            .putStringSet(key(id, "node_metadata"), nodes.mapTo(linkedSetOf(), ::encodeNode))
+            .putString(key(id, "node_metadata_encrypted"), encryptedNodeMetadata)
+            .remove(key(id, "node_metadata"))
             .putString(key(id, "payload_generation"), generation)
             .commit()
         if (!committed) {
@@ -112,10 +118,7 @@ class SubscriptionSecretStore(
                     name = name,
                     nodeCount = preferences.getInt(key(id, "nodes"), 0),
                     format = format,
-                    nodes = preferences
-                        .getStringSet(key(id, "node_metadata"), emptySet())
-                        .orEmpty()
-                        .mapNotNull(::decodeNode)
+                    nodes = readNodeMetadata(id)
                         .sortedBy { it.name.lowercase() },
                     hasPayload = payloadFile(id).isFile,
                 )
@@ -206,6 +209,49 @@ class SubscriptionSecretStore(
 
     private fun payloadFileName(id: String, generation: String) = "$id.$generation.enc"
 
+    private fun encryptNodeMetadata(id: String, nodes: List<StoredNode>): String =
+        secretBox.encrypt(
+            plaintext = nodes.joinToString("\n", transform = ::encodeNode)
+                .toByteArray(Charsets.UTF_8),
+            associatedData = "$id:nodes".toByteArray(Charsets.UTF_8),
+        )
+
+    private fun readNodeMetadata(id: String): List<StoredNode> {
+        val encrypted = preferences.getString(key(id, "node_metadata_encrypted"), null)
+        if (encrypted != null) {
+            return runCatching {
+                secretBox.decrypt(
+                    envelope = encrypted,
+                    associatedData = "$id:nodes".toByteArray(Charsets.UTF_8),
+                ).toString(Charsets.UTF_8)
+                    .lineSequence()
+                    .filter(String::isNotBlank)
+                    .mapNotNull(::decodeNode)
+                    .toList()
+            }.getOrDefault(emptyList())
+        }
+        // Read the legacy plaintext field only long enough to migrate an older install.
+        return preferences.getStringSet(key(id, "node_metadata"), emptySet())
+            .orEmpty()
+            .mapNotNull(::decodeNode)
+    }
+
+    private fun migrateLegacyNodeMetadata() {
+        preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().forEach { id ->
+            if (preferences.contains(key(id, "node_metadata_encrypted"))) return@forEach
+            val legacy = preferences.getStringSet(key(id, "node_metadata"), emptySet())
+                .orEmpty()
+                .mapNotNull(::decodeNode)
+            if (legacy.isEmpty()) return@forEach
+            runCatching {
+                preferences.edit()
+                    .putString(key(id, "node_metadata_encrypted"), encryptNodeMetadata(id, legacy))
+                    .remove(key(id, "node_metadata"))
+                    .commit()
+            }
+        }
+    }
+
     private fun cleanPayloadDirectory(directory: File) {
         val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
         val referencedFiles = ids.mapTo(mutableSetOf()) { id ->
@@ -277,6 +323,7 @@ class SubscriptionSecretStore(
             "nodes",
             "format",
             "node_metadata",
+            "node_metadata_encrypted",
             "payload_generation",
         )
     }

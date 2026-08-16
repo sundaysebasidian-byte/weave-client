@@ -87,7 +87,30 @@ class RouteConfigCompilerTest {
     }
 
     @Test
-    fun `udp guard follows app route and prevents default route leakage`() {
+    fun `direct app route keeps udp and quic on direct outlet`() {
+        val route = route(
+            "com.binance",
+            RouteTarget(
+                kind = RouteKind.DIRECT,
+                label = "直连",
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                "UID,10200,DIRECT",
+                "PROCESS-NAME,com.binance,DIRECT",
+                "MATCH,DEFAULT",
+            ),
+            compiler.compileRules(
+                routes = listOf(route),
+                packageUids = mapOf("com.binance" to 10200),
+            ),
+        )
+    }
+
+    @Test
+    fun `proxy udp guard prevents default route leakage`() {
         val route = route(
             "com.android.chrome",
             RouteTarget(
@@ -148,6 +171,8 @@ class RouteConfigCompilerTest {
         assertEquals(
             listOf(
                 "PROCESS-NAME,video.app,sub.overseas.auto",
+                "GEOSITE,private,DIRECT",
+                "GEOIP,LAN,DIRECT,no-resolve",
                 "GEOSITE,cn,DIRECT",
                 "GEOIP,CN,DIRECT,no-resolve",
                 "MATCH,DEFAULT",
@@ -155,9 +180,29 @@ class RouteConfigCompilerTest {
             compiler.compileRules(
                 routes = listOf(route),
                 trailingRules = listOf(
+                    "GEOSITE,private,DIRECT",
+                    "GEOIP,LAN,DIRECT,no-resolve",
                     "GEOSITE,cn,DIRECT",
                     "GEOIP,CN,DIRECT,no-resolve",
                 ),
+            ),
+        )
+    }
+
+    @Test
+    fun `automatic route can target a cross subscription group`() {
+        val route = route(
+            "browser.app",
+            RouteTarget(RouteKind.AUTO, "跨订阅", subscriptionId = "daily"),
+        )
+        assertEquals(
+            listOf(
+                "PROCESS-NAME,browser.app,WEAVE-CROSS-AUTO",
+                "MATCH,DEFAULT",
+            ),
+            compiler.compileRules(
+                routes = listOf(route),
+                automaticGroupName = { "WEAVE-CROSS-AUTO" },
             ),
         )
     }

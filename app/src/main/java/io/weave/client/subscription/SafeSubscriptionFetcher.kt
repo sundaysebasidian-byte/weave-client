@@ -28,6 +28,7 @@ class SafeSubscriptionFetcher(
         var current = urlPolicy.validate(rawUrl)
 
         repeat(maxRedirects + 1) { hop ->
+            urlPolicy.validateResolvedAddresses(current)
             val connection = current.toURL().openConnection() as? HttpsURLConnection
                 ?: throw SubscriptionImportException("订阅连接不是 HTTPS")
             try {

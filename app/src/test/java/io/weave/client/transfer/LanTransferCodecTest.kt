@@ -53,6 +53,8 @@ class LanTransferCodecTest {
         assertEquals(link.port, parsed.port)
         assertEquals(link.token, parsed.token)
         assertArrayEquals(key, parsed.key)
+        assertEquals(link.confirmationCode(), parsed.confirmationCode())
+        assertEquals(6, parsed.confirmationCode().length)
     }
 
     @Test
@@ -73,6 +75,22 @@ class LanTransferCodecTest {
                 "weave://lan/v1/0123456789abcdef0123456789abcdef" +
                     "?host=8.8.8.8&port=80#invalid",
             )
+        }
+    }
+
+    @Test
+    fun `rejects non private and malformed transfer links`() {
+        val key = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(ByteArray(32))
+        val token = "0123456789abcdef0123456789abcdef"
+        listOf(
+            "weave://lan/v1/$token?host=8.8.8.8&port=443#$key",
+            "weave://lan/v1/$token?host=192.168.1.2&port=0#$key",
+            "weave://lan/v1/$token?host=192.168.1.2&port=443#bad",
+        ).forEach { raw ->
+            assertThrows(SubscriptionImportException::class.java) {
+                LanTransferLink.parse(raw)
+            }
         }
     }
 }

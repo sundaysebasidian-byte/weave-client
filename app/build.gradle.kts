@@ -11,8 +11,8 @@ android {
         applicationId = "io.weave.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "0.3.0-alpha33"
+        versionCode = 52
+        versionName = "0.3.0-alpha50"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -83,7 +83,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation("com.google.zxing:core:3.5.4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

@@ -8,6 +8,7 @@ import java.io.DataOutputStream
 import java.net.URI
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -16,6 +17,8 @@ data class TransferSubscription(
     val name: String,
     val source: String,
     val payload: String,
+    /** Local identity used by LAN Sync selection/merge. */
+    val id: String = "",
 )
 
 data class LanTransferLink(
@@ -27,6 +30,16 @@ data class LanTransferLink(
     fun encode(): String {
         val encodedKey = Base64.getUrlEncoder().withoutPadding().encodeToString(key)
         return "weave://lan/v1/$token?host=$host&port=$port#$encodedKey"
+    }
+
+    /** Short out-of-band confirmation value; it authenticates that both devices show the same link. */
+    fun confirmationCode(): String {
+        val input = token.toByteArray(Charsets.US_ASCII) + key
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(input)
+        val number = ((digest[0].toInt() and 0xff) shl 16) or
+            ((digest[1].toInt() and 0xff) shl 8) or
+            (digest[2].toInt() and 0xff)
+        return "%06d".format(Locale.ROOT, number % 1_000_000)
     }
 
     companion object {

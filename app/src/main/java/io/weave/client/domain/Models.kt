@@ -31,6 +31,20 @@ enum class AutomaticStrategy(
     ),
 }
 
+enum class StrategyScope(
+    val label: String,
+    val description: String,
+) {
+    PER_SUBSCRIPTION(
+        "按订阅独立",
+        "每个订阅维护自己的自动节点组，资源占用更低",
+    ),
+    CROSS_SUBSCRIPTION(
+        "跨订阅自动",
+        "把当前加载的多个订阅放入同一个测速与故障切换组",
+    ),
+}
+
 enum class DnsTransport(
     val label: String,
     val description: String,
@@ -43,10 +57,30 @@ enum class DnsProfile(
     val label: String,
     val description: String,
 ) {
-    PRIVACY("普通隐私", "AliDNS / 腾讯 DoH 或 DoT，不主动过滤内容"),
+    PRIVACY("国内隐私", "阿里 DNS + 腾讯 DNS 双上游，不主动过滤内容"),
+    ALI_DNS("阿里 DNS", "国内网络友好，使用阿里加密 DoH / DoT"),
+    TENCENT_DNS("腾讯 DNS", "国内网络友好，使用腾讯加密 DoH / DoT"),
+    CLOUDFLARE_DNS("Cloudflare", "海外隐私导向解析；中国大陆网络可能较慢"),
+    GOOGLE_DNS("Google Public DNS", "全球通用解析；中国大陆网络可能不可达"),
+    QUAD9_DNS("Quad9 Secure", "带恶意域名拦截的安全解析，不记录完整查询日志"),
+    MULLVAD_DNS("Mullvad DNS", "隐私导向解析；不主动过滤广告内容"),
     AD_BLOCK("屏蔽广告", "AdGuard DNS + 本地规则：过滤广告、跟踪器与恶意域名"),
     FAMILY("家庭过滤", "AdGuard Family + 本地规则：广告、跟踪器与成人内容过滤"),
     CUSTOM("自定义", "填写自己的加密 DoH 或 DoT 地址"),
+}
+
+enum class DnsRoutingMode(
+    val label: String,
+    val description: String,
+) {
+    SINGLE(
+        "统一解析",
+        "所有域名使用当前选择的加密 DNS",
+    ),
+    SMART(
+        "国内 / 海外分流",
+        "国内域名优先国内上游，海外域名使用隐私上游",
+    ),
 }
 
 enum class Ipv6Mode(
@@ -57,29 +91,60 @@ enum class Ipv6Mode(
     IPV4_ONLY("仅 IPv4", "停用 IPv6 解析并在隧道内拒绝 IPv6，防止旁路"),
 }
 
+enum class WeaveAppearanceGroup(val label: String) {
+    MINIMAL("极简风"),
+    ART("艺术风"),
+}
+
+enum class WeaveLanguage(
+    val localeTag: String,
+    val nativeLabel: String,
+    val description: String,
+) {
+    SIMPLIFIED_CHINESE("zh-CN", "简体中文", "简体中文界面"),
+    TRADITIONAL_CHINESE("zh-TW", "繁體中文", "繁體中文介面"),
+    ENGLISH("en", "English", "English interface"),
+    JAPANESE("ja", "日本語", "日本語インターフェース"),
+    FRENCH("fr", "Français", "Interface française"),
+    GERMAN("de", "Deutsch", "Deutsche Oberfläche"),
+}
+
 /**
- * A small set of curated, low-saturation palettes. They change presentation
- * only; routing, DNS and the proxy core never depend on this value.
+ * Appearance choices are presentation-only; routing, DNS and the proxy core never depend on
+ * this value. The four historical art names remain stable so existing saved preferences keep
+ * working after the appearance picker is regrouped.
  */
 enum class WeavePalette(
     val label: String,
     val description: String,
+    val group: WeaveAppearanceGroup,
+    /** True for palettes that deliberately force a dark canvas instead of following the system. */
+    val forceDark: Boolean = false,
 ) {
-    IMPRESSION_SUNRISE("日出·印象", "雾蓝、海玻璃与一笔暖橙"),
-    WATER_LILIES("睡莲", "青绿、薰衣草与水面灰蓝"),
-    POPPY_FIELD("罂粟田", "鼠尾草、奶油纸与柔珊瑚"),
-    TWILIGHT_GARDEN("暮色花园", "靛紫、雾青与黄昏粉棕"),
+    MINIMAL_LIGHT("浅色模式", "清晰留白与冷暖中性灰，适合日常使用", WeaveAppearanceGroup.MINIMAL),
+    MINIMAL_DARK("深色模式", "低亮度深色画布，适合夜间与极客习惯", WeaveAppearanceGroup.MINIMAL, forceDark = true),
+    MINIMAL_DEEP_OCEAN("深海蓝", "深靛蓝、雾青与低亮银灰，适合夜间阅读", WeaveAppearanceGroup.MINIMAL, forceDark = true),
+    MINIMAL_GRAPHITE("石墨灰", "中性石墨与柔银，克制、清晰、低干扰", WeaveAppearanceGroup.MINIMAL, forceDark = true),
+    MINIMAL_NIGHT_PINE("夜松青", "墨绿画布与冷薄荷，柔和但保持对比", WeaveAppearanceGroup.MINIMAL, forceDark = true),
+    IMPRESSION_SUNRISE("日出·印象", "雾蓝、海玻璃与一笔暖橙", WeaveAppearanceGroup.ART),
+    WATER_LILIES("睡莲", "青绿、薰衣草与水面灰蓝", WeaveAppearanceGroup.ART),
+    POPPY_FIELD("罂粟田", "鼠尾草、奶油纸与柔珊瑚", WeaveAppearanceGroup.ART),
+    TWILIGHT_GARDEN("暮色花园", "靛紫、雾青与黄昏粉棕", WeaveAppearanceGroup.ART),
 }
 
 data class NetworkPreferences(
     val automaticStrategy: AutomaticStrategy = AutomaticStrategy.LOWEST_LATENCY,
+    val strategyScope: StrategyScope = StrategyScope.PER_SUBSCRIPTION,
     val dnsTransport: DnsTransport = DnsTransport.DOH,
     val dnsProfile: DnsProfile = DnsProfile.PRIVACY,
+    val dnsRoutingMode: DnsRoutingMode = DnsRoutingMode.SINGLE,
     val customDnsEndpoint: String = "",
     val ipv6Mode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
     val blockUdpStun: Boolean = false,
-    val domesticDirect: Boolean = false,
-    val weavePalette: WeavePalette = WeavePalette.IMPRESSION_SUNRISE,
+    // Mainland direct is the compatibility-first default. Users who need an all-proxy profile
+    // can disable it explicitly in Settings.
+    val domesticDirect: Boolean = true,
+    val weavePalette: WeavePalette = WeavePalette.MINIMAL_LIGHT,
 )
 
 enum class RouteKind {

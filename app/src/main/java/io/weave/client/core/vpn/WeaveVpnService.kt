@@ -6,8 +6,10 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -18,6 +20,7 @@ import io.weave.client.core.engine.MihomoEngineAdapter
 import io.weave.client.core.engine.AssembledMihomoConfig
 import io.weave.client.core.engine.RuntimeProfileTransaction
 import io.weave.client.data.AppRouteStore
+import io.weave.client.data.RecoveryVault
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
 import java.net.InetAddress
@@ -43,6 +46,7 @@ class WeaveVpnService : VpnService() {
     private val configAssembler by lazy { MihomoConfigAssembler(this) }
     private val routeStore by lazy { AppRouteStore(this) }
     private val settingsStore by lazy { RuntimeSettingsStore(this) }
+    private val recoveryVault by lazy { RecoveryVault(this) }
     private val profileTransaction by lazy { RuntimeProfileTransaction(cacheDir) }
     private val connectivityManager by lazy {
         getSystemService(ConnectivityManager::class.java)
@@ -50,8 +54,8 @@ class WeaveVpnService : VpnService() {
     private val underlyingNetworkMonitor by lazy {
         UnderlyingNetworkMonitor(
             connectivityManager = connectivityManager,
-            onNetworkChanged = ::scheduleNetworkRecovery,
-            onUnavailable = ::markUnderlyingNetworkUnavailable,
+            onNetworkChanged = ::onUnderlyingNetworksChanged,
+            onUnavailable = ::onUnderlyingNetworksChanged,
         )
     }
     private val uidAttributionCache = SocketUidAttributionCache()
@@ -60,9 +64,16 @@ class WeaveVpnService : VpnService() {
     @Volatile
     private var reloadPending = false
     @Volatile
+    private var shutdownRequested = false
+    @Volatile
     private var probeSubscriptionId: String? = null
     private var networkRecoveryJob: Job? = null
+    @Volatile
+    private var outboundRecoveryJob: Job? = null
+    @Volatile
     private var lastSuccessfulRuntime: PreparedRuntime? = null
+    @Volatile
+    private var preferredUnderlyingNetwork: Network? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -72,9 +83,16 @@ class WeaveVpnService : VpnService() {
             engine.state.collectLatest { state ->
                 if (
                     state == ConnectionState.ERROR &&
-                    VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED
+                    lastSuccessfulRuntime != null &&
+                    VpnRuntimeState.snapshot.value.state in setOf(
+                        ConnectionState.CONNECTED,
+                        ConnectionState.ERROR,
+                    )
                 ) {
-                    shutdown("系统拒绝保护代理出站 socket，连接已关闭")
+                    // A late socket-protect failure is usually a Wi-Fi/cellular handover race.
+                    // Mihomo has already stopped its TUN in the adapter, so recover the last
+                    // known-good profile instead of tearing down the foreground VPN immediately.
+                    scheduleOutboundRecovery()
                 }
             }
         }
@@ -82,12 +100,16 @@ class WeaveVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            shutdownRequested = true
+            outboundRecoveryJob?.cancel()
             serviceScope.launch { shutdown("已断开") }
             return START_NOT_STICKY
         }
+        shutdownRequested = false
 
         createNotificationChannel()
         val reloading = intent?.action == ACTION_RELOAD
+        if (!reloading) outboundRecoveryJob?.cancel()
         if (reloading) {
             intent.getStringExtra(EXTRA_PROBE_SUBSCRIPTION_ID)
                 ?.takeIf(String::isNotBlank)
@@ -119,6 +141,8 @@ class WeaveVpnService : VpnService() {
 
     override fun onRevoke() {
         Log.w(LOG_TAG, "Android revoked the VpnService authorization")
+        shutdownRequested = true
+        outboundRecoveryJob?.cancel()
         serviceScope.launch {
             shutdown("系统或其他 VPN 已接管连接；请关闭 Pixel VPN 或其他代理后重试")
         }
@@ -126,8 +150,10 @@ class WeaveVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        shutdownRequested = true
         underlyingNetworkMonitor.stop()
         networkRecoveryJob?.cancel()
+        outboundRecoveryJob?.cancel()
         runBlocking {
             withContext(NonCancellable + Dispatchers.IO) {
                 engine.stop()
@@ -141,11 +167,24 @@ class WeaveVpnService : VpnService() {
 
     private fun scheduleNetworkRecovery() {
         Log.i(LOG_TAG, "Underlying network changed; runtime=${VpnRuntimeState.snapshot.value.state}")
-        if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return
+        val runtimeState = VpnRuntimeState.snapshot.value.state
+        if (runtimeState != ConnectionState.CONNECTED && runtimeState != ConnectionState.ERROR) return
+        if (runtimeState == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+            scheduleOutboundRecovery()
+            return
+        }
+        if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+            scheduleOutboundRecovery()
+            return
+        }
         networkRecoveryJob?.cancel()
         networkRecoveryJob = serviceScope.launch {
             delay(NETWORK_RECOVERY_DEBOUNCE_MS)
             if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return@launch
+            if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+                scheduleOutboundRecovery()
+                return@launch
+            }
             if (startInProgress) {
                 Log.i(LOG_TAG, "Network recovery queued behind an active runtime operation")
                 reloadPending = true
@@ -157,8 +196,36 @@ class WeaveVpnService : VpnService() {
         }
     }
 
+    @Synchronized
+    private fun onUnderlyingNetworksChanged(networks: List<Network>) {
+        val previous = preferredUnderlyingNetwork
+        val preferred = networks.firstOrNull()
+        if (preferred == previous) return
+        preferredUnderlyingNetwork = preferred
+        if (preferred == null) {
+            markUnderlyingNetworkUnavailable()
+            return
+        }
+        if (
+            VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED
+        ) {
+            // All Mihomo sockets are bound to this same network in protectAndBindSocket(). Keep
+            // Android's VPN attribution in lockstep during Wi-Fi/cellular handover.
+            val updated = updateVpnUnderlyingNetworks(arrayOf(preferred))
+            if (!updated && VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+                Log.w(LOG_TAG, "System rejected underlying-network update; scheduling recovery")
+            }
+        }
+        scheduleNetworkRecovery()
+    }
+
     private fun markUnderlyingNetworkUnavailable() {
-        Log.i(LOG_TAG, "All validated non-VPN networks became unavailable")
+        Log.i(LOG_TAG, "All usable non-VPN networks became unavailable")
+        if (VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED) {
+            // Empty means explicitly no upstream; traffic remains inside the VPN instead of
+            // falling back to an unvalidated default network.
+            updateVpnUnderlyingNetworks(emptyArray())
+        }
         networkRecoveryJob?.cancel()
         if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
             VpnRuntimeState.update(
@@ -168,14 +235,106 @@ class WeaveVpnService : VpnService() {
         }
     }
 
+    /**
+     * Rebuilds the last healthy runtime after a late protect/bind failure. The native adapter
+     * stops its TUN when the first unprotected socket is observed; keeping the service alive lets
+     * Android finish a physical-network handover and avoids forcing the user to reconnect.
+     *
+     * The retry budget is deliberately bounded. If the radio remains unavailable, the service
+     * stays in an explicit error state and waits for the next ConnectivityManager callback rather
+     * than spinning or silently allowing traffic outside the VPN.
+     */
+    private fun scheduleOutboundRecovery() {
+        if (outboundRecoveryJob?.isActive == true) return
+        if (shutdownRequested) return
+        if (recoveryVault.snapshot().safeMode) return
+        if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+            notifyStatus("正在恢复出站保护")
+            VpnRuntimeState.update(
+                ConnectionState.ERROR,
+                "出站保护正在恢复，Weave 将保持断网保护",
+            )
+        }
+        outboundRecoveryJob = serviceScope.launch {
+            val retryDelays = longArrayOf(500L, 1_500L, 3_000L, 6_000L, 12_000L)
+            for ((index, retryDelay) in retryDelays.withIndex()) {
+                delay(retryDelay)
+                if (
+                    VpnRuntimeState.snapshot.value.state == ConnectionState.DISCONNECTED ||
+                    lastSuccessfulRuntime == null ||
+                    recoveryVault.snapshot().safeMode
+                ) {
+                    return@launch
+                }
+                if (underlyingNetworkMonitor.currentNetworks().isEmpty()) {
+                    notifyStatus("等待底层网络恢复")
+                    VpnRuntimeState.update(
+                        ConnectionState.ERROR,
+                        "底层网络暂时不可用，网络恢复后将自动重连",
+                    )
+                    return@launch
+                }
+                if (startInProgress) {
+                    reloadPending = true
+                    return@launch
+                }
+
+                val runtime = lastSuccessfulRuntime ?: return@launch
+                startInProgress = true
+                notifyStatus("正在恢复代理连接")
+                VpnRuntimeState.update(
+                    ConnectionState.CONNECTING,
+                    "正在恢复代理连接（第 ${index + 1} 次）",
+                )
+                val result = runCatching {
+                    // The adapter's callback stops the native TUN asynchronously. The backoff
+                    // above gives that stop operation time to finish before the new TUN starts.
+                    engine.stop()
+                    uidAttributionCache.clear()
+                    launchPreparedRuntime(runtime)
+                }
+                startInProgress = false
+
+                if (result.isSuccess) {
+                    publishConnected(runtime, "网络已恢复，代理已重新连接")
+                    finishOperation()
+                    return@launch
+                }
+
+                Log.w(
+                    LOG_TAG,
+                    "Outbound recovery attempt ${index + 1} failed: ${safeFailureCode(result.exceptionOrNull())}",
+                )
+                // Keep the TUN fail-closed between attempts. Do not expose a partially started
+                // profile while the next physical-network candidate is settling.
+                runCatching { engine.stop() }
+                notifyStatus("正在等待下一次网络重试")
+                VpnRuntimeState.update(
+                    ConnectionState.ERROR,
+                    "出站保护暂时失败，Weave 将继续重试",
+                )
+            }
+            runCatching { engine.stop() }
+            notifyStatus("出站保护失败，请检查网络")
+            VpnRuntimeState.update(
+                ConnectionState.ERROR,
+                "出站保护暂时失败，请检查网络后重试",
+            )
+        }
+    }
+
     private suspend fun startRuntime() {
         VpnRuntimeState.update(ConnectionState.CONNECTING)
         uidAttributionCache.clear()
         runCatching {
+            check(!recoveryVault.snapshot().safeMode) {
+                "安全模式已启用，请在恢复中心解除后再连接"
+            }
             check(engine.isAvailable) { "Mihomo 原生库无法加载或初始化" }
             val prepared = prepareCurrentRuntime()
             launchPreparedRuntime(prepared)
             lastSuccessfulRuntime = prepared
+            recoveryVault.recordHealthy("${prepared.assembled.usableSubscriptions} subscriptions")
             publishConnected(prepared, "安全代理已连接")
             profileTransaction.clean()
         }.onFailure { error ->
@@ -186,6 +345,7 @@ class WeaveVpnService : VpnService() {
             engine.stop()
             configAssembler.cleanRuntimeFiles()
             profileTransaction.clean()
+            recoveryVault.recordFailure(safeFailureCode(error))
             VpnRuntimeState.update(
                 ConnectionState.ERROR,
                 safeError(error),
@@ -213,6 +373,7 @@ class WeaveVpnService : VpnService() {
         }.getOrElse { error ->
             runCatching { profileTransaction.restoreRollback() }
             profileTransaction.clean()
+            recoveryVault.recordFailure("candidate_validation_failed:${safeFailureCode(error)}")
             VpnRuntimeState.update(
                 ConnectionState.CONNECTED,
                 "新配置未通过校验，已继续使用原连接：${safeError(error)}",
@@ -228,6 +389,7 @@ class WeaveVpnService : VpnService() {
         }
         if (candidateStart.isSuccess) {
             lastSuccessfulRuntime = candidate
+            recoveryVault.recordHealthy("${candidate.assembled.usableSubscriptions} subscriptions")
             profileTransaction.clean()
             publishConnected(candidate, "新配置已安全生效")
             finishOperation()
@@ -242,11 +404,14 @@ class WeaveVpnService : VpnService() {
         profileTransaction.clean()
         if (rollback.isSuccess) {
             lastSuccessfulRuntime = previous
+            recoveryVault.recordFailure("candidate_start_failed;previous_runtime_restored")
             publishConnected(
                 previous,
                 "新配置启动失败，已自动恢复原连接：${safeError(candidateStart.exceptionOrNull())}",
             )
         } else {
+            recoveryVault.recordFailure("candidate_and_rollback_failed")
+            recoveryVault.enableSafeMode("候选配置与上一份配置均无法启动")
             VpnRuntimeState.update(
                 ConnectionState.ERROR,
                 "新配置与原配置均无法启动，VPN 已安全关闭",
@@ -295,24 +460,28 @@ class WeaveVpnService : VpnService() {
         engine.start(
             tunFd = tunFd,
             config = prepared.assembled.yaml,
-            protectSocket = ::protect,
+            protectSocket = ::protectAndBindSocket,
             querySocketUid = ::querySocketUid,
             installedApps = prepared.installedApps,
         ).getOrThrow()
     }
 
     private fun publishConnected(prepared: PreparedRuntime, message: String) {
-        getSystemService(NotificationManager::class.java).notify(
-            NOTIFICATION_ID,
-            buildNotification(
-                if (prepared.assembled.usableSubscriptions == 0) {
-                    "已连接 · 直连规则"
-                } else {
-                    "已连接 · ${prepared.assembled.usableSubscriptions} 个订阅"
-                },
-            ),
+        notifyStatus(
+            if (prepared.assembled.usableSubscriptions == 0) {
+                "已连接 · 直连规则"
+            } else {
+                "已连接 · ${prepared.assembled.usableSubscriptions} 个订阅"
+            },
         )
         VpnRuntimeState.update(ConnectionState.CONNECTED, message)
+    }
+
+    private fun notifyStatus(status: String) {
+        getSystemService(NotificationManager::class.java).notify(
+            NOTIFICATION_ID,
+            buildNotification(status),
+        )
     }
 
     private fun safeError(error: Throwable?): String {
@@ -321,16 +490,43 @@ class WeaveVpnService : VpnService() {
             "系统拒绝建立 VPN" in message -> "系统拒绝建立 VPN，请重新授权后再试"
             "原生库无法加载" in message -> "代理内核无法加载，请重新安装应用"
             "没有可用订阅" in message -> "没有可用订阅，请先导入或选择直连"
+            "安全模式已启用" in message -> "恢复中心已启用安全模式，请解除后再连接"
+            "底层网络" in message -> "没有可用的 Wi‑Fi 或移动数据网络"
             "订阅不存在" in message -> "所选订阅已不存在，请重新选择出口"
             else -> "代理配置或内核启动失败，已保留上一份安全状态"
         }
     }
 
+    /**
+     * Persist only an allowlisted failure category. Exception messages can contain a node host,
+     * SNI, socket address or provider path, so they must never be written to RecoveryVault.
+     */
+    private fun safeFailureCode(error: Throwable?): String {
+        val message = error?.message.orEmpty()
+        return when {
+            error == null -> "runtime_failure"
+            "安全模式" in message -> "safe_mode_enabled"
+            "Mihomo" in message || "原生库" in message -> "native_core_unavailable"
+            "订阅" in message -> "subscription_validation_failed"
+            "DNS" in message -> "dns_configuration_failed"
+            "VPN" in message || "TUN" in message -> "vpn_interface_failed"
+            "网络" in message || "底层" in message -> "underlying_network_unavailable"
+            else -> error.javaClass.simpleName
+                .replace(Regex("[^A-Za-z0-9_.-]"), "_")
+                .take(64)
+                .ifBlank { "runtime_failure" }
+        }
+    }
+
     private fun establishTun(): Int {
+        val preferred = underlyingNetworkMonitor.currentNetworks().firstOrNull()
+        preferredUnderlyingNetwork = preferred
+        checkNotNull(preferred) { "没有可用的底层网络" }
         val descriptor = Builder()
             .setSession("Weave")
             .setMtu(TUN_MTU)
             .setBlocking(false)
+            .setUnderlyingNetworks(arrayOf(preferred))
             .addAddress(TUN_GATEWAY, TUN_PREFIX)
             .addAddress(TUN_GATEWAY6, TUN_PREFIX6)
             .addRoute("0.0.0.0", 0)
@@ -348,6 +544,35 @@ class WeaveVpnService : VpnService() {
             .establish()
             ?: error("系统拒绝建立 VPN TUN 接口")
         return descriptor.detachFd()
+    }
+
+    private fun updateVpnUnderlyingNetworks(networks: Array<Network>): Boolean =
+        runCatching { setUnderlyingNetworks(networks) }
+            .onFailure {
+                Log.w(LOG_TAG, "Android rejected VPN underlying-network update")
+            }
+            .getOrDefault(false)
+
+    /** Protects the core socket from VPN recursion and pins it to the selected physical network. */
+    private fun protectAndBindSocket(fd: Int): Boolean {
+        // Refresh the candidate at the callback boundary. During a handover the monitor can
+        // receive the new Network before the native core asks for its next socket, while the
+        // previously preferred Network may already be stale or lost.
+        val network = underlyingNetworkMonitor.currentNetworks().firstOrNull()
+            ?.also { preferredUnderlyingNetwork = it }
+            ?: return false
+        if (!protect(fd)) return false
+        return runCatching {
+            // fromFd duplicates the descriptor. Closing the wrapper leaves Mihomo's original fd
+            // alive, while the network binding applies to the shared socket description.
+            ParcelFileDescriptor.fromFd(fd).use { duplicate ->
+                network.bindSocket(duplicate.fileDescriptor)
+            }
+            true
+        }.onFailure {
+            // Do not log the exception: Android socket errors can include a node address or SNI.
+            Log.e(LOG_TAG, "Failed to bind protected socket to underlying network")
+        }.getOrDefault(false)
     }
 
     private fun installedAppMappings(packageNames: List<String>): List<Pair<Int, String>> =
@@ -394,6 +619,7 @@ class WeaveVpnService : VpnService() {
     }.getOrNull()
 
     private suspend fun shutdown(message: String) {
+        shutdownRequested = true
         Log.i(LOG_TAG, "Shutting down runtime: $message")
         withContext(NonCancellable) {
             engine.stop()
@@ -448,7 +674,7 @@ class WeaveVpnService : VpnService() {
         private const val TUN_GATEWAY6 = "fdfe:dcba:9876::1"
         private const val TUN_PREFIX6 = 126
         private const val TUN_DNS6 = "fdfe:dcba:9876::2"
-        private const val NETWORK_RECOVERY_DEBOUNCE_MS = 1_500L
+        private const val NETWORK_RECOVERY_DEBOUNCE_MS = 2_500L
         private const val LOG_TAG = "WeaveVpnService"
 
         fun start(context: android.content.Context) {
@@ -473,6 +699,14 @@ class WeaveVpnService : VpnService() {
             ContextCompat.startForegroundService(
                 context,
                 intent,
+            )
+        }
+
+        fun clearRecoverySafeMode(context: android.content.Context) {
+            RecoveryVault(context).clearSafeMode()
+            VpnRuntimeState.update(
+                ConnectionState.DISCONNECTED,
+                "安全模式已解除，可以重新连接",
             )
         }
     }

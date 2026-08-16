@@ -16,6 +16,17 @@ struct TransferLink: Equatable {
     let token: String
     let key: Data
 
+    /// Six digits shown out-of-band by the sending device. This is a confirmation value, not a
+    /// replacement for AES-GCM authentication; the receiver must still verify the encrypted packet.
+    var confirmationCode: String {
+        var input = Data(token.utf8)
+        input.append(key)
+        let digest = SHA256.hash(data: input)
+        let bytes = Array(digest)
+        let number = (Int(bytes[0]) << 16) | (Int(bytes[1]) << 8) | Int(bytes[2])
+        return String(format: "%06d", number % 1_000_000)
+    }
+
     var string: String {
         var components = URLComponents()
         components.scheme = "weave"
@@ -50,6 +61,7 @@ struct TransferLink: Equatable {
         guard
             let host = items.first(where: { $0.name == "host" })?.value,
             PrivateIPv4.isAllowed(host),
+            !host.hasPrefix("127."),
             let portText = items.first(where: { $0.name == "port" })?.value,
             let port = UInt16(portText),
             port > 0,

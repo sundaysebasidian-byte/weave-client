@@ -1,0 +1,46 @@
+name: iOS integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shared core self-test
+        run: swift run --package-path ios/WeaveCore WeaveCoreSelfTest
+      - name: Validate generated Mihomo config
+        if: runner.arch == 'ARM64'
+        env:
+          WEAVE_MIHOMO_BINARY: ${{ github.workspace }}/macos/Resources/mihomo
+        run: swift run --package-path ios/WeaveCore WeaveCoreSelfTest
+      - name: Validate project metadata
+        run: >-
+          plutil -lint
+          ios/WeaveIOS.xcodeproj/project.pbxproj
+          ios/WeaveIOS/Resources/Info.plist
+          ios/PacketTunnel/Info.plist
+          ios/Config/WeaveIOS.entitlements
+          ios/Config/PacketTunnel.entitlements
+      - name: Unsigned simulator build
+        run: >-
+          xcodebuild
+          -project ios/WeaveIOS.xcodeproj
+          -scheme WeaveIOS
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath ios/.deriveddata
+          CODE_SIGNING_ALLOWED=NO
+          build

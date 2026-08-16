@@ -114,6 +114,31 @@ class SubscriptionPayloadParserTest {
     }
 
     @Test
+    fun `normalizes a clash document to nodes while preserving referenced merge anchors`() {
+        val raw = """
+            x-openvpn-common: &openvpn-common
+              type: openvpn
+              username: test
+              password: test
+            proxies:
+              - <<: *openvpn-common
+                name: first
+                server: 192.0.2.1
+            external-controller: 127.0.0.1:9090
+            rules:
+              - MATCH,DIRECT
+        """.trimIndent()
+
+        val normalized = parser.normalizeForMihomo(raw)
+
+        assertTrue(normalized.contains("x-openvpn-common: &openvpn-common"))
+        assertTrue(normalized.contains("proxies:"))
+        assertTrue(!normalized.contains("external-controller:"))
+        assertTrue(!normalized.contains("rules:"))
+        assertEquals(listOf("first"), parser.parse(normalized).nodes.map { it.name })
+    }
+
+    @Test
     fun `parses clash flow style proxy maps with nested transport options`() {
         val parsed = parser.parse(
             """
@@ -145,6 +170,54 @@ class SubscriptionPayloadParserTest {
 
         assertEquals(2, parsed.nodeCount)
         assertEquals(listOf("one", "two"), parsed.nodes.map { it.name })
+    }
+
+    @Test
+    fun `sanitizes clash control plane sections before provider is installed`() {
+        val raw = """
+            mixed-port: 7890
+            allow-lan: true
+            external-controller: 0.0.0.0:9090
+            dns:
+              enable: true
+              nameserver: [1.1.1.1]
+            proxies:
+              - name: secure-node
+                type: trojan
+                server: example.com
+                port: 443
+                sni: example.com
+            proxy-groups:
+              - name: attacker-controlled
+                type: select
+                proxies: [secure-node]
+            rules:
+              - MATCH,DIRECT
+            rule-providers:
+              remote:
+                url: https://attacker.example/rules.yaml
+            tun:
+              enable: true
+        """.trimIndent()
+
+        val normalized = parser.normalizeForMihomo(raw)
+
+        assertTrue(normalized.contains("proxies:"))
+        assertTrue(normalized.contains("server: example.com"))
+        assertTrue(normalized.contains("sni: example.com"))
+        listOf(
+            "mixed-port:",
+            "allow-lan:",
+            "external-controller:",
+            "dns:",
+            "proxy-groups:",
+            "rules:",
+            "rule-providers:",
+            "tun:",
+        ).forEach { forbidden ->
+            assertTrue("control-plane key leaked: $forbidden", !normalized.contains(forbidden))
+        }
+        assertEquals(listOf("secure-node"), parser.parse(normalized).nodes.map { it.name })
     }
 
     @Test

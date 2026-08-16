@@ -19,19 +19,25 @@ MihomoEngineAdapter   SingBoxEngineAdapter
        │                     │
        └──────────┬──────────┘
                   ▼
-   Android VpnService / macOS local proxy
+ Android VpnService / iOS Packet Tunnel / macOS local proxy
                   │ TUN fd + protect(socket)
                   ▼
              Device network
 ```
 
-Android 使用 `VpnService` 接管 TUN；macOS alpha 首版仅启动绑定 `127.0.0.1` 的 Mihomo
+Android 使用 `VpnService` 接管 TUN；iOS 使用独立 `NEPacketTunnelProvider` 与
+`NEPacketTunnelFlow`，且只有嵌入经审计的移动 framework 后才启动数据面；macOS alpha
+首版仅启动绑定 `127.0.0.1` 的 Mihomo
 本地代理。macOS 全设备 TUN 必须落在独立签名的 `NEPacketTunnelProvider` extension 中，
 不能由普通 App 进程或假状态替代。
 
-两端共用 Weave LAN Transfer v1 的线协议：发送端临时监听局域网 TCP，只提供一个随机
+三个平台共用 Weave LAN Transfer v1 的线协议：发送端临时监听局域网 TCP，只提供一个随机
 token 对应的 AES-256-GCM 密文，接收端从二维码/链接 fragment 取得密钥。成功读取一次或
-5 分钟后监听立即关闭；订阅落盘仍分别使用 Android Keystore 和 macOS Keychain 主密钥。
+5 分钟后监听立即关闭；订阅落盘分别使用 Android Keystore，以及 iOS/macOS Keychain 主密钥。
+
+公开发行配置不包含 Weave 后端、远程更新器、遥测或集中式控制 API。订阅刷新、加密 DNS、IP
+质量检测和局域网互传属于用户主动选择的第三方/同局域网请求，固定端点和触发条件维护在
+[`NETWORK_ENDPOINT_INVENTORY.md`](NETWORK_ENDPOINT_INVENTORY.md)。
 
 ## 为什么不直接 fork CMFA 或 Karing
 

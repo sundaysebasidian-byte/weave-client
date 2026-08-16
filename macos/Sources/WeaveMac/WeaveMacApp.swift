@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -8,6 +9,9 @@ struct WeaveMacApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    model.shutdown()
+                }
         }
         .windowStyle(.titleBar)
         .commands {

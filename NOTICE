@@ -4,6 +4,11 @@ Copyright (C) 2026 Weave contributors
 Weave original source is provided under GPL-3.0-or-later. The complete license
 is in LICENSE. This software is provided without warranty.
 
+The public preview follows the local-open-source distribution profile described
+in `docs/LOCAL_ONLY_RELEASE_PROFILE.md`: it does not operate a hosted account,
+relay, node marketplace, telemetry service, or in-app remote updater. This is an
+engineering boundary, not a legal exemption or a zero-log guarantee.
+
 Distributed preview artifacts include a modified CMFA/Mihomo core under GPL-3.0.
 The exact source commits, Weave patch, build inputs, and artifact hashes are in
 core-lock.properties and docs/CORE_PROVENANCE.md. Corresponding source and build
@@ -12,8 +17,9 @@ instructions must remain available with every distributed binary.
 Bundled GeoIP/GeoSite lite data is derived from MetaCubeX meta-rules-dat. Its
 release coordinate and artifact hashes are in geodata-lock.properties.
 
-AndroidX and ZXing components are licensed under Apache-2.0. Google Play
-services and ML Kit artifacts are subject to their applicable Google terms.
+AndroidX and ZXing components are licensed under Apache-2.0. The Android
+preview does not bundle Google Play services or ML Kit runtime artifacts;
+camera QR decoding uses the system camera preview and the bundled ZXing core.
 Additional project roles and links are listed in THIRD_PARTY.md. A production
 distributor must generate and ship the complete transitive dependency copyright,
 license, and SBOM bundle for the exact release; this preview notice is not a

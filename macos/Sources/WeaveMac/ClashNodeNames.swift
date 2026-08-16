@@ -1,5 +1,76 @@
 import Foundation
 
+enum ClashProviderSanitizer {
+    /// A subscription is a node provider, never a Mihomo control-plane document. Keep only the
+    /// `proxies` section and YAML merge anchors referenced by a proxy entry. This prevents an
+    /// imported subscription from opening a controller, listener, TUN, script or remote rule set.
+    static func sanitize(_ payload: String) throws -> String {
+        let lines = payload
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+        guard !lines.isEmpty else {
+            throw WeaveMacError.message("订阅内容为空")
+        }
+
+        let referencedAnchors = Set(
+            matches(
+                pattern: #"\*([A-Za-z0-9_.-]+)"#,
+                in: payload,
+            ).compactMap { $0.count > 1 ? $0[1].lowercased() : nil }
+        )
+        let anchorRoots = Set(
+            matches(
+                pattern: #"(?m)^([A-Za-z0-9_.-]+)\s*:\s*&([A-Za-z0-9_.-]+)"#,
+                in: payload,
+            ).compactMap { match -> String? in
+                guard match.count > 2,
+                      referencedAnchors.contains(match[2].lowercased()) else { return nil }
+                return match[1].lowercased()
+            }
+        )
+        let allowedRoots = Set(["proxies"]).union(anchorRoots)
+        var currentRootAllowed = false
+        var retained: [String] = []
+        var foundProxies = false
+
+        for line in lines {
+            let leading = line.prefix { $0 == " " || $0 == "\t" }.count
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if leading == 0,
+               !trimmed.isEmpty,
+               !trimmed.hasPrefix("#"),
+               let colon = trimmed.firstIndex(of: ":") {
+                let key = String(trimmed[..<colon]).lowercased()
+                currentRootAllowed = allowedRoots.contains(key)
+                foundProxies = foundProxies || key == "proxies"
+            }
+            if currentRootAllowed {
+                retained.append(line)
+            }
+        }
+
+        guard foundProxies else {
+            throw WeaveMacError.message("Clash 订阅缺少 proxies 节点列表")
+        }
+        let result = retained.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else {
+            throw WeaveMacError.message("Clash 订阅节点列表为空")
+        }
+        return result + "\n"
+    }
+
+    private static func matches(pattern: String, in value: String) -> [[String]] {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(value.startIndex..., in: value)
+        return expression.matches(in: value, range: range).map { match in
+            (0..<match.numberOfRanges).map { index in
+                guard let range = Range(match.range(at: index), in: value) else { return "" }
+                return String(value[range])
+            }
+        }
+    }
+}
+
 enum ClashNodeNames {
     static func parse(_ payload: String) -> [String] {
         var inProxies = false
@@ -37,6 +108,15 @@ enum ClashNodeNames {
     static func display(_ raw: String) -> String {
         let original = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !original.isEmpty else { return "未命名节点" }
+        let escapedPrefix = #"^(?:\\u[0-9A-Za-z]{4,12}|\\U[0-9A-Za-z]{8,12})+"#
+        let escaped = original.replacingOccurrences(
+            of: escapedPrefix,
+            with: "",
+            options: .regularExpression,
+        )
+        if escaped != original {
+            return display(escaped)
+        }
         var scalars = original.unicodeScalars[...]
         var removed = false
         while let first = scalars.first, isLeadingDecoration(first.value) {

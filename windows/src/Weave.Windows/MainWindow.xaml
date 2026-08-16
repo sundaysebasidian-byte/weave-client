@@ -1,0 +1,120 @@
+<Window
+    x:Class="Weave.Windows.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Weave">
+    <Grid x:Name="RootGrid" Background="{ThemeResource WeaveCanvasBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Padding="34,26,34,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <TextBlock Text="WEAVE" FontSize="28" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                <TextBlock Text="PRIVATE NETWORK · WINDOWS PREVIEW" FontSize="11" CharacterSpacing="170" Foreground="{ThemeResource WeaveMutedBrush}" />
+            </StackPanel>
+            <Border Grid.Column="1" Background="{ThemeResource WeaveCardBrush}" CornerRadius="18" Padding="16,8">
+                <TextBlock x:Name="StatusText" Text="未连接" Foreground="{ThemeResource WeaveMutedBrush}" />
+            </Border>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" Padding="34,8,34,34">
+            <StackPanel MaxWidth="840" Spacing="18">
+                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="连接" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                        <TextBlock Text="先选订阅，再选节点。自动策略会在该订阅内测速并切换。" Foreground="{ThemeResource WeaveMutedBrush}" />
+                        <ComboBox x:Name="SubscriptionComboBox" Header="订阅" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged" />
+                        <ComboBox x:Name="NodeComboBox" Header="节点（留空为自动测速）" DisplayMemberPath="DisplayName" />
+                        <Button x:Name="ConnectButton" Content="连接" Click="ConnectButton_Click" HorizontalAlignment="Left" Padding="26,11" Background="{ThemeResource WeaveAccentBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="应用分流" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                        <TextBlock Text="按 Windows 进程名分流。添加或修改规则后，需要断开再连接才能应用。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.3*" />
+                                <ColumnDefinition Width="1*" />
+                                <ColumnDefinition Width="1*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="ProcessNameBox" Header="进程名" PlaceholderText="chrome.exe" />
+                            <ComboBox x:Name="RouteSubscriptionComboBox" Grid.Column="1" Header="订阅" DisplayMemberPath="Name" SelectionChanged="RouteSubscriptionComboBox_SelectionChanged" />
+                            <ComboBox x:Name="RouteTargetModeComboBox" Grid.Column="2" Header="出口类型" SelectionChanged="RouteTargetModeComboBox_SelectionChanged" />
+                            <Button Grid.Column="3" Content="添加 / 更新" Click="AddRouteButton_Click" VerticalAlignment="Bottom" />
+                        </Grid>
+                        <ComboBox x:Name="RouteNodeComboBox" Header="固定节点（仅固定节点时使用）" DisplayMemberPath="DisplayName" />
+                        <ListView x:Name="RouteListView" MinHeight="100">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="2,7">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ProcessName}" Foreground="{ThemeResource WeaveInkBrush}" />
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="删除" Tag="{Binding ProcessName}" Click="DeleteRouteButton_Click" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                        <TextBlock Text="本地导入内容使用 Windows DPAPI 加密保存；远程订阅只接受 HTTPS。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
+                        <TextBox x:Name="SubscriptionNameBox" Header="名称（可选）" PlaceholderText="例如：主订阅" />
+                        <TextBox x:Name="SubscriptionUrlBox" Header="HTTPS 链接" PlaceholderText="https://example.com/sub" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="导入链接" Click="ImportUrlButton_Click" />
+                            <Button Content="选择 YAML 文件" Click="ImportFileButton_Click" />
+                        </StackPanel>
+                        <TextBox x:Name="SubscriptionTextBox" Header="或粘贴 Clash/Mihomo YAML / Base64" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
+                        <Button Content="导入粘贴内容" Click="ImportTextButton_Click" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="已导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                        <ListView x:Name="SubscriptionListView" SelectionChanged="SubscriptionListView_SelectionChanged" MinHeight="130">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="2,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" Foreground="{ThemeResource WeaveInkBrush}" />
+                                            <TextBlock Text="{Binding Summary}" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="删除" Tag="{Binding Id}" Click="DeleteSubscriptionButton_Click" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

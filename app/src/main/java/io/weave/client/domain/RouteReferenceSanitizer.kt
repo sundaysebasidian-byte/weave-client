@@ -70,7 +70,10 @@ object RouteReferenceSanitizer {
             RouteKind.AUTO -> if (subscriptions.any { it.id == target.subscriptionId }) {
                 target.copy(label = "自动选择")
             } else {
-                RouteTarget(RouteKind.DIRECT, "直连")
+                // A deleted proxy target is not user consent to expose the physical address.
+                // Null lets the runtime select another usable subscription and fail closed when
+                // none exists; DIRECT is preserved only when it was explicitly selected above.
+                null
             }
             RouteKind.FIXED -> {
                 val node = nodes.firstOrNull {
@@ -83,7 +86,7 @@ object RouteReferenceSanitizer {
                         label = "自动选择",
                         subscriptionId = target.subscriptionId,
                     )
-                    else -> RouteTarget(RouteKind.DIRECT, "直连")
+                    else -> null
                 }
             }
         }

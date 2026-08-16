@@ -1,13 +1,15 @@
 import Combine
+import Darwin
 import Foundation
 
 @MainActor
 final class MihomoController: ObservableObject {
     @Published private(set) var state: MacConnectionState = .stopped
-    @Published private(set) var message = "完整 VPN 需要已签名的 Network Extension"
+    @Published private(set) var message = "完整 VPN 需要已签名的 Network Extension；当前可使用本地系统代理"
 
     private var process: Process?
     private var startTask: Task<Void, Never>?
+    private let systemProxy = SystemProxyManager()
 
     var coreAvailable: Bool { executableURL != nil }
 
@@ -52,7 +54,7 @@ final class MihomoController: ObservableObject {
                     )
                 }.value
                 guard !Task.isCancelled else { return }
-                try launch(executableURL: executableURL, runtime: runtime)
+                try await launch(executableURL: executableURL, runtime: runtime)
             } catch is CancellationError {
                 return
             } catch {
@@ -62,25 +64,35 @@ final class MihomoController: ObservableObject {
         }
     }
 
-    private func launch(executableURL: URL, runtime: URL) throws {
-            let task = Process()
-            task.executableURL = executableURL
-            task.arguments = ["-d", runtime.path, "-f", runtime.appendingPathComponent("config.yaml").path]
-            task.standardOutput = FileHandle.nullDevice
-            task.standardError = FileHandle.nullDevice
-            task.terminationHandler = { [weak self] _ in
-                Task { @MainActor in
-                    self?.process = nil
-                    if self?.state != .stopped {
-                        self?.state = .failed
-                        self?.message = "Mihomo 已停止；未修改系统代理设置"
-                    }
+    private func launch(executableURL: URL, runtime: URL) async throws {
+        let task = Process()
+        task.executableURL = executableURL
+        task.arguments = ["-d", runtime.path, "-f", runtime.appendingPathComponent("config.yaml").path]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        task.terminationHandler = { [weak self] _ in
+            Task { @MainActor in
+                self?.process = nil
+                if self?.state != .stopped {
+                    self?.state = .failed
+                    self?.systemProxy.restore()
+                    self?.message = "Mihomo 已停止，系统代理已恢复"
                 }
             }
-            try task.run()
-            process = task
-            state = .localProxy
-            message = "本地代理 127.0.0.1:7890；系统 VPN 需签名 Network Extension"
+        }
+        try task.run()
+        process = task
+        do {
+            try await Self.waitUntilReady()
+            try systemProxy.enable(port: 7890)
+        } catch {
+            task.terminate()
+            process = nil
+            systemProxy.restore()
+            throw error
+        }
+        state = .localProxy
+        message = "系统 HTTP/HTTPS/SOCKS 已接管 · 127.0.0.1:7890"
     }
 
     func stop() {
@@ -88,6 +100,7 @@ final class MihomoController: ObservableObject {
         startTask = nil
         state = .stopped
         message = "本地代理已停止"
+        systemProxy.restore()
         process?.terminate()
         process = nil
     }
@@ -114,7 +127,8 @@ final class MihomoController: ObservableObject {
         let providers = base.appendingPathComponent("providers", isDirectory: true)
         try FileManager.default.createDirectory(at: providers, withIntermediateDirectories: true)
         for subscription in subscriptions {
-            try subscription.payload.write(
+            let sanitized = try ClashProviderSanitizer.sanitize(subscription.payload)
+            try sanitized.write(
                 to: providers.appendingPathComponent("\(subscription.id.uuidString).yaml"),
                 atomically: true,
                 encoding: .utf8
@@ -126,7 +140,6 @@ final class MihomoController: ObservableObject {
         mode: rule
         log-level: warning
         ipv6: true
-        external-controller: 127.0.0.1:9090
         proxy-providers:
 
         """
@@ -178,6 +191,33 @@ final class MihomoController: ObservableObject {
             encoding: .utf8
         )
         return base
+    }
+
+    nonisolated private static func waitUntilReady() async throws {
+        for _ in 0..<40 {
+            try Task.checkCancellation()
+            if isPortOpen(7890) { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw WeaveMacError.message("Mihomo 未能在本机代理端口就绪")
+    }
+
+    nonisolated private static func isPortOpen(_ port: UInt16) -> Bool {
+        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        guard descriptor >= 0 else { return false }
+        defer { close(descriptor) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        "127.0.0.1".withCString { pointer in
+            _ = inet_pton(AF_INET, pointer, &address.sin_addr)
+        }
+        return withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
     }
 
     nonisolated private static func exactRegex(_ value: String) -> String {

@@ -24,10 +24,7 @@ object SubscriptionDeletionReconciler {
                     label = "自动选择",
                     subscriptionId = subscription.id,
                 )
-            } ?: RouteTarget(
-                kind = RouteKind.DIRECT,
-                label = "直连",
-            )
+            }
         } else {
             defaultTarget
         }

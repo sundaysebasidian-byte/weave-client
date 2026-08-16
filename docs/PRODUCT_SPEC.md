@@ -1,4 +1,4 @@
-# Weave Android / macOS 产品规格（alpha）
+# Weave Android / iOS / macOS 产品规格（alpha）
 
 ## 一句话
 
@@ -12,6 +12,7 @@
 3. **配置与内核解耦。** 产品数据不直接保存成某个内核的 YAML/JSON。
 4. **安全失败。** 配置验证失败、规则引用失效、内核崩溃时，不建立或立即关闭 TUN。
 5. **不做隐性联网。** 无广告、无推荐订阅、无默认遥测、无远程 WebView 控制面。
+6. **本地发行边界。** 公开版不运营账号、云端控制、代理中继、节点市场或应用远程更新；用户主动选择的第三方端点必须在隐私声明和端点清单中可见。
 
 ## 用户模型
 
@@ -82,6 +83,14 @@ Android 11+ 对已安装应用可见性有限。首发不申请高风险的 `QUE
   entitlement 的 Packet Tunnel Provider extension。
 - 未签名开发预览只做 ad-hoc 签名，不具备可分发版本的 Developer ID notarization。
 
+## iOS 平台边界
+
+- iOS 17+ 使用独立 `NEPacketTunnelProvider`，运行配置只通过 App Group 中的版本化清单交接。
+- 普通个人 VPN 无法把每个数据包归属到源 App；Per-App VPN 是受管设备的 MDM 能力，因此
+  公开版只提供可真实编译的域名后缀分流，不显示假的应用选择器。
+- Android `.so` 与 macOS 可执行文件不能在 iOS 加载；连接发行前必须从锁定源码生成、审计并
+  嵌入面向 `NEPacketTunnelFlow` 的移动 framework，同时完成 Apple entitlement 和真机签名。
+
 ## 0.1 验收
 
 - [x] 四个一级页面和一致的浅/深色设计系统
@@ -94,6 +103,8 @@ Android 11+ 对已安装应用可见性有限。首发不申请高风险的 `QUE
 - [x] Android Keystore AES-256-GCM 订阅地址存储
 - [x] 无 `QUERY_ALL_PACKAGES` 的真实启动器应用选择
 - [x] 跨订阅自动策略、固定节点、直连和阻止出口选择
+- [x] iOS SwiftUI 控制面、加密订阅库、导入/互传与 Packet Tunnel fail-closed 边界
+- [ ] iOS 移动内核 XCFramework、签名真机 TCP/UDP/DNS 数据面闭环
 - [ ] 真机视觉与无障碍检查
 - [x] 四 ABI Mihomo 源码构建、JNI、TUN 与 socket protect 接入
 - [x] Clash YAML 多 provider、包名规则与固定节点配置生成

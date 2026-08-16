@@ -62,7 +62,11 @@ internal object NodeHealthAggregator {
             .flatten()
             .groupBy { it.name }
             .map { (name, snapshots) ->
-                val delays = snapshots.mapNotNull { it.latencyMs }
+                // Be defensive even when snapshots came from a test or a future adapter path.
+                // Native delay sentinels must count as failed probes, never as slow nodes.
+                val delays = snapshots.mapNotNull {
+                    LatencySamplePolicy.sanitize(it.latencyMs)
+                }
                 val expected = rounds.size
                 val successful = delays.size
                 val ordered = delays.sorted()
@@ -111,14 +115,18 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
     private var validatedDigest: ByteArray? = null
 
     override val state: StateFlow<ConnectionState> = mutableState.asStateFlow()
-    override val isAvailable: Boolean =
-        NativeBridge.isAvailable && NativeBridge.initialize(appContext).isSuccess
+    // A lightweight install check is enough for the UI. Loading libclash here would map the
+    // native engine while the user is only browsing settings, costing tens of megabytes of RSS.
+    // The first validate/start operation performs the real load and initialization.
+    override val isAvailable: Boolean
+        get() = NativeBridge.isInstalled(appContext)
 
     override suspend fun validate(config: String): Result<Unit> = lifecycleMutex.withLock {
         if (!isAvailable) {
             return@withLock Result.failure(IllegalStateException(CORE_UNAVAILABLE))
         }
         runCatching {
+            NativeBridge.initialize(appContext).getOrThrow()
             runtimeDirectory.mkdirs()
             val pending = File(runtimeDirectory, "config.yaml.pending")
             pending.writeText(config, Charsets.UTF_8)
@@ -232,7 +240,9 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             protocol = selectedMetadata?.optString("type")
                 ?.takeIf(String::isNotBlank)
                 ?: "Mihomo",
-            latencyMs = selectedMetadata?.optInt("delay")?.takeIf { it > 0 },
+            latencyMs = LatencySamplePolicy.sanitize(
+                selectedMetadata?.optInt("delay", 0),
+            ),
             uploadBytesPerSecond = traffic.getOrElse(0) { 0L },
             downloadBytesPerSecond = traffic.getOrElse(1) { 0L },
             attributedAppConnections = ATTRIBUTION_MATCHES.get(),
@@ -261,7 +271,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             NodeHealthSnapshot(
                 name = internalName.removePrefix(prefix),
                 protocol = proxy.optString("type").ifBlank { "Mihomo" },
-                latencyMs = proxy.optInt("delay").takeIf { it > 0 },
+                latencyMs = LatencySamplePolicy.sanitize(proxy.optInt("delay", 0)),
             )
         }
     }.getOrNull()
@@ -279,7 +289,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
                 repeat(HEALTH_ROUNDS) { round ->
                     runCatching {
                         NativeBridge.healthCheck(group).getOrThrow()
-                        checkNotNull(querySubscriptionHealthUnlocked(subscriptionId)) {
+                        checkNotNull(awaitSettledSubscriptionHealthUnlocked(subscriptionId)) {
                             "测速完成后无法读取节点状态"
                         }
                     }.onSuccess { add(it) }.onFailure { error ->
@@ -300,8 +310,25 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         }
     }
 
+    /**
+     * Some core builds publish the health-check completion just before the proxy-history JSON is
+     * replaced. Poll briefly when every value is still an invalid sentinel. This is bounded and
+     * only affects an all-failed/all-uninitialised result, so ordinary probes return immediately.
+     */
+    private suspend fun awaitSettledSubscriptionHealthUnlocked(
+        subscriptionId: String,
+    ): List<NodeHealthSnapshot>? {
+        var latest = querySubscriptionHealthUnlocked(subscriptionId)
+        repeat(HEALTH_RESULT_POLL_ATTEMPTS - 1) {
+            if (latest?.any { it.latencyMs != null } == true) return latest
+            delay(HEALTH_RESULT_POLL_GAP_MS)
+            latest = querySubscriptionHealthUnlocked(subscriptionId)
+        }
+        return latest
+    }
+
     override suspend fun stop() = lifecycleMutex.withLock {
-        if (NativeBridge.isAvailable) {
+        if (NativeBridge.isLoaded) {
             runCatching { NativeBridge.stopTun() }
             // DNS and fake-IP caches live in the process-wide Mihomo core. Clear them between
             // candidate profiles so switching to a filtering resolver cannot retain mappings
@@ -319,6 +346,8 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         const val DEFAULT_GROUP = "DEFAULT"
         const val HEALTH_ROUNDS = 3
         const val HEALTH_ROUND_GAP_MS = 250L
+        const val HEALTH_RESULT_POLL_ATTEMPTS = 4
+        const val HEALTH_RESULT_POLL_GAP_MS = 50L
         val NODE_PREFIX = Regex("""^weave:[^:]+:""")
         val ATTRIBUTION_QUERIES = AtomicLong()
         val ATTRIBUTION_MATCHES = AtomicLong()

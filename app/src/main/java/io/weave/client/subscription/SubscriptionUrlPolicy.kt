@@ -1,6 +1,7 @@
 package io.weave.client.subscription
 
 import java.net.URI
+import java.net.InetAddress
 
 class SubscriptionUrlPolicy(
     private val allowPrivateNetwork: Boolean = false,
@@ -29,6 +30,27 @@ class SubscriptionUrlPolicy(
         }
 
         return uri.normalize()
+    }
+
+    /**
+     * Revalidates DNS answers immediately before opening each HTTPS hop. This closes the common
+     * case where a public-looking hostname resolves to loopback, a LAN service or a multicast
+     * address. Redirect destinations receive the same check in SafeSubscriptionFetcher.
+     */
+    fun validateResolvedAddresses(
+        uri: URI,
+        resolver: (String) -> Array<InetAddress> = InetAddress::getAllByName,
+    ) {
+        if (allowPrivateNetwork) return
+        val host = requireNotNull(uri.host) { "订阅地址缺少有效主机名" }
+        val addresses = runCatching { resolver(host) }
+            .getOrElse { throw SubscriptionImportException("无法解析订阅服务器地址") }
+        if (addresses.isEmpty()) {
+            throw SubscriptionImportException("无法解析订阅服务器地址")
+        }
+        if (addresses.any(::isLocalOrPrivateAddress)) {
+            throw SubscriptionImportException("订阅服务器解析到了本机或私有网络地址")
+        }
     }
 
     private fun isLocalOrPrivateLiteral(host: String): Boolean {
@@ -71,5 +93,17 @@ class SubscriptionUrlPolicy(
             part.toIntOrNull()?.takeIf { it in 0..255 } ?: return null
         }
     }
-}
 
+    private fun isLocalOrPrivateAddress(address: InetAddress): Boolean =
+        address.isAnyLocalAddress ||
+            address.isLoopbackAddress ||
+            address.isLinkLocalAddress ||
+            address.isSiteLocalAddress ||
+            address.isMulticastAddress ||
+            isCarrierGradeNat(address.address)
+
+    private fun isCarrierGradeNat(bytes: ByteArray): Boolean =
+        bytes.size == 4 &&
+            bytes[0].toInt() and 0xff == 100 &&
+            bytes[1].toInt() and 0xff in 64..127
+}

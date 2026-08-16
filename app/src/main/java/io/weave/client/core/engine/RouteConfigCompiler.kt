@@ -15,6 +15,9 @@ class RouteConfigCompiler {
         packageUids: Map<String, Int> = emptyMap(),
         leadingRules: List<String> = emptyList(),
         trailingRules: List<String> = emptyList(),
+        automaticGroupName: (String) -> String = { subscriptionId ->
+            "sub.$subscriptionId.auto"
+        },
     ): List<String> {
         val rules = routes
             .sortedBy { it.packageName }
@@ -26,7 +29,7 @@ class RouteConfigCompiler {
                         val subscriptionId = requireNotNull(route.target.subscriptionId) {
                             "An automatic route requires a subscription target"
                         }
-                        "sub.$subscriptionId.auto"
+                        automaticGroupName(subscriptionId)
                     }
                     RouteKind.FIXED -> {
                         val subscriptionId = requireNotNull(route.target.subscriptionId) {
@@ -47,10 +50,15 @@ class RouteConfigCompiler {
                         add("UID,$it,${escape(target)}")
                     }
                     add("PROCESS-NAME,${escape(route.packageName)},${escape(target)}")
-                    uid?.let {
-                        // When a selected node cannot carry UDP, Mihomo normally continues to
-                        // MATCH,DEFAULT. Reject that flow so QUIC retries through routed TCP.
-                        add("AND,((NETWORK,UDP),(UID,$it)),REJECT")
+                    if (route.target.kind == RouteKind.AUTO || route.target.kind == RouteKind.FIXED) {
+                        uid?.let {
+                            // Mihomo continues down the rule list when a proxy cannot carry UDP.
+                            // Keep that path fail-closed for proxy targets instead of allowing a
+                            // QUIC/HTTP3 packet to reach the default outlet. DIRECT already has
+                            // native UDP support, so adding this guard there would break app
+                            // WebViews that prefer QUIC (for example Binance's embedded pages).
+                            add("AND,((NETWORK,UDP),(UID,$it)),REJECT")
+                        }
                     }
                 }
             }

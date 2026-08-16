@@ -3,6 +3,7 @@ package io.weave.client.transfer
 import io.weave.client.subscription.SubscriptionImportException
 import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
@@ -24,7 +25,11 @@ class OneTimeLanTransferServer {
         stop()
         val host = localPrivateIpv4()
             ?: throw SubscriptionImportException("未找到可用的局域网 IPv4 地址")
-        val server = ServerSocket(0)
+        // Bind only to the selected private interface. A wildcard listener would expose the
+        // one-time transfer endpoint to other local interfaces (including tethering/USB links).
+        val server = ServerSocket()
+        server.reuseAddress = false
+        server.bind(InetSocketAddress(host, 0))
         val token = LanTransferCodec.randomToken()
         val key = LanTransferCodec.randomKey()
         val sealed = LanTransferCodec.seal(packet, key)
@@ -39,7 +44,11 @@ class OneTimeLanTransferServer {
                 runCatching { server.accept() }.getOrNull()?.use { client ->
                     client.soTimeout = 5_000
                     val request = readHeader(client)
-                    val allowed = request.startsWith("GET /v1/$token HTTP/1.") &&
+                    val requestLine = request.lineSequence().firstOrNull().orEmpty()
+                    val allowed = requestLine in setOf(
+                        "GET /v1/$token HTTP/1.0",
+                        "GET /v1/$token HTTP/1.1",
+                    ) &&
                         consumed.compareAndSet(false, true)
                     if (allowed) {
                         val header = (
@@ -145,7 +154,26 @@ object LanTransferClient {
             if (!header.startsWith("HTTP/1.1 200 ")) {
                 throw SubscriptionImportException("发送设备拒绝了传输或链接已失效")
             }
-            all.copyOfRange(headerEnd + separator.size, all.size)
+            val headers = header.lineSequence()
+                .drop(1)
+                .mapNotNull { line ->
+                    line.split(':', limit = 2).takeIf { it.size == 2 }
+                        ?.let { it[0].trim().lowercase() to it[1].trim() }
+                }
+                .toMap()
+            if (headers["content-type"]?.lowercase() != "application/vnd.weave.transfer") {
+                throw SubscriptionImportException("发送设备返回了不受信任的传输类型")
+            }
+            val body = all.copyOfRange(headerEnd + separator.size, all.size)
+            val declaredLength = headers["content-length"]?.toLongOrNull()
+                ?: throw SubscriptionImportException("发送设备缺少传输长度")
+            if (
+                declaredLength !in 1..LanTransferCodec.MAX_CIPHERTEXT_BYTES.toLong() ||
+                declaredLength != body.size.toLong()
+            ) {
+                throw SubscriptionImportException("发送设备返回的传输长度无效")
+            }
+            body
         }
     }
 }

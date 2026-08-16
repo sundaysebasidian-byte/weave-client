@@ -10,13 +10,17 @@ final class AppModel: ObservableObject {
     let core = MihomoController()
 
     @Published var transferLink = ""
+    @Published var transferConfirmationCode = ""
     @Published var importLink = ""
+    @Published var importConfirmationCode = ""
     @Published var transferMessage = ""
     @Published var transferBusy = false
     @Published var selectedSubscriptionID: UUID?
     @Published var selectedNodeName: String?
     @Published var directImportBusy = false
     @Published var directImportMessage = ""
+    @Published var editingSubscriptionID: UUID?
+    @Published private(set) var refreshingSubscriptionID: UUID?
     @Published private(set) var subscriptions: [MacSubscription] = []
     @Published private(set) var selectedNodes: [String] = []
 
@@ -57,6 +61,8 @@ final class AppModel: ObservableObject {
     func toggleConnection() {
         if core.state == .localProxy {
             core.stop()
+        } else if core.state == .starting {
+            core.stop()
         } else {
             core.start(
                 subscriptions: subscriptions,
@@ -93,13 +99,12 @@ final class AppModel: ObservableObject {
             do {
                 let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.lowercased().hasPrefix("weave://lan/") {
-                    let link = try TransferLink.parse(trimmed)
-                    let response = try await LANTransferClient.fetch(link)
-                    let decoded = try await decodeTransferResponse(response, key: link.key)
-                    try vault.importTransfer(decoded.0, nodeNames: decoded.1)
-                    directImportMessage = "已安全导入 \(decoded.0.count) 个订阅"
-                } else {
+                    throw WeaveMacError.message("局域网链接请在“局域网互传”页面输入发送端 6 位短码")
+                } else if trimmed.lowercased().hasPrefix("https://") {
                     let imported = try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
+                    try await storeDirectSubscription(imported, preferredName: name)
+                } else {
+                    let imported = try DirectSubscriptionImporter.inlinePayload(from: trimmed)
                     try await storeDirectSubscription(imported, preferredName: name)
                 }
             } catch {
@@ -137,11 +142,7 @@ final class AppModel: ObservableObject {
                 }
                 let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.lowercased().hasPrefix("weave://lan/") {
-                    let link = try TransferLink.parse(trimmed)
-                    let response = try await LANTransferClient.fetch(link)
-                    let decoded = try await decodeTransferResponse(response, key: link.key)
-                    try vault.importTransfer(decoded.0, nodeNames: decoded.1)
-                    directImportMessage = "已安全导入 \(decoded.0.count) 个订阅"
+                    throw WeaveMacError.message("局域网二维码请在“局域网互传”页面输入发送端 6 位短码")
                 } else {
                     let imported = if trimmed.lowercased().hasPrefix("https://") {
                         try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
@@ -161,12 +162,62 @@ final class AppModel: ObservableObject {
         directImportMessage = ""
     }
 
+    func updateSubscription(
+        id: UUID,
+        name: String,
+        source: String,
+        payload: String,
+    ) {
+        do {
+            try vault.update(id: id, name: name, source: source, payload: payload)
+            directImportMessage = "订阅已更新"
+        } catch {
+            directImportMessage = error.localizedDescription
+        }
+    }
+
+    func refreshSubscription(_ subscription: MacSubscription) {
+        guard refreshingSubscriptionID == nil else { return }
+        guard subscription.source.lowercased().hasPrefix("https://") else {
+            directImportMessage = "本地文件订阅不能自动刷新，请在编辑页替换文件内容"
+            return
+        }
+        refreshingSubscriptionID = subscription.id
+        Task {
+            defer { refreshingSubscriptionID = nil }
+            do {
+                let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source)
+                try vault.update(
+                    id: subscription.id,
+                    name: subscription.name,
+                    source: imported.source,
+                    payload: imported.payload,
+                )
+                directImportMessage = "已刷新“\(subscription.name)”"
+                if core.state == .localProxy {
+                    core.stop()
+                    let latestSubscriptions = vault.subscriptions
+                    subscriptions = latestSubscriptions
+                    core.start(
+                        subscriptions: latestSubscriptions,
+                        selectedSubscriptionID: selectedSubscriptionID,
+                        selectedNodeName: selectedNodeName,
+                        availableNodeNames: selectedNodes,
+                    )
+                }
+            } catch {
+                directImportMessage = error.localizedDescription
+            }
+        }
+    }
+
     private func storeDirectSubscription(
         _ imported: ImportedSubscriptionPayload,
         preferredName: String
     ) async throws {
+        let sanitizedPayload = try ClashProviderSanitizer.sanitize(imported.payload)
         let nodes = await Task.detached(priority: .userInitiated) {
-            ClashNodeNames.parse(imported.payload)
+            ClashNodeNames.parse(sanitizedPayload)
         }.value
         guard !nodes.isEmpty else {
             throw WeaveMacError.message("没有识别到可供 Mihomo 使用的 Clash 节点")
@@ -178,7 +229,7 @@ final class AppModel: ObservableObject {
                 TransferSubscription(
                     name: name,
                     source: imported.source,
-                    payload: imported.payload
+                    payload: sanitizedPayload
                 ),
             ],
             nodeNames: [nodes]
@@ -243,6 +294,12 @@ final class AppModel: ObservableObject {
                     token: material.1,
                     key: material.0
                 ).string
+                transferConfirmationCode = TransferLink(
+                    host: host,
+                    port: port,
+                    token: material.1,
+                    key: material.0
+                ).confirmationCode
                 transferMessage = "一次性链接将在 5 分钟或导入一次后失效"
             } catch {
                 transferMessage = error.localizedDescription
@@ -255,6 +312,7 @@ final class AppModel: ObservableObject {
         transferServer?.stop()
         transferServer = nil
         transferLink = ""
+        transferConfirmationCode = ""
     }
 
     func copyTransferLink() {
@@ -266,11 +324,19 @@ final class AppModel: ObservableObject {
 
     func importFromCurrentLink() {
         let raw = importLink
-        guard !raw.isEmpty, !transferBusy else { return }
+        let code = importConfirmationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, code.range(of: "^[0-9]{6}$", options: .regularExpression) != nil,
+              !transferBusy else {
+            transferMessage = "请输入发送设备显示的 6 位确认短码"
+            return
+        }
         transferBusy = true
         Task {
             do {
                 let link = try TransferLink.parse(raw)
+                guard code == link.confirmationCode else {
+                    throw WeaveMacError.message("短码不匹配：请让发送设备重新显示当前二维码和短码")
+                }
                 let response = try await LANTransferClient.fetch(link)
                 let decoded = try await Task.detached(priority: .userInitiated) {
                     let plaintext = try TransferCodec.open(response, key: link.key)
@@ -283,7 +349,8 @@ final class AppModel: ObservableObject {
                 }.value
                 try vault.importTransfer(decoded.0, nodeNames: decoded.1)
                 importLink = ""
-                transferMessage = "已安全导入 \(decoded.0.count) 个订阅"
+                importConfirmationCode = ""
+                transferMessage = "已安全同步 \(decoded.0.count) 个订阅"
             } catch {
                 transferMessage = error.localizedDescription
             }
@@ -296,11 +363,19 @@ final class AppModel: ObservableObject {
             do {
                 if let value = try await QRCodeImporter.chooseAndRead() {
                     importLink = value
-                    importFromCurrentLink()
+                    importConfirmationCode = ""
+                    transferMessage = "二维码已读取，请输入发送设备显示的 6 位确认短码"
                 }
             } catch {
                 transferMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Called by the application termination hook so a normal quit cannot leave the
+    /// previous system proxy transaction active until the next launch.
+    func shutdown() {
+        core.stop()
+        stopExport()
     }
 }

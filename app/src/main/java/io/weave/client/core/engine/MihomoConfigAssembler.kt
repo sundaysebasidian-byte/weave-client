@@ -10,6 +10,10 @@ import io.weave.client.domain.RoutingMode
 import io.weave.client.subscription.StoredSubscription
 import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
+import io.weave.client.policy.PolicyPackCompiler
+import io.weave.client.policy.PolicyPackStore
+import io.weave.client.routing.LocalRouteRuleStore
+import io.weave.client.routing.LocalRuleCompiler
 import java.io.File
 
 data class AssembledMihomoConfig(
@@ -31,6 +35,8 @@ class MihomoConfigAssembler(
 ) {
     private val payloadParser = SubscriptionPayloadParser()
     private val providerDirectory = File(context.cacheDir, "mihomo-runtime/providers")
+    private val policyPackStore = PolicyPackStore(context)
+    private val localRuleStore = LocalRouteRuleStore(context)
 
     fun assemble(
         routes: List<AppRoute>,
@@ -44,10 +50,14 @@ class MihomoConfigAssembler(
         val usable = subscriptions.filter { it.hasPayload }
         require(
             mode == RoutingMode.DIRECT ||
-                subscriptions.isEmpty() ||
+                defaultTarget?.kind == RouteKind.DIRECT ||
                 usable.isNotEmpty(),
         ) {
-            "已导入的订阅没有可用配置内容，请重新导入"
+            if (subscriptions.isEmpty()) {
+                "没有可用订阅，请先导入或选择直连"
+            } else {
+                "已导入的订阅没有可用配置内容，请重新导入"
+            }
         }
         val byId = usable.associateBy(StoredSubscription::id)
         val plan = MihomoRuntimePlanner.plan(
@@ -55,7 +65,13 @@ class MihomoConfigAssembler(
             mode = mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
-            additionalSubscriptionIds = additionalSubscriptionIds,
+            additionalSubscriptionIds = additionalSubscriptionIds + if (
+                networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
+            ) {
+                usable.mapTo(linkedSetOf(), StoredSubscription::id)
+            } else {
+                emptySet()
+            },
         )
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
         val effectiveRoutes = plan.effectiveRoutes
@@ -68,15 +84,26 @@ class MihomoConfigAssembler(
         val automaticGroupConfig = MihomoFeatureCompiler.automaticGroup(
             networkPreferences.automaticStrategy,
         )
+        val dnsPolicy = MihomoFeatureCompiler.nameserverPolicy(networkPreferences)
+        val dnsCompatibilityFallbacks = MihomoFeatureCompiler.dnsCompatibilityFallbacks(networkPreferences)
+        val fakeIpFilter = MihomoFeatureCompiler.fakeIpFilter(networkPreferences)
         val leadingRules = MihomoFeatureCompiler.leadingRules(networkPreferences)
         val domesticDirectRules = MihomoFeatureCompiler.domesticDirectRules(networkPreferences)
+        val offlinePolicyRules = PolicyPackCompiler.compile(policyPackStore.active())
+        val localRules = LocalRuleCompiler.compile(localRuleStore.list())
 
         val yaml = buildString {
             appendLine("mode: rule")
-            appendLine("log-level: warning")
+            // Mihomo warning logs can include host/SNI context from failed dials. Keep only
+            // actionable engine errors by default; the app's own diagnostics already reduce
+            // failures to allowlisted categories without retaining endpoint text.
+            appendLine("log-level: error")
             appendLine("allow-lan: false")
             appendLine("ipv6: $ipv6Enabled")
-            appendLine("geodata-mode: ${networkPreferences.domesticDirect}")
+            // The APK ships the CMFA/Mihomo .dat datasets. Keep the data mode stable even when
+            // the user toggles CN direct routing; tying the file format to a routing switch can
+            // make an otherwise valid profile look for an absent mmdb file after reload.
+            appendLine("geodata-mode: true")
             appendLine("geodata-loader: memconservative")
             appendLine("unified-delay: true")
             appendLine("tcp-concurrent: true")
@@ -91,20 +118,69 @@ class MihomoConfigAssembler(
             appendLine("  fake-ip-range: 198.18.0.1/16")
             appendLine("  fake-ip-filter-mode: blacklist")
             appendLine("  fake-ip-filter:")
-            appendLine("    - '*.lan'")
-            appendLine("    - '*.local'")
-            appendLine("    - '*.home.arpa'")
+            fakeIpFilter.forEach { entry ->
+                appendLine("    - ${yamlString(entry)}")
+            }
+            // Keep private/local discovery and (when enabled) mainland domains on real addresses.
+            // With a fake destination such as 198.18.x.x, GEOIP,CN cannot classify an IP-only or
+            // QUIC flow. The real-IP CN exception makes the GEOIP fallback effective while the
+            // VPN TUN still captures the connection. Overseas domains remain fake-IP so their
+            // original host is available to the proxy rules.
+            if (dnsPolicy.isNotEmpty()) {
+                appendLine("  nameserver-policy:")
+                dnsPolicy.forEach { (rule, endpoints) ->
+                    appendLine("    $rule:")
+                    endpoints.forEach { appendLine("      - $it") }
+                }
+                appendLine("  direct-nameserver:")
+                (dnsPolicy.values.firstOrNull()
+                    ?: MihomoFeatureCompiler.policyNameServers(networkPreferences))
+                    .forEach { appendLine("    - $it") }
+                appendLine("  direct-nameserver-follow-policy: true")
+            }
             appendLine("  default-nameserver:")
             appendLine("    - 223.5.5.5")
             appendLine("    - 119.29.29.29")
             appendLine("  nameserver:")
-            MihomoFeatureCompiler.encryptedNameServers(networkPreferences)
+            // Keep the selected resolver first, but make the mainland-compatible encrypted
+            // resolvers available to every query class (including TXT/PTR). Mihomo's separate
+            // fallback block is geo-aware and does not always participate in those queries;
+            // putting the same safe set here prevents a non-critical Quad9/Cloudflare timeout
+            // from delaying WebView bootstrap or proxy health checks.
+            MihomoFeatureCompiler.policyNameServers(networkPreferences)
                 .forEach { appendLine("    - $it") }
+            if (dnsCompatibilityFallbacks.isNotEmpty()) {
+                // Overseas encrypted endpoints are not reliably reachable from every mainland
+                // carrier. Mihomo queries these encrypted fallbacks when the selected resolver
+                // times out; local reject rules continue to cover the bundled ad/family set.
+                appendLine("  fallback:")
+                dnsCompatibilityFallbacks.forEach { appendLine("    - $it") }
+                appendLine("  fallback-filter:")
+                appendLine("    geoip: true")
+                appendLine("    geoip-code: CN")
+            }
             // Proxy hostnames must also use encrypted upstreams. Plain default-nameserver is now
             // limited to bootstrapping the DoH/DoT hostnames, preventing per-proxy DNS leakage.
             appendLine("  proxy-server-nameserver:")
-            MihomoFeatureCompiler.encryptedNameServers(networkPreferences)
+            MihomoFeatureCompiler.policyNameServers(networkPreferences)
                 .forEach { appendLine("    - $it") }
+            // Preserve the original host for fake-IP connections and recover SNI/HTTP hosts for
+            // clients that connect using a literal address. This is local inspection only; no
+            // sniffed host is exported from the app.
+            appendLine("sniffer:")
+            appendLine("  enable: true")
+            appendLine("  force-dns-mapping: true")
+            appendLine("  parse-pure-ip: true")
+            // Use the sniffed host for rule matching, but never replace the actual destination;
+            // this avoids a fake-IP re-resolution loop for proxy endpoints and literal-IP apps.
+            appendLine("  override-destination: false")
+            appendLine("  sniff:")
+            appendLine("    TLS:")
+            appendLine("      ports: [443, 8443]")
+            appendLine("    HTTP:")
+            appendLine("      ports: [80, 8080-8880]")
+            appendLine("    QUIC:")
+            appendLine("      ports: [443, 8443]")
             // CMFA rejects profiles that contain neither an explicit proxy nor a provider,
             // even though Mihomo itself exposes the built-in DIRECT outbound.
             appendLine("proxies:")
@@ -133,9 +209,9 @@ class MihomoConfigAssembler(
                 // Keep the automatic choice fresh without probing continuously. A bounded
                 // timeout and a low failure threshold make dead nodes leave the candidate set
                 // quickly, while lazy=true avoids waking unused subscriptions.
-                appendLine("    interval: 180")
-                appendLine("    timeout: 5000")
-                appendLine("    max-failed-times: 2")
+                appendLine("    interval: ${automaticGroupConfig.intervalSeconds}")
+                appendLine("    timeout: ${automaticGroupConfig.timeoutMs}")
+                appendLine("    max-failed-times: ${automaticGroupConfig.maxFailedTimes}")
                 appendLine("    expected-status: 204")
                 automaticGroupConfig.tolerance?.let {
                     appendLine("    tolerance: $it")
@@ -143,6 +219,22 @@ class MihomoConfigAssembler(
                 automaticGroupConfig.strategy?.let {
                     appendLine("    strategy: $it")
                 }
+                appendLine("    lazy: true")
+            }
+            if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
+                appendLine("  - name: ${yamlString(CROSS_SUBSCRIPTION_GROUP)}")
+                appendLine("    type: ${automaticGroupConfig.type}")
+                appendLine("    use:")
+                activeSubscriptions.forEach { subscription ->
+                    appendLine("      - ${yamlString(providerName(subscription))}")
+                }
+                appendLine("    url: https://www.gstatic.com/generate_204")
+                appendLine("    interval: ${automaticGroupConfig.intervalSeconds}")
+                appendLine("    timeout: ${automaticGroupConfig.timeoutMs}")
+                appendLine("    max-failed-times: ${automaticGroupConfig.maxFailedTimes}")
+                appendLine("    expected-status: 204")
+                automaticGroupConfig.tolerance?.let { appendLine("    tolerance: $it") }
+                automaticGroupConfig.strategy?.let { appendLine("    strategy: $it") }
                 appendLine("    lazy: true")
             }
             val fixedTargets = (
@@ -168,20 +260,33 @@ class MihomoConfigAssembler(
             appendLine("  - name: DEFAULT")
             appendLine("    type: select")
             appendLine("    proxies:")
-            val defaultProxies = buildList {
-                when (effectiveDefaultTarget?.kind) {
-                    RouteKind.AUTO -> add(
-                        autoGroup(requireNotNull(effectiveDefaultTarget.subscriptionId)),
-                    )
-                    RouteKind.FIXED -> add(fixedGroup(effectiveDefaultTarget))
-                    RouteKind.DIRECT -> add(EXPLICIT_DIRECT_PROXY)
-                    RouteKind.BLOCK, null -> Unit
+            val requestedDefaultProxy = when (effectiveDefaultTarget?.kind) {
+                RouteKind.AUTO -> if (
+                    networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
+                ) {
+                    CROSS_SUBSCRIPTION_GROUP
+                } else {
+                    autoGroup(requireNotNull(effectiveDefaultTarget.subscriptionId))
                 }
-                if (isEmpty() && mode != RoutingMode.DIRECT) {
-                    activeSubscriptions.firstOrNull()?.let { add(autoGroup(it.id)) }
-                }
-                add(EXPLICIT_DIRECT_PROXY)
-            }.distinct()
+                RouteKind.FIXED -> fixedGroup(effectiveDefaultTarget)
+                RouteKind.DIRECT -> EXPLICIT_DIRECT_PROXY
+                RouteKind.BLOCK, null -> null
+            }
+            val defaultProxies = DefaultProxyPolicy.compile(
+                mode = mode,
+                requestedProxy = requestedDefaultProxy,
+                fallbackAutomaticProxy = if (
+                    networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
+                ) {
+                    CROSS_SUBSCRIPTION_GROUP.takeIf { activeSubscriptions.isNotEmpty() }
+                } else {
+                    activeSubscriptions.firstOrNull()?.let { autoGroup(it.id) }
+                },
+                directProxy = EXPLICIT_DIRECT_PROXY,
+            )
+            check(defaultProxies.isNotEmpty()) {
+                "没有可用订阅，请先导入或选择直连"
+            }
             defaultProxies.forEach {
                 appendLine("      - ${yamlString(it)}")
             }
@@ -192,10 +297,17 @@ class MihomoConfigAssembler(
                     effectiveRoutes,
                     packageUids,
                     leadingRules,
-                    domesticDirectRules,
+                    offlinePolicyRules + localRules + domesticDirectRules,
+                    automaticGroupName = { subscriptionId ->
+                        if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
+                            CROSS_SUBSCRIPTION_GROUP
+                        } else {
+                            autoGroup(subscriptionId)
+                        }
+                    },
                 )
-                RoutingMode.GLOBAL -> leadingRules + "MATCH,DEFAULT"
-                RoutingMode.DIRECT -> leadingRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
+                RoutingMode.GLOBAL -> leadingRules + offlinePolicyRules + "MATCH,DEFAULT"
+                RoutingMode.DIRECT -> leadingRules + offlinePolicyRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
             }
             rules.forEach { appendLine("  - ${yamlString(it)}") }
         }
@@ -293,6 +405,27 @@ class MihomoConfigAssembler(
 
     private companion object {
         const val EXPLICIT_DIRECT_PROXY = "WEAVE-DIRECT"
+        const val CROSS_SUBSCRIPTION_GROUP = "WEAVE-CROSS-AUTO"
         const val REGEX_META_CHARACTERS = "\\.^$|?*+()[]{}"
     }
+}
+
+/**
+ * Builds the DEFAULT group without silently falling back to a direct connection.
+ *
+ * Direct access remains available when the user explicitly selects it. In every proxy mode a
+ * missing or failed target stays failed closed instead of exposing the device's physical IP.
+ */
+internal object DefaultProxyPolicy {
+    fun compile(
+        mode: RoutingMode,
+        requestedProxy: String?,
+        fallbackAutomaticProxy: String?,
+        directProxy: String,
+    ): List<String> = listOfNotNull(
+        requestedProxy ?: when (mode) {
+            RoutingMode.DIRECT -> directProxy
+            RoutingMode.RULE, RoutingMode.GLOBAL -> fallbackAutomaticProxy
+        },
+    )
 }

@@ -16,6 +16,18 @@ import kotlinx.coroutines.withContext
 class QrCodeImageReader(context: Context) {
     private val appContext = context.applicationContext
 
+    /** Decodes a camera preview entirely on-device and releases its native pixel buffer. */
+    suspend fun readBitmap(bitmap: Bitmap): String {
+        try {
+            return withContext(Dispatchers.Default) {
+                decodeAndRecycle(bitmap)
+            }
+        } finally {
+            // Also cover cancellation before the Default dispatcher starts the decode block.
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+    }
+
     suspend fun read(uri: Uri): String = withContext(Dispatchers.Default) {
         val declaredLength = runCatching {
             appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
@@ -37,20 +49,27 @@ class QrCodeImageReader(context: Context) {
 
         val options = BitmapFactory.Options().apply {
             inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
-            inPreferredConfig = Bitmap.Config.ARGB_8888
+            // QR decoding only needs luminance; RGB_565 halves the native bitmap allocation.
+            inPreferredConfig = Bitmap.Config.RGB_565
         }
         val bitmap = runCatching {
             resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         }.getOrNull() ?: throw SubscriptionImportException("无法读取所选二维码图片")
 
-        try {
+        decodeAndRecycle(bitmap)
+    }
+
+    private fun decodeAndRecycle(bitmap: Bitmap): String {
+        return try {
             decode(bitmap)
         } catch (_: NotFoundException) {
             throw SubscriptionImportException("图片中没有识别到二维码")
+        } catch (error: SubscriptionImportException) {
+            throw error
         } catch (_: Exception) {
             throw SubscriptionImportException("二维码图片识别失败")
         } finally {
-            bitmap.recycle()
+            if (!bitmap.isRecycled) bitmap.recycle()
         }
     }
 
@@ -87,6 +106,8 @@ class QrCodeImageReader(context: Context) {
 
     private companion object {
         const val MAX_QR_IMAGE_BYTES = 20L * 1024L * 1024L
-        const val MAX_DECODE_DIMENSION = 2048
+        // A 1536px edge is ample for phone screenshots and keeps ZXing's temporary pixel array
+        // bounded when a user selects a very large camera image.
+        const val MAX_DECODE_DIMENSION = 1536
     }
 }

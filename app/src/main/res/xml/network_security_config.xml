@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Weave never needs cleartext HTTP. Keep the trust anchors at Android's system CA store and
+    make that contract explicit even on OEM builds with permissive legacy defaults.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -10,7 +10,7 @@ internal enum class NetworkAvailabilityTransition {
  * Reduces noisy ConnectivityManager callbacks to meaningful underlying-network transitions.
  */
 internal class NetworkAvailabilityTracker<T> {
-    private val available = mutableSetOf<T>()
+    private val available = linkedSetOf<T>()
 
     @Synchronized
     fun update(network: T, isAvailable: Boolean): NetworkAvailabilityTransition {
@@ -27,4 +27,7 @@ internal class NetworkAvailabilityTracker<T> {
     fun clear() {
         available.clear()
     }
+
+    @Synchronized
+    fun snapshot(): List<T> = available.toList()
 }

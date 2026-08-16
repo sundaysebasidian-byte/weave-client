@@ -1,5 +1,96 @@
 # Android 运行验证
 
+## 2026-08-16：出站保护长连接恢复（alpha50，待真机长时回归）
+
+- 原生内核晚到的 `VpnService.protect()` 或物理 Network 绑定失败不再直接关闭前台 VPN；服务会
+  保留 fail-closed 状态，按 0.5/1.5/3/6/12 秒退避重建上一份健康运行时。
+- 无可用 Wi‑Fi/移动网络时不启动新 TUN；底层网络回调重新出现后再触发恢复。重试耗尽会显示
+  明确错误并等待下一次网络变化，不会回退到未保护的物理网络。
+- 本轮需要 Pixel / Android 17 真机验证：Wi‑Fi/蜂窝切换、锁屏 12 小时、DHCP/IPv6 更新、
+  Always-on 与系统省电策略；本地单元测试、Lint 和 ARM64 APK 构建已通过，当前 ADB 无设备，
+  尚未覆盖安装或完成长时真机回归。
+
+## 2026-08-15：应用内多语言（alpha49，待真机排版回归）
+
+- 设置新增简体中文、繁體中文、English、日本語、Français、Deutsch 六个应用内语言选项，选择保存
+  在 `runtime_settings_v1`，重启后恢复。
+- Compose 稳定文案在渲染边界本地化；节点名、订阅名、应用名、URL 和用户输入错误原文不翻译，避免
+  改写外部数据。长法语/德语、日语字体和二维码导入页面仍需在 Pixel / Android 17 真机检查换行。
+- 单元测试、Android Lint、ARM64 debug APK 已通过；当前 ADB 无设备，尚未覆盖安装。
+
+## 2026-08-15：隐私与 DNS 旁路加固（alpha46，待真机覆盖）
+
+- Mihomo 配置默认 `log-level: error`，避免 warning 级别将失败连接的域名/SNI 写入 logcat；Weave
+  自身恢复记录继续只保存 allowlist 错误类别。
+- 所有配置的前置规则拒绝应用自发的 TCP/UDP 53、TCP/UDP 853、已知公共 DoH 域名和公共 DNS
+  IPv4/IPv6；过滤配置额外保留广告/家庭域名拒绝。核心自己的加密 DNS socket 仍通过
+  `VpnService.protect()` 走已验证物理网络。
+- Privacy Observatory 新增“DNS 旁路拒绝”和“系统断网保护”两项证据。后者必须在 Android VPN
+  设置中手动打开 Always-on 与“阻止无 VPN 连接”，应用无法代替系统开关。
+- 单元测试已通过；尚未覆盖 Pixel / Android 17 的真实明文 DNS、浏览器 Secure DNS、断网和
+  system always-on 矩阵，不能把静态规则结论当作外部泄漏测试。
+
+## 2026-08-15：移动网络稳定性增强（alpha45，待真机覆盖）
+
+- 自动节点组健康探测从 180 秒 / 连续失败 2 次调整为最低延迟 60 秒、故障切换 45 秒，
+  单次失败即可剔除异常节点；5 秒探测超时保持不变，避免坏节点长时间拖住应用内网页。
+- 选定的加密 DNS 仍保持首选，但阿里/腾讯兼容解析器同时加入 Mihomo 的根 `nameserver`，
+  覆盖 TXT/PTR 等不会稳定触发 `fallback-filter` 的查询类型，降低中国大陆网络下的解析抖动。
+- 版本号升至 `0.3.0-alpha45`（versionCode 47）。需要在 Pixel / Android 17 真机重新连接后，
+  观察节点自动切换、Wi‑Fi/蜂窝切换和 Binance 内页连续加载，不能用单元测试替代数据面结论。
+
+## 2026-08-15：海外 DNS 回退与 Binance 内页真机验证
+
+- Pixel 现场日志确认 `com.binance.dev` 的 UID 10409 已命中 `DIRECT`，失败点是
+  `api.saasexch.info` 解析；用户启用的 AdGuard DoH 在当前中国电信 Wi‑Fi 上连续超时。
+- 过滤 DNS 和 Cloudflare/Google/Quad9/Mullvad 等海外 DNS 现保留用户选择的上游为首选，并加入阿里/腾讯加密 DoH/DoT 回退；Mihomo 的
+  `fallback-filter` 仅使用随 APK 提供的 CN GeoIP 数据（不依赖未打包的 `gfw` GeoSite 集合），
+  应用内本地广告/家庭域名拒绝规则不因回退而关闭。
+- `0.3.0-alpha44`（versionCode 46，`arm64-v8a`）已覆盖安装到 Pixel / Android 17，
+  并在断开后重新连接 Weave；运行时配置更新时间为 `2026-08-15 00:18:33`，实际包含
+  `fallback: doh.pub + dns.alidns.com`。
+- 真机复测确认：Binance 设为直连时，应用外壳可打开但内页会被大陆网络阻断；切换为
+  `tokyo-gcp` 订阅的自动出口后，Binance 主界面与“学院”内页均能加载，流量命中
+  `GCP-Tokyo-HY2`，未出现 DNS 解析失败或 TCP 超时。美国 LAX 出口会触发 Binance
+  的美国 IP 提示，因此不作为 Binance 的默认出口。
+
+## 2026-08-14：应用直连 WebView/QUIC 规则修复（待真机覆盖安装）
+
+- 复核 Binance “应用外壳可打开、内置网页打不开”的规则链后，确认每条 UID 应用规则
+  末尾原先都附带 UDP `REJECT` 守卫；这会误伤明确选择直连的应用内 WebView/HTTP3。
+- 现仅对自动策略和固定代理节点保留 UDP 防泄漏守卫：当代理不支持 UDP 时继续匹配并
+  命中 `REJECT`，不会落到默认出口；`DIRECT` 由 Mihomo 的原生 direct 出站承载 TCP、UDP
+  和 QUIC，`BLOCK` 直接由应用目标拒绝。
+- 已增加 JVM 回归测试，覆盖 Binance 类 direct UID 规则不再生成额外 UDP 拒绝，同时保留
+  代理 UDP 失败关闭行为。本轮需要重新构建并在 Android 17 真机验证 Binance 内置网页。
+
+## 2026-08-13：alpha34 轻量化改动（待重新构建）
+
+- 原生桥接改为按需加载；界面只检查 split APK 是否包含 `libbridge.so` 与 `libclash.so`，
+  真正的 `System.loadLibrary` 延后到 VPN 配置校验边界。
+- 首页运行遥测在非首页或 Activity 非 RESUMED 时停止，可见首页间隔为 3 秒；莫奈背景渐变
+  使用 `drawWithCache`，二维码识别改为系统相机预览 + 本机 ZXing，并限制 Bitmap 解码尺寸。
+- 本轮代码与依赖锁已完成静态检查，但当前执行环境的提权构建额度已用尽，尚未重新运行
+  JVM 单测、Lint 和 Release 构建；下面历史记录中的通过结果不代表本轮新包已生成。
+
+## 2026-08-13：alpha34 测速哨兵与网络隐私加固（待真机）
+
+- 延迟在原生查询边界统一限制为 `1..10000 ms`，`65535/65553` 等未初始化或失败值不再进入
+  首页、节点列表和三轮质量聚合；首轮全无效时最多轮询 150 ms 等待核心历史状态稳定。
+- 代理模式 `DEFAULT` 组不再附加 `WEAVE-DIRECT` 作为隐式备选；默认订阅失效、删除或已无
+  可用订阅时保持断开，只有用户明确选择直连才生成直连默认出口；连接中删除最后一个代理
+  会立即停止旧运行时，不通过事务回滚继续使用已删除凭据。
+- VPN 仅接受 `VALIDATED + NOT_VPN` 底层网络，Mihomo 出站 fd 在 protect 后绑定到首选物理
+  网络；Wi-Fi/蜂窝切换同步更新，全部丢失时调用空 `underlyingNetworks` 保持无上游。
+- 广告/家庭过滤增加 TCP/UDP 853 与常见公共 DNS IPv6 地址拦截；远程订阅在每个 HTTPS hop
+  前验证 DNS 答案，拒绝本地/私网/CGNAT/组播目标；敏感导入/编辑/互传界面阻止截图，
+  一次性互传链接 60 秒后清除剪贴板。
+- JVM 单元测试、Android Lint、四 ABI debug APK 构建及锁定 Mihomo 配置解析已通过。Pixel 8 /
+  Android 17 的真实首次测速、断网与 Wi-Fi/蜂窝切换仍待验证，不能用构建结果替代数据面结论。
+- 最终 ARM64 debug APK 为 `0.3.0-alpha34`（versionCode 36），v2 签名验证通过，SHA-256：
+  `71771af0a7aa65ee22b834dd64abc5125c7d50b1452cff8f90571e59f38a3175`；本轮 ADB 未发现设备，
+  因此未声称已覆盖安装。
+
 ## 2026-08-02：alpha22 Pixel × Liquid Glass 视觉系统
 
 - 四个主页面统一为克制的 Pixel 信息层级与轻量玻璃材质：浮动胶囊底栏、珍珠雾灰色系、
@@ -42,10 +133,13 @@
   覆盖安装，手机端与本地包 SHA-256 完全一致，订阅数据保留。
 - 订阅原位替换不再覆盖唯一 payload：新版本先加密落盘，再与节点元数据一起提交，成功后
   才删除旧版本；节点重排保留稳定 ID，完成后提示新增、移除、保留及可能重复项。
-- 增加可选国内智能直连。APK 内置固定来源与 SHA-256 的 lite GeoSite/GeoIP 数据，启动时
-  校验后原子安装；应用规则位于 CN 规则之前，因此 Chrome 等应用的显式出口不会被覆盖。
-- `ConnectivityManager` 仅监听已验证的非 VPN 底层网络，过滤重复回调；Wi‑Fi/蜂窝变更
-  1.5 秒去抖后走 alpha17 的事务重启与回滚路径，无网络时等待恢复。
+- 增加默认开启的国内智能直连。APK 内置固定来源与 SHA-256 的 lite GeoSite/GeoIP 数据，启动时
+  校验后原子安装；CN 域名加入 fake-IP 例外并返回真实地址，使 `GEOIP,CN` 能覆盖 IP-only/QUIC
+  流量；应用规则位于 CN 规则之前，因此 Chrome 等应用的显式出口不会被覆盖；CN direct 同时使用
+  独立加密解析策略。
+- `ConnectivityManager` 优先监听已验证的非 VPN 底层网络；若 Android 尚未及时提供
+  `VALIDATED`，会安全回退到具备 INTERNET/NOT_VPN 能力的物理网络，过滤重复回调；Wi‑Fi/蜂窝变更
+  1.5 秒去抖后走事务重启与回滚路径，无网络时等待恢复。
 - 首页流量、节点和应用归属指标只在连接页可见时轮询；连接时长改用单调时钟计算，离开首页
   不再每秒更新整个根 Compose 状态。
 - 61 项 JVM 单元测试、Android Lint、四 ABI 与 universal debug APK，以及包含真实 Geo
@@ -153,7 +247,7 @@
 ## 2026-07-29：alpha10 Android/macOS 局域网互传
 
 - Android 新增订阅页局域网互传入口，可导出全部订阅为一次性二维码/链接，也可粘贴链接或
-  使用 Google Code Scanner 扫描导入；成功读取一次或 5 分钟后发送端立即停止。
+  使用系统相机预览 + ZXing 本机扫描导入；成功读取一次或 5 分钟后发送端立即停止。
 - Android 和 macOS 对同一中文订阅编码得到固定 SHA-256
   `3762f88e5dbbb4598b84219faf58fcbf7620607c08c51df1a218e9fb039040c1`，
   AES-256-GCM、链接解析、篡改拒绝与公网地址拒绝自测通过。
@@ -188,7 +282,7 @@
 - 删除时先把加密 payload 原子移动为不可达 tombstone，再移除加密 URL、节点元数据和订阅
   索引；元数据提交失败时恢复 payload，残留 tombstone 会在下次初始化时清理。
 - 引用被删订阅的应用规则同步移除，使应用重新继承默认出口；默认出口引用被删订阅时优先
-  切到剩余订阅的自动策略，没有其他订阅时回落直连。
+  切到剩余订阅的自动策略，没有其他订阅时保持断开，不静默回落直连。
 - 新增 3 项引用协调测试；`0.3.0-alpha09` 共 33 项单元测试，Android Lint、四 ABI 构建
   和 APK v2 签名验证通过。
 - alpha09 已覆盖安装到 Pixel 8 / Android 17，versionCode 11；真机确认删除入口和二次
@@ -264,9 +358,9 @@
 - 切网瞬间出现 8 条 OpenVPN 重连错误，恢复后重新测试为 0，未出现 fatal、group 或持续 OpenVPN 错误。
 - 断开后 `tun0`、VPN network 与全部明文运行文件消失，加密订阅仍保留。
 - alpha04 保留原有 43 节点加密订阅与应用规则，首页默认出口可进入真实节点选择器。
-- 相机扫码入口成功启动 Google Code Scanner 的实时相机预览，无需应用申请
-  `android.permission.CAMERA`；取消扫描不会改变订阅。
-- 相册二维码入口成功启动系统图片选择器，图片由随包 ML Kit 在本机识别。
+- 旧版本相机扫码入口曾启动 Google Code Scanner；该依赖已在 alpha34 移除，当前实现改为
+  首次使用时按需申请 `android.permission.CAMERA`，再由系统相机预览和随包 ZXing 本机识别。
+- 相册二维码入口继续使用系统图片选择器和随包 ZXing；本轮轻量化改动后的真机回归待补。
 
 ### 尚未覆盖
 
@@ -310,9 +404,9 @@
 - alpha04 可从首页手动选择默认固定节点，生成配置中该节点排在 `DEFAULT` 组首位。
 - 连接期间改选另一个默认节点会触发安全热重载；配置哈希变化、VPN 恢复
   `IS_VALIDATED`，且 fatal、group 与 OpenVPN 错误均为 0。
-- 相册二维码入口启动系统图片选择器，应用未申请相机权限。该模拟器缺少可启动的
-  Google Code Scanner UI 模块，应用会显示明确错误；Android 17 真机上的相机入口已通过。
-- 使用不含敏感信息的最小 Clash YAML 测试二维码完成相册端到端导入：随包本地模型被选用，
+- 旧版本模拟器缺少可启动的 Google Code Scanner UI 模块；alpha34 已改用系统相机预览，
+  申请权限路径和 Android 17 真机扫码回归待补。
+- 使用不含敏感信息的最小 Clash YAML 测试二维码完成相册端到端导入：随包 ZXing 被选用，
   对话框自动关闭，总节点数由 43 增至 44，随后已清空模拟器测试数据与测试图片。
 
 ### 运行验证发现并修复

@@ -17,7 +17,15 @@ final class OneTimeTransferServer: @unchecked Sendable {
     }
 
     func start(expirySeconds: TimeInterval = 300) async throws -> UInt16 {
-        let listener = try NWListener(using: .tcp, on: .any)
+        guard let host = LocalAddress.privateIPv4() else {
+            throw WeaveMacError.message("未找到可用的局域网 IPv4 地址")
+        }
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host(host),
+            port: .any,
+        )
+        let listener = try NWListener(using: parameters, on: .any)
         listener.newConnectionLimit = 4
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
@@ -55,13 +63,36 @@ final class OneTimeTransferServer: @unchecked Sendable {
 
     private func handle(_ connection: NWConnection) {
         connection.start(queue: queue)
+        receiveRequest(connection, buffer: Data())
+    }
+
+    private func receiveRequest(_ connection: NWConnection, buffer: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 8_192) {
-            [weak self] data, _, _, _ in
+            [weak self] data, _, isComplete, error in
             guard let self else { connection.cancel(); return }
-            let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            let expected = "GET /v1/\(self.token) HTTP/1."
+            if error != nil {
+                connection.cancel()
+                return
+            }
+            var requestData = buffer
+            if let data { requestData.append(data) }
+            guard requestData.count <= 8_192 else { connection.cancel(); return }
+            guard requestData.range(of: Data("\r\n\r\n".utf8)) != nil else {
+                if isComplete {
+                    connection.cancel()
+                    return
+                }
+                self.receiveRequest(connection, buffer: requestData)
+                return
+            }
+            let request = String(data: requestData, encoding: .utf8) ?? ""
+            let requestLine = request.components(separatedBy: "\r\n").first ?? ""
+            let expected = Set([
+                "GET /v1/\(self.token) HTTP/1.0",
+                "GET /v1/\(self.token) HTTP/1.1",
+            ])
             self.lock.lock()
-            let allowed = !self.consumed && request.hasPrefix(expected)
+            let allowed = !self.consumed && expected.contains(requestLine)
             if allowed { self.consumed = true }
             self.lock.unlock()
 
@@ -197,9 +228,27 @@ private final class FetchState: @unchecked Sendable {
             let separator = data.range(of: Data("\r\n\r\n".utf8)),
             let statusEnd = data.range(of: Data("\r\n".utf8)),
             let status = String(data: data[..<statusEnd.lowerBound], encoding: .utf8),
-            status.contains(" 200 ")
+            status.hasPrefix("HTTP/1.1 200 ")
         else {
             continuation.resume(throwing: WeaveMacError.message("发送设备拒绝了传输或链接已失效"))
+            return
+        }
+        let header = String(data: data[..<separator.lowerBound], encoding: .utf8) ?? ""
+        let fields = Dictionary(uniqueKeysWithValues: header
+            .components(separatedBy: "\r\n")
+            .dropFirst()
+            .compactMap { line -> (String, String)? in
+                let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { return nil }
+                return (parts[0].trimmingCharacters(in: .whitespaces).lowercased(), parts[1].trimmingCharacters(in: .whitespaces))
+            })
+        guard fields["content-type"]?.lowercased() == "application/vnd.weave.transfer",
+              let declared = fields["content-length"].flatMap(Int.init),
+              declared > 0,
+              declared <= TransferLimits.maxCiphertextBytes,
+              data.count - separator.upperBound == declared
+        else {
+            continuation.resume(throwing: WeaveMacError.message("发送设备返回了无效传输响应"))
             return
         }
         let body = data[separator.upperBound...]
@@ -245,6 +294,11 @@ enum LocalAddress {
             guard PrivateIPv4.isAllowed(value), !value.hasPrefix("127.") else { continue }
             let rawName = interface.pointee.ifa_name!
             let name = String(cString: rawName)
+            guard !name.hasPrefix("utun"),
+                  !name.hasPrefix("awdl"),
+                  !name.hasPrefix("llw"),
+                  !name.hasPrefix("gif"),
+                  !name.hasPrefix("stf") else { continue }
             candidates.append((name, value))
         }
         return candidates.sorted {

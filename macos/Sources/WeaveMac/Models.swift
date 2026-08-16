@@ -31,3 +31,7 @@ enum WeaveMacError: LocalizedError {
         }
     }
 }
+
+extension MacConnectionState {
+    var isActive: Bool { self == .localProxy || self == .starting }
+}

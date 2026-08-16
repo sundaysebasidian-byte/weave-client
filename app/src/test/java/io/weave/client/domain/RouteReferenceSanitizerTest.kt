@@ -41,9 +41,8 @@ class RouteReferenceSanitizerTest {
     }
 
     @Test
-    fun `invalid default falls back to direct instead of keeping a dead reference`() {
-        assertEquals(
-            RouteTarget(RouteKind.DIRECT, "直连"),
+    fun `invalid default fails closed instead of silently selecting direct`() {
+        assertNull(
             RouteReferenceSanitizer.defaultTarget(
                 RouteTarget(RouteKind.AUTO, "旧", "deleted"),
                 subscriptions = listOf(subscription),

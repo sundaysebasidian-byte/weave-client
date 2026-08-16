@@ -1,6 +1,6 @@
 # Bundled Geo data provenance
 
-Weave's optional “国内智能直连” mode uses immutable GeoIP and GeoSite files bundled in the APK.
+Weave's “国内智能直连” mode is enabled by default and uses immutable GeoIP and GeoSite files bundled in the APK.
 The app does not download or silently replace these files at runtime.
 
 The exact source coordinates and SHA-256 digests are recorded in

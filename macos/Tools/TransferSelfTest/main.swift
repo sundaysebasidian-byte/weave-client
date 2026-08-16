@@ -49,6 +49,29 @@ do {
     )
     require(nodeNames == ["🇩🇪 de-n1 (0.3x)", "us-n2"], "Clash node parsing")
     require(ClashNodeNames.display(nodeNames[0]) == "de-n1 (0.3x)", "concise node display")
+    require(
+        ClashNodeNames.display("\\u0001f1e0\\u0001f1ea de-n1") == "de-n1",
+        "escaped decoration cleanup",
+    )
+
+    let sanitized = try ClashProviderSanitizer.sanitize(
+        """
+        mixed-port: 7890
+        common: &common
+          udp: true
+        proxies:
+          - name: test
+            <<: *common
+            type: vless
+        proxy-groups:
+          - name: control-plane
+            type: select
+        external-controller: 0.0.0.0:9090
+        """
+    )
+    require(sanitized.contains("proxies:"), "provider sanitizer keeps nodes")
+    require(sanitized.contains("common: &common"), "provider sanitizer keeps referenced anchor")
+    require(!sanitized.contains("external-controller"), "provider sanitizer strips control plane")
 
     var tampered = packet
     tampered[tampered.count - 1] ^= 1

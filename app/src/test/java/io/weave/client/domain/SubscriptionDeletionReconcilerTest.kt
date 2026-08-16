@@ -1,6 +1,7 @@
 package io.weave.client.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SubscriptionDeletionReconcilerTest {
@@ -31,7 +32,7 @@ class SubscriptionDeletionReconcilerTest {
     }
 
     @Test
-    fun `falls back to direct when deleted subscription was the last one`() {
+    fun `last proxy deletion does not silently grant direct access`() {
         val result = SubscriptionDeletionReconciler.reconcile(
             deletedSubscriptionId = deletedSubscription,
             routes = listOf(route("removed.app", deletedSubscription)),
@@ -40,10 +41,7 @@ class SubscriptionDeletionReconcilerTest {
         )
 
         assertEquals(emptyList<AppRoute>(), result.routes)
-        assertEquals(
-            RouteTarget(RouteKind.DIRECT, "直连"),
-            result.defaultTarget,
-        )
+        assertNull(result.defaultTarget)
     }
 
     @Test

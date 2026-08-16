@@ -1,10 +1,25 @@
 # Weave privacy notice
 
-Last updated: 2026-08-12
+Last updated: 2026-08-16
 
 This notice describes the open-source preview builds in this repository. A
 distributor that changes Weave, adds analytics, or operates a hosted service
 must publish an accurate notice for that build.
+
+## Distribution boundary
+
+The public repository follows the `local-open-source` profile. Weave does not
+operate accounts, a hosted control plane, proxy relays, a node marketplace, a
+subscription service, advertising, analytics, crash reporting, or an in-app
+remote updater. GitHub releases are static source and build artifacts published
+by a maintainer; they are not a Weave backend or a remote configuration channel.
+
+This boundary does not mean that all traffic stays on the device. A user-selected
+subscription, proxy, DNS resolver, IP-quality service, destination, or LAN peer
+can receive the data needed to complete that request. The current endpoint
+inventory is documented in [`docs/NETWORK_ENDPOINT_INVENTORY.md`](docs/NETWORK_ENDPOINT_INVENTORY.md).
+This notice is a technical description, not a legal conclusion or a promise that
+any distribution method is exempt from local rules.
 
 ## What stays on the device
 
@@ -28,8 +43,11 @@ When used, Weave connects to parties outside this project:
 - proxy servers and destination services selected by the user's configuration;
 - the configured DoH or DoT resolver;
 - `www.gstatic.com/generate_204` during an on-demand Mihomo availability test;
-- Google Play services when its optional code-scanner module is installed or
-  used on supported Android devices.
+- public HTTPS IP-quality endpoints (`api4.ipify.org`, `api6.ipify.org`, `ipwho.is`,
+  `www.cloudflare.com/cdn-cgi/trace`, `cp.cloudflare.com/generate_204`, and
+  `www.gstatic.com/generate_204`) only when the user taps “IP 质量检测”. These endpoints see the
+  request's current proxy exit and may return IP, region, ASN and security-label metadata. Weave
+  keeps the report in memory and does not send it to a Weave service;
 
 Those parties have their own privacy practices. A subscription provider or
 proxy operator may observe the source IP, connection timing, destination

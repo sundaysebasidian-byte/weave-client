@@ -6,6 +6,15 @@ import org.junit.Test
 
 class NodeHealthAggregatorTest {
     @Test
+    fun `native failure sentinels never become visible latency samples`() {
+        listOf(null, -1, 0, 10_001, 65_535, 65_553, Int.MAX_VALUE).forEach { raw ->
+            assertNull("raw=$raw", LatencySamplePolicy.sanitize(raw))
+        }
+        assertEquals(1, LatencySamplePolicy.sanitize(1))
+        assertEquals(10_000, LatencySamplePolicy.sanitize(10_000))
+    }
+
+    @Test
     fun `aggregates median jitter p95 and loss across probe rounds`() {
         val result = NodeHealthAggregator.aggregate(
             listOf(
@@ -37,5 +46,21 @@ class NodeHealthAggregatorTest {
         assertEquals(1, lossy.successfulSamples)
         assertEquals(66, lossy.packetLossPercent)
         assertNull(lossy.jitterMs)
+    }
+
+    @Test
+    fun `aggregation treats a core sentinel as packet loss`() {
+        val result = NodeHealthAggregator.aggregate(
+            listOf(
+                listOf(NodeHealthSnapshot("jp-1", "VLESS", 65_535)),
+                listOf(NodeHealthSnapshot("jp-1", "VLESS", 82)),
+                listOf(NodeHealthSnapshot("jp-1", "VLESS", 65_553)),
+            ),
+        ).single()
+
+        assertEquals(82, result.latencyMs)
+        assertEquals(1, result.successfulSamples)
+        assertEquals(66, result.packetLossPercent)
+        assertNull(result.jitterMs)
     }
 }

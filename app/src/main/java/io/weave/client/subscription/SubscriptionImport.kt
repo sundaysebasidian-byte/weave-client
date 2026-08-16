@@ -84,15 +84,63 @@ class SubscriptionPayloadParser {
      *
      * This deliberately supports only fields with a direct, unambiguous mapping. A URI or
      * sing-box object with an unsupported transport is rejected instead of being silently
-     * flattened into a different connection. Existing Clash YAML is returned byte-for-byte.
+     * flattened into a different connection. Clash YAML is reduced to its node provider section;
+     * user-controlled runtime and control-plane sections never reach Mihomo.
      */
     fun normalizeForMihomo(input: String, parsed: ParsedSubscription = parse(input)): String =
         when (parsed.format) {
-            SubscriptionFormat.CLASH_YAML -> input.trim()
+            SubscriptionFormat.CLASH_YAML -> sanitizeClashProvider(input)
             SubscriptionFormat.URI_LIST -> renderClash(uriSpecs(uriPayload(input)))
             SubscriptionFormat.SING_BOX_JSON -> renderClash(singBoxSpecs(input))
             SubscriptionFormat.V2RAY_JSON -> renderClash(v2RaySpecs(input))
         }
+
+    /**
+     * A user-supplied Clash document is a provider, not a control-plane configuration. Strip
+     * control/listener sections before it reaches Mihomo; otherwise an imported subscription
+     * could turn on an external controller, LAN proxy port, script or remote rule provider.
+     */
+    private fun sanitizeClashProvider(input: String): String {
+        val lines = input.trim().lineSequence().toList()
+        // A provider only needs `proxies:`. The one exception is a YAML merge anchor used by
+        // some OpenVPN/Clash exports (`x-common: &common` + `<<: *common` inside proxies). Keep
+        // only anchor definitions that are actually referenced by a proxy; every other root key
+        // (including future control-plane keys we do not know today) is discarded by default.
+        val referencedAnchors = Regex("\\*([A-Za-z0-9_.-]+)")
+            .findAll(input)
+            .map { it.groupValues[1] }
+            .toSet()
+        val anchorRootKeys = Regex("(?m)^([A-Za-z0-9_.-]+)\\s*:\\s*&([A-Za-z0-9_.-]+)")
+            .findAll(input)
+            .filter { it.groupValues[2] in referencedAnchors }
+            .map { it.groupValues[1].lowercase() }
+            .toSet()
+        val allowedRootKeys = setOf("proxies") + anchorRootKeys
+        val retained = buildString {
+            var skipIndent: Int? = null
+            lines.forEach { line ->
+                val trimmed = line.trimStart()
+                val key = trimmed.substringBefore(':', missingDelimiterValue = "")
+                    .lowercase()
+                val indent = line.indexOfFirst { !it.isWhitespace() }.takeIf { it >= 0 } ?: 0
+                if (skipIndent != null) {
+                    if (trimmed.isBlank() || indent > skipIndent) return@forEach
+                    skipIndent = null
+                }
+                // Only a root key is control-plane input. A nested `server`, `path` or `tls`
+                // property inside a proxy is ordinary node data and must be retained.
+                if (indent == 0 && key.isNotEmpty() && key !in allowedRootKeys) {
+                    skipIndent = indent
+                    return@forEach
+                }
+                appendLine(line)
+            }
+        }.trim()
+        require(retained.lineSequence().any { it.trimStart().startsWith("proxies:") }) {
+            "Clash 订阅缺少 proxies 节点列表"
+        }
+        return retained
+    }
 
     private fun detectStructured(payload: String): ParsedSubscription? {
         if (CLASH_MARKER.containsMatchIn(payload)) {

@@ -410,7 +410,7 @@ private struct ConnectionView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(Color.weaveGood)
-                    Text("当前为绑定 127.0.0.1:7890 的本地代理。完整设备 VPN 需要签名的 Network Extension。")
+                    Text("连接时接管当前网络服务的 HTTP/HTTPS/SOCKS 代理并关闭 PAC 绕过，转发到 127.0.0.1:7890；完整设备 VPN 仍需要签名的 Network Extension。")
                         .font(.caption)
                         .foregroundStyle(Color.weaveMuted)
                     Spacer()
@@ -581,6 +581,7 @@ private struct WeavePickerRow<Content: View>: View {
 private struct SubscriptionListView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showImporter = false
+    @State private var editingSubscription: MacSubscription?
 
     var body: some View {
         ScrollView {
@@ -617,7 +618,7 @@ private struct SubscriptionListView: View {
                         Text("本机订阅已载入")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(.white)
-                        Text("共 \(model.subscriptions.reduce(0) { $0 + $1.nodeCount }) 个节点")
+                        Text("共 \(model.subscriptions.reduce(0) { $0 + $1.nodeCount }) 个节点 · 自动刷新可用")
                             .font(.caption)
                             .foregroundStyle(Color.white.opacity(0.62))
                     }
@@ -663,6 +664,38 @@ private struct SubscriptionListView: View {
                                         .foregroundStyle(Color.weaveMuted)
                                 }
                                 Spacer()
+                                Button {
+                                    editingSubscription = subscription
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .foregroundStyle(Color.weaveTeal)
+                                        .frame(width: 34, height: 34)
+                                        .background(
+                                            Color.weaveTeal.opacity(0.10),
+                                            in: RoundedRectangle(cornerRadius: 11)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .help("编辑订阅")
+                                Button {
+                                    model.refreshSubscription(subscription)
+                                } label: {
+                                    if model.refreshingSubscriptionID == subscription.id {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else {
+                                        Image(systemName: "arrow.clockwise")
+                                    }
+                                }
+                                .foregroundStyle(Color.weaveTeal)
+                                .frame(width: 34, height: 34)
+                                .background(
+                                    Color.weaveTeal.opacity(0.10),
+                                    in: RoundedRectangle(cornerRadius: 11)
+                                )
+                                .buttonStyle(.plain)
+                                .disabled(model.refreshingSubscriptionID != nil)
+                                .help("刷新 HTTPS 订阅")
                                 Button(role: .destructive) {
                                     model.vault.remove(subscription)
                                 } label: {
@@ -698,6 +731,69 @@ private struct SubscriptionListView: View {
             DirectSubscriptionImportSheet()
                 .environmentObject(model)
         }
+        .sheet(item: $editingSubscription) { subscription in
+            SubscriptionEditorSheet(subscription: subscription)
+                .environmentObject(model)
+        }
+    }
+}
+
+private struct SubscriptionEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var model: AppModel
+    let subscription: MacSubscription
+    @State private var name: String
+    @State private var source: String
+    @State private var payload: String
+    @State private var message = ""
+
+    init(subscription: MacSubscription) {
+        self.subscription = subscription
+        _name = State(initialValue: subscription.name)
+        _source = State(initialValue: subscription.source)
+        _payload = State(initialValue: subscription.payload)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                WeavePageHeader(eyebrow: "EDIT SOURCE", title: "编辑订阅")
+                Spacer()
+                Button("关闭") { dismiss() }
+                    .buttonStyle(.plain)
+            }
+            TextField("订阅名称", text: $name)
+                .textFieldStyle(.roundedBorder)
+            TextField("HTTPS 来源（可选）", text: $source)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+            TextEditor(text: $payload)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(minHeight: 330)
+                .padding(8)
+                .background(Color.weaveCanvas, in: RoundedRectangle(cornerRadius: 14))
+            HStack {
+                Text("保存前会再次剥离 Clash 控制面字段并校验节点")
+                    .font(.caption)
+                    .foregroundStyle(Color.weaveMuted)
+                Spacer()
+                Button("保存") {
+                    model.updateSubscription(id: subscription.id, name: name, source: source, payload: payload)
+                    message = model.directImportMessage
+                    if message == "订阅已更新" { dismiss() }
+                }
+                .weavePrimaryButton()
+                .frame(width: 120)
+            }
+            if !message.isEmpty {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(message == "订阅已更新" ? Color.weaveGood : Color.weaveError)
+            }
+        }
+        .padding(24)
+        .frame(width: 720, height: 560)
+        .background(Color.weavePaper)
     }
 }
 
@@ -758,7 +854,7 @@ private struct DirectSubscriptionImportSheet: View {
 
                 WeaveSectionLabel("订阅链接")
                     .padding(.top, 4)
-                TextField("https://… 或 weave://lan/…", text: $subscriptionLink)
+                TextField("HTTPS、URI、Clash YAML 或 weave://lan/…", text: $subscriptionLink)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
                     .padding(.horizontal, 14)
@@ -921,6 +1017,9 @@ private struct TransferView: View {
                                 .foregroundStyle(Color.weaveMuted)
                                 .lineLimit(2)
                                 .textSelection(.enabled)
+                            Text("确认短码：\(model.transferConfirmationCode)")
+                                .font(.system(size: 16, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.weaveTeal)
                             HStack {
                                 Button("复制链接") { model.copyTransferLink() }
                                 Button("立即失效", role: .destructive) { model.stopExport() }
@@ -943,6 +1042,12 @@ private struct TransferView: View {
                             .padding(.horizontal, 14)
                             .frame(height: 46)
                             .background(Color.weaveCanvas, in: RoundedRectangle(cornerRadius: 14))
+                        TextField("发送设备显示的 6 位短码", text: $model.importConfirmationCode)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, design: .monospaced))
+                            .padding(.horizontal, 14)
+                            .frame(height: 46)
+                            .background(Color.weaveCanvas, in: RoundedRectangle(cornerRadius: 14))
                         Button {
                             model.importFromCurrentLink()
                         } label: {
@@ -954,7 +1059,7 @@ private struct TransferView: View {
                             .weavePrimaryButton()
                         }
                         .buttonStyle(.plain)
-                        .disabled(model.importLink.isEmpty || model.transferBusy)
+                        .disabled(model.importLink.isEmpty || model.importConfirmationCode.count != 6 || model.transferBusy)
 
                         Button {
                             model.importQRCodeImage()
@@ -997,8 +1102,9 @@ private struct TransferView: View {
 }
 
 private struct SettingsView: View {
+    @EnvironmentObject private var model: AppModel
     private let rows = [
-        ("版本", "0.1.0-alpha05", "number"),
+        ("版本", "0.1.0-alpha06", "number"),
         ("架构", "Apple Silicon arm64", "cpu"),
         ("本地存储", "Keychain + AES-256-GCM", "lock.fill"),
         ("VPN 模式", "需要 Network Extension entitlement", "network"),
@@ -1028,6 +1134,26 @@ private struct SettingsView: View {
                         }
                     }
                 }
+                .weaveCard()
+
+                HStack(spacing: 12) {
+                    Image(systemName: model.core.state == .localProxy ? "network" : "lock.shield")
+                        .foregroundStyle(model.core.state == .localProxy ? Color.weaveGood : Color.weaveMuted)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("系统代理接管")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(model.core.state == .localProxy
+                             ? "HTTP/HTTPS/SOCKS → 127.0.0.1:7890；PAC 和原设置会自动恢复"
+                             : "连接时接管主网络服务，完整 VPN 仍需 Network Extension")
+                            .font(.caption)
+                            .foregroundStyle(Color.weaveMuted)
+                    }
+                    Spacer()
+                    Text("自动")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.weaveTeal)
+                }
+                .padding(17)
                 .weaveCard()
             }
             .padding(28)

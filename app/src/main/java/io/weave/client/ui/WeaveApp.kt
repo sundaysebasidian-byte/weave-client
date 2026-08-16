@@ -1,10 +1,17 @@
 package io.weave.client.ui
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.Manifest
+import android.graphics.Bitmap
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.PersistableBundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -34,6 +41,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Add
@@ -65,10 +74,12 @@ import androidx.compose.material.icons.rounded.SyncAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -84,9 +95,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +107,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -103,22 +116,42 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.core.content.ContextCompat
 import io.weave.client.BuildConfig
 import io.weave.client.apps.InstalledApp
+import io.weave.client.core.diagnostics.LensState
+import io.weave.client.core.diagnostics.PrivacyObservation
+import io.weave.client.core.diagnostics.PrivacyObservationReport
+import io.weave.client.core.diagnostics.RouteLens
+import io.weave.client.core.diagnostics.RouteLensQuery
+import io.weave.client.core.diagnostics.RouteLensResult
+import io.weave.client.data.RecoveryState
+import io.weave.client.core.engine.QualityMatrixBuilder
+import io.weave.client.core.engine.QualityMatrixRow
+import io.weave.client.core.ipquality.IpQualityCheck
+import io.weave.client.core.ipquality.IpQualityReport
+import io.weave.client.core.ipquality.IpQualityState
+import io.weave.client.policy.PolicyPack
+import io.weave.client.policy.PolicyPackIntegrity
 import io.weave.client.domain.AppRoute
 import io.weave.client.domain.AutomaticStrategy
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.DashboardState
+import io.weave.client.domain.DistributionProfile
 import io.weave.client.domain.DnsProfile
+import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
@@ -126,10 +159,21 @@ import io.weave.client.domain.NodeDisplayName
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
+import io.weave.client.domain.StrategyScope
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
 import io.weave.client.transfer.QrCodeGenerator
+import io.weave.client.domain.WeaveAppearanceGroup
 import io.weave.client.domain.WeavePalette
+import io.weave.client.domain.WeaveLanguage
+import io.weave.client.ui.LocalWeaveLanguage
+import io.weave.client.ui.theme.LocalWeavePalette
+import io.weave.client.routing.LocalRouteRule
+import io.weave.client.routing.LocalRuleAction
+import io.weave.client.routing.LocalRuleType
+import io.weave.client.subscription.SubscriptionAuditSeverity
+import java.text.DateFormat
+import java.util.Date
 
 private enum class Destination(
     val label: String,
@@ -141,6 +185,43 @@ private enum class Destination(
     SETTINGS("设置", Icons.Rounded.Settings),
 }
 
+/**
+ * Localized text shim for the existing Compose surface. Stable UI labels are translated here;
+ * user-provided names and node metadata pass through unchanged via localizeWeaveText().
+ */
+@Composable
+private fun Text(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    fontWeight: FontWeight? = null,
+    letterSpacing: TextUnit = TextUnit.Unspecified,
+    textAlign: TextAlign? = null,
+    lineHeight: TextUnit = TextUnit.Unspecified,
+    overflow: TextOverflow = TextOverflow.Clip,
+    maxLines: Int = Int.MAX_VALUE,
+    style: TextStyle = androidx.compose.material3.LocalTextStyle.current,
+) {
+    MaterialText(
+        text = localizeWeaveText(text, LocalWeaveLanguage.current),
+        modifier = modifier,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        letterSpacing = letterSpacing,
+        textAlign = textAlign,
+        lineHeight = lineHeight,
+        overflow = overflow,
+        maxLines = maxLines,
+        style = style,
+    )
+}
+
+@Composable
+private fun localizedContentDescription(text: String): String =
+    localizeWeaveText(text, LocalWeaveLanguage.current)
+
 @Composable
 fun WeaveApp(
     viewModel: AppViewModel,
@@ -149,6 +230,7 @@ fun WeaveApp(
     onOpenVpnSettings: () -> Unit,
     vpnDisclosureAccepted: Boolean,
     onAcceptVpnDisclosure: () -> Unit,
+    onSensitiveSurfaceChanged: (Boolean) -> Unit,
 ) {
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val routes by viewModel.routes.collectAsStateWithLifecycle()
@@ -159,7 +241,14 @@ fun WeaveApp(
     val editorState by viewModel.editorState.collectAsStateWithLifecycle()
     val lanTransferState by viewModel.lanTransferState.collectAsStateWithLifecycle()
     val networkPreferences by viewModel.networkPreferences.collectAsStateWithLifecycle()
+    val language by viewModel.language.collectAsStateWithLifecycle()
     val subscriptionHealth by viewModel.subscriptionHealth.collectAsStateWithLifecycle()
+    val recoveryState by viewModel.recoveryState.collectAsStateWithLifecycle()
+    val policyPackState by viewModel.policyPackState.collectAsStateWithLifecycle()
+    val localRouteRuleState by viewModel.localRouteRuleState.collectAsStateWithLifecycle()
+    val subscriptionRefreshState by viewModel.subscriptionRefreshState.collectAsStateWithLifecycle()
+    val ipQualityState by viewModel.ipQualityState.collectAsStateWithLifecycle()
+    val dnsProbeState by viewModel.dnsProbeState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var destination by remember { mutableStateOf(Destination.HOME) }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -169,17 +258,54 @@ fun WeaveApp(
     var showDefaultRoutePicker by remember { mutableStateOf(false) }
     var managedSubscriptionId by remember { mutableStateOf<String?>(null) }
     var showVpnDisclosure by remember { mutableStateOf(false) }
+    var showRouteLens by remember { mutableStateOf(false) }
+    var showPrivacyObservatory by remember { mutableStateOf(false) }
+    var showRecoveryCenter by remember { mutableStateOf(false) }
+    var showPolicyPacks by remember { mutableStateOf(false) }
+    var showLocalRouteRules by remember { mutableStateOf(false) }
+    var showIpQuality by remember { mutableStateOf(false) }
+
+    val sensitiveSurfaceVisible = showImportDialog ||
+        showLanTransferDialog ||
+        managedSubscriptionId != null ||
+        showIpQuality ||
+        showPolicyPacks ||
+        showLocalRouteRules ||
+        showRecoveryCenter
+    LaunchedEffect(sensitiveSurfaceVisible) {
+        // Sensitive URLs, credentials and one-time transfer keys should not enter screenshots or
+        // the recent-apps preview. Normal navigation remains screenshot-friendly.
+        onSensitiveSurfaceChanged(sensitiveSurfaceVisible)
+    }
 
     LaunchedEffect(destination) {
-        viewModel.setDashboardVisible(destination == Destination.HOME)
         if (destination == Destination.ROUTES) {
             viewModel.ensureInstalledAppsLoaded()
         }
     }
 
-    LaunchedEffect(dashboard.statusMessage) {
+    // Dashboard counters are useful while the page is visible, but keeping a 2–3 second native
+    // query loop alive while the app is backgrounded costs battery for no user-visible benefit.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, destination) {
+        fun updateVisibility() {
+            viewModel.setDashboardVisible(
+                destination == Destination.HOME &&
+                    lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            )
+        }
+        val observer = LifecycleEventObserver { _, _ -> updateVisibility() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        updateVisibility()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.setDashboardVisible(false)
+        }
+    }
+
+    LaunchedEffect(dashboard.statusMessage, language) {
         dashboard.statusMessage?.let {
-            snackbar.showSnackbar(it)
+            snackbar.showSnackbar(localizeWeaveText(it, language))
             viewModel.dismissMessage()
         }
     }
@@ -197,7 +323,10 @@ fun WeaveApp(
             .fillMaxSize()
             .background(background),
     ) {
-        MonetAtmosphere(Modifier.fillMaxSize())
+        MonetAtmosphere(
+            palette = networkPreferences.weavePalette,
+            modifier = Modifier.fillMaxSize(),
+        )
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
@@ -223,7 +352,7 @@ fun WeaveApp(
                             NavigationBarItem(
                                 selected = destination == item,
                                 onClick = { destination = item },
-                                icon = { Icon(item.icon, contentDescription = item.label) },
+                                icon = { Icon(item.icon, contentDescription = localizedContentDescription(item.label)) },
                                 label = { Text(item.label, fontWeight = FontWeight.Medium) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -259,6 +388,10 @@ fun WeaveApp(
                 onModeSelected = viewModel::selectMode,
                 onDefaultRouteClick = { showDefaultRoutePicker = true },
                 onMoreClick = { destination = Destination.SETTINGS },
+                onIpQuality = {
+                    showIpQuality = true
+                    viewModel.runIpQualityProbe()
+                },
                 contentPadding = innerPadding,
             )
             Destination.ROUTES -> RoutesScreen(
@@ -267,12 +400,15 @@ fun WeaveApp(
                     editingRoute = routes.firstOrNull { it.packageName == packageName }
                 },
                 onAdd = { showAppPicker = true },
+                onRouteLens = { showRouteLens = true },
                 contentPadding = innerPadding,
             )
             Destination.SUBSCRIPTIONS -> SubscriptionsScreen(
                 subscriptions = subscriptions,
                 onAdd = { showImportDialog = true },
                 onTransfer = { showLanTransferDialog = true },
+                refreshState = subscriptionRefreshState,
+                onRefresh = viewModel::refreshAllRemoteSubscriptions,
                 onSubscriptionClick = { subscriptionId ->
                     managedSubscriptionId = subscriptionId
                     viewModel.openSubscriptionEditor(subscriptionId)
@@ -281,17 +417,33 @@ fun WeaveApp(
             )
             Destination.SETTINGS -> SettingsScreen(
                 preferences = networkPreferences,
+                language = language,
+                dnsProbeState = dnsProbeState,
                 contentPadding = innerPadding,
                 onOpenVpnSettings = onOpenVpnSettings,
                 onAutomaticStrategySelected = viewModel::setAutomaticStrategy,
+                onStrategyScopeSelected = viewModel::setStrategyScope,
                 onDnsTransportSelected = viewModel::setDnsTransport,
                 onDnsProfileSelected = viewModel::setDnsProfile,
+                onDnsRoutingModeSelected = viewModel::setDnsRoutingMode,
                 onCustomDnsEndpointSaved = viewModel::setCustomDnsEndpoint,
+                onProbeDnsProviders = viewModel::probeDnsProviders,
                 onIpv6ModeSelected = viewModel::setIpv6Mode,
                 onBlockUdpStunChanged = viewModel::setBlockUdpStun,
                 onDomesticDirectChanged = viewModel::setDomesticDirect,
                 onPaletteSelected = viewModel::setWeavePalette,
+                onLanguageSelected = viewModel::setLanguage,
                 onShowVpnDisclosure = { showVpnDisclosure = true },
+                onOpenPrivacyObservatory = { showPrivacyObservatory = true },
+                onOpenRecoveryCenter = {
+                    viewModel.refreshRecoveryState()
+                    showRecoveryCenter = true
+                },
+                onOpenPolicyPacks = { showPolicyPacks = true },
+                onOpenLocalRouteRules = {
+                    viewModel.clearLocalRouteRuleError()
+                    showLocalRouteRules = true
+                },
             )
             }
         }
@@ -309,6 +461,64 @@ fun WeaveApp(
         )
     }
 
+    if (showRouteLens) {
+        RouteLensDialog(
+            routes = routes,
+            mode = dashboard.routingMode,
+            defaultTarget = dashboard.defaultRouteTarget,
+            preferences = networkPreferences,
+            localRules = localRouteRuleState.rules,
+            onDismiss = { showRouteLens = false },
+        )
+    }
+
+    if (showPrivacyObservatory) {
+        PrivacyObservatoryDialog(
+            report = viewModel.privacyReport(),
+            onDismiss = { showPrivacyObservatory = false },
+        )
+    }
+
+    if (showRecoveryCenter) {
+        RecoveryCenterDialog(
+            state = recoveryState,
+            onClearSafeMode = viewModel::clearRecoverySafeMode,
+            onRefresh = viewModel::refreshRecoveryState,
+            onDismiss = { showRecoveryCenter = false },
+        )
+    }
+
+    if (showPolicyPacks) {
+        PolicyPackDialog(
+            state = policyPackState,
+            onImport = viewModel::importPolicyPack,
+            onToggle = viewModel::setPolicyPackActive,
+            onDelete = viewModel::deletePolicyPack,
+            onDismiss = { showPolicyPacks = false },
+        )
+    }
+
+    if (showLocalRouteRules) {
+        LocalRouteRulesDialog(
+            state = localRouteRuleState,
+            onAdd = viewModel::addLocalRouteRule,
+            onToggle = viewModel::setLocalRouteRuleEnabled,
+            onDelete = viewModel::deleteLocalRouteRule,
+            onDismiss = { showLocalRouteRules = false },
+        )
+    }
+
+    if (showIpQuality) {
+        IpQualityDialog(
+            state = ipQualityState,
+            onRun = viewModel::runIpQualityProbe,
+            onDismiss = {
+                showIpQuality = false
+                viewModel.clearIpQualityState()
+            },
+        )
+    }
+
     if (showImportDialog) {
         ImportSubscriptionDialog(
             state = importState,
@@ -320,15 +530,15 @@ fun WeaveApp(
             },
             onImport = viewModel::importSubscription,
             onImportFile = viewModel::importSubscriptionFile,
-            onImportQr = viewModel::importSubscriptionQr,
             onImportQrImage = viewModel::importSubscriptionQrImage,
+            onScanQr = viewModel::importSubscriptionQrBitmap,
         )
     }
 
     if (showLanTransferDialog) {
         LanTransferDialog(
             state = lanTransferState,
-            subscriptionCount = subscriptions.size,
+            subscriptions = subscriptions,
             onDismiss = {
                 if (!lanTransferState.running) {
                     showLanTransferDialog = false
@@ -338,6 +548,7 @@ fun WeaveApp(
             onStartExport = viewModel::startLanExport,
             onStopExport = viewModel::stopLanExport,
             onImport = viewModel::importLanTransfer,
+            onScanQr = viewModel::importLanTransferQr,
         )
     }
 
@@ -437,22 +648,35 @@ private fun ImportSubscriptionDialog(
     onDismiss: () -> Unit,
     onImport: (name: String, url: String) -> Unit,
     onImportFile: (name: String, uri: Uri) -> Unit,
-    onImportQr: (name: String, rawValue: String) -> Unit,
     onImportQrImage: (name: String, uri: Uri) -> Unit,
+    onScanQr: (name: String, bitmap: Bitmap) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var scannerError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val codeScanner = remember(context) {
-        (context as? Activity)?.let { activity ->
-            GmsBarcodeScanning.getClient(
-                activity,
-                GmsBarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                    .enableAutoZoom()
-                    .build(),
-            )
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicturePreview(),
+    ) { bitmap ->
+        if (bitmap == null) {
+            scannerError = "没有取得相机预览，请重试"
+        } else {
+            onScanQr(name, bitmap)
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) cameraLauncher.launch(null)
+        else scannerError = "需要相机权限才能扫描二维码"
+    }
+    fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraLauncher.launch(null)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
     val filePicker = rememberLauncherForActivityResult(
@@ -503,23 +727,7 @@ private fun ImportSubscriptionDialog(
                     TextButton(
                         onClick = {
                             scannerError = null
-                            val scanner = codeScanner
-                            if (scanner == null) {
-                                scannerError = "当前界面无法启动二维码扫描器"
-                            } else {
-                                scanner.startScan()
-                                    .addOnSuccessListener { barcode ->
-                                        val rawValue = barcode.rawValue
-                                        if (rawValue.isNullOrBlank()) {
-                                            scannerError = "二维码内容为空"
-                                        } else {
-                                            onImportQr(name, rawValue)
-                                        }
-                                    }
-                                    .addOnFailureListener {
-                                        scannerError = "无法启动系统二维码扫描器"
-                                    }
-                            }
+                            launchCamera()
                         },
                         enabled = !state.running,
                     ) {
@@ -585,27 +793,38 @@ private fun ImportSubscriptionDialog(
 @Composable
 private fun LanTransferDialog(
     state: LanTransferState,
-    subscriptionCount: Int,
+    subscriptions: List<Subscription>,
     onDismiss: () -> Unit,
-    onStartExport: () -> Unit,
+    onStartExport: (Set<String>) -> Unit,
     onStopExport: () -> Unit,
-    onImport: (String) -> Unit,
+    onImport: (String, String) -> Unit,
+    onScanQr: (Bitmap) -> Unit,
 ) {
     var importLink by remember { mutableStateOf("") }
+    var confirmationCode by remember { mutableStateOf("") }
+    var selectedIds by remember(subscriptions) {
+        mutableStateOf<Set<String>>(subscriptions.mapTo(linkedSetOf()) { it.id })
+    }
     var scannerError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val clipboard = remember(context) {
-        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicturePreview(),
+    ) { bitmap ->
+        if (bitmap == null) scannerError = "没有取得相机预览，请重试" else onScanQr(bitmap)
     }
-    val scanner = remember(context) {
-        (context as? Activity)?.let { activity ->
-            GmsBarcodeScanning.getClient(
-                activity,
-                GmsBarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                    .enableAutoZoom()
-                    .build(),
-            )
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) cameraLauncher.launch(null)
+        else scannerError = "需要相机权限才能扫描二维码"
+    }
+    fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraLauncher.launch(null)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
     val qrBitmap = remember(state.exportLink) {
@@ -634,11 +853,43 @@ private fun LanTransferDialog(
                 item { TargetSectionLabel("导出到另一台设备") }
                 if (state.exportLink.isEmpty()) {
                     item {
-                        Button(
-                            onClick = onStartExport,
-                            enabled = subscriptionCount > 0 && !state.running,
+                        Text(
+                            "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    items(subscriptions, key = { it.id }) { subscription ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("导出全部 $subscriptionCount 个订阅")
+                            Checkbox(
+                                checked = subscription.id in selectedIds,
+                                onCheckedChange = { checked ->
+                                    selectedIds = if (checked) {
+                                        selectedIds + subscription.id
+                                    } else {
+                                        selectedIds - subscription.id
+                                    }
+                                },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(subscription.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${subscription.nodeCount} 个节点",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        Button(
+                            onClick = { onStartExport(selectedIds) },
+                            enabled = selectedIds.isNotEmpty() && !state.running,
+                        ) {
+                            Text("导出所选 ${selectedIds.size} 个订阅")
                         }
                     }
                 } else {
@@ -646,12 +897,19 @@ private fun LanTransferDialog(
                         item {
                             Image(
                                 bitmap = bitmap,
-                                contentDescription = "一次性传输二维码",
+                                contentDescription = localizedContentDescription("一次性传输二维码"),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(240.dp),
                             )
                         }
+                    }
+                    item {
+                        Text(
+                            "确认短码：${state.confirmationCode}",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
                     }
                     item {
                         Text(
@@ -666,11 +924,10 @@ private fun LanTransferDialog(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(
                                 onClick = {
-                                    clipboard.setPrimaryClip(
-                                        ClipData.newPlainText(
-                                            "Weave 一次性局域网链接",
-                                            state.exportLink,
-                                        ),
+                                    copySensitiveText(
+                                        context = context,
+                                        label = "Weave 一次性局域网链接",
+                                        value = state.exportLink,
                                     )
                                 },
                             ) {
@@ -684,9 +941,13 @@ private fun LanTransferDialog(
                 }
                 item { WeaveDivider() }
                 item { TargetSectionLabel("从另一台设备导入") }
+                val effectiveImportLink = importLink.ifBlank { state.pendingLink }
+                // The sender's code must be typed out-of-band. Never reuse this device's own
+                // export code when it is also displaying an export and an import form together.
+                val effectiveConfirmationCode = confirmationCode
                 item {
                     OutlinedTextField(
-                        value = importLink,
+                        value = effectiveImportLink,
                         onValueChange = { importLink = it.take(2_048) },
                         label = { Text("weave://lan/…") },
                         singleLine = true,
@@ -697,27 +958,16 @@ private fun LanTransferDialog(
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { onImport(importLink) },
-                            enabled = importLink.isNotBlank() && !state.running,
+                            onClick = { onImport(effectiveImportLink, effectiveConfirmationCode) },
+                            enabled = effectiveImportLink.isNotBlank() &&
+                                effectiveConfirmationCode.length == 6 && !state.running,
                         ) {
                             Text("从链接导入")
                         }
                         TextButton(
                             onClick = {
                                 scannerError = null
-                                val codeScanner = scanner
-                                if (codeScanner == null) {
-                                    scannerError = "当前界面无法启动二维码扫描器"
-                                } else {
-                                    codeScanner.startScan()
-                                        .addOnSuccessListener { barcode ->
-                                            barcode.rawValue?.let(onImport)
-                                                ?: run { scannerError = "二维码内容为空" }
-                                        }
-                                        .addOnFailureListener {
-                                            scannerError = "无法启动系统二维码扫描器"
-                                        }
-                                }
+                                launchCamera()
                             },
                             enabled = !state.running,
                         ) {
@@ -725,6 +975,25 @@ private fun LanTransferDialog(
                             Spacer(Modifier.width(6.dp))
                             Text("扫描二维码")
                         }
+                    }
+                }
+                item {
+                    OutlinedTextField(
+                        value = effectiveConfirmationCode,
+                        onValueChange = { confirmationCode = it.filter(Char::isDigit).take(6) },
+                        label = { Text("发送设备显示的 6 位确认短码") },
+                        singleLine = true,
+                        enabled = !state.running,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (state.pendingLink.isNotBlank()) {
+                    item {
+                        Text(
+                            "二维码已读入，请核对短码后再次点击导入",
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontSize = 12.sp,
+                        )
                     }
                 }
                 (state.error ?: scannerError ?: state.message)?.let { status ->
@@ -762,6 +1031,38 @@ private fun LanTransferDialog(
         },
     )
 }
+
+/** Marks one-time transfer keys as sensitive and removes our copy after a short grace period. */
+private fun copySensitiveText(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText(label, value).apply {
+        description.extras = PersistableBundle().apply {
+            // Compatibility literal is consumed by Android 13+ and many older OEM clipboard UIs.
+            putBoolean("android.content.extra.IS_SENSITIVE", true)
+        }
+    }
+    clipboard.setPrimaryClip(clip)
+    Handler(Looper.getMainLooper()).postDelayed({
+        // Background clipboard reads can be denied by newer Android versions or OEM policy.
+        // Failure to clear must never crash the app or replace a newer clipboard value.
+        runCatching {
+            val stillOurValue = clipboard.primaryClip
+                ?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)
+                ?.coerceToText(context)
+                ?.toString() == value
+            if (stillOurValue) {
+                if (Build.VERSION.SDK_INT >= 28) {
+                    clipboard.clearPrimaryClip()
+                } else {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+                }
+            }
+        }
+    }, SENSITIVE_CLIPBOARD_TTL_MS)
+}
+
+private const val SENSITIVE_CLIPBOARD_TTL_MS = 60_000L
 
 @Composable
 private fun SubscriptionManagerDialog(
@@ -812,6 +1113,7 @@ private fun SubscriptionManagerDialog(
             }.thenBy { it.name },
         )
     }
+    val qualityRows = remember(health.nodes) { QualityMatrixBuilder.build(health.nodes) }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -836,7 +1138,7 @@ private fun SubscriptionManagerDialog(
                     }
                     if (isDefaultRoute) {
                         Text(
-                            "默认出口将切换到其他订阅；没有其他订阅时改为直连。",
+                            "默认出口将切换到其他订阅；没有其他订阅时保持断开，避免静默直连。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                         )
@@ -942,9 +1244,9 @@ private fun SubscriptionManagerDialog(
                                             Icons.Rounded.Visibility
                                         },
                                         contentDescription = if (revealSourceUrl) {
-                                            "隐藏订阅地址"
+                                            localizedContentDescription("隐藏订阅地址")
                                         } else {
-                                            "显示订阅地址"
+                                            localizedContentDescription("显示订阅地址")
                                         },
                                     )
                                 }
@@ -997,6 +1299,35 @@ private fun SubscriptionManagerDialog(
                                 modifier = Modifier.size(22.dp),
                                 strokeWidth = 2.dp,
                             )
+                        }
+                    }
+                    state.audit?.let { audit ->
+                        val auditColor = when (audit.severity) {
+                            SubscriptionAuditSeverity.CLEAN -> MaterialTheme.colorScheme.secondary
+                            SubscriptionAuditSeverity.REVIEW -> MaterialTheme.colorScheme.tertiary
+                            SubscriptionAuditSeverity.BLOCKED -> MaterialTheme.colorScheme.error
+                        }
+                        LiquidGlassPanel(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("订阅安全审计", color = auditColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(
+                                    "${audit.summary} · ${audit.oldNodeCount} → ${audit.newNodeCount} 节点",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                )
+                                audit.findings.take(3).forEach { finding ->
+                                    Text(
+                                        "· ${finding.title}：${finding.detail}",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp,
+                                        lineHeight = 16.sp,
+                                    )
+                                }
+                            }
                         }
                     }
                     WeaveDivider()
@@ -1057,6 +1388,23 @@ private fun SubscriptionManagerDialog(
                             fontSize = 11.sp,
                             lineHeight = 16.sp,
                         )
+                    }
+                    if (qualityRows.isNotEmpty()) {
+                        Text(
+                            "质量矩阵",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        Text(
+                            "只展示当前内核实际测到的字段；未测项目保持“—”，不估算 DNS、TLS 或带宽。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                        )
+                        qualityRows.take(8).forEach { row ->
+                            QualityMatrixEntry(row)
+                        }
                     }
                     if (!vpnConnected && health.error == null) {
                         Text(
@@ -1184,6 +1532,52 @@ private fun SubscriptionNodeRow(
 }
 
 @Composable
+private fun QualityMatrixEntry(row: io.weave.client.core.engine.QualityMatrixRow) {
+    LiquidGlassPanel(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(13.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    NodeDisplayName.core(row.name),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    row.stabilityScore?.let { "$it · ${row.stabilityLabel}" } ?: "未完成",
+                    color = when {
+                        row.stabilityScore == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        row.stabilityScore >= 85 -> MaterialTheme.colorScheme.secondary
+                        row.stabilityScore >= 65 -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.error
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                buildString {
+                    append(row.protocol)
+                    append(" · ")
+                    append(row.medianLatencyMs?.let { "中位 ${it}ms" } ?: "延迟—")
+                    append(" · ")
+                    append(row.p95LatencyMs?.let { "P95 ${it}ms" } ?: "P95—")
+                    append(" · 抖")
+                    append(row.jitterMs?.toString() ?: "—")
+                    append(" · 丢${row.packetLossPercent}% · ${row.successfulSamples}/${row.totalSamples}")
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp,
+                lineHeight = 15.sp,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AppPickerDialog(
     apps: List<InstalledApp>,
     onDismiss: () -> Unit,
@@ -1227,6 +1621,7 @@ private fun AppPickerDialog(
                             .heightIn(max = 420.dp),
                     ) {
                         items(filtered, key = { it.packageName }) { app ->
+                            val badge = appBadgeColors(app.tint)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1238,12 +1633,12 @@ private fun AppPickerDialog(
                                     modifier = Modifier
                                         .size(42.dp)
                                         .clip(RoundedCornerShape(13.dp))
-                                        .background(Color(app.tint)),
+                                        .background(badge.background),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
                                         app.monogram,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        color = badge.content,
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 13.sp,
                                     )
@@ -1261,7 +1656,7 @@ private fun AppPickerDialog(
                                 }
                                 Icon(
                                     Icons.Rounded.Add,
-                                    contentDescription = "添加 ${app.label}",
+                                    contentDescription = localizedContentDescription("添加 ${app.label}"),
                                 )
                             }
                         }
@@ -1677,7 +2072,7 @@ private fun TargetOptionRow(
         if (selected) {
             Icon(
                 Icons.Rounded.CheckCircle,
-                contentDescription = "当前选择",
+                contentDescription = localizedContentDescription("当前选择"),
                 modifier = Modifier.size(19.dp),
             )
         }
@@ -1685,60 +2080,77 @@ private fun TargetOptionRow(
 }
 
 @Composable
-private fun MonetAtmosphere(modifier: Modifier = Modifier) {
+private fun MonetAtmosphere(
+    palette: WeavePalette,
+    modifier: Modifier = Modifier,
+) {
     val background = MaterialTheme.colorScheme.background
+    if (palette.group == WeaveAppearanceGroup.MINIMAL) {
+        // Minimal mode deliberately has no decorative shader layer: a single stable canvas is
+        // easier to scan and avoids the visual noise and small GPU cost of the art atmosphere.
+        Box(modifier = modifier.background(background))
+        return
+    }
     val teal = MaterialTheme.colorScheme.primaryContainer
     val lavender = MaterialTheme.colorScheme.secondaryContainer
     val sunrise = MaterialTheme.colorScheme.tertiary
-    Canvas(modifier = modifier.background(background)) {
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    background,
-                    lavender.copy(alpha = 0.38f),
-                    background,
-                ),
-                start = androidx.compose.ui.geometry.Offset.Zero,
-                end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-            ),
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(teal.copy(alpha = 0.42f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
-                radius = size.minDimension * 0.72f,
-            ),
-            radius = size.minDimension * 0.72f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(lavender.copy(alpha = 0.46f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
-                radius = size.minDimension * 0.78f,
-            ),
-            radius = size.minDimension * 0.78f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(sunrise.copy(alpha = 0.30f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
-                radius = size.minDimension * 0.38f,
-            ),
-            radius = size.minDimension * 0.38f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
-        )
-        drawOval(
-            brush = Brush.radialGradient(
-                colors = listOf(teal.copy(alpha = 0.18f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * 0.52f, size.height * 0.78f),
-                radius = size.width * 0.72f,
-            ),
-            topLeft = androidx.compose.ui.geometry.Offset(-size.width * 0.18f, size.height * 0.66f),
-            size = androidx.compose.ui.geometry.Size(size.width * 1.4f, size.height * 0.24f),
-        )
-    }
+    // Gradients are cached until the palette or window size changes. The dashboard can update
+    // every couple of seconds while connected; rebuilding five shader objects for each state
+    // emission made scrolling and page switching needlessly expensive on mid-range devices.
+    Canvas(
+        modifier = modifier
+            .background(background)
+            .drawWithCache {
+                val linear = Brush.linearGradient(
+                    colors = listOf(background, lavender.copy(alpha = 0.38f), background),
+                    start = androidx.compose.ui.geometry.Offset.Zero,
+                    end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                )
+                val tealBrush = Brush.radialGradient(
+                    colors = listOf(teal.copy(alpha = 0.42f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
+                    radius = size.minDimension * 0.72f,
+                )
+                val lavenderBrush = Brush.radialGradient(
+                    colors = listOf(lavender.copy(alpha = 0.46f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
+                    radius = size.minDimension * 0.78f,
+                )
+                val sunriseBrush = Brush.radialGradient(
+                    colors = listOf(sunrise.copy(alpha = 0.30f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
+                    radius = size.minDimension * 0.38f,
+                )
+                val lowerBrush = Brush.radialGradient(
+                    colors = listOf(teal.copy(alpha = 0.18f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.52f, size.height * 0.78f),
+                    radius = size.width * 0.72f,
+                )
+                onDrawBehind {
+                    drawRect(linear)
+                    drawCircle(
+                        brush = tealBrush,
+                        radius = size.minDimension * 0.72f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
+                    )
+                    drawCircle(
+                        brush = lavenderBrush,
+                        radius = size.minDimension * 0.78f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
+                    )
+                    drawCircle(
+                        brush = sunriseBrush,
+                        radius = size.minDimension * 0.38f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
+                    )
+                    drawOval(
+                        brush = lowerBrush,
+                        topLeft = androidx.compose.ui.geometry.Offset(-size.width * 0.18f, size.height * 0.66f),
+                        size = androidx.compose.ui.geometry.Size(size.width * 1.4f, size.height * 0.24f),
+                    )
+                }
+            },
+    ) {}
 }
 
 @Composable
@@ -1765,52 +2177,73 @@ private fun LiquidGlassPanel(
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val minimal = LocalWeavePalette.current.group == WeaveAppearanceGroup.MINIMAL
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
     val surface = MaterialTheme.colorScheme.surface
-    val glassBrush = Brush.linearGradient(
-        colors = if (dark) {
-            listOf(
-                surface,
-                androidx.compose.ui.graphics.lerp(
+    // Art themes keep their existing impressionist gradient. Minimal themes use one opaque
+    // surface color, a small shadow and a quiet outline so adjacent cards remain easy to read.
+    val glassBrush = if (minimal) {
+        null
+    } else {
+        Brush.linearGradient(
+            colors = if (dark) {
+                listOf(
                     surface,
-                    MaterialTheme.colorScheme.secondaryContainer,
-                    0.14f,
-                ),
-                androidx.compose.ui.graphics.lerp(
+                    androidx.compose.ui.graphics.lerp(
+                        surface,
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        0.14f,
+                    ),
+                    androidx.compose.ui.graphics.lerp(
+                        surface,
+                        MaterialTheme.colorScheme.primaryContainer,
+                        0.18f,
+                    ),
                     surface,
-                    MaterialTheme.colorScheme.primaryContainer,
-                    0.18f,
-                ),
-                surface,
-            )
-        } else {
-            listOf(
-                androidx.compose.ui.graphics.lerp(surface, Color.White, 0.30f),
-                androidx.compose.ui.graphics.lerp(
+                )
+            } else {
+                listOf(
+                    androidx.compose.ui.graphics.lerp(surface, Color.White, 0.30f),
+                    androidx.compose.ui.graphics.lerp(
+                        surface,
+                        MaterialTheme.colorScheme.primaryContainer,
+                        0.15f,
+                    ),
+                    androidx.compose.ui.graphics.lerp(
+                        surface,
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        0.16f,
+                    ),
+                    androidx.compose.ui.graphics.lerp(
+                        surface,
+                        MaterialTheme.colorScheme.tertiary,
+                        0.07f,
+                    ),
                     surface,
-                    MaterialTheme.colorScheme.primaryContainer,
-                    0.15f,
-                ),
-                androidx.compose.ui.graphics.lerp(
-                    surface,
-                    MaterialTheme.colorScheme.secondaryContainer,
-                    0.16f,
-                ),
-                androidx.compose.ui.graphics.lerp(
-                    surface,
-                    MaterialTheme.colorScheme.tertiary,
-                    0.07f,
-                ),
-                surface,
-            )
-        },
-    )
+                )
+            },
+        )
+    }
     Box(
         modifier = modifier
-            .shadow(8.dp, shape, clip = false)
+            .shadow(if (minimal) 2.dp else 8.dp, shape, clip = false)
             .clip(shape)
-            .background(glassBrush)
-            .border(1.dp, liquidGlassEdge(), shape)
+            .then(
+                if (glassBrush == null) {
+                    Modifier.background(surface)
+                } else {
+                    Modifier.background(glassBrush)
+                },
+            )
+            .border(
+                1.dp,
+                if (minimal) {
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f)
+                } else {
+                    liquidGlassEdge()
+                },
+                shape,
+            )
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
             ),
@@ -1857,6 +2290,7 @@ private fun HomeScreen(
     onModeSelected: (RoutingMode) -> Unit,
     onDefaultRouteClick: () -> Unit,
     onMoreClick: () -> Unit,
+    onIpQuality: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     LazyColumn(
@@ -1885,7 +2319,7 @@ private fun HomeScreen(
                     ) {
                         Icon(
                             Icons.Rounded.MoreHoriz,
-                            contentDescription = "更多",
+                            contentDescription = localizedContentDescription("更多"),
                             modifier = Modifier.padding(10.dp),
                         )
                     }
@@ -1948,6 +2382,50 @@ private fun HomeScreen(
 
         item {
             CurrentRouteCard(state, onClick = onDefaultRouteClick)
+        }
+
+        item {
+            Surface(
+                onClick = onIpQuality,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.74f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, liquidGlassEdge()),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Language,
+                            contentDescription = null,
+                            modifier = Modifier.padding(9.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(11.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("IP 质量检测", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "公网出口、地区、ASN、代理标签与真实 HTTPS 延迟",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Icon(
+                        Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         item {
@@ -2042,7 +2520,7 @@ private fun ConnectionHero(
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = if (state.coreAvailable) "内核就绪" else "内核不可用",
+                    text = if (state.coreAvailable) "内核已安装" else "内核不可用",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                 )
@@ -2055,7 +2533,7 @@ private fun ConnectionHero(
             )
             Text(
                 text = if (state.coreAvailable) {
-                    "规则只在本机处理，流量按你的选择离开设备"
+                    "本机规则已就绪，连接时按需加载原生内核"
                 } else {
                     "原生内核加载失败，已禁止建立 VPN"
                 },
@@ -2166,7 +2644,7 @@ private fun CurrentRouteCard(
             }
             Icon(
                 Icons.Rounded.ChevronRight,
-                contentDescription = "选择节点",
+                contentDescription = localizedContentDescription("选择节点"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -2205,6 +2683,7 @@ private fun RoutesScreen(
     routes: List<AppRoute>,
     onRouteClick: (String) -> Unit,
     onAdd: () -> Unit,
+    onRouteLens: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     LazyColumn(
@@ -2222,20 +2701,37 @@ private fun RoutesScreen(
                 eyebrow = "按应用选择出口",
                 title = "应用分流",
                 action = {
-                    Surface(
-                        onClick = onAdd,
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            liquidGlassEdge(),
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Rounded.Add,
-                            contentDescription = "添加规则",
-                            modifier = Modifier.padding(10.dp),
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            onClick = onRouteLens,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                liquidGlassEdge(),
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Visibility,
+                                contentDescription = localizedContentDescription("路由解释"),
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
+                        Surface(
+                            onClick = onAdd,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                liquidGlassEdge(),
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Add,
+                                contentDescription = localizedContentDescription("添加规则"),
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
                     }
                 },
             )
@@ -2265,7 +2761,7 @@ private fun RoutesScreen(
         }
         item {
             Text(
-                text = "当前版本按“应用规则 > 默认出口”匹配。自定义域名与远程规则集将在实现并通过测试后开放。",
+                text = "当前按“应用规则 > 本地域名/IP规则 > 默认出口”匹配；路由解释可在连接前预览命中结果。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
@@ -2316,6 +2812,7 @@ private fun AppRouteRow(
     route: AppRoute,
     onClick: () -> Unit,
 ) {
+    val badge = appBadgeColors(route.tint)
     LiquidGlassPanel(
         modifier = Modifier
             .padding(horizontal = 20.dp)
@@ -2331,12 +2828,12 @@ private fun AppRouteRow(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(15.dp))
-                    .background(Color(route.tint)),
+                    .background(badge.background),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     route.monogram,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = badge.content,
                     fontWeight = FontWeight.ExtraBold,
                 )
             }
@@ -2370,11 +2867,47 @@ private fun AppRouteRow(
     }
 }
 
+private data class AppBadgeColors(
+    val background: Color,
+    val content: Color,
+)
+
+@Composable
+private fun appBadgeColors(tint: Long): AppBadgeColors {
+    val base = Color(tint)
+    return when (LocalWeavePalette.current) {
+        WeavePalette.MINIMAL_DARK,
+        WeavePalette.MINIMAL_DEEP_OCEAN,
+        WeavePalette.MINIMAL_GRAPHITE,
+        WeavePalette.MINIMAL_NIGHT_PINE -> AppBadgeColors(
+            // The stored app tints are intentionally light for the light theme. In graphite
+            // mode, blend them into the dark surface so the hue remains recognizable without
+            // leaving a pale square that competes with the row text.
+            background = androidx.compose.ui.graphics.lerp(
+                MaterialTheme.colorScheme.surfaceVariant,
+                base,
+                0.30f,
+            ),
+            content = MaterialTheme.colorScheme.onSurface,
+        )
+        WeavePalette.MINIMAL_LIGHT -> AppBadgeColors(
+            background = base,
+            content = Color(0xFF1D252D),
+        )
+        else -> AppBadgeColors(
+            background = base,
+            content = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+}
+
 @Composable
 private fun SubscriptionsScreen(
     subscriptions: List<Subscription>,
     onAdd: () -> Unit,
     onTransfer: () -> Unit,
+    refreshState: SubscriptionRefreshState,
+    onRefresh: () -> Unit,
     onSubscriptionClick: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
@@ -2394,10 +2927,23 @@ private fun SubscriptionsScreen(
                 title = "订阅",
                 action = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onRefresh,
+                            enabled = !refreshState.running,
+                        ) {
+                            if (refreshState.running) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Icon(Icons.Rounded.Sync, contentDescription = localizedContentDescription("刷新远程订阅"))
+                            }
+                        }
                         IconButton(onClick = onTransfer) {
                             Icon(
                                 Icons.Rounded.SyncAlt,
-                                contentDescription = "局域网互传",
+                                contentDescription = localizedContentDescription("局域网互传"),
                             )
                         }
                         Surface(
@@ -2408,7 +2954,7 @@ private fun SubscriptionsScreen(
                         ) {
                             Icon(
                                 Icons.Rounded.Add,
-                                contentDescription = "添加订阅",
+                                contentDescription = localizedContentDescription("添加订阅"),
                                 modifier = Modifier.padding(10.dp),
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
@@ -2452,6 +2998,19 @@ private fun SubscriptionsScreen(
                         "本机加密",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
+                    )
+                }
+                if (refreshState.running || refreshState.message != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = if (refreshState.running) {
+                            "正在刷新 ${refreshState.currentName ?: "远程订阅"} · ${refreshState.completed}/${refreshState.total}"
+                        } else {
+                            refreshState.message.orEmpty()
+                        },
+                        color = if (refreshState.failed > 0) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
                     )
                 }
             }
@@ -2510,7 +3069,7 @@ private fun SubscriptionCard(
                 }
                 Icon(
                     Icons.Rounded.ChevronRight,
-                    contentDescription = "查看和编辑订阅",
+                    contentDescription = localizedContentDescription("查看和编辑订阅"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -2575,20 +3134,32 @@ private fun SecurityNote() {
 @Composable
 private fun SettingsScreen(
     preferences: NetworkPreferences,
+    language: WeaveLanguage,
+    dnsProbeState: DnsProbeState,
     contentPadding: PaddingValues,
     onOpenVpnSettings: () -> Unit,
     onAutomaticStrategySelected: (AutomaticStrategy) -> Unit,
+    onStrategyScopeSelected: (StrategyScope) -> Unit,
     onDnsTransportSelected: (DnsTransport) -> Unit,
     onDnsProfileSelected: (DnsProfile) -> Unit,
+    onDnsRoutingModeSelected: (DnsRoutingMode) -> Unit,
     onCustomDnsEndpointSaved: (String) -> Boolean,
+    onProbeDnsProviders: () -> Unit,
     onIpv6ModeSelected: (Ipv6Mode) -> Unit,
     onBlockUdpStunChanged: (Boolean) -> Unit,
     onDomesticDirectChanged: (Boolean) -> Unit,
     onPaletteSelected: (WeavePalette) -> Unit,
+    onLanguageSelected: (WeaveLanguage) -> Unit,
     onShowVpnDisclosure: () -> Unit,
+    onOpenPrivacyObservatory: () -> Unit,
+    onOpenRecoveryCenter: () -> Unit,
+    onOpenPolicyPacks: () -> Unit,
+    onOpenLocalRouteRules: () -> Unit,
 ) {
     var showPalette by remember { mutableStateOf(false) }
+    var showLanguage by remember { mutableStateOf(false) }
     var showAutomaticStrategy by remember { mutableStateOf(false) }
+    var showStrategyScope by remember { mutableStateOf(false) }
     var showDnsSettings by remember { mutableStateOf(false) }
     var showIpv6Mode by remember { mutableStateOf(false) }
     var showSecurityDetails by remember { mutableStateOf(false) }
@@ -2612,9 +3183,16 @@ private fun SettingsScreen(
             SettingsGroup {
                 LinkSetting(
                     icon = Icons.Rounded.AutoAwesome,
-                    title = "艺术主题",
-                    subtitle = "${preferences.weavePalette.label} · 仅改变界面颜色",
+                    title = "外观",
+                    subtitle = "${preferences.weavePalette.group.label} · ${preferences.weavePalette.label}",
                     onClick = { showPalette = true },
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Language,
+                    title = "语言",
+                    subtitle = language.nativeLabel,
+                    onClick = { showLanguage = true },
                 )
             }
         }
@@ -2624,14 +3202,21 @@ private fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Speed,
                     title = "自动节点策略",
-                    subtitle = preferences.automaticStrategy.label,
+                    subtitle = "${preferences.automaticStrategy.label} · ${preferences.strategyScope.label}",
                     onClick = { showAutomaticStrategy = true },
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.SwapVert,
+                    title = "策略组范围",
+                    subtitle = preferences.strategyScope.description,
+                    onClick = { showStrategyScope = true },
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Bolt,
                     title = "Always-on 与断网保护",
-                    subtitle = "前往 Android 系统 VPN 设置启用",
+                    subtitle = "系统级保护 · 需同时开启 Always-on 与阻止无 VPN 连接",
                     onClick = onOpenVpnSettings,
                 )
                 WeaveDivider()
@@ -2660,9 +3245,9 @@ private fun SettingsScreen(
                         preferences.dnsProfile == DnsProfile.AD_BLOCK ||
                         preferences.dnsProfile == DnsProfile.FAMILY
                     ) {
-                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · DNS + 本地规则"
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + 本地规则"
                     } else {
-                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · fake-IP"
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + fake-IP"
                     },
                     onClick = { showDnsSettings = true },
                 )
@@ -2677,7 +3262,7 @@ private fun SettingsScreen(
                 ToggleSetting(
                     icon = Icons.Rounded.Language,
                     title = "国内智能直连",
-                    subtitle = "应用分流优先 · 固定 GeoIP/Geosite 数据 · 不联网更新",
+                    subtitle = "默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先",
                     checked = preferences.domesticDirect,
                     onCheckedChange = onDomesticDirectChanged,
                 )
@@ -2687,6 +3272,34 @@ private fun SettingsScreen(
                     title = "安全与隐私",
                     subtitle = "Keystore 加密 · 明文按会话清理",
                     onClick = { showSecurityDetails = true },
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Visibility,
+                    title = "隐私观测",
+                    subtitle = "本地证据检查 · 不生成虚假安全百分比",
+                    onClick = onOpenPrivacyObservatory,
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Lock,
+                    title = "恢复中心",
+                    subtitle = "查看失败记录、解除安全模式",
+                    onClick = onOpenRecoveryCenter,
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Policy,
+                    title = "离线策略包",
+                    subtitle = "本地导入、哈希校验、可回滚启停",
+                    onClick = onOpenPolicyPacks,
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Tune,
+                    title = "本地域名 / IP 规则",
+                    subtitle = "本机加密保存 · 应用规则优先 · 连接前可解释",
+                    onClick = onOpenLocalRouteRules,
                 )
                 WeaveDivider()
                 ToggleSetting(
@@ -2732,13 +3345,23 @@ private fun SettingsScreen(
             },
         )
     }
-    if (showPalette) {
+    if (showStrategyScope) {
         SettingChoiceDialog(
-            title = "艺术主题",
-            options = WeavePalette.entries,
+            title = "策略组范围",
+            options = StrategyScope.entries,
+            selected = preferences.strategyScope,
+            label = StrategyScope::label,
+            description = StrategyScope::description,
+            onDismiss = { showStrategyScope = false },
+            onSelect = {
+                onStrategyScopeSelected(it)
+                showStrategyScope = false
+            },
+        )
+    }
+    if (showPalette) {
+        AppearanceChoiceDialog(
             selected = preferences.weavePalette,
-            label = WeavePalette::label,
-            description = WeavePalette::description,
             onDismiss = { showPalette = false },
             onSelect = {
                 onPaletteSelected(it)
@@ -2746,15 +3369,32 @@ private fun SettingsScreen(
             },
         )
     }
+    if (showLanguage) {
+        SettingChoiceDialog(
+            title = "语言",
+            options = WeaveLanguage.entries,
+            selected = language,
+            label = WeaveLanguage::nativeLabel,
+            description = WeaveLanguage::description,
+            onDismiss = { showLanguage = false },
+            onSelect = {
+                onLanguageSelected(it)
+                showLanguage = false
+            },
+        )
+    }
     if (showDnsSettings) {
         DnsSettingsDialog(
             preferences = preferences,
+            probeState = dnsProbeState,
             onDismiss = { showDnsSettings = false },
             onProfileSelected = onDnsProfileSelected,
+            onRoutingModeSelected = onDnsRoutingModeSelected,
             onCustomEndpointSaved = { endpoint ->
                 onCustomDnsEndpointSaved(endpoint)
             },
             onTransportSelected = onDnsTransportSelected,
+            onProbeProviders = onProbeDnsProviders,
         )
     }
     if (showIpv6Mode) {
@@ -2777,8 +3417,10 @@ private fun SettingsScreen(
             sections = listOf(
                 "本机存储" to "订阅地址和正文使用 Android Keystore AES-256-GCM 加密；敏感文件不参与系统备份。",
                 "运行时" to "配置只在应用私有目录中短期解密，断开或失败后清理。应用不启用外部控制端口。",
-                "网络" to "订阅只接受 HTTPS 或你主动选择的本地文件；DNS 可使用 DoH 或 DoT。",
+                "网络" to "订阅只接受 HTTPS 或你主动选择的本地文件；DNS 使用 DoH/DoT，应用自发的 53、853 和已知公共 DoH 旁路会被拒绝。",
+                "系统断网保护" to "请在 Android VPN 设置中开启 Always-on 与“阻止无 VPN 连接”；Weave 不伪造系统开关状态。",
                 "遥测" to "当前版本没有广告、统计或第三方崩溃上报 SDK，也不上传访问域名、节点地址和应用规则。",
+                "本地发行边界" to DistributionProfile.disclosure,
                 "责任边界" to "你选择的订阅提供方和代理节点仍可能看到来源 IP、连接时间与部分流量元数据。",
             ),
             onDismiss = { showSecurityDetails = false },
@@ -2791,8 +3433,9 @@ private fun SettingsScreen(
                 "Weave" to "GPL-3.0-or-later。你可以运行、研究、修改和重新分发；本软件不提供任何担保。",
                 "CMFA / Mihomo" to "GPL-3.0。发行内核来自仓库锁定的源码提交，并记录构建补丁与 SHA-256。",
                 "AndroidX" to "Apache-2.0。用于 Android UI、生命周期和系统兼容。",
-                "Google Code Scanner / ZXing" to "相机扫码使用系统 Google Code Scanner；图片二维码由随包 ZXing 本机识别，Weave 不把二维码内容发送到自己的服务器。",
+                "系统相机 / ZXing" to "相机扫码使用系统相机预览；二维码内容由随包 ZXing 本机识别，Weave 不把二维码内容发送到自己的服务器。",
                 "对应源码" to "每个公开发行版应在同一 GitHub Release 附近提供对应源码、构建说明、校验和与第三方清单。",
+                "发行配置" to "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或应用远程更新；主动选择的第三方端点仍按隐私说明工作。",
             ),
             onDismiss = { showOpenSourceDetails = false },
         )
@@ -2802,8 +3445,9 @@ private fun SettingsScreen(
             title = "路由优先级",
             sections = listOf(
                 "1 · 应用规则" to "固定节点、自动策略、直连或阻止。应用选择始终优先。",
-                "2 · 国内智能直连" to "启用后使用 APK 内固定并校验哈希的 GeoIP / GeoSite 数据，不静默联网更新。",
-                "3 · 默认出口" to "未命中前两层的流量使用连接页选择的订阅与节点。",
+                "2 · 本地域名 / IP" to "本机加密保存的域名、关键词和 CIDR 规则；不联网、不上传，可由路由解释预览。",
+                "3 · 国内智能直连" to "默认使用 APK 内固定并校验哈希的 GeoIP / GeoSite 数据；关闭后恢复全量代理，不静默联网更新。",
+                "4 · 默认出口" to "未命中前面规则的流量使用连接页选择的订阅与节点。",
                 "变更安全" to "候选配置先由内核解析验证；失败时保留上一份可用配置。",
             ),
             onDismiss = { showRoutingDetails = false },
@@ -2837,6 +3481,10 @@ private fun VpnDisclosureDialog(
                 Text(
                     "Weave 会建立本地 VPN 接口，以便把设备流量交给你选择的规则和代理节点。",
                     lineHeight = 20.sp,
+                )
+                DisclosurePoint(
+                    "服务边界",
+                    "Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。",
                 )
                 DisclosurePoint("本机访问", "为执行按应用分流，Weave 会在设备内读取连接所属应用、DNS 请求和路由元数据。")
                 DisclosurePoint("不会上传", "当前版本不把访问域名、应用规则、节点凭据或流量记录发送到 Weave 服务器。")
@@ -2879,6 +3527,769 @@ private fun DisclosurePoint(title: String, body: String) {
                 fontSize = 13.sp,
                 lineHeight = 19.sp,
             )
+        }
+    }
+}
+
+@Composable
+private fun IpQualityDialog(
+    state: IpQualityProbeState,
+    onRun: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val report = state.report
+    AlertDialog(
+        onDismissRequest = { if (!state.running) onDismiss() },
+        title = {
+            Column {
+                Text("IP 质量检测", fontWeight = FontWeight.Bold)
+                Text(
+                    "仅在你点击检测时请求公开 HTTPS 端点；Weave 不保存或上传结果",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 580.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Button(
+                        onClick = onRun,
+                        enabled = !state.running,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (state.running) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        } else {
+                            Icon(Icons.Rounded.Speed, contentDescription = null)
+                            Spacer(Modifier.width(7.dp))
+                        }
+                        Text(if (state.running) "检测中…" else "重新检测")
+                    }
+                }
+                item {
+                    Text(
+                        "检测结果反映当前 VPN 出口，不等同于网站信誉或绝对匿名性。地区、ASN 和代理标签来自第三方信息服务，可能存在误判。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                    )
+                }
+                state.error?.let { error ->
+                    item { Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+                if (report != null) {
+                    item { IpQualityIdentityCard(report) }
+                    item { ExternalIpTestLinks() }
+                    item {
+                        Text(
+                            "HTTPS 延迟",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    items(report.latency) { latency ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(latency.provider, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                            Text(
+                                latency.latencyMs?.let { "$it ms" } ?: "失败",
+                                color = if (latency.latencyMs != null) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Text(
+                            latency.detail,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                        )
+                    }
+                    item {
+                        Text(
+                            "隐私与出口检查",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                    items(report.checks) { check -> IpQualityCheckRow(check) }
+                    item {
+                        Text(
+                            "完成 ${report.completedProbes}/${report.totalProbes} 项 · ${report.elapsedMillis} ms",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                        )
+                    }
+                } else if (!state.running) {
+                    item {
+                        Text(
+                            "连接 VPN 后点击“检测”，开始读取当前代理出口。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss, enabled = !state.running) { Text("完成") }
+        },
+    )
+}
+
+@Composable
+private fun ExternalIpTestLinks() {
+    val context = LocalContext.current
+    val tests = listOf(
+        "DNS 泄漏测试" to "https://www.dnsleaktest.com/",
+        "IPv6 / WebRTC 测试" to "https://browserleaks.com/webrtc",
+        "综合 IP 质量" to "https://browserleaks.com/ip",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(
+            "浏览器外部复核",
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+        )
+        Text(
+            "应用内探测无法替代浏览器 DNS、IPv6 或 WebRTC 测试；点击后交给系统浏览器打开公开测试站。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+        )
+        tests.forEach { (label, url) ->
+            TextButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
+            ) {
+                Text(label, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                Icon(Icons.Rounded.ChevronRight, contentDescription = null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IpQualityIdentityCard(report: IpQualityReport) {
+    val metadata = report.metadata
+    LiquidGlassPanel(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(
+                "${metadata?.country ?: "未知地区"}${metadata?.region?.let { " · $it" } ?: ""}${metadata?.city?.let { " · $it" } ?: ""}",
+                fontWeight = FontWeight.Bold,
+            )
+            Text("IPv4  ${report.ipv4 ?: "—"}", fontSize = 12.sp)
+            Text("IPv6  ${report.ipv6 ?: "—"}", fontSize = 12.sp)
+            Text(
+                buildString {
+                    append("ASN  ")
+                    append(metadata?.asn ?: "—")
+                    append(" · ")
+                    append(metadata?.organization ?: metadata?.isp ?: "未知运营商")
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            metadata?.edgeLocation?.let {
+                Text("边缘节点  $it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IpQualityCheckRow(check: IpQualityCheck) {
+    val (icon, color, label) = when (check.state) {
+        IpQualityState.VERIFIED -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, "已确认")
+        IpQualityState.ATTENTION -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "注意")
+        IpQualityState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
+        IpQualityState.NOT_TESTED -> Triple(Icons.Rounded.MoreHoriz, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
+    }
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(check.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(label, color = color, fontSize = 10.sp)
+            }
+            Text(check.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
+        }
+    }
+}
+
+@Composable
+private fun LocalRouteRulesDialog(
+    state: LocalRouteRuleState,
+    onAdd: (LocalRuleType, String, LocalRuleAction) -> Boolean,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var type by remember { mutableStateOf(LocalRuleType.DOMAIN_SUFFIX) }
+    var action by remember { mutableStateOf(LocalRuleAction.DIRECT) }
+    var value by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("本地域名 / IP 规则", fontWeight = FontWeight.Bold)
+                Text(
+                    "只在本机生效；应用规则优先于这里的规则",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 580.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                item {
+                    Text(
+                        "规则按列表从上到下匹配。域名和 CIDR 会在连接前编译为 Mihomo 规则，不解析、不上传输入内容。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            type = LocalRuleType.entries[
+                                (LocalRuleType.entries.indexOf(type) + 1) % LocalRuleType.entries.size
+                            ]
+                        }) { Text(type.label) }
+                        TextButton(onClick = {
+                            action = LocalRuleAction.entries[
+                                (LocalRuleAction.entries.indexOf(action) + 1) % LocalRuleAction.entries.size
+                            ]
+                        }) { Text(action.label) }
+                    }
+                }
+                item {
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { value = it.take(253) },
+                        label = {
+                            Text(
+                                when (type) {
+                                    LocalRuleType.DOMAIN -> "例如 example.com"
+                                    LocalRuleType.DOMAIN_SUFFIX -> "例如 google.com"
+                                    LocalRuleType.DOMAIN_KEYWORD -> "例如 ads"
+                                    LocalRuleType.IP_CIDR -> "例如 203.0.113.0/24"
+                                    LocalRuleType.IP_CIDR6 -> "例如 2001:db8::/32"
+                                },
+                            )
+                        },
+                        singleLine = true,
+                        isError = state.error != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    Button(
+                        onClick = {
+                            if (onAdd(type, value, action)) value = ""
+                        },
+                        enabled = value.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(Modifier.width(7.dp))
+                        Text("添加规则")
+                    }
+                }
+                state.error?.let { message ->
+                    item {
+                        Text(message, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
+                }
+                if (state.rules.isEmpty()) {
+                    item {
+                        Text(
+                            "还没有本地规则。你可以先添加广告域名、家庭过滤域名或需要直连的企业网段。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+                items(state.rules, key = { it.id }) { rule ->
+                    LiquidGlassPanel(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(15.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(rule.value, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${rule.type.label} · ${rule.action.label}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                            Switch(
+                                checked = rule.enabled,
+                                onCheckedChange = { onToggle(rule.id, it) },
+                            )
+                            IconButton(onClick = { onDelete(rule.id) }) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = localizedContentDescription("删除规则"))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+    )
+}
+
+@Composable
+private fun RouteLensDialog(
+    routes: List<AppRoute>,
+    mode: RoutingMode,
+    defaultTarget: RouteTarget?,
+    preferences: NetworkPreferences,
+    localRules: List<LocalRouteRule>,
+    onDismiss: () -> Unit,
+) {
+    var packageName by remember { mutableStateOf(routes.firstOrNull()?.packageName.orEmpty()) }
+    var appName by remember { mutableStateOf(routes.firstOrNull()?.appName.orEmpty()) }
+    var domain by remember { mutableStateOf("example.com") }
+    var ip by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("443") }
+    var protocol by remember { mutableStateOf("TCP") }
+    var result by remember { mutableStateOf<RouteLensResult?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("路由解释", fontWeight = FontWeight.Bold)
+                Text(
+                    "只模拟本机规则，不执行网络请求",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = ip,
+                        onValueChange = { ip = it.take(45) },
+                        label = { Text("IP（可选，用于 CIDR 规则）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = appName,
+                        onValueChange = { appName = it.take(80) },
+                        label = { Text("应用名称（可选）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = packageName,
+                        onValueChange = { packageName = it.take(160) },
+                        label = { Text("应用包名（用于匹配规则）") },
+                        placeholder = { Text("com.example.app") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = domain,
+                        onValueChange = { domain = it.take(253) },
+                        label = { Text("域名") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = port,
+                            onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                            label = { Text("端口") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = protocol,
+                            onValueChange = { protocol = it.take(8).uppercase() },
+                            label = { Text("协议") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                item {
+                    Button(
+                        onClick = {
+                            val parsedPort = port.toIntOrNull()
+                            when {
+                                domain.isBlank() -> error = "请输入域名"
+                                parsedPort == null || parsedPort !in 1..65535 -> error = "端口必须为 1–65535"
+                                else -> {
+                                    error = null
+                                    result = RouteLens.evaluate(
+                                        query = RouteLensQuery(
+                                            packageName = packageName.trim(),
+                                            appName = appName.trim().ifBlank { "未指定应用" },
+                                            domain = domain.trim(),
+                                            ip = ip.trim().ifBlank { null },
+                                            port = requireNotNull(parsedPort),
+                                            protocol = protocol.trim().ifBlank { "TCP" },
+                                        ),
+                                        routes = routes,
+                                        mode = mode,
+                                        defaultTarget = defaultTarget,
+                                        preferences = preferences,
+                                        localRules = localRules,
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Visibility, contentDescription = null)
+                        Spacer(Modifier.width(7.dp))
+                        Text("解释这条连接")
+                    }
+                }
+                error?.let { message ->
+                    item { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+                result?.let { explanation ->
+                    item {
+                        LiquidGlassPanel(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                Text(
+                                    "${explanation.query.domain}:${explanation.query.port} · ${explanation.query.protocol}",
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    "${explanation.matchedRule} → ${explanation.target}",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+                    items(explanation.checks) { check ->
+                        LensCheckRow(check)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+    )
+}
+
+@Composable
+private fun LensCheckRow(check: io.weave.client.core.diagnostics.RouteLensCheck) {
+    val (icon, color, label) = when (check.state) {
+        LensState.VERIFIED -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, "已确认")
+        LensState.ATTENTION -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "注意")
+        LensState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
+        LensState.NOT_TESTED -> Triple(Icons.Rounded.MoreHoriz, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(check.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Spacer(Modifier.width(7.dp))
+                Text(label, color = color, fontSize = 11.sp)
+            }
+            Text(check.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+}
+
+@Composable
+private fun PrivacyObservatoryDialog(
+    report: PrivacyObservationReport,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("隐私观测", fontWeight = FontWeight.Bold)
+                Text(
+                    report.summary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 540.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                item {
+                    Text(
+                        "生成时间：${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(report.generatedAtEpochMillis))}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                    )
+                }
+                items(report.observations) { observation ->
+                    ObservatoryRow(observation)
+                }
+                item {
+                    Text(
+                        "已确认表示来自本机状态或已写入的规则；未知/未测试必须用外部 DNS、IPv6、WebRTC 和 QUIC 测试站复核。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+    )
+}
+
+@Composable
+private fun ObservatoryRow(observation: PrivacyObservation) {
+    val (icon, color, label) = when (observation.state) {
+        io.weave.client.core.diagnostics.ObservatoryState.VERIFIED -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, "已确认")
+        io.weave.client.core.diagnostics.ObservatoryState.ATTENTION -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "注意")
+        io.weave.client.core.diagnostics.ObservatoryState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
+        io.weave.client.core.diagnostics.ObservatoryState.NOT_TESTED -> Triple(Icons.Rounded.MoreHoriz, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
+    }
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(observation.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Spacer(Modifier.width(7.dp))
+                Text(label, color = color, fontSize = 11.sp)
+            }
+            Text(observation.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+}
+
+@Composable
+private fun RecoveryCenterDialog(
+    state: RecoveryState,
+    onClearSafeMode: () -> Unit,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("恢复中心", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                Text(
+                    if (state.safeMode) "安全模式已启用" else "运行状态可恢复",
+                    color = if (state.safeMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    if (state.safeMode) {
+                        state.safeModeReason ?: "最近一次候选配置与旧配置均未能启动"
+                    } else {
+                        "失败的候选配置不会覆盖上一份可用配置；运行快照只保留在应用私有缓存中。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                )
+                Text("连续失败：${state.failureCount} 次", fontSize = 13.sp)
+                state.lastFailure?.let {
+                    Text("最近失败：$it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                state.lastHealthyRevision?.let {
+                    Text("最近可用快照：$it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                Text(
+                    "恢复中心不保存订阅 URL、节点凭据或明文配置；解除安全模式后需要你主动重新连接。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onRefresh) { Text("刷新") }
+                if (state.safeMode) {
+                    TextButton(onClick = onClearSafeMode) { Text("解除安全模式") }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+    )
+}
+
+@Composable
+private fun PolicyPackDialog(
+    state: PolicyPackState,
+    onImport: (Uri) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(onImport) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("离线策略包", fontWeight = FontWeight.Bold)
+                Text(
+                    "规则只在本机保存和编译，不依赖远程规则服务器",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                item {
+                    Button(onClick = {
+                        filePicker.launch(arrayOf("application/json", "text/*", "application/octet-stream"))
+                    }) {
+                        Icon(Icons.Rounded.CloudDownload, contentDescription = null)
+                        Spacer(Modifier.width(7.dp))
+                        Text("导入 .weave-policy JSON")
+                    }
+                }
+                if (state.packs.isEmpty()) {
+                    item {
+                        Text(
+                            "尚未导入策略包。策略包必须包含格式、版本、规则和 SHA-256；无签名包会标记为需复核。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        )
+                    }
+                }
+                items(state.packs, key = { it.id }) { pack ->
+                    PolicyPackRow(pack, onToggle, onDelete)
+                }
+                (state.message ?: state.error)?.let { message ->
+                    item {
+                        Text(
+                            message,
+                            color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+    )
+}
+
+@Composable
+private fun PolicyPackRow(
+    pack: PolicyPack,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val integrityLabel = when (pack.integrity) {
+        PolicyPackIntegrity.VERIFIED_SIGNATURE -> "签名已验证"
+        PolicyPackIntegrity.VERIFIED_HASH -> "哈希已验证"
+        PolicyPackIntegrity.UNSIGNED_REVIEW -> "无签名·需复核"
+        PolicyPackIntegrity.INVALID -> "无效"
+    }
+    LiquidGlassPanel(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(pack.name, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "v${pack.version} · ${pack.ruleCount} 条 · $integrityLabel",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                    )
+                }
+                Switch(checked = pack.active, onCheckedChange = { onToggle(pack.id, it) })
+            }
+            if (pack.description.isNotBlank()) {
+                Text(
+                    pack.description,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+            Row {
+                Text(
+                    pack.sha256.take(16) + "…",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onDelete(pack.id) }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
     }
 }
@@ -2974,7 +4385,7 @@ private fun LinkSetting(
         if (onClick != null) {
             Icon(
                 Icons.Rounded.ChevronRight,
-                contentDescription = "打开",
+                contentDescription = localizedContentDescription("打开"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -3025,13 +4436,18 @@ private fun ToggleSetting(
 @Composable
 private fun DnsSettingsDialog(
     preferences: NetworkPreferences,
+    probeState: DnsProbeState,
     onDismiss: () -> Unit,
     onProfileSelected: (DnsProfile) -> Unit,
+    onRoutingModeSelected: (DnsRoutingMode) -> Unit,
     onCustomEndpointSaved: (String) -> Boolean,
     onTransportSelected: (DnsTransport) -> Unit,
+    onProbeProviders: () -> Unit,
 ) {
     var editingCustom by remember { mutableStateOf(false) }
     var choosingTransport by remember { mutableStateOf(false) }
+    var choosingRouting by remember { mutableStateOf(false) }
+    var showingProbe by remember { mutableStateOf(false) }
     var endpoint by remember { mutableStateOf(preferences.customDnsEndpoint) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -3039,12 +4455,22 @@ private fun DnsSettingsDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                if (editingCustom) "自定义 DNS" else if (choosingTransport) "解析协议" else "DNS",
+                when {
+                    editingCustom -> "自定义 DNS"
+                    choosingTransport -> "解析协议"
+                    choosingRouting -> "解析策略"
+                    showingProbe -> "DNS 端点检测"
+                    else -> "DNS"
+                },
                 fontWeight = FontWeight.Bold,
             )
         },
         text = {
             when {
+                showingProbe -> DnsProbePanel(
+                    state = probeState,
+                    onProbe = onProbeProviders,
+                )
                 choosingTransport -> Column {
                     DnsTransport.entries.forEachIndexed { index, transport ->
                         Row(
@@ -3068,12 +4494,43 @@ private fun DnsSettingsDialog(
                             if (transport == preferences.dnsTransport) {
                                 Icon(
                                     Icons.Rounded.CheckCircle,
-                                    contentDescription = "已选择",
+                                    contentDescription = localizedContentDescription("已选择"),
                                     tint = MaterialTheme.colorScheme.secondary,
                                 )
                             }
                         }
                         if (index != DnsTransport.entries.lastIndex) WeaveDivider()
+                    }
+                }
+                choosingRouting -> Column {
+                    DnsRoutingMode.entries.forEachIndexed { index, mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onRoutingModeSelected(mode)
+                                    choosingRouting = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(mode.label, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    mode.description,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                            if (mode == preferences.dnsRoutingMode) {
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = localizedContentDescription("已选择"),
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                )
+                            }
+                        }
+                        if (index != DnsRoutingMode.entries.lastIndex) WeaveDivider()
                     }
                 }
                 editingCustom -> Column {
@@ -3098,7 +4555,11 @@ private fun DnsSettingsDialog(
                         supportingText = error?.let { message -> { Text(message) } },
                     )
                 }
-                else -> Column {
+                else -> Column(
+                    modifier = Modifier
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     DnsProfile.entries.forEachIndexed { index, profile ->
                         Row(
                             modifier = Modifier
@@ -3126,7 +4587,7 @@ private fun DnsSettingsDialog(
                             if (profile == preferences.dnsProfile) {
                                 Icon(
                                     Icons.Rounded.CheckCircle,
-                                    contentDescription = "已选择",
+                                    contentDescription = localizedContentDescription("已选择"),
                                     tint = MaterialTheme.colorScheme.secondary,
                                 )
                             }
@@ -3149,7 +4610,43 @@ private fun DnsSettingsDialog(
                                 fontSize = 12.sp,
                             )
                         }
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = "选择协议")
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = localizedContentDescription("选择协议"))
+                    }
+                    WeaveDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { choosingRouting = true }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("解析策略", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "当前：${preferences.dnsRoutingMode.label}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = localizedContentDescription("选择解析策略"))
+                    }
+                    WeaveDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showingProbe = true }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("测速与可用性", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "仅测 TLS / HTTPS 端点，不发送域名查询",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Icon(Icons.Rounded.Speed, contentDescription = localizedContentDescription("检测 DNS"))
                     }
                 }
             }
@@ -3165,16 +4662,97 @@ private fun DnsSettingsDialog(
         dismissButton = {
             TextButton(onClick = {
                 when {
-                    editingCustom || choosingTransport -> {
+                    editingCustom || choosingTransport || choosingRouting || showingProbe -> {
                         editingCustom = false
                         choosingTransport = false
+                        choosingRouting = false
+                        showingProbe = false
                         error = null
                     }
                     else -> onDismiss()
                 }
-            }) { Text(if (editingCustom || choosingTransport) "返回" else "取消") }
+            }) {
+                Text(
+                    if (editingCustom || choosingTransport || choosingRouting || showingProbe) {
+                        "返回"
+                    } else {
+                        "取消"
+                    },
+                )
+            }
         },
     )
+}
+
+@Composable
+private fun DnsProbePanel(
+    state: DnsProbeState,
+    onProbe: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .heightIn(max = 520.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Text(
+            "结果是当前网络到加密 DNS 服务端点的实测 RTT；不代表节点延迟，也不会伪造 65553ms 之类的无效值。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = onProbe,
+            enabled = !state.running,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (state.running) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(if (state.running) "检测中…" else "检测全部 DNS")
+        }
+        state.error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
+        DnsProfile.entries
+            .filter { it != DnsProfile.CUSTOM || state.results.containsKey(it) }
+            .forEach { profile ->
+                val result = state.results[profile]
+                WeaveDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(profile.label, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            result?.detail ?: "尚未检测",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    result?.let {
+                        Text(
+                            if (it.available) "${it.latencyMs ?: "—"} ms" else "不可达",
+                            color = if (it.available) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+    }
 }
 
 @Composable
@@ -3216,7 +4794,7 @@ private fun <T> SettingChoiceDialog(
                             Spacer(Modifier.width(12.dp))
                             Icon(
                                 Icons.Rounded.CheckCircle,
-                                contentDescription = "已选择",
+                                contentDescription = localizedContentDescription("已选择"),
                                 tint = MaterialTheme.colorScheme.secondary,
                             )
                         }
@@ -3233,8 +4811,117 @@ private fun <T> SettingChoiceDialog(
 }
 
 @Composable
+private fun AppearanceChoiceDialog(
+    selected: WeavePalette,
+    onDismiss: () -> Unit,
+    onSelect: (WeavePalette) -> Unit,
+) {
+    val minimal = WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.MINIMAL }
+    val art = WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.ART }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("外观", fontWeight = FontWeight.Bold) },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                item { AppearanceGroupLabel(WeaveAppearanceGroup.MINIMAL.label) }
+                items(minimal) { option ->
+                    AppearanceOptionRow(
+                        option = option,
+                        selected = option == selected,
+                        onClick = { onSelect(option) },
+                    )
+                }
+                item {
+                    Spacer(Modifier.height(10.dp))
+                    AppearanceGroupLabel(WeaveAppearanceGroup.ART.label)
+                }
+                items(art) { option ->
+                    AppearanceOptionRow(
+                        option = option,
+                        selected = option == selected,
+                        onClick = { onSelect(option) },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
+@Composable
+private fun AppearanceGroupLabel(label: String) {
+    Text(
+        text = label,
+        color = MaterialTheme.colorScheme.primary,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun AppearanceOptionRow(
+    option: WeavePalette,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else Color.Transparent,
+            )
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(option.label, fontWeight = FontWeight.SemiBold)
+            Text(
+                option.description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+        }
+        PaletteSwatch(option)
+        if (selected) {
+            Spacer(Modifier.width(12.dp))
+            Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = localizedContentDescription("已选择"),
+                tint = MaterialTheme.colorScheme.secondary,
+            )
+        }
+    }
+}
+
+@Composable
 private fun PaletteSwatch(palette: WeavePalette) {
     val colors = when (palette) {
+        WeavePalette.MINIMAL_LIGHT -> listOf(
+            Color(0xFF1D252D), Color(0xFFDCE7EE), Color(0xFFF4F6F8),
+        )
+        WeavePalette.MINIMAL_DARK -> listOf(
+            Color(0xFFE9EEF2), Color(0xFF344A59), Color(0xFF0E1318),
+        )
+        WeavePalette.MINIMAL_DEEP_OCEAN -> listOf(
+            Color(0xFFE4F0F3), Color(0xFF285361), Color(0xFF09151B),
+        )
+        WeavePalette.MINIMAL_GRAPHITE -> listOf(
+            Color(0xFFEBEDF0), Color(0xFF444B55), Color(0xFF0E1013),
+        )
+        WeavePalette.MINIMAL_NIGHT_PINE -> listOf(
+            Color(0xFFE6F0EA), Color(0xFF3D5B50), Color(0xFF0C1714),
+        )
         WeavePalette.IMPRESSION_SUNRISE -> listOf(
             Color(0xFF3E5875), Color(0xFFA0BAB1), Color(0xFFDF9A7D),
         )

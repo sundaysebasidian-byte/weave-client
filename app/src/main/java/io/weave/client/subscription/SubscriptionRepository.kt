@@ -38,6 +38,11 @@ class SubscriptionRepository(
     fun loadNodes(subscriptionId: String): List<ProxyNode> =
         loadNodes().filter { it.subscriptionId == subscriptionId }
 
+    /** Returns only IDs whose encrypted source is an HTTPS URL; the URL never leaves this layer. */
+    fun loadRemoteIds(): Set<String> = store.list()
+        .filter { runCatching { store.readUrl(it.id) }.getOrNull()?.startsWith("https://", ignoreCase = true) == true }
+        .mapTo(linkedSetOf()) { it.id }
+
     suspend fun loadEditor(subscriptionId: String): EditableSubscription =
         withContext(Dispatchers.IO) {
             val record = store.get(subscriptionId)
@@ -70,43 +75,118 @@ class SubscriptionRepository(
         store.delete(subscriptionId)
     }
 
-    suspend fun exportForLanTransfer(): List<TransferSubscription> =
+    suspend fun exportForLanTransfer(
+        selectedIds: Set<String> = emptySet(),
+    ): List<TransferSubscription> =
         withContext(Dispatchers.IO) {
-            store.list().map { subscription ->
+            store.list()
+                .filter { selectedIds.isEmpty() || it.id in selectedIds }
+                .map { subscription ->
                 TransferSubscription(
+                    id = subscription.id,
                     name = subscription.name,
                     source = store.readUrl(subscription.id),
                     payload = store.readPayload(subscription.id),
                 )
-            }
+                }
         }
 
     suspend fun importFromLanTransfer(
         items: List<TransferSubscription>,
     ): List<Subscription> = withContext(Dispatchers.IO) {
+        require(items.isNotEmpty()) { "传输中没有订阅" }
+        val records = store.list()
+        val sourceById = records.associate { record ->
+            record.id to runCatching { store.readUrl(record.id) }.getOrNull()
+        }
+        data class ExistingSnapshot(
+            val record: StoredSubscription,
+            val source: String,
+            val payload: String,
+        )
+        data class PreparedImport(
+            val item: TransferSubscription,
+            val runtimePayload: String,
+            val parsed: ParsedSubscription,
+            val existing: ExistingSnapshot?,
+        )
+        fun stableId(value: String): String? = value.trim().takeIf {
+            it.length <= 64 && runCatching { java.util.UUID.fromString(it) }.isSuccess
+        }
+        fun existingFor(item: TransferSubscription): ExistingSnapshot? {
+            val byId = stableId(item.id)?.let { id -> records.firstOrNull { it.id == id } }
+            val record = byId ?: records.firstOrNull {
+                it.name == item.name && sourceById[it.id] == item.source
+            } ?: return null
+            val source = sourceById[record.id] ?: return null
+            return ExistingSnapshot(record, source, store.readPayload(record.id))
+        }
+
         val validated = items.map { item ->
-            item to prepareRuntimePayload(item.payload).also { (_, parsed) ->
+            val existing = existingFor(item)
+            val prepared = prepareRuntimePayload(item.payload).also { (_, parsed) ->
                 if (parsed.nodeCount == 0) {
                     throw SubscriptionImportException("订阅中没有可用节点")
                 }
             }
+            if (existing != null) {
+                val audit = SubscriptionGuard.audit(
+                    previous = existing.record,
+                    candidate = prepared.second,
+                    oldSource = existing.source,
+                    newSource = item.source,
+                )
+                if (audit.blocked) throw SubscriptionGuardException(audit)
+            }
+            PreparedImport(item, prepared.first, prepared.second, existing)
+        }
+        val incomingIds = items.mapNotNull { stableId(it.id) }
+        check(incomingIds.size == incomingIds.distinct().size) {
+            "传输中包含重复的订阅 ID，已停止同步"
+        }
+        val existingIds = validated.mapNotNull { it.existing?.record?.id }
+        check(existingIds.size == existingIds.distinct().size) {
+            "传输中包含重复的同一订阅，已停止同步"
         }
         val imported = mutableListOf<Subscription>()
+        val saved = mutableListOf<Pair<PreparedImport, String>>()
         try {
-            validated.forEach { (item, parsed) ->
-                imported += toDomain(
-                    store.save(
+            validated.forEach { prepared ->
+                val item = prepared.item
+                val id = prepared.existing?.record?.id
+                    ?: stableId(item.id)
+                    ?: java.util.UUID.randomUUID().toString()
+                val savedRecord = store.save(
                         name = item.name,
                         url = item.source,
-                        payload = parsed.first,
-                        parsed = parsed.second,
-                    ),
-                )
+                        payload = prepared.runtimePayload,
+                        parsed = prepared.parsed,
+                        id = id,
+                    )
+                saved += prepared to id
+                imported += toDomain(savedRecord)
             }
             imported
         } catch (error: Throwable) {
-            imported.forEach { subscription ->
-                runCatching { store.delete(subscription.id) }
+            // A same-ID sync updates in place. Roll it back to its encrypted snapshot if a later
+            // item fails; new imports are removed entirely. This keeps a multi-subscription packet
+            // transactional without deleting a pre-existing local subscription on error.
+            saved.asReversed().forEach { (prepared, id) ->
+                runCatching {
+                    val snapshot = prepared.existing
+                    if (snapshot == null) {
+                        store.delete(id)
+                    } else {
+                        val oldParsed = prepareRuntimePayload(snapshot.payload)
+                        store.save(
+                            name = snapshot.record.name,
+                            url = snapshot.source,
+                            payload = oldParsed.first,
+                            parsed = oldParsed.second,
+                            id = snapshot.record.id,
+                        )
+                    }
+                }
             }
             throw error
         }
@@ -125,6 +205,17 @@ class SubscriptionRepository(
             source = fetched.finalUri.toString(),
             payload = fetched.body,
         )
+    }
+
+    /** Refreshes an existing HTTPS subscription without exposing its decrypted URL to UI state. */
+    suspend fun refreshRemote(subscriptionId: String): SubscriptionUpdate = withContext(Dispatchers.IO) {
+        val record = store.get(subscriptionId)
+            ?: throw SubscriptionImportException("订阅不存在")
+        val source = store.readUrl(subscriptionId)
+        require(source.startsWith("https://", ignoreCase = true)) {
+            "「${record.name}」不是远程 HTTPS 订阅，已跳过自动刷新"
+        }
+        replaceRemote(subscriptionId, record.name, source)
     }
 
     suspend fun replaceFile(
@@ -212,6 +303,17 @@ class SubscriptionRepository(
             throw SubscriptionImportException("订阅中没有可用节点")
         }
         val diff = SubscriptionDiffer.compare(previous.nodes, parsed.nodes)
+        val audit = SubscriptionGuard.audit(
+            previous = previous,
+            candidate = parsed,
+            oldSource = runCatching { store.readUrl(subscriptionId) }.getOrNull(),
+            newSource = source,
+        )
+        if (audit.blocked) {
+            // The old encrypted metadata and payload are deliberately untouched. Callers can
+            // display the finding and retry after inspecting the source.
+            throw SubscriptionGuardException(audit)
+        }
         val updated = store.save(
             name = name,
             url = source,
@@ -219,7 +321,7 @@ class SubscriptionRepository(
             parsed = parsed,
             id = subscriptionId,
         )
-        return SubscriptionUpdate(toDomain(updated), diff)
+        return SubscriptionUpdate(toDomain(updated), diff, audit)
     }
 
     private fun requireExisting(subscriptionId: String) {
@@ -256,4 +358,5 @@ class SubscriptionRepository(
 data class SubscriptionUpdate(
     val subscription: Subscription,
     val diff: SubscriptionDiff,
+    val audit: SubscriptionAudit = SubscriptionAudit.clean(),
 )

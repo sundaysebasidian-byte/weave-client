@@ -24,6 +24,7 @@ class NetworkAvailabilityTrackerTest {
             NetworkAvailabilityTransition.NONE,
             tracker.update("wifi", false),
         )
+        assertEquals(emptyList<String>(), tracker.snapshot())
     }
 
     @Test
@@ -39,6 +40,7 @@ class NetworkAvailabilityTrackerTest {
             NetworkAvailabilityTransition.AVAILABLE_CHANGED,
             tracker.update("wifi", false),
         )
+        assertEquals(listOf("cellular"), tracker.snapshot())
         assertEquals(
             NetworkAvailabilityTransition.UNAVAILABLE,
             tracker.update("cellular", false),
