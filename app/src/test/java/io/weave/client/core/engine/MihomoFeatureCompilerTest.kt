@@ -18,7 +18,7 @@ class MihomoFeatureCompilerTest {
                 tolerance = 80,
                 intervalSeconds = 60,
                 timeoutMs = 5_000,
-                maxFailedTimes = 1,
+                maxFailedTimes = 3,
             ),
             MihomoFeatureCompiler.automaticGroup(AutomaticStrategy.LOWEST_LATENCY),
         )
@@ -31,7 +31,7 @@ class MihomoFeatureCompilerTest {
                 type = "fallback",
                 intervalSeconds = 45,
                 timeoutMs = 5_000,
-                maxFailedTimes = 1,
+                maxFailedTimes = 3,
             ),
             MihomoFeatureCompiler.automaticGroup(AutomaticStrategy.FAILOVER),
         )
@@ -41,7 +41,7 @@ class MihomoFeatureCompilerTest {
                 strategy = "consistent-hashing",
                 intervalSeconds = 60,
                 timeoutMs = 5_000,
-                maxFailedTimes = 1,
+                maxFailedTimes = 3,
             ),
             MihomoFeatureCompiler.automaticGroup(AutomaticStrategy.LOAD_BALANCE),
         )

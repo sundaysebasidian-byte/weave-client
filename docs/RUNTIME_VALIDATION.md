@@ -1,5 +1,17 @@
 # Android 运行验证
 
+## 2026-08-16：Android 数据面稳定性修复（alpha51，待真机回归）
+
+- 对照 CMFA 的 Android 集成路径收敛 TUN 默认值：使用 `system` 栈，DNS 劫持覆盖任意
+  IPv4/IPv6 53 端口，避免应用的私有 DNS/硬编码 DNS 被前置拒绝规则直接丢弃。
+- Android 10+ 不再把 Mihomo socket 绑定到单个 `Network` 对象，也不因 Wi‑Fi/蜂窝切换重建
+  健康 TUN；出站 socket 只调用 `VpnService.protect()`，由系统把它迁移到当前物理网络。
+  Android 8/9 保留 CMFA 使用的 `setUnderlyingNetworks` 元数据更新。
+- 自动组连续 3 次健康探测失败才切换节点，探测地址改为 CMFA 常用的轻量
+  `http://www.gstatic.com/generate_204`，降低移动网络瞬时抖动导致的节点剔除。
+- JVM 单元测试、Android Lint 和四 ABI debug APK 已通过；当前没有连接 ADB 真机，以下
+  Wi‑Fi/蜂窝切换、锁屏长连接、IPv6/QUIC 仍需在 Android 17 真机确认。
+
 ## 2026-08-16：出站保护长连接恢复（alpha50，待真机长时回归）
 
 - 原生内核晚到的 `VpnService.protect()` 或物理 Network 绑定失败不再直接关闭前台 VPN；服务会

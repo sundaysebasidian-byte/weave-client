@@ -5,6 +5,12 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+- Android alpha51：针对“同一节点在 CMFA 稳定、Weave 偶发无网”收敛 CMFA 数据面路径。Mihomo
+  使用 Android `system` TUN 栈并接管任意 IPv4/IPv6 DNS 53 端口；Android 10+ 核心出站只做
+  `VpnService.protect()`，不再绑定易失效的 `Network` 或在换网时重建健康 TUN；自动节点连续
+  3 次健康探测失败才切换，并使用轻量 connectivity probe，减少移动网络瞬时抖动导致的断网。
+  新版本号为 `0.3.0-alpha51`（versionCode 53）。
+
 - 发布边界：新增 `local-open-source` 本地发行配置、网络端点清单和 `audit-local-release.sh`；明确公开版不运营账号、云端控制、节点中继、遥测、崩溃上报或应用远程更新，并在首次 VPN 数据路径说明中展示该边界。发布文案、隐私说明、第三方清单和 PR 模板同步加入事实核对与敏感信息脱敏门槛。
 
 - Android：稳定长连接的出站保护恢复链路。区分底层 Network 暂时不可用与原生内核出站 socket

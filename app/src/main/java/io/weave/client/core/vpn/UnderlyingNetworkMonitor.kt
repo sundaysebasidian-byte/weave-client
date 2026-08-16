@@ -4,6 +4,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Build
 
 /**
  * Watches usable, non-VPN networks so the VPN cannot accidentally react to itself.
@@ -42,6 +43,26 @@ internal class UnderlyingNetworkMonitor(
         override fun onLost(network: Network) {
             update(network, false)
         }
+
+        override fun onLosing(network: Network, maxMsToLive: Int) {
+            // A handover can keep the old Network in the callback set until onLost(). Publish
+            // immediately so Android 8/9 can move the VPN metadata before the old route expires.
+            publishCurrent(force = true)
+        }
+
+        override fun onLinkPropertiesChanged(
+            network: Network,
+            linkProperties: android.net.LinkProperties,
+        ) {
+            // DHCP, IPv6 prefix and carrier DNS changes do not necessarily change capabilities.
+            // They still invalidate a long-lived protected socket path, so feed the same debounced
+            // recovery path used for a Wi-Fi/cellular handover.
+            publishCurrent(force = true)
+        }
+
+        override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
+            update(network, !blocked)
+        }
     }
 
     fun start() {
@@ -50,6 +71,15 @@ internal class UnderlyingNetworkMonitor(
             NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                .apply {
+                    // Match CMFA's foreground network request on Android 9+. Without this
+                    // capability some OEMs stop delivering the physical network to a long-lived
+                    // VPN service as soon as its activity leaves the foreground.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        addCapability(NetworkCapabilities.NET_CAPABILITY_FOREGROUND)
+                    }
+                }
                 .build(),
             callback,
         )
@@ -95,11 +125,15 @@ internal class UnderlyingNetworkMonitor(
 
     private fun update(network: Network, eligible: Boolean) {
         val transition = tracker.update(network, eligible)
-        val networks = orderedNetworks()
         // Capabilities can change without the set of networks changing (for example, a network
         // becomes validated). Publish only when the ordered candidate list really changed, which
         // avoids a recovery storm while still allowing a validated Wi‑Fi to outrank cellular.
-        if (transition == NetworkAvailabilityTransition.NONE && networks == lastPublished) return
+        publishCurrent(force = transition != NetworkAvailabilityTransition.NONE)
+    }
+
+    private fun publishCurrent(force: Boolean = false) {
+        val networks = orderedNetworks()
+        if (!force && networks == lastPublished) return
         lastPublished = networks
         if (networks.isEmpty()) {
             onUnavailable(networks)
@@ -128,7 +162,8 @@ internal class UnderlyingNetworkMonitor(
     private fun NetworkCapabilities?.isEligible(): Boolean =
         this != null &&
             hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+            hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
 
     private fun NetworkCapabilities?.isValidated(): Boolean =
         this != null && hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)

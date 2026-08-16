@@ -1,20 +1,17 @@
 # Weave（暂定名）
 
-一款面向 Android、iOS、macOS 与 Windows 的开源规则代理客户端：以 CMFA 的兼容性和低学习成本为基线，
-吸收 Karing 的多订阅、复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性
-放在架构中心。
+一款面向 Android 的开源规则代理客户端：以 CMFA 的兼容性和低学习成本为基线，吸收 Karing 的多订阅、
+复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性放在架构中心。仓库中的其他平台
+目录保留为历史实验代码，不属于当前 Android 发行版。
 
-> 当前里程碑是 **Android 0.3.0-alpha50 / macOS 0.1.0-alpha06 / iOS 0.1.0-alpha01**。Android 四个 ABI 的
+> 当前里程碑是 **Android 0.3.0-alpha51**（Android-only 预览版）。Android 四个 ABI 的
 > CMFA/Mihomo
 > 核心已从锁定源码本地复现并接入；Clash YAML、URI/Base64、sing-box JSON 与基础 V2Ray JSON
 > 可从 HTTPS、粘贴文本、系统文件选择器、相机二维码或二维码图片安全导入，并编译为隔离 provider，
 > Android `VpnService` 会把 TUN fd 交给核心，并通过 `protect(fd)` 与 UID/包名回调完成出站
 > 和按应用路由。Android 16 ARM64 模拟器与 Pixel 8 / Android 17 真机均已用真实 OpenVPN
 > 订阅完成双栈 TUN、固定节点、Chrome 应用归属、系统网络验证、Wi‑Fi/蜂窝切换和断开清理
-> 闭环。macOS 版是原生 SwiftUI Apple Silicon 客户端，已集成相同锁定 commit 的 arm64
-> Mihomo、本地代理、订阅加密库和跨端局域网互传。iOS 已有原生 SwiftUI App、加密订阅库、
-> 域名分流编译器与独立 Packet Tunnel target；实际数据面仍需嵌入经审计的 iOS 移动内核并用
-> Apple Network Extension entitlement 签名。三个平台都仍是开发预览版，不应作为生产 VPN 使用。
+> 闭环。当前发行只覆盖 Android；其他平台目录不随 Android 预览版构建，也不应作为生产 VPN 使用。
 
 Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点和第三方 DNS 由用户自行选择，
 其运营者可能看到连接所必需的元数据。公开预览版的实际数据处理见
@@ -41,7 +38,8 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
 - 首页可手动选择默认订阅策略、固定节点或直连；选择订阅后可对该订阅全部节点进行三轮质量
   测速，并直接固定到选中的节点；连接中修改会安全热重载。
 - Android 长连接遇到 Wi‑Fi/蜂窝切换或底层 Network 短暂重建时，会在保持前台服务和 fail-closed
-  的前提下自动重建上一次健康运行时；单个出站 socket 的保护/绑定瞬态失败不再立即要求用户手动重连。
+  的前提下恢复上一次健康运行时；Android 10+ 的核心出站 socket 只调用 `protect()`，由系统跟随
+  当前物理网络，避免把连接钉在已经失效的 Network 对象上。
 - 出口选择采用“先选订阅、再选节点”的两步条件流程；节点只显示核心名称，不拼接订阅名、
   协议或空延迟说明，并清理开头的旗帜 Emoji 与 `\u...` 转义装饰。
 - 已导入订阅可查看和搜索全部节点、修改名称或 HTTPS 地址，也可用本地文件原位替换；
@@ -92,7 +90,9 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
   和带宽等未实际探测的字段保持未知，不生成伪造数值。
 - 设置页支持离线策略包（`weave-policy/v1`）：本机校验 SHA-256，可选 Ed25519 签名，Keystore
   加密保存，启用/停用后安全热重载；规则只接受受限域名、CIDR 和进程匹配，未签名包明确标记为需复核。
-- 代理模式没有隐式直连兜底；默认订阅失效或底层网络丢失时保持失败关闭。核心出站 socket 只绑定到已验证的非 VPN Wi-Fi、蜂窝或以太网。
+- 代理模式没有隐式直连兜底；默认订阅失效或底层网络丢失时保持失败关闭。核心出站 socket 通过
+  `VpnService.protect()` 绕过 TUN，Android 10+ 由系统选择当前非 VPN Wi‑Fi、蜂窝或以太网；Android 8/9
+  额外更新 VPN 的 underlying-network 元数据。
 - 代理服务器域名强制交给所选 DoH/DoT 上游解析；明文 `default-nameserver` 只承担加密
   DNS 上游域名的引导解析，不再用于每个代理服务器域名。
 - 订阅正文、URL、节点元数据和自定义 DNS 端点均使用 Keystore AES-GCM 保护；Clash 导入只保留

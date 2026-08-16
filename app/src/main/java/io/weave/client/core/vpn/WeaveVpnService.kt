@@ -9,7 +9,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -200,7 +199,23 @@ class WeaveVpnService : VpnService() {
     private fun onUnderlyingNetworksChanged(networks: List<Network>) {
         val previous = preferredUnderlyingNetwork
         val preferred = networks.firstOrNull()
-        if (preferred == previous) return
+        if (preferred == previous) {
+            // LinkProperties/DHCP callbacks can refresh an unchanged Network. Android 8/9 need
+            // that refresh pushed back into the VPN metadata; Android 10+ only needs recovery if
+            // the core has already reported an error.
+            if (
+                preferred != null &&
+                VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED
+            ) {
+                updateVpnUnderlyingNetworks(arrayOf(preferred))
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                scheduleNetworkRecovery()
+            } else if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+                scheduleOutboundRecovery()
+            }
+            return
+        }
         preferredUnderlyingNetwork = preferred
         if (preferred == null) {
             markUnderlyingNetworkUnavailable()
@@ -209,19 +224,32 @@ class WeaveVpnService : VpnService() {
         if (
             VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED
         ) {
-            // All Mihomo sockets are bound to this same network in protectAndBindSocket(). Keep
-            // Android's VPN attribution in lockstep during Wi-Fi/cellular handover.
+            // Android 10+ automatically moves protected sockets to the current default network.
+            // Pinning every socket to a Network object that is about to be lost causes exactly
+            // the intermittent "connected but no internet" state this service is meant to avoid.
+            // Android 8/9 still needs the explicit VPN metadata update used by CMFA.
             val updated = updateVpnUnderlyingNetworks(arrayOf(preferred))
             if (!updated && VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
                 Log.w(LOG_TAG, "System rejected underlying-network update; scheduling recovery")
             }
         }
-        scheduleNetworkRecovery()
+        // On Android 10+ a handover does not require tearing down a healthy TUN. The protected
+        // core sockets follow the platform default; rebuilding the TUN here only introduces a
+        // race between Wi-Fi and cellular and briefly drops every app connection. Keep the
+        // recovery path for old releases where the explicit underlying-network metadata matters.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            scheduleNetworkRecovery()
+        } else if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+            scheduleOutboundRecovery()
+        }
     }
 
     private fun markUnderlyingNetworkUnavailable() {
         Log.i(LOG_TAG, "All usable non-VPN networks became unavailable")
-        if (VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED) {
+        if (
+            VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED &&
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+        ) {
             // Empty means explicitly no upstream; traffic remains inside the VPN instead of
             // falling back to an unvalidated default network.
             updateVpnUnderlyingNetworks(emptyArray())
@@ -460,7 +488,7 @@ class WeaveVpnService : VpnService() {
         engine.start(
             tunFd = tunFd,
             config = prepared.assembled.yaml,
-            protectSocket = ::protectAndBindSocket,
+            protectSocket = ::protectCoreSocket,
             querySocketUid = ::querySocketUid,
             installedApps = prepared.installedApps,
         ).getOrThrow()
@@ -522,17 +550,25 @@ class WeaveVpnService : VpnService() {
         val preferred = underlyingNetworkMonitor.currentNetworks().firstOrNull()
         preferredUnderlyingNetwork = preferred
         checkNotNull(preferred) { "没有可用的底层网络" }
-        val descriptor = Builder()
+        val builder = Builder()
             .setSession("Weave")
             .setMtu(TUN_MTU)
             .setBlocking(false)
-            .setUnderlyingNetworks(arrayOf(preferred))
             .addAddress(TUN_GATEWAY, TUN_PREFIX)
             .addAddress(TUN_GATEWAY6, TUN_PREFIX6)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .addDnsServer(TUN_DNS)
             .addDnsServer(TUN_DNS6)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            // CMFA only updates this metadata on Android 8/9. On newer releases it is safer to
+            // let Android move protected sockets with the default physical network itself.
+            builder.setUnderlyingNetworks(arrayOf(preferred))
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
+        val descriptor = builder
             .setConfigureIntent(
                 PendingIntent.getActivity(
                     this,
@@ -546,33 +582,22 @@ class WeaveVpnService : VpnService() {
         return descriptor.detachFd()
     }
 
-    private fun updateVpnUnderlyingNetworks(networks: Array<Network>): Boolean =
-        runCatching { setUnderlyingNetworks(networks) }
+    private fun updateVpnUnderlyingNetworks(networks: Array<Network>): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true
+        return runCatching { setUnderlyingNetworks(networks) }
             .onFailure {
                 Log.w(LOG_TAG, "Android rejected VPN underlying-network update")
             }
             .getOrDefault(false)
+    }
 
-    /** Protects the core socket from VPN recursion and pins it to the selected physical network. */
-    private fun protectAndBindSocket(fd: Int): Boolean {
-        // Refresh the candidate at the callback boundary. During a handover the monitor can
-        // receive the new Network before the native core asks for its next socket, while the
-        // previously preferred Network may already be stale or lost.
-        val network = underlyingNetworkMonitor.currentNetworks().firstOrNull()
-            ?.also { preferredUnderlyingNetwork = it }
-            ?: return false
-        if (!protect(fd)) return false
-        return runCatching {
-            // fromFd duplicates the descriptor. Closing the wrapper leaves Mihomo's original fd
-            // alive, while the network binding applies to the shared socket description.
-            ParcelFileDescriptor.fromFd(fd).use { duplicate ->
-                network.bindSocket(duplicate.fileDescriptor)
-            }
-            true
-        }.onFailure {
-            // Do not log the exception: Android socket errors can include a node address or SNI.
-            Log.e(LOG_TAG, "Failed to bind protected socket to underlying network")
-        }.getOrDefault(false)
+    /** Protects the core socket from VPN recursion; Android moves it across physical networks. */
+    private fun protectCoreSocket(fd: Int): Boolean {
+        // Keep this callback as small as CMFA's vpn::protect. ConnectivityManager.bindSocket()
+        // pins a socket to a stale Network during Wi-Fi/cellular handover and can make Mihomo
+        // tear down an otherwise healthy TUN. protect() is sufficient to prevent VPN recursion;
+        // Android then routes the socket through the current default physical network.
+        return protect(fd)
     }
 
     private fun installedAppMappings(packageNames: List<String>): List<Pair<Int, String>> =

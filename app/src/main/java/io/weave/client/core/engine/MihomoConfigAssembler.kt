@@ -205,7 +205,10 @@ class MihomoConfigAssembler(
                 appendLine("    type: ${automaticGroupConfig.type}")
                 appendLine("    use:")
                 appendLine("      - ${yamlString(providerName(subscription))}")
-                appendLine("    url: https://www.gstatic.com/generate_204")
+                // Use the same lightweight HTTP connectivity probe as CMFA. The probe itself is
+                // sent through the selected proxy; HTTPS here adds a second TLS/DNS failure mode
+                // on mainland/mobile networks and can evict an otherwise healthy node.
+                appendLine("    url: $HEALTH_CHECK_URL")
                 // Keep the automatic choice fresh without probing continuously. A bounded
                 // timeout and a low failure threshold make dead nodes leave the candidate set
                 // quickly, while lazy=true avoids waking unused subscriptions.
@@ -228,7 +231,7 @@ class MihomoConfigAssembler(
                 activeSubscriptions.forEach { subscription ->
                     appendLine("      - ${yamlString(providerName(subscription))}")
                 }
-                appendLine("    url: https://www.gstatic.com/generate_204")
+                appendLine("    url: $HEALTH_CHECK_URL")
                 appendLine("    interval: ${automaticGroupConfig.intervalSeconds}")
                 appendLine("    timeout: ${automaticGroupConfig.timeoutMs}")
                 appendLine("    max-failed-times: ${automaticGroupConfig.maxFailedTimes}")
@@ -406,6 +409,7 @@ class MihomoConfigAssembler(
     private companion object {
         const val EXPLICIT_DIRECT_PROXY = "WEAVE-DIRECT"
         const val CROSS_SUBSCRIPTION_GROUP = "WEAVE-CROSS-AUTO"
+        const val HEALTH_CHECK_URL = "http://www.gstatic.com/generate_204"
         const val REGEX_META_CHARACTERS = "\\.^$|?*+()[]{}"
     }
 }

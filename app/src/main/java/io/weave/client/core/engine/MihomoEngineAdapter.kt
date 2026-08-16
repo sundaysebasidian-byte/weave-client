@@ -178,10 +178,16 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             )
             val result = NativeBridge.startTun(
                 fd = tunFd,
-                stack = "mixed",
+                // Match CMFA's Android default. The system stack avoids the extra userspace
+                // translation layer on Android and follows the platform's socket lifecycle
+                // during Wi-Fi/cellular handover.
+                stack = MihomoTunDefaults.STACK,
                 gateway = "172.19.0.1/30,fdfe:dcba:9876::1/126",
                 portal = "172.19.0.2,fdfe:dcba:9876::2",
-                dns = "172.19.0.2,fdfe:dcba:9876::2",
+                // CMFA enables DNS hijacking for any resolver destination. Restricting this to
+                // only the virtual Android DNS address lets raw/private DNS packets hit Weave's
+                // port-53 reject rules instead of reaching Mihomo's resolver.
+                dns = MihomoTunDefaults.DNS_HIJACK,
                 callback = object : NativeTunCallback {
                     override fun markSocket(fd: Int) {
                         if (!protectSocket(fd) && protectFailed.compareAndSet(false, true)) {

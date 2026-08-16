@@ -24,7 +24,7 @@
 | 自定义 DNS / 分流 DNS | 已实现基础 | 设置页支持广告过滤、家庭过滤、自定义加密 DoH/DoT，以及基于 `geosite:cn` 与 `geosite:geolocation-!cn` 的国内/海外 nameserver-policy；DoQ 与自定义规则化 DNS 仍后续 |
 | IPv6 | 已实现 | 双栈或仅 IPv4；仅 IPv4 会关闭内核/DNS IPv6，并在 TUN 中拒绝 IPv6 |
 | 速度优化 | 部分实现 | `tcp-concurrent`、`unified-delay` 与懒测速已启用；未宣称未经设备矩阵验证的 TCP Fast Open |
-| 后台稳定 | 已实现基础 | Android 前台 `VpnService`、`START_STICKY`、已验证非 VPN 底层网络监听、socket/上游网络绑定和 2.5 秒去抖事务恢复；晚到的出站保护失败按退避自动重建上一份健康配置，无上游时保持 fail-closed，仍需真机长时测试 |
+| 后台稳定 | 已实现基础 | Android 前台 `VpnService`、`START_STICKY`、非 VPN 底层网络监听；Android 10+ 只用 `protect()` 让核心 socket 跟随系统换网，Android 8/9 保留 underlying-network 元数据和 2.5 秒去抖恢复；晚到的出站保护失败按退避重建上一份健康配置，无上游时保持 fail-closed，仍需真机长时测试 |
 | 配置热重载 | 已实现事务回退 | 候选配置只解析不应用；校验失败保留旧 TUN，启动失败恢复旧配置/provider；进程崩溃测试仍待设备矩阵 |
 | Recovery Vault 恢复中心 | 已实现 | 只持久化失败与快照元数据；候选和回滚均失败时进入安全模式，用户主动解除后才能重新连接 |
 | Kill Switch | 已实现系统入口 | 打开 Android Always-on / Block connections without VPN 设置，不复制不可靠的应用内假开关 |

@@ -11,8 +11,8 @@ android {
         applicationId = "io.weave.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 52
-        versionName = "0.3.0-alpha50"
+        versionCode = 53
+        versionName = "0.3.0-alpha51"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
