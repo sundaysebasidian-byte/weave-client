@@ -2,6 +2,7 @@ package io.weave.client.core.engine
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.core.bridge.NativeTunCallback
 import io.weave.client.domain.ConnectionState
@@ -22,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
+@Immutable
 data class EngineRuntimeSnapshot(
     val nodeName: String,
     val protocol: String,
@@ -31,6 +33,7 @@ data class EngineRuntimeSnapshot(
     val attributedAppConnections: Long,
 )
 
+@Immutable
 data class NodeHealthSnapshot(
     val name: String,
     val protocol: String,

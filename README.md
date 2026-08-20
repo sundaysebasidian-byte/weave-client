@@ -4,7 +4,7 @@
 复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性放在架构中心。仓库中的其他平台
 目录保留为历史实验代码，不属于当前 Android 发行版。
 
-> 当前里程碑是 **Android 0.3.0-alpha51**（Android-only 预览版）。Android 四个 ABI 的
+> 当前里程碑是 **Android 0.3.0-alpha60**（Android-only 预览版）。Android 四个 ABI 的
 > CMFA/Mihomo
 > 核心已从锁定源码本地复现并接入；Clash YAML、URI/Base64、sing-box JSON 与基础 V2Ray JSON
 > 可从 HTTPS、粘贴文本、系统文件选择器、相机二维码或二维码图片安全导入，并编译为隔离 provider，
@@ -82,7 +82,9 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
 - 分流页提供 Route Lens 路由解释器，可输入应用包名、域名、端口和协议，展示命中规则、DNS、
   出口、UDP/QUIC 与 IPv6 风险；它只模拟本地配置，不伪造网络测试结果。
 - 设置页提供 Privacy Observatory 隐私观测，逐项区分已确认、未知和未测试，覆盖 VPN、加密 DNS、
-  DNS 旁路拒绝、过滤、IPv6、WebRTC/STUN、显式直连和断开清理，不输出误导性的安全百分比；
+  DNS 旁路拒绝、过滤、IPv6、WebRTC/STUN、显式直连和断开清理；用户主动运行时并行检查 HTTPS
+  IPv4/IPv6 出口，并在本机 WebView 中采集一次 ICE 候选和浏览器身份表面，与代理出口交叉比对。
+  DNS 泄漏仍需由独立权威测试服务观察，不输出误导性的安全百分比；
   Android 的 Always-on / “阻止无 VPN 连接”仍需用户在系统 VPN 设置中打开，应用不会伪造已开启状态。
 - 连接页和订阅详情都可读取 CMFA 真实运行组的节点质量，并手动触发三轮 provider 健康检查；
   未加载的订阅会临时加入候选运行配置，不改变默认出口；核心未初始化/失败延迟哨兵会在数据边界丢弃，不参与排序或展示。
@@ -128,10 +130,12 @@ WinUI 入口已经包含订阅导入/删除、先选订阅再选节点和连接�
 ## macOS Apple Silicon
 
 macOS 14+ 可运行 [Weave.app](macos/build/Weave.app)，或在 `macos/` 执行
-`./build-app.sh` 重新构建。连接页先选订阅，再选自动策略或该订阅的具体节点；当前启动绑定
-`127.0.0.1:7890` 的本地代理；连接时会事务化接管当前 macOS 网络服务的 HTTP/HTTPS/SOCKS 代理并关闭 PAC，停止、崩溃
-或下次启动时恢复原设置。完整设备 VPN 和按应用分流需要 Apple Developer 为 Packet Tunnel extension
-授予 Network Extension entitlement，未获权限时界面不会显示虚假的 VPN 成功状态。macOS/iOS
+`./build-app.sh` 重新构建。连接页先选订阅，再选自动策略或该订阅的具体节点；默认启动 Mihomo
+原生 `utun_weave` 双栈 TUN，接管 IPv4、IPv6、UDP 和 DNS，并阻断常见 STUN 端口。TUN 接口或
+IPv4/IPv6 路由未就绪时会拒绝连接，不会把 `127.0.0.1:7890` 的本地代理误报成全设备 VPN；
+关闭设置中的双栈 TUN 开关后，才会主动使用本地 HTTP/HTTPS/SOCKS 代理，并通过事务化快照接管当前
+macOS 网络服务、关闭 PAC，停止、崩溃或下次启动时恢复原设置。面向朋友的签名系统级 VPN 和按应用
+分流仍需要 Apple Developer 为 Packet Tunnel extension 授予 Network Extension entitlement。macOS/iOS
 仅用于私有朋友分发，不是本仓库的公开发布目标。
 
 ## iOS

@@ -1,6 +1,6 @@
 # Weave privacy notice
 
-Last updated: 2026-08-16
+Last updated: 2026-08-20
 
 This notice describes the open-source preview builds in this repository. A
 distributor that changes Weave, adds analytics, or operates a hosted service
@@ -48,6 +48,12 @@ When used, Weave connects to parties outside this project:
   `www.gstatic.com/generate_204`) only when the user taps “IP 质量检测”. These endpoints see the
   request's current proxy exit and may return IP, region, ASN and security-label metadata. Weave
   keeps the report in memory and does not send it to a Weave service;
+- Google's public STUN endpoint (`stun.l.google.com:19302`) for one WebRTC ICE probe only when the
+  user opens the browser privacy lab and runs the test. The endpoint can see the request's network
+  exit. ICE candidates and browser-surface fields remain in memory and are not uploaded by Weave;
+- external browser verification pages (`dnsleaktest.com` and `browserleaks.com`) only after the user
+  taps a named link. They open in the system browser, operate under their own privacy practices,
+  and Weave neither reads nor stores their results;
 
 Those parties have their own privacy practices. A subscription provider or
 proxy operator may observe the source IP, connection timing, destination
@@ -70,7 +76,10 @@ who obtains the complete QR code or link before expiry can import its contents.
 - `BIND_VPN_SERVICE` protects the non-exported VPN service.
 
 Weave does not request `QUERY_ALL_PACKAGES`; it lists only applications with a
-launcher entry for the application-routing picker.
+launcher entry for the application-routing picker. The same on-device list can identify a small,
+fixed set of known compatible proxy clients. Migration starts only after the user confirms a source
+and selects that client's exported file in Android's system file picker; Weave cannot read another
+application's private storage and does not modify the source application.
 
 ## Deletion and reports
 

@@ -40,3 +40,18 @@ class LocalSubscriptionReader(
         const val DEFAULT_MAX_BYTES = 5 * 1024 * 1024
     }
 }
+
+internal fun importedSubscriptionName(requested: String, displayName: String?): String {
+    requested.trim().takeIf(String::isNotEmpty)?.let { return it }
+    return displayName
+        ?.trim()
+        ?.replace(LOCAL_SUBSCRIPTION_EXTENSION, "")
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.take(80)
+        ?: "Imported subscription"
+}
+
+private val LOCAL_SUBSCRIPTION_EXTENSION = Regex(
+    "(?i)\\.(yaml|yml|json|txt|conf|config)$",
+)

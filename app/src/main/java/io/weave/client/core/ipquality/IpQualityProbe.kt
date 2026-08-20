@@ -3,6 +3,10 @@ package io.weave.client.core.ipquality
 import io.weave.client.domain.Ipv6Mode
 import java.net.HttpURLConnection
 import java.net.URI
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 enum class IpQualityState {
     VERIFIED,
@@ -80,32 +84,43 @@ class IpQualityProbe(
     private val transport: IpQualityHttpTransport = UrlConnectionIpQualityTransport(),
     private val timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
 ) {
-    fun run(
+    suspend fun run(
         ipv6Mode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
         now: Long = System.currentTimeMillis(),
-    ): IpQualityReport {
+    ): IpQualityReport = coroutineScope {
         val startedAt = System.currentTimeMillis()
-        val results = mutableListOf<ProbeResult>()
-
-        results += probe("IPv4", IPV4_ENDPOINT) { body ->
-            IpQualityParsers.ipFromJson(body)
-        }
-        // This probe is kept even in IPv4-only mode: a successful answer is useful evidence of a
-        // real IPv6 path or leak, whereas a timeout alone never proves that IPv6 is unavailable.
-        results += probe("IPv6", IPV6_ENDPOINT) { body ->
-            IpQualityParsers.ipFromJson(body)
-        }
-        results += probe("出口信息", IPWHO_ENDPOINT) { body ->
-            IpQualityParsers.metadataFromIpWho(body)
-        }
-        results += probe("边缘出口", CLOUDFLARE_TRACE_ENDPOINT) { body ->
-            IpQualityParsers.metadataFromCloudflareTrace(body)
-        }
-
-        val latency = listOf(
-            probeLatency("Cloudflare 204", CLOUDFLARE_204_ENDPOINT),
-            probeLatency("Google 204", GOOGLE_204_ENDPOINT),
+        // Independent probes must not queue six full timeout windows. On a blocked or broken
+        // path the old serial implementation looked frozen for up to 24 seconds.
+        val resultJobs = listOf(
+            async(Dispatchers.IO) {
+                probe("IPv4", IPV4_ENDPOINT) { body -> IpQualityParsers.ipFromJson(body) }
+            },
+            // Keep this even in IPv4-only mode: a successful answer is evidence of a real IPv6
+            // path or leak, whereas a timeout alone never proves IPv6 is unavailable.
+            async(Dispatchers.IO) {
+                probe("IPv6", IPV6_ENDPOINT) { body -> IpQualityParsers.ipFromJson(body) }
+            },
+            async(Dispatchers.IO) {
+                probe("出口信息", IPWHO_ENDPOINT) { body ->
+                    IpQualityParsers.metadataFromIpWho(body)
+                }
+            },
+            async(Dispatchers.IO) {
+                probe("边缘出口", CLOUDFLARE_TRACE_ENDPOINT) { body ->
+                    IpQualityParsers.metadataFromCloudflareTrace(body)
+                }
+            },
         )
+        val latencyJobs = listOf(
+            async(Dispatchers.IO) {
+                probeLatency("Cloudflare 204", CLOUDFLARE_204_ENDPOINT)
+            },
+            async(Dispatchers.IO) {
+                probeLatency("Google 204", GOOGLE_204_ENDPOINT)
+            },
+        )
+        val results = resultJobs.awaitAll()
+        val latency = latencyJobs.awaitAll()
         val ipv4 = results.firstOrNull { it.label == "IPv4" }?.value as? String
         val ipv6 = results.firstOrNull { it.label == "IPv6" }?.value as? String
         val ipWhoMetadata = results.firstOrNull { it.label == "出口信息" }?.value as? IpQualityMetadata
@@ -121,7 +136,7 @@ class IpQualityProbe(
         )
         val completed = results.count { it.completed } + latency.count { it.latencyMs != null }
         val total = results.size + latency.size
-        return IpQualityReport(
+        IpQualityReport(
             generatedAtEpochMillis = now,
             ipv4 = ipv4,
             ipv6 = ipv6,

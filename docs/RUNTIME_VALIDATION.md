@@ -1,5 +1,82 @@
 # Android 运行验证
 
+## 2026-08-20：保持原始外观的滚动性能修复（alpha60）
+
+- 主页面 `LazyColumn` 仅预组装视口前 240dp、后 80dp 的少量内容，快速滑动时提前完成卡片测量；未修改卡片绘制链、颜色、阴影、圆角或布局。
+- Compose 页面状态和列表项模型标记为不可变，减少滚动期间无关重组。
+- `localOptimized` ARM64 APK 使用与正式版相同的 R8/资源压缩，并以本机调试证书签名，适合覆盖安装做真机对比；该证书不用于 GitHub 发布。APK SHA-256：
+  `8735909805e8bdeab29abe8429c90ccc3413465138e8001be90e154376826713`。
+- 构建已通过 `assembleLocalOptimized`；当前 ADB 服务不可用，尚未代替用户在 Pixel / Android 17 上完成人工滑动帧率验证。
+
+## 2026-08-20：锁定原始外观，移除运动态视觉降级（alpha59）
+
+- alpha58 的运动态减负会在手指拖动或惯性滚动期间隐藏阴影和圆角裁剪，造成视觉像换了一套主题。
+  alpha59 已完全移除这条运行时分支，恢复直接使用原始 `LazyColumn` 与原始卡片绘制链；任何滚动
+  速度下都不会主动改变颜色、透明度、阴影、裁剪或布局。
+- alpha57/58 的无视觉变化优化继续保留：Brush 记忆化、稳定 key / content type、用户数据原文直绘、
+  多语言正则缓存。新版本必须以 alpha56 的截图作为视觉基准，再单独测量滚动帧时间。
+- `testDebugUnitTest`、`lintDebug`、四 ABI debug/release 构建和本地发行审计均通过。ARM64
+  debug APK 为 `0.3.0-alpha59`（versionCode 61），v2 签名有效，SHA-256：
+  `5b4d474d1f08212c38e664f11b733b5c6a8c2d6ace745e4185773f254880f314`。Pixel / Android 17
+  的静止外观仍需安装后与 alpha56 截图做最终人工对照。
+
+## 2026-08-20：恢复静态玻璃外观并保留滚动减负（alpha58）
+
+- alpha57 始终移除卡片阴影与裁剪，虽然降低了滚动合成成本，但静止页面明显失去原有层次。本版
+  恢复 alpha56 的静态卡片链路：极简风 3 dp / 艺术风 8 dp 阴影、圆角裁剪、原渐变及边框。
+- 所有 Weave `LazyColumn` 共享各自的真实 `isScrollInProgress` 状态。只有拖动或惯性滚动期间，
+  可见卡片才暂时省略阴影和裁剪层；列表停止后原外观立即恢复。列表状态不会因模式切换而重建，
+  alpha57 的 key、content type、Brush 缓存、原文直绘和正则缓存均保留。
+- `testDebugUnitTest`、`lintDebug`、四 ABI debug/release 构建和本地发行审计均通过。ARM64
+  debug APK 为 `0.3.0-alpha58`（versionCode 60），v2 签名有效，SHA-256：
+  `7d5f90ecd7e600c67142d8a101e7609ba4c959c7fe8eec26abb269eb9f29416b`。Pixel / Android 17
+  的静止外观与高速滚动切换仍需安装后做最终视觉确认。
+
+## 2026-08-20：长列表绘制与复用优化（alpha57）
+
+- `LiquidGlassPanel` 移除每卡片 3/8 dp 的独立 RenderNode 阴影和形状裁剪层，继续使用形状背景与
+  细边框保留层次；主题渐变颜色列表和 Brush 改为记忆化，不再随列表项重组重复创建。四套艺术风
+  的全屏氛围背景没有改色或删减。
+- 应用、节点、订阅、路由规则、策略包和诊断结果列表补齐稳定 key 与 content type，避免快速甩动
+  时把不同结构的列表项当作同类重复重组。稳定 UI 文案在组合期缓存；用户提供的节点、订阅和应用
+  名称直接绘制原文。
+- 六语种动态模式原先会在未命中翻译表时重复构造大量 `Regex`；现在每个固定表达式只编译一次，
+  保留现有变量翻译结果。`testDebugUnitTest`、`lintDebug`、四 ABI debug/release 构建与本地发行审计
+  均通过。ARM64 debug APK 为 `0.3.0-alpha57`（versionCode 59），v2 签名有效，SHA-256：
+  `1c5ba52d71f0fe87beee750e4bde57f83c04ca81378b4eae28da491510c37154`。代码层已去除已知热点；
+  实际快速滑动帧时间仍需在 Pixel / Android 17 真机安装后用系统帧统计确认。
+
+## 2026-08-20：隐私观测主动检测修复（alpha56）
+
+- 根因是 `onCreated()` 写入 WebView 状态后触发重组，旧 `DisposableEffect` 的清理闭包读取了
+  新状态并销毁刚创建的 WebView，因此页面可能一直等待、无结果或直接失效。清理逻辑现在捕获
+  各自拥有的实例，只在实例替换或页面关闭时销毁。
+- JS 报告改为每 400 ms 轮询，最多 12 秒；成功只交付一次，超时显示明确错误并可原位重新检测。
+  浏览器实验室提升为根级独立对话框，不再叠在隐私观测对话框之上；返回后保留 WebRTC 与 HTTPS
+  出口的交叉验证结果。
+- 六个独立 HTTPS 探测改在有界 IO 调度器并行执行，最坏等待由六次 4 秒串行超时收敛为约一次
+  超时窗口。DNS 泄漏仍保持“需要外部权威观察”，没有用普通 HTTP/IP 结果伪造结论。
+- 新增并发回归测试，确认同一轮至少两个探测同时执行；`testDebugUnitTest`、`lintDebug`、四 ABI
+  debug/release 构建和本地发行审计均通过。ARM64 debug APK 为 `0.3.0-alpha56`
+  （versionCode 58），v2 签名有效，SHA-256：
+  `e4e1882119b01e4abb7cfb8af562fcc15023054deaa2701a1199af07e54db7c7`。WebView/ICE 仍需真机
+  运行确认，构建测试不替代设备网络验证。
+
+## 2026-08-20：DNS 配置收敛与即时导航（alpha55）
+
+- 撤回尚未发布的 alpha54 单一网站兼容实验。运行配置不再包含 OpenAI/ChatGPT 专用域名表、
+  `#DEFAULT` DNS 选择器或 UDP 443 特判；DNS 只由用户选择的解析器、统一/智能模式、国内直连和
+  IPv6 设置决定，避免隐藏规则改变解析路径。
+- Mihomo 配置恢复 alpha53 已验证结构：节点域名使用独立的加密 `proxy-server-nameserver` 引导，
+  统一解析只使用所选端点及既有加密兼容回退，智能解析只按 CN/非 CN 两类生成确定性策略。
+- 底部导航内容原本已经直接切换；本版继续移除选中项 160 ms 颜色渐变、点击涟漪和字重变化，
+  避免切页时出现位移或选中态追赶。
+- `testDebugUnitTest`、`lintDebug`、四 ABI debug/release 构建和本地发行审计均通过；锁定的
+  Mihomo `e26714a` 也成功解析现有 DNS/TUN 烟雾配置。ARM64 debug APK 为
+  `0.3.0-alpha55`（versionCode 57），v2 签名有效，SHA-256：
+  `fbac26f3ba7b1d42a5424a59e40455da94693ad56a77c0ed594ca04f93ea8349`。当前 ADB 无设备，
+  尚未把本版真机网络表现标为已验证。
+
 ## 2026-08-16：Android 数据面稳定性修复（alpha51，待真机回归）
 
 - 对照 CMFA 的 Android 集成路径收敛 TUN 默认值：使用 `system` 栈，DNS 劫持覆盖任意

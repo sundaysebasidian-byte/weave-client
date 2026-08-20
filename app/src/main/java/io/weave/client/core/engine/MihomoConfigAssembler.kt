@@ -2,6 +2,7 @@ package io.weave.client.core.engine
 
 import android.content.Context
 import io.weave.client.domain.AppRoute
+import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
 import io.weave.client.domain.RouteKind
@@ -20,6 +21,22 @@ data class AssembledMihomoConfig(
     val yaml: String,
     val usableSubscriptions: Int,
 )
+
+internal data class ExperienceRuntimePolicy(
+    val routes: List<AppRoute>,
+    val mode: RoutingMode,
+    val includeAdvancedRules: Boolean,
+)
+
+internal fun resolveExperienceRuntimePolicy(
+    routes: List<AppRoute>,
+    mode: RoutingMode,
+    experienceMode: ExperienceMode,
+): ExperienceRuntimePolicy = if (experienceMode == ExperienceMode.NEWCOMER) {
+    ExperienceRuntimePolicy(emptyList(), RoutingMode.RULE, includeAdvancedRules = false)
+} else {
+    ExperienceRuntimePolicy(routes, mode, includeAdvancedRules = true)
+}
 
 /**
  * Builds a minimal Mihomo control plane around encrypted Clash providers.
@@ -48,8 +65,16 @@ class MihomoConfigAssembler(
     ): AssembledMihomoConfig {
         val subscriptions = secretStore.list()
         val usable = subscriptions.filter { it.hasPayload }
+        val experiencePolicy = resolveExperienceRuntimePolicy(
+            routes = routes,
+            mode = mode,
+            experienceMode = networkPreferences.experienceMode,
+        )
+        // Newcomer mode is a genuinely simplified runtime, not merely a hidden settings screen.
+        // Preserve advanced rules on disk so switching back restores them, but do not silently
+        // execute app, policy-pack or local rules while their editors are unavailable.
         require(
-            mode == RoutingMode.DIRECT ||
+            experiencePolicy.mode == RoutingMode.DIRECT ||
                 defaultTarget?.kind == RouteKind.DIRECT ||
                 usable.isNotEmpty(),
         ) {
@@ -61,8 +86,8 @@ class MihomoConfigAssembler(
         }
         val byId = usable.associateBy(StoredSubscription::id)
         val plan = MihomoRuntimePlanner.plan(
-            routes = routes,
-            mode = mode,
+            routes = experiencePolicy.routes,
+            mode = experiencePolicy.mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
             additionalSubscriptionIds = additionalSubscriptionIds + if (
@@ -89,8 +114,16 @@ class MihomoConfigAssembler(
         val fakeIpFilter = MihomoFeatureCompiler.fakeIpFilter(networkPreferences)
         val leadingRules = MihomoFeatureCompiler.leadingRules(networkPreferences)
         val domesticDirectRules = MihomoFeatureCompiler.domesticDirectRules(networkPreferences)
-        val offlinePolicyRules = PolicyPackCompiler.compile(policyPackStore.active())
-        val localRules = LocalRuleCompiler.compile(localRuleStore.list())
+        val offlinePolicyRules = if (experiencePolicy.includeAdvancedRules) {
+            PolicyPackCompiler.compile(policyPackStore.active())
+        } else {
+            emptyList()
+        }
+        val localRules = if (experiencePolicy.includeAdvancedRules) {
+            LocalRuleCompiler.compile(localRuleStore.list())
+        } else {
+            emptyList()
+        }
 
         val yaml = buildString {
             appendLine("mode: rule")
@@ -107,7 +140,12 @@ class MihomoConfigAssembler(
             appendLine("geodata-loader: memconservative")
             appendLine("unified-delay: true")
             appendLine("tcp-concurrent: true")
-            appendLine("find-process-mode: strict")
+            // UID attribution is sufficient when there are no per-app rules. Avoid Mihomo's
+            // process scanner in that common/newcomer path to reduce wakeups and retained process
+            // metadata; strict discovery is enabled only when app-routing fallbacks need it.
+            appendLine(
+                "find-process-mode: ${if (effectiveRoutes.isEmpty()) "off" else "strict"}",
+            )
             appendLine("profile:")
             appendLine("  store-selected: false")
             appendLine("  store-fake-ip: false")
@@ -276,7 +314,7 @@ class MihomoConfigAssembler(
                 RouteKind.BLOCK, null -> null
             }
             val defaultProxies = DefaultProxyPolicy.compile(
-                mode = mode,
+                mode = experiencePolicy.mode,
                 requestedProxy = requestedDefaultProxy,
                 fallbackAutomaticProxy = if (
                     networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
@@ -295,7 +333,7 @@ class MihomoConfigAssembler(
             }
 
             appendLine("rules:")
-            val rules = when (mode) {
+            val rules = when (experiencePolicy.mode) {
                 RoutingMode.RULE -> routeCompiler.compileRules(
                     effectiveRoutes,
                     packageUids,

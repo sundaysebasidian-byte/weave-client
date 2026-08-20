@@ -1,6 +1,7 @@
 package io.weave.client.routing
 
 import android.content.Context
+import androidx.compose.runtime.Immutable
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import java.io.File
@@ -25,6 +26,7 @@ enum class LocalRuleAction(val label: String) {
     REJECT("阻止"),
 }
 
+@Immutable
 data class LocalRouteRule(
     val id: String = UUID.randomUUID().toString(),
     val type: LocalRuleType,

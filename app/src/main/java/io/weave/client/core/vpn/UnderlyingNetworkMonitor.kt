@@ -4,7 +4,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.os.Build
 
 /**
  * Watches usable, non-VPN networks so the VPN cannot accidentally react to itself.
@@ -21,26 +20,33 @@ internal class UnderlyingNetworkMonitor(
     private val onUnavailable: (List<Network>) -> Unit,
 ) {
     private val tracker = NetworkAvailabilityTracker<Network>()
+    private val capabilityLock = Any()
+    private val capabilities = mutableMapOf<Network, NetworkCapabilities>()
+    private val blockedNetworks = mutableSetOf<Network>()
     private var registered = false
     @Volatile
     private var lastPublished: List<Network> = emptyList()
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            update(
-                network,
-                connectivityManager.getNetworkCapabilities(network).isEligible(),
-            )
+            // API 26+ immediately follows onAvailable with onCapabilitiesChanged. Android's
+            // documentation explicitly warns against synchronously querying capabilities from
+            // inside callbacks because the result can already be stale (or temporarily null).
+            capabilitiesFor(network)?.let { remembered ->
+                update(network, remembered.isEligible() && !isBlocked(network))
+            }
         }
 
         override fun onCapabilitiesChanged(
             network: Network,
             networkCapabilities: NetworkCapabilities,
         ) {
-            update(network, networkCapabilities.isEligible())
+            rememberCapabilities(network, networkCapabilities)
+            update(network, networkCapabilities.isEligible() && !isBlocked(network))
         }
 
         override fun onLost(network: Network) {
+            forgetNetwork(network)
             update(network, false)
         }
 
@@ -61,7 +67,8 @@ internal class UnderlyingNetworkMonitor(
         }
 
         override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
-            update(network, !blocked)
+            setBlocked(network, blocked)
+            update(network, !blocked && capabilitiesFor(network).isEligible())
         }
     }
 
@@ -72,14 +79,6 @@ internal class UnderlyingNetworkMonitor(
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-                .apply {
-                    // Match CMFA's foreground network request on Android 9+. Without this
-                    // capability some OEMs stop delivering the physical network to a long-lived
-                    // VPN service as soon as its activity leaves the foreground.
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        addCapability(NetworkCapabilities.NET_CAPABILITY_FOREGROUND)
-                    }
-                }
                 .build(),
             callback,
         )
@@ -87,10 +86,10 @@ internal class UnderlyingNetworkMonitor(
         // Callbacks deliver their initial state asynchronously. Seed it synchronously so the
         // first proxy socket cannot race ahead of validated-network discovery.
         initialNetworks().forEach { network ->
-            update(
-                network,
-                connectivityManager.getNetworkCapabilities(network).isEligible(),
-            )
+            connectivityManager.getNetworkCapabilities(network)?.let { snapshot ->
+                rememberCapabilities(network, snapshot)
+                update(network, snapshot.isEligible())
+            }
         }
     }
 
@@ -98,6 +97,10 @@ internal class UnderlyingNetworkMonitor(
         if (!registered) return
         runCatching { connectivityManager.unregisterNetworkCallback(callback) }
         tracker.clear()
+        synchronized(capabilityLock) {
+            capabilities.clear()
+            blockedNetworks.clear()
+        }
         lastPublished = emptyList()
         registered = false
     }
@@ -143,14 +146,42 @@ internal class UnderlyingNetworkMonitor(
     }
 
     private fun orderedNetworks(): List<Network> = tracker.snapshot()
-        .filter { connectivityManager.getNetworkCapabilities(it).isEligible() }
+        .mapNotNull { network ->
+            capabilitiesFor(network)
+                ?.takeIf { it.isEligible() && !isBlocked(network) }
+                ?.let { network to it }
+        }
         .sortedWith(
-            compareBy<Network> {
-                connectivityManager.getNetworkCapabilities(it).isValidated().not()
-            }.thenBy {
-                networkPreference(connectivityManager.getNetworkCapabilities(it))
-            }.thenBy { it.networkHandle },
+            compareBy<Pair<Network, NetworkCapabilities>> { (_, value) ->
+                value.isValidated().not()
+            }.thenBy { (_, value) ->
+                networkPreference(value)
+            }.thenBy { (network, _) -> network.networkHandle },
         )
+        .map(Pair<Network, NetworkCapabilities>::first)
+
+    private fun rememberCapabilities(network: Network, value: NetworkCapabilities) {
+        synchronized(capabilityLock) { capabilities[network] = value }
+    }
+
+    private fun capabilitiesFor(network: Network): NetworkCapabilities? =
+        synchronized(capabilityLock) { capabilities[network] }
+
+    private fun setBlocked(network: Network, blocked: Boolean) {
+        synchronized(capabilityLock) {
+            if (blocked) blockedNetworks += network else blockedNetworks -= network
+        }
+    }
+
+    private fun isBlocked(network: Network): Boolean =
+        synchronized(capabilityLock) { network in blockedNetworks }
+
+    private fun forgetNetwork(network: Network) {
+        synchronized(capabilityLock) {
+            capabilities -= network
+            blockedNetworks -= network
+        }
+    }
 
     private fun networkPreference(capabilities: NetworkCapabilities?): Int = when {
         capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true -> 0

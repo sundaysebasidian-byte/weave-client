@@ -28,10 +28,10 @@ object NativeBridge {
     // opening the settings/subscription UI does not pay the native memory cost before a VPN is
     // actually requested. The service still loads them synchronously at the validation boundary.
     //
-    // Some OriginOS/Vivo releases keep uncompressed native libraries inside the APK instead of
-    // materialising them under ApplicationInfo.nativeLibraryDir. Others are stricter about a
-    // DT_NEEDED dependency being loaded before the JNI bridge. Do both checks at the actual load
-    // boundary, while keeping the lightweight install probe free of native memory mapping.
+    // Some OriginOS/Vivo releases and externally repackaged APKs fail to materialise a usable
+    // nativeLibraryDir. Others are stricter about a DT_NEEDED dependency being loaded before the
+    // JNI bridge. Do both checks at the actual load boundary, while keeping the lightweight
+    // install probe free of native memory mapping.
     @Volatile
     private var loadAttempt: Result<Unit>? = null
     @Volatile
@@ -60,9 +60,9 @@ object NativeBridge {
             }
         }
 
-        // With extractNativeLibs=false, nativeLibraryDir can be empty on OEM ROMs even though
-        // the libraries are valid uncompressed APK entries and System.loadLibrary can load them.
-        // Check every base/split APK because Play-style ABI delivery may place the pair in a split.
+        // An OEM/repacked install can expose an empty nativeLibraryDir even though both libraries
+        // remain valid APK entries. Check every base/split APK because Play-style ABI delivery may
+        // place the pair in a split.
         val apkPaths = buildList {
             add(context.applicationInfo.sourceDir)
             context.applicationInfo.splitSourceDirs?.let(::addAll)
@@ -212,10 +212,9 @@ object NativeBridge {
     }
 
     /**
-     * A few OEM package managers keep native libraries uncompressed in the APK but do not expose
-     * a usable linker namespace for them. Copy only the matching ABI pair to app-private storage
-     * and ask the platform linker to load the files by absolute path. This is a fallback, not the
-     * normal path, so the common case keeps the 50 MB core outside the app process until connect.
+     * A few OEM package managers do not expose a usable linker namespace. Copy only the matching
+     * ABI pair from the signed APK to app-private storage and load by absolute path. This is a
+     * fallback, not the normal path, so the common case keeps the core unmapped until connect.
      */
     private fun extractNativeLibraries(context: Context): File? {
         val apkPaths = buildList {

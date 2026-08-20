@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.runtime.Immutable
 import io.weave.client.apps.InstalledApp
 import io.weave.client.apps.InstalledAppRepository
 import io.weave.client.data.AppRouteStore
@@ -30,8 +31,10 @@ import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.EditableSubscription
+import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
+import io.weave.client.domain.NavigationConfiguration
 import io.weave.client.domain.NodeDisplayName
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.RouteKind
@@ -65,6 +68,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -75,12 +79,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
+@Immutable
 data class SubscriptionImportState(
     val running: Boolean = false,
     val error: String? = null,
     val completedId: String? = null,
 )
 
+@Immutable
 data class SubscriptionEditorState(
     val subscriptionId: String? = null,
     val loading: Boolean = false,
@@ -91,6 +97,7 @@ data class SubscriptionEditorState(
     val audit: io.weave.client.subscription.SubscriptionAudit? = null,
 )
 
+@Immutable
 data class LanTransferState(
     val running: Boolean = false,
     val exportLink: String = "",
@@ -100,6 +107,7 @@ data class LanTransferState(
     val pendingLink: String = "",
 )
 
+@Immutable
 data class PolicyPackState(
     val packs: List<PolicyPack> = emptyList(),
     val running: Boolean = false,
@@ -107,6 +115,7 @@ data class PolicyPackState(
     val message: String? = null,
 )
 
+@Immutable
 data class SubscriptionHealthState(
     val subscriptionId: String? = null,
     val running: Boolean = false,
@@ -115,11 +124,13 @@ data class SubscriptionHealthState(
     val checkedAtMillis: Long? = null,
 )
 
+@Immutable
 data class LocalRouteRuleState(
     val rules: List<LocalRouteRule> = emptyList(),
     val error: String? = null,
 )
 
+@Immutable
 data class SubscriptionRefreshState(
     val running: Boolean = false,
     val total: Int = 0,
@@ -129,12 +140,14 @@ data class SubscriptionRefreshState(
     val message: String? = null,
 )
 
+@Immutable
 data class IpQualityProbeState(
     val running: Boolean = false,
     val report: IpQualityReport? = null,
     val error: String? = null,
 )
 
+@Immutable
 data class DnsProbeState(
     val running: Boolean = false,
     val results: Map<DnsProfile, DnsProbeResult> = emptyMap(),
@@ -168,10 +181,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         subscriptions = initialSubscriptions,
         nodes = initialNodes,
     )
+    private val initialNetworkPreferences = settingsStore.networkPreferences()
+    private val storedRoutingMode = settingsStore.routingMode()
+    private val initialRoutingMode = if (
+        initialNetworkPreferences.experienceMode == ExperienceMode.NEWCOMER
+    ) {
+        RoutingMode.RULE
+    } else {
+        storedRoutingMode
+    }
 
     private val mutableDashboard = MutableStateFlow(
         DashboardState(
-            routingMode = settingsStore.routingMode(),
+            routingMode = initialRoutingMode,
             defaultRouteTarget = initialDefaultTarget,
         ),
     )
@@ -182,7 +204,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     )
     val routes = mutableRoutes.asStateFlow()
 
-    private val mutableNetworkPreferences = MutableStateFlow(settingsStore.networkPreferences())
+    private val mutableNetworkPreferences = MutableStateFlow(initialNetworkPreferences)
     val networkPreferences = mutableNetworkPreferences.asStateFlow()
 
     private val mutableLanguage = MutableStateFlow(settingsStore.language())
@@ -237,6 +259,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableDashboardVisible = MutableStateFlow(false)
     private var connectedAtElapsedRealtime: Long? = null
     private var installedAppsLoaded = false
+    private var installedAppsReleaseJob: Job? = null
 
     init {
         if (storedRoutes != initialRoutes) {
@@ -245,6 +268,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (storedDefaultTarget != initialDefaultTarget) {
             initialDefaultTarget?.let(settingsStore::setDefaultRouteTarget)
                 ?: settingsStore.clearDefaultRouteTarget()
+        }
+        if (storedRoutingMode != initialRoutingMode) {
+            settingsStore.setRoutingMode(initialRoutingMode)
         }
         viewModelScope.launch {
             VpnRuntimeState.snapshot.collect { runtime ->
@@ -346,12 +372,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun ensureInstalledAppsLoaded() {
+        installedAppsReleaseJob?.cancel()
         if (installedAppsLoaded) return
         installedAppsLoaded = true
         viewModelScope.launch {
             mutableInstalledApps.value = withContext(Dispatchers.IO) {
                 installedAppRepository.listLaunchableApps()
             }
+        }
+    }
+
+    fun releaseInstalledAppsWhenIdle() {
+        installedAppsReleaseJob?.cancel()
+        installedAppsReleaseJob = viewModelScope.launch {
+            delay(INSTALLED_APP_CACHE_IDLE_MS)
+            mutableInstalledApps.value = emptyList()
+            installedAppsLoaded = false
         }
     }
 
@@ -383,13 +419,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableDashboard.update { it.copy(statusMessage = null) }
     }
 
-    fun privacyReport(): PrivacyObservationReport = PrivacyObservatory.inspect(
-        connectionState = mutableDashboard.value.connectionState,
-        routingMode = mutableDashboard.value.routingMode,
-        preferences = mutableNetworkPreferences.value,
-        routes = mutableRoutes.value,
-        defaultTarget = mutableDashboard.value.defaultRouteTarget,
-    )
+    fun privacyReport(): PrivacyObservationReport {
+        val preferences = mutableNetworkPreferences.value
+        return PrivacyObservatory.inspect(
+            connectionState = mutableDashboard.value.connectionState,
+            routingMode = if (preferences.experienceMode == ExperienceMode.NEWCOMER) {
+                RoutingMode.RULE
+            } else {
+                mutableDashboard.value.routingMode
+            },
+            preferences = preferences,
+            routes = if (preferences.experienceMode == ExperienceMode.NEWCOMER) {
+                emptyList()
+            } else {
+                mutableRoutes.value
+            },
+            defaultTarget = mutableDashboard.value.defaultRouteTarget,
+        )
+    }
 
     fun refreshRecoveryState() {
         mutableRecoveryState.value = recoveryVault.snapshot()
@@ -555,6 +602,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (mutableNetworkPreferences.value.weavePalette == palette) return
         settingsStore.setWeavePalette(palette)
         mutableNetworkPreferences.update { it.copy(weavePalette = palette) }
+    }
+
+    fun setExperienceMode(mode: ExperienceMode) {
+        if (mutableNetworkPreferences.value.experienceMode == mode) return
+        settingsStore.setExperienceMode(mode)
+        mutableNetworkPreferences.update { it.copy(experienceMode = mode) }
+        if (mode == ExperienceMode.NEWCOMER && mutableDashboard.value.routingMode != RoutingMode.RULE) {
+            settingsStore.setRoutingMode(RoutingMode.RULE)
+            mutableDashboard.update { it.copy(routingMode = RoutingMode.RULE) }
+        }
+        reloadIfConnected(
+            if (mode == ExperienceMode.NEWCOMER) {
+                "已进入新手模式，高级分流规则已暂停"
+            } else {
+                "已进入标准模式，正在恢复完整分流配置"
+            },
+        )
+    }
+
+    fun setNavigationConfiguration(configuration: NavigationConfiguration) {
+        val normalized = configuration.normalized()
+        if (mutableNetworkPreferences.value.navigation == normalized) return
+        settingsStore.setNavigationConfiguration(normalized)
+        mutableNetworkPreferences.update { it.copy(navigation = normalized) }
     }
 
     fun setLanguage(language: WeaveLanguage) {
@@ -1249,6 +1320,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // Runtime counters are informative rather than control-plane state. A three-second
         // cadence keeps the connected dashboard responsive while avoiding needless wakeups.
         const val RUNTIME_POLL_INTERVAL_MS = 3_000L
+        const val INSTALLED_APP_CACHE_IDLE_MS = 120_000L
         const val MAX_POLICY_PACK_BYTES = 512 * 1024
     }
 }

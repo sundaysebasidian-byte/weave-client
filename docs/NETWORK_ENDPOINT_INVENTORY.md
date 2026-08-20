@@ -13,6 +13,8 @@
 | IPv6 出口 | `https://api6.ipify.org` | 用户点击 IP 质量检测 | 当前请求视角的 IPv6（不可用时显示未测试） |
 | IP 元数据 | `https://ipwho.is` | 用户点击 IP 质量检测 | IP、地区、ASN、组织和第三方标签（取决于服务响应） |
 | 边缘视角 | `https://www.cloudflare.com/cdn-cgi/trace`、`https://cp.cloudflare.com/generate_204` | 用户点击 IP 质量检测 | 边缘机房、HTTP 可达性和 RTT |
+| WebRTC 本机检测 | `stun:l.google.com:19302` | 用户打开“浏览器隐私实验室”并主动运行检测 | 一次 WebRTC ICE/STUN 探测；Google STUN 可看到请求的网络出口，候选地址和浏览器指纹字段只在本机内存展示，不上传到 Weave 服务 |
+| 浏览器外部复核 | `https://www.dnsleaktest.com/`、`https://browserleaks.com/webrtc`、`https://browserleaks.com/javascript` | 用户在隐私检测页明确点击对应链接 | 由系统默认浏览器打开；站点可接收普通浏览器请求及其测试所需数据，Weave 不读取或保存页面结果 |
 | 局域网互传 | 当前局域网中用户明确选择的私有 IPv4 | 用户点击生成或扫描一次性二维码/链接 | AES-256-GCM 密文；密钥只放在 `weave://` 链接 fragment，不放进 HTTP 请求 |
 
 以下不是默认网络端点：Weave 没有账号、广告/统计、崩溃上报、远程配置、远程更新、内置节点或集中式控制 API。固定端点、协议和用户可配置端点发生变化时，必须同步修改本清单、[`PRIVACY.md`](../PRIVACY.md) 和发布审计。

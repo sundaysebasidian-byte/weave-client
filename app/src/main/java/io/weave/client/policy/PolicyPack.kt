@@ -2,6 +2,7 @@ package io.weave.client.policy
 
 import android.content.Context
 import androidx.core.content.edit
+import androidx.compose.runtime.Immutable
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import java.io.File
@@ -37,12 +38,14 @@ enum class PolicyRuleAction {
     REJECT,
 }
 
+@Immutable
 data class PolicyRule(
     val type: PolicyRuleType,
     val value: String,
     val action: PolicyRuleAction,
 )
 
+@Immutable
 data class PolicyPack(
     val id: String,
     val name: String,

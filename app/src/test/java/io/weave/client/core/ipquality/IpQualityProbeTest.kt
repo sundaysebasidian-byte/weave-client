@@ -1,10 +1,12 @@
 package io.weave.client.core.ipquality
 
 import io.weave.client.domain.Ipv6Mode
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 class IpQualityProbeTest {
     @Test
@@ -42,10 +44,12 @@ class IpQualityProbeTest {
             }
         }
 
-        val report = IpQualityProbe(transport = transport).run(
-            ipv6Mode = Ipv6Mode.IPV4_ONLY,
-            now = 123L,
-        )
+        val report = runBlocking {
+            IpQualityProbe(transport = transport).run(
+                ipv6Mode = Ipv6Mode.IPV4_ONLY,
+                now = 123L,
+            )
+        }
 
         assertEquals(123L, report.generatedAtEpochMillis)
         assertEquals("8.8.8.8", report.ipv4)
@@ -62,6 +66,32 @@ class IpQualityProbeTest {
             .forEach { assertNull(IpAddressValidator.publicIpOrNull(it)) }
         assertEquals(IpFamily.IPV4, IpAddressValidator.family("1.1.1.1"))
         assertEquals(IpFamily.IPV6, IpAddressValidator.family("2606:4700:4700::1111"))
+    }
+
+    @Test
+    fun `independent network checks run concurrently`() {
+        val active = AtomicInteger()
+        val maximum = AtomicInteger()
+        val transport = IpQualityHttpTransport { url, _ ->
+            val current = active.incrementAndGet()
+            maximum.updateAndGet { previous -> maxOf(previous, current) }
+            try {
+                Thread.sleep(40)
+                when {
+                    url.contains("api4.ipify") -> response("{\"ip\":\"8.8.8.8\"}")
+                    url.contains("api6.ipify") -> response("{\"ip\":\"2001:4860:4860::8888\"}")
+                    url.contains("ipwho.is") -> response("{\"success\":true,\"ip\":\"8.8.8.8\"}")
+                    url.contains("cloudflare.com/cdn-cgi") -> response("ip=8.8.8.8\nloc=US\n")
+                    else -> response("")
+                }
+            } finally {
+                active.decrementAndGet()
+            }
+        }
+
+        runBlocking { IpQualityProbe(transport = transport).run() }
+
+        assertTrue("expected concurrent probes, maximum active=${maximum.get()}", maximum.get() >= 2)
     }
 
     private fun response(body: String, elapsed: Long = 15L) = IpQualityHttpResponse(
