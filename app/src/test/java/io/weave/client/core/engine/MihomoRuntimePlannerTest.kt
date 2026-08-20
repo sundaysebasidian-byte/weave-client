@@ -1,6 +1,7 @@
 package io.weave.client.core.engine
 
 import io.weave.client.domain.AppRoute
+import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
@@ -10,6 +11,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MihomoRuntimePlannerTest {
+    @Test
+    fun `newcomer mode pauses advanced routing without deleting it`() {
+        val savedRoutes = listOf(route("app.fixed", target(RouteKind.FIXED, "saved", "node")))
+
+        val newcomer = resolveExperienceRuntimePolicy(
+            routes = savedRoutes,
+            mode = RoutingMode.GLOBAL,
+            experienceMode = ExperienceMode.NEWCOMER,
+        )
+        val standard = resolveExperienceRuntimePolicy(
+            routes = savedRoutes,
+            mode = RoutingMode.GLOBAL,
+            experienceMode = ExperienceMode.STANDARD,
+        )
+
+        assertTrue(newcomer.routes.isEmpty())
+        assertEquals(RoutingMode.RULE, newcomer.mode)
+        assertTrue(!newcomer.includeAdvancedRules)
+        assertEquals(savedRoutes, standard.routes)
+        assertEquals(RoutingMode.GLOBAL, standard.mode)
+        assertTrue(standard.includeAdvancedRules)
+    }
+
     @Test
     fun fixedDefaultLoadsOnlyItsProviderWithoutAutomaticHealthCheck() {
         val plan = MihomoRuntimePlanner.plan(

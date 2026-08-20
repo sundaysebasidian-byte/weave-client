@@ -121,11 +121,11 @@ class LanguageTest {
             localizeWeaveText("HTTPS 远程订阅", WeaveLanguage.ENGLISH),
         )
         assertEquals("Deep Ocean", localizeWeaveText("深海蓝", WeaveLanguage.ENGLISH))
-        assertEquals("Graphit", localizeWeaveText("石墨灰", WeaveLanguage.GERMAN))
+        assertEquals("Weiß-Grün", localizeWeaveText("白绿", WeaveLanguage.GERMAN))
         assertEquals("Pin nocturne", localizeWeaveText("夜松青", WeaveLanguage.FRENCH))
         assertEquals(
-            "Neutral graphite and soft silver: restrained, clear and low-distraction",
-            localizeWeaveText("中性石墨与柔银，克制、清晰、低干扰", WeaveLanguage.ENGLISH),
+            "Pure white surfaces, soft green accents and crisp dark text",
+            localizeWeaveText("纯净白底、柔和青绿与清晰深色文字", WeaveLanguage.ENGLISH),
         )
         assertEquals(
             "LAN subscriptions imported; safely updating the runtime configuration",
@@ -154,6 +154,62 @@ class LanguageTest {
         assertEquals(
             "The candidate has fewer than a quarter of the old nodes; the old version was retained",
             localizeWeaveText("候选节点少于旧版本四分之一，旧版本已保留", WeaveLanguage.ENGLISH),
+        )
+    }
+
+    @Test
+    fun `new navigation migration and privacy surfaces never fall back to simplified Chinese`() {
+        val sources = listOf(
+            "新手模式",
+            "标准模式",
+            "自订导航",
+            "调整底部导航的真实顺序，也可隐藏分流或订阅。连接与设置是安全入口，始终保留。",
+            "恢复默认导航",
+            "快速开始",
+            "按顺序完成三步即可连接；高级分流不会在新手模式中后台生效。",
+            "新手保护方案",
+            "白绿",
+            "从其他客户端迁移",
+            "确认并选择文件",
+            "浏览器隐私实验室",
+            "运行 WebRTC 与浏览器身份检测",
+            "浏览器检测超时，请重新检测",
+            "重新检测",
+            "WebRTC 候选",
+            "浏览器身份表面",
+            "当前 WebView 不支持 RTCPeerConnection，结果未知。",
+            "未取得 ICE 候选。可能是 STUN 被阻止、网络超时或浏览器策略限制；不能单独据此判定无泄漏。",
+            "host 数字地址会暴露本地网络表面；srflx 通常是当前 WebRTC 公网出口，必须与 VPN 出口对照后才能判断泄漏。",
+            "WebView 不能代表 Chrome、Firefox 的扩展、Secure DNS 或 WebRTC 策略。以下页面会交给系统浏览器打开。",
+            "这些字段组合后可能用于跨站指纹识别；本页只在本机展示，不保存唯一标识。",
+            "出口交叉验证",
+            "WebRTC 公网候选与 HTTPS 代理出口不一致，请检查分流或泄漏。",
+            "DNS 泄漏不能仅靠本机代码准确判定；必须由独立权威 DNS 服务观察查询来源。下方外部测试才是实际 DNS 泄漏验证。",
+        )
+        val translatedLanguages = listOf(
+            WeaveLanguage.ENGLISH,
+            WeaveLanguage.JAPANESE,
+            WeaveLanguage.FRENCH,
+            WeaveLanguage.GERMAN,
+        )
+        translatedLanguages.forEach { language ->
+            sources.forEach { source ->
+                assertNotEquals("$language left Chinese text: $source", source, localizeWeaveText(source, language))
+            }
+        }
+        assertEquals(
+            "3 compatible clients detected · confirm and choose an exported file",
+            localizeWeaveText(
+                "检测到 3 个兼容客户端 · 由你确认后选择导出文件",
+                WeaveLanguage.ENGLISH,
+            ),
+        )
+        assertEquals(
+            "4 advanced rules paused · switch to Standard mode to restore",
+            localizeWeaveText(
+                "4 项高级规则已暂停 · 切换标准模式可恢复",
+                WeaveLanguage.ENGLISH,
+            ),
         )
     }
 }

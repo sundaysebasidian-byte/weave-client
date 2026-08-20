@@ -24,7 +24,7 @@
 | 自定义 DNS / 分流 DNS | 已实现基础 | 设置页支持广告过滤、家庭过滤、自定义加密 DoH/DoT，以及基于 `geosite:cn` 与 `geosite:geolocation-!cn` 的国内/海外 nameserver-policy；DoQ 与自定义规则化 DNS 仍后续 |
 | IPv6 | 已实现 | 双栈或仅 IPv4；仅 IPv4 会关闭内核/DNS IPv6，并在 TUN 中拒绝 IPv6 |
 | 速度优化 | 部分实现 | `tcp-concurrent`、`unified-delay` 与懒测速已启用；未宣称未经设备矩阵验证的 TCP Fast Open |
-| 后台稳定 | 已实现基础 | Android 前台 `VpnService`、`START_STICKY`、已验证非 VPN 底层网络监听、socket/上游网络绑定和 2.5 秒去抖事务恢复；晚到的出站保护失败按退避自动重建上一份健康配置，无上游时保持 fail-closed，仍需真机长时测试 |
+| 后台稳定 | 已实现基础 | Android 前台 `VpnService`、`START_STICKY`、非 VPN 底层网络监听；Android 10+ 只用 `protect()` 让核心 socket 跟随系统换网，Android 8/9 保留 underlying-network 元数据和 2.5 秒去抖恢复；晚到的出站保护失败按退避重建上一份健康配置，无上游时保持 fail-closed，仍需真机长时测试 |
 | 配置热重载 | 已实现事务回退 | 候选配置只解析不应用；校验失败保留旧 TUN，启动失败恢复旧配置/provider；进程崩溃测试仍待设备矩阵 |
 | Recovery Vault 恢复中心 | 已实现 | 只持久化失败与快照元数据；候选和回滚均失败时进入安全模式，用户主动解除后才能重新连接 |
 | Kill Switch | 已实现系统入口 | 打开 Android Always-on / Block connections without VPN 设置，不复制不可靠的应用内假开关 |
@@ -33,7 +33,7 @@
 | Route Lens 路由解释 | 已实现 | 本地模拟应用规则、本地域名/IP规则、默认出口、DNS、UDP/QUIC 与 IPv6 状态；不执行网络请求，未知项明确标注 |
 | IP 质量检测 | 已实现基础 | 用户主动触发固定 HTTPS 出口探测，展示 IPv4/IPv6、ASN/地区/ISP、边缘节点、第三方代理标签和 RTT；DNS 泄漏、WebRTC、网站信誉仍需外部浏览器测试 |
 | 远程订阅手动刷新 | 已实现 | 仅刷新加密存储中的 HTTPS 来源；逐个执行安全审计并展示成功/失败进度，不常驻后台 |
-| Privacy Observatory 隐私观测 | 已实现 | 根据本地 VPN、DNS 旁路拒绝、过滤、IPv6、STUN 与直连配置生成证据报告；Always-on/断网保护仍由 Android 系统设置负责；未知/未测试不转换为安全百分比 |
+| Privacy Observatory 隐私观测 | 已实现 | 根据本地 VPN、DNS 旁路拒绝、过滤、IPv6、STUN 与直连配置生成证据报告；按用户操作并行检查 HTTPS IPv4/IPv6 出口，并用本机 WebView 采集 ICE 候选和浏览器身份表面做出口交叉验证；DNS 泄漏及 Always-on/断网保护仍需外部或系统设置复核，未知/未测试不转换为安全百分比 |
 | AI 自动优化 | 后续研究 | 未建立本地、可解释、可回滚的决策与隐私模型前不提供入口 |
 | 离线策略包 | 已实现 | `weave-policy/v1` 本地 JSON；SHA-256 必须匹配，可选 Ed25519 签名，Keystore 加密保存；规则值和数量有上限，未签名包需人工复核 |
 | LAN Sync 2.0 | 已实现基础 | 可按订阅选择导出、二维码后核对发送端显示的 6 位短码；WVLAN001 保持 macOS/iOS 兼容，同名同源订阅在 Android 侧经审计原位更新 |

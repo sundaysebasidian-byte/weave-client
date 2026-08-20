@@ -36,24 +36,24 @@ private fun paletteTokens(palette: WeavePalette, dark: Boolean): PaletteTokens =
         muted = Color(0xFF5D6873), good = Color(0xFF3D6F63),
     )
     WeavePalette.MINIMAL_DARK -> PaletteTokens(
-        ink = Color(0xFFE9EEF2), accent = Color(0xFFB0C2D1), lavender = Color(0xFF28343F),
-        coral = Color(0xFFC6A39B), canvas = Color(0xFF0E1318), paper = Color(0xFF171E25),
-        muted = Color(0xFFA6B1BB), good = Color(0xFF9BBDAF),
+        ink = Color(0xFFF2F7F5), accent = Color(0xFF8DD9B4), lavender = Color(0xFF20332D),
+        coral = Color(0xFFE7B7A7), canvas = Color(0xFF07100E), paper = Color(0xFF101C19),
+        muted = Color(0xFFA8BBB4), good = Color(0xFF78D5AA),
+    )
+    WeavePalette.MINIMAL_WHITE_GREEN -> PaletteTokens(
+        ink = Color(0xFF13231D), accent = Color(0xFF16A76C), lavender = Color(0xFFDDF6E9),
+        coral = Color(0xFFB55E4B), canvas = Color(0xFFF4F8F6), paper = Color(0xFFFFFFFF),
+        muted = Color(0xFF5C6D66), good = Color(0xFF11885A),
     )
     WeavePalette.MINIMAL_DEEP_OCEAN -> PaletteTokens(
-        ink = Color(0xFFE4F0F3), accent = Color(0xFF8DBCC9), lavender = Color(0xFF1D3641),
-        coral = Color(0xFFC5A49E), canvas = Color(0xFF09151B), paper = Color(0xFF11252D),
-        muted = Color(0xFF9DB8BF), good = Color(0xFF8FBBAA),
-    )
-    WeavePalette.MINIMAL_GRAPHITE -> PaletteTokens(
-        ink = Color(0xFFEBEDF0), accent = Color(0xFFB8C0CA), lavender = Color(0xFF293039),
-        coral = Color(0xFFC2A6A1), canvas = Color(0xFF0E1013), paper = Color(0xFF181C21),
-        muted = Color(0xFFA3AAB3), good = Color(0xFFA0B6AB),
+        ink = Color(0xFFF0FAFC), accent = Color(0xFF7DD6E6), lavender = Color(0xFF153849),
+        coral = Color(0xFFE8B4A8), canvas = Color(0xFF03131C), paper = Color(0xFF0B2532),
+        muted = Color(0xFFA3C2CB), good = Color(0xFF78D4B6),
     )
     WeavePalette.MINIMAL_NIGHT_PINE -> PaletteTokens(
-        ink = Color(0xFFE6F0EA), accent = Color(0xFF9DBBAB), lavender = Color(0xFF263A34),
-        coral = Color(0xFFC8A69C), canvas = Color(0xFF0C1714), paper = Color(0xFF15241F),
-        muted = Color(0xFFA4B7AD), good = Color(0xFF9FC2AD),
+        ink = Color(0xFFF0F8F2), accent = Color(0xFF9AD9B1), lavender = Color(0xFF1B3B2D),
+        coral = Color(0xFFE5B7A4), canvas = Color(0xFF06150E), paper = Color(0xFF0F271B),
+        muted = Color(0xFFA8C1B1), good = Color(0xFF83D6A3),
     )
     WeavePalette.IMPRESSION_SUNRISE -> if (dark) {
         PaletteTokens(
@@ -124,6 +124,7 @@ private fun materialColors(
     dark: Boolean,
     minimalDark: Boolean,
     minimalLight: Boolean,
+    minimalWhiteGreen: Boolean,
 ) = if (dark && minimalDark) {
     // Minimal dark palettes share a restrained scheme structure but keep their own ink/accent
     // tokens. That gives the user real alternatives without changing the four art palettes.
@@ -142,11 +143,33 @@ private fun materialColors(
         onBackground = tokens.ink,
         surface = tokens.paper,
         onSurface = tokens.ink,
-        surfaceVariant = mix(tokens.paper, tokens.accent, 0.16f),
+        surfaceVariant = mix(tokens.paper, tokens.accent, 0.11f),
         onSurfaceVariant = tokens.muted,
-        outline = tokens.muted.copy(alpha = 0.72f),
-        outlineVariant = tokens.muted.copy(alpha = 0.28f),
+        outline = tokens.muted.copy(alpha = 0.56f),
+        outlineVariant = tokens.muted.copy(alpha = 0.20f),
         error = Color(0xFFFFB4AB),
+    )
+} else if (!dark && minimalWhiteGreen) {
+    lightColorScheme(
+        primary = Color(0xFF087A50),
+        onPrimary = Color.White,
+        primaryContainer = Color(0xFFD8F4E5),
+        onPrimaryContainer = Color(0xFF063C29),
+        secondary = Color(0xFF26745A),
+        onSecondary = Color.White,
+        secondaryContainer = Color(0xFFE2F4EA),
+        onSecondaryContainer = Color(0xFF153D30),
+        tertiary = Color(0xFF8A5A4C),
+        onTertiary = Color.White,
+        background = Color(0xFFF4F8F6),
+        onBackground = Color(0xFF13231D),
+        surface = Color(0xFFFEFFFE),
+        onSurface = Color(0xFF13231D),
+        surfaceVariant = Color(0xFFE7F0EB),
+        onSurfaceVariant = Color(0xFF52645D),
+        outline = Color(0xFF7B8D85),
+        outlineVariant = Color(0xFFD4E2DA),
+        error = Color(0xFFBA1A1A),
     )
 } else if (!dark && minimalLight) {
     // Minimal light uses a single cool-neutral canvas and a quiet blue control color. Avoid
@@ -292,7 +315,8 @@ fun WeaveTheme(
     // they had before the appearance picker gained groups.
     val resolvedDarkTheme = when {
         palette.forceDark -> true
-        palette == WeavePalette.MINIMAL_LIGHT -> false
+        palette == WeavePalette.MINIMAL_LIGHT ||
+            palette == WeavePalette.MINIMAL_WHITE_GREEN -> false
         else -> darkTheme
     }
     val tokens = paletteTokens(palette, resolvedDarkTheme)
@@ -303,6 +327,7 @@ fun WeaveTheme(
                 dark = resolvedDarkTheme,
                 minimalDark = palette.forceDark,
                 minimalLight = palette == WeavePalette.MINIMAL_LIGHT,
+                minimalWhiteGreen = palette == WeavePalette.MINIMAL_WHITE_GREEN,
             ),
             typography = WeaveTypography,
             shapes = WeaveShapes,

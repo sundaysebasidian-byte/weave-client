@@ -5,6 +5,50 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+- Android `0.3.0-alpha60`：主页面列表使用小型前后预组装窗口，避免快速滑动时集中执行阴影、裁剪和文字测量；节点、订阅、分流、应用和页面状态声明为不可变，减少无关重组。新增仅供本地覆盖测试的 `localOptimized` 构建变体，沿用正式版 R8/资源压缩但使用本机调试证书。卡片、颜色、圆角、阴影和滚动中的视觉效果保持原版不变。versionCode 升至 62。
+
+- Android `0.3.0-alpha59`：撤销所有会在拖动/惯性滚动期间改变卡片外观的运行时降级。列表始终使用
+  原来的 LazyColumn、阴影、圆角裁剪、渐变与玻璃边框；保留不改变像素的 Brush 缓存、稳定 key /
+  content type 和多语言计算缓存，避免为了流畅牺牲视觉一致性。versionCode 升至 61。
+
+- Android `0.3.0-alpha58`：恢复 alpha56 的完整液态玻璃静态外观，包括极简风 3 dp、艺术风
+  8 dp 的卡片阴影、圆角裁剪、原渐变与高光边框。性能优化改为运动感知：列表拖动或惯性滚动时
+  临时使用无阴影轻量表面，停止后立即恢复原设计且不改变尺寸；alpha57 的稳定 key、content type、
+  渐变缓存和多语言计算优化继续保留。versionCode 升至 60。
+
+- Android `0.3.0-alpha57`：优化长列表快速滑动。滚动卡片不再为每一项建立独立实时阴影与
+  裁剪合成层，液态玻璃渐变按主题缓存，并为节点、应用、订阅、规则和检测结果补充稳定 key /
+  content type，提升 LazyColumn 复用效率。多语言动态文案的正则表达式改为进程内只编译一次，
+  节点名、订阅名与应用名按原文直接绘制，避免非中文界面的无效匹配与重复翻译。四套艺术背景、
+  页面结构和点击行为保持不变。versionCode 升至 59。
+
+- Android `0.3.0-alpha56`：修复隐私观测主动检测无结果。浏览器探测 WebView 不再因首次重组
+  被误销毁，改为轮询完成状态、12 秒明确超时并支持原位重试；主动检测改为独立页面，避免嵌套
+  对话框失效，结果返回后保留在隐私观测中。IPv4、IPv6、出口信息、边缘出口和两项 HTTPS
+  可达性由串行改为六路并行，故障网络的最长等待从约 24 秒收敛到约 4 秒。versionCode 升至 58。
+
+- Android `0.3.0-alpha55`：撤回未发布 alpha54 中按网站硬编码 DNS、代理选择器和 QUIC 回落的
+  实验，恢复统一且可预测的 DNS 配置：只按用户选择的解析模式、解析器和国内直连策略生成配置，
+  不再为 ChatGPT/OpenAI 或其他单个服务暗中改写解析与路由。底部导航取消选中项的颜色渐变、
+  点击涟漪和字重变化，页面立即切换且布局不跳动。保留新手模式真正停用隐藏高级规则的修复。
+  versionCode 升至 57。
+
+- macOS `0.1.0-alpha08`：默认启用 Mihomo 原生 `utun_weave` 双栈 TUN，显式安装 IPv4/IPv6
+  分半路由、DNS 劫持和严格路由；加密 DoH 上游与 fake-IP 保持统一，连接前检查 TUN 接口及
+  两套路由表。任一条件未就绪都会 fail-closed 拒绝连接，避免 IPv4/IPv6/DNS 静默直连；关闭
+  双栈 TUN 开关后才允许本地 HTTP/HTTPS/SOCKS 代理模式。补充 3478/5349 与 19302–19309
+  常见 STUN 端口阻断。此版本仍是 Apple Silicon 私有 ad-hoc 包，未伪装成签名的 Network Extension。
+
+- macOS `0.1.0-alpha09`：macOS UI 对齐 Android 极简浅色布局。移除整页米色纹理和深色巨型状态块，
+  统一为冷中性画布、浅色卡片、低对比边界和 Android 风格的连接主卡、出口选择、当前出口与状态提示；
+  连接与双栈 TUN 行为不变。
+
+- Android alpha51：针对“同一节点在 CMFA 稳定、Weave 偶发无网”收敛 CMFA 数据面路径。Mihomo
+  使用 Android `system` TUN 栈并接管任意 IPv4/IPv6 DNS 53 端口；Android 10+ 核心出站只做
+  `VpnService.protect()`，不再绑定易失效的 `Network` 或在换网时重建健康 TUN；自动节点连续
+  3 次健康探测失败才切换，并使用轻量 connectivity probe，减少移动网络瞬时抖动导致的断网。
+  新版本号为 `0.3.0-alpha51`（versionCode 53）。
+
 - 发布边界：新增 `local-open-source` 本地发行配置、网络端点清单和 `audit-local-release.sh`；明确公开版不运营账号、云端控制、节点中继、遥测、崩溃上报或应用远程更新，并在首次 VPN 数据路径说明中展示该边界。发布文案、隐私说明、第三方清单和 PR 模板同步加入事实核对与敏感信息脱敏门槛。
 
 - Android：稳定长连接的出站保护恢复链路。区分底层 Network 暂时不可用与原生内核出站 socket

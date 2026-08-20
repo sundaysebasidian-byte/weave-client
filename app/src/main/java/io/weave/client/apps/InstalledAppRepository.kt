@@ -4,12 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.runtime.Immutable
 
+@Immutable
 data class InstalledApp(
     val packageName: String,
     val label: String,
     val monogram: String,
     val tint: Long,
+    val migrationCandidate: Boolean = false,
 )
 
 /**
@@ -44,6 +47,7 @@ class InstalledAppRepository(
                     label = label,
                     monogram = label.monogram(),
                     tint = APP_TINTS[(packageName.hashCode() and Int.MAX_VALUE) % APP_TINTS.size],
+                    migrationCandidate = ProxyClientDetector.matches(packageName, label),
                 )
             }
             .distinctBy { it.packageName }
@@ -69,3 +73,36 @@ class InstalledAppRepository(
     }
 }
 
+/** Exact identifiers only: a generic VPN-looking label must never become a migration prompt. */
+internal object ProxyClientDetector {
+    private val knownPackages = setOf(
+        "com.github.kr328.clash",
+        "com.github.kr328.clash.premium",
+        "com.github.metacubex.clash.meta",
+        "com.nebula.karing",
+        "com.v2ray.ang",
+        "io.nekohasekai.sagernet",
+        "io.nekohasekai.sfa",
+        "moe.nb4a",
+        "app.hiddify.com",
+        "com.follow.clash",
+    )
+    private val knownLabels = setOf(
+        "clash meta",
+        "clash meta for android",
+        "clash for android",
+        "cmfa",
+        "flclash",
+        "hiddify",
+        "karing",
+        "nekobox",
+        "sagernet",
+        "sing-box",
+        "v2rayng",
+    )
+
+    fun matches(packageName: String, label: String): Boolean {
+        if (packageName.trim().lowercase() in knownPackages) return true
+        return label.trim().lowercase() in knownLabels
+    }
+}

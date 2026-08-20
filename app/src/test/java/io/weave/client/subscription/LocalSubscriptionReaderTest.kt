@@ -33,4 +33,12 @@ class LocalSubscriptionReaderTest {
             reader.read(ByteArrayInputStream(byteArrayOf(0xC3.toByte(), 0x28)))
         }
     }
+
+    @Test
+    fun `file import preserves an explicit name or derives the exported file name`() {
+        assertEquals("My provider", importedSubscriptionName(" My provider ", "ignored.yaml"))
+        assertEquals("Tokyo routes", importedSubscriptionName("", "Tokyo routes.YML"))
+        assertEquals("profile.backup", importedSubscriptionName("", "profile.backup.json"))
+        assertEquals("Imported subscription", importedSubscriptionName("", null))
+    }
 }

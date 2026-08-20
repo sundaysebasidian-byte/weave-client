@@ -7,6 +7,23 @@ import java.util.concurrent.ConcurrentHashMap
 /** The UI language is app-local and does not change the device-wide locale. */
 val LocalWeaveLanguage = staticCompositionLocalOf { WeaveLanguage.SIMPLIFIED_CHINESE }
 
+private val TRANSLATION_REGEX_CACHE = ConcurrentHashMap<String, Regex>()
+
+/**
+ * Some runtime messages are assembled from other localized messages. Keep that composition
+ * bounded so a malformed or self-referential message can never crash the UI with recursive
+ * localization (the audit test exercises every visible literal).
+ */
+private const val MAX_TRANSLATION_DEPTH = 12
+private val TRANSLATION_DEPTH = ThreadLocal.withInitial<Int> { 0 }
+
+/** Dynamic UI patterns are stable constants; compile each one once instead of per text render. */
+private fun translationRegex(pattern: String): Regex {
+    TRANSLATION_REGEX_CACHE[pattern]?.let { return it }
+    val compiled = Regex(pattern)
+    return TRANSLATION_REGEX_CACHE.putIfAbsent(pattern, compiled) ?: compiled
+}
+
 /**
  * Translates stable UI labels at the rendering boundary. User data (app names, node names,
  * subscription names and URLs) is intentionally left untouched. The map is deliberately keyed by
@@ -15,12 +32,45 @@ val LocalWeaveLanguage = staticCompositionLocalOf { WeaveLanguage.SIMPLIFIED_CHI
  */
 fun localizeWeaveText(text: String, language: WeaveLanguage): String {
     if (language == WeaveLanguage.SIMPLIFIED_CHINESE || text.isBlank()) return text
-    translationTable(language)[text]?.let { return it }
-    return translateCommonPatterns(text, language) ?: text
+    val depth = TRANSLATION_DEPTH.get() ?: 0
+    if (depth >= MAX_TRANSLATION_DEPTH) return text
+    TRANSLATION_DEPTH.set(depth + 1)
+    return try {
+        translationTable(language)[text]?.let { it }
+            ?: translateCommonPatterns(text, language)
+            ?: text
+    } finally {
+        TRANSLATION_DEPTH.set(depth)
+    }
 }
 
 private fun translateCommonPatterns(text: String, language: WeaveLanguage): String? {
-    Regex("^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$").matchEntire(text)?.let { match ->
+        val count = match.groupValues[1]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "$count 項進階規則已暫停 · 切換標準模式可恢復"
+            WeaveLanguage.ENGLISH -> "$count advanced rules paused · switch to Standard mode to restore"
+            WeaveLanguage.JAPANESE -> "高度なルール $count 件を一時停止中 · 標準モードで復元できます"
+            WeaveLanguage.FRENCH -> "$count règles avancées suspendues · passez en mode standard pour les rétablir"
+            WeaveLanguage.GERMAN -> "$count erweiterte Regeln pausiert · im Standardmodus wiederherstellen"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    translationRegex("^检测到 (\\d+) 个兼容客户端 · 由你确认后选择导出文件$").matchEntire(text)?.let { match ->
+        val count = match.groupValues[1]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "偵測到 $count 個相容客戶端 · 由你確認後選擇匯出檔案"
+            WeaveLanguage.ENGLISH -> "$count compatible clients detected · confirm and choose an exported file"
+            WeaveLanguage.JAPANESE -> "互換クライアントを $count 個検出 · 確認後に書き出しファイルを選択"
+            WeaveLanguage.FRENCH -> "$count clients compatibles détectés · confirmez puis choisissez un fichier exporté"
+            WeaveLanguage.GERMAN -> "$count kompatible Clients erkannt · bestätigen und Exportdatei wählen"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    translationRegex("^(极简风|艺术风) · (.+)$").matchEntire(text)?.let { match ->
+        return "${localizeWeaveText(match.groupValues[1], language)} · ${localizeWeaveText(match.groupValues[2], language)}"
+    }
+    translationRegex("^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$").matchEntire(text)?.let { match ->
         val owner = match.groupValues[1]
         val field = match.groupValues[2]
         val localizedField = when (field) {
@@ -90,7 +140,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$").matchEntire(text)?.let { match ->
+    translationRegex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$").matchEntire(text)?.let { match ->
         val scheme = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$scheme 節點位址格式無效"
@@ -101,7 +151,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$").matchEntire(text)?.let { match ->
+    translationRegex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$").matchEntire(text)?.let { match ->
         val scheme = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$scheme 節點"
@@ -112,7 +162,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$").matchEntire(text)?.let { match ->
         val scheme = match.groupValues[1]
         val index = match.groupValues[2]
         return when (language) {
@@ -124,7 +174,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^暂不支持将 (.+) URI 转换为 Mihomo$").matchEntire(text)?.let { match ->
+    translationRegex("^暂不支持将 (.+) URI 转换为 Mihomo$").matchEntire(text)?.let { match ->
         val scheme = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "目前不支援將 $scheme URI 轉換為 Mihomo"
@@ -135,7 +185,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$").matchEntire(text)?.let { match ->
+    translationRegex("^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$").matchEntire(text)?.let { match ->
         val family = match.groupValues[1]
         val protocol = match.groupValues[2]
         return when (language) {
@@ -147,7 +197,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^· (\\d+) 个同名同协议节点未自动删除$").matchEntire(text)?.let { match ->
+    translationRegex("^· (\\d+) 个同名同协议节点未自动删除$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "· $count 個同名同協定節點未自動刪除"
@@ -158,7 +208,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$").matchEntire(text)?.let { match ->
+    translationRegex("^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "「$name」不是遠端 HTTPS 訂閱，已略過自動重新整理"
@@ -169,7 +219,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已连接 · (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translationRegex("^已连接 · (\\d+) 个订阅$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已連線 · $count 個訂閱"
@@ -180,7 +230,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$").matchEntire(text)?.let { match ->
+    translationRegex("^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$").matchEntire(text)?.let { match ->
         val kind = match.groupValues[1]
         val size = match.groupValues[2]
         val unit = match.groupValues[3]
@@ -221,7 +271,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^请选择 1–(\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translationRegex("^请选择 1–(\\d+) 个订阅$").matchEntire(text)?.let { match ->
         val max = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "請選擇 1–$max 個訂閱"
@@ -232,7 +282,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^策略包规则数量必须为 1–(\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^策略包规则数量必须为 1–(\\d+)$").matchEntire(text)?.let { match ->
         val max = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "策略包規則數量必須為 1–$max"
@@ -243,7 +293,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^第 (\\d+) 条(.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^第 (\\d+) 条(.+)$").matchEntire(text)?.let { match ->
         val index = match.groupValues[1]
         val reason = match.groupValues[2].trimStart()
         val englishReason = when {
@@ -288,7 +338,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^Mihomo 原生库复制不完整：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^Mihomo 原生库复制不完整：(.*)$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "Mihomo 原生函式庫複製不完整：$name"
@@ -299,7 +349,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^订阅服务器返回 HTTP (\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^订阅服务器返回 HTTP (\\d+)$").matchEntire(text)?.let { match ->
         val status = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "訂閱伺服器回傳 HTTP $status"
@@ -310,7 +360,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^发现未支持的节点格式：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^发现未支持的节点格式：(.*)$").matchEntire(text)?.let { match ->
         val value = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "發現不支援的節點格式：$value"
@@ -321,7 +371,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^最多保存 (\\d+) 条本地规则$").matchEntire(text)?.let { match ->
+    translationRegex("^最多保存 (\\d+) 条本地规则$").matchEntire(text)?.let { match ->
         val max = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最多保存 $max 條本機規則"
@@ -332,7 +382,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$").matchEntire(text)?.let { match ->
         val added = match.groupValues[1]
         val removed = match.groupValues[2]
         val kept = match.groupValues[3]
@@ -345,7 +395,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^共 (\\d+) 个节点$").matchEntire(text)?.let { match ->
+    translationRegex("^共 (\\d+) 个节点$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "共 $count 個節點"
@@ -356,7 +406,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^应用规则  (\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^应用规则  (\\d+)$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "應用規則  $count"
@@ -367,7 +417,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+) 个节点$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) 个节点$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$count 個節點"
@@ -378,7 +428,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^导出所选 (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translationRegex("^导出所选 (\\d+) 个订阅$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "匯出所選 $count 個訂閱"
@@ -389,7 +439,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^从 (\\d+) 个节点中自动选择$").matchEntire(text)?.let { match ->
+    translationRegex("^从 (\\d+) 个节点中自动选择$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "從 $count 個節點中自動選擇"
@@ -400,7 +450,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^连续失败：(\\d+) 次$").matchEntire(text)?.let { match ->
+    translationRegex("^连续失败：(\\d+) 次$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "連續失敗：$count 次"
@@ -411,7 +461,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^正在恢复代理连接（第 (\\d+) 次）$").matchEntire(text)?.let { match ->
+    translationRegex("^正在恢复代理连接（第 (\\d+) 次）$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "正在恢復代理連線（第 $count 次）"
@@ -422,7 +472,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+) 个节点 · 本地加密保存$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) 个节点 · 本地加密保存$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$count 個節點 · 本機加密保存"
@@ -433,12 +483,12 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+) · (稳定|一般|波动|未完成)$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) · (稳定|一般|波动|未完成)$").matchEntire(text)?.let { match ->
         val score = match.groupValues[1]
         val label = localizeWeaveText(match.groupValues[2], language)
         return "$score · $label"
     }
-    Regex("^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
         val protocol = match.groupValues[1]
         val median = match.groupValues[2]
         val p95 = match.groupValues[3]
@@ -455,7 +505,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
         val protocol = match.groupValues[1]
         val jitter = match.groupValues[2]
         val loss = match.groupValues[3]
@@ -470,7 +520,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^例如 (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^例如 (.+)$").matchEntire(text)?.let { match ->
         val example = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "例如 $example"
@@ -481,7 +531,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$").matchEntire(text)?.let { match ->
         val profile = localizeWeaveText(match.groupValues[1], language)
         val transport = localizeWeaveText(match.groupValues[2], language)
         val routing = localizeWeaveText(match.groupValues[3], language)
@@ -496,7 +546,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         val suffix = localizeWeaveText(match.groupValues[4], language)
         return "$profile · $transport · $routing · $bypass + $suffix"
     }
-    Regex("^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$").matchEntire(text)?.let { match ->
         val verified = match.groupValues[1]
         val external = match.groupValues[2]
         return when (language) {
@@ -508,7 +558,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$").matchEntire(text)?.let { match ->
         val reachable = match.groupValues[1]
         val total = match.groupValues[2]
         val median = match.groupValues[3]
@@ -521,7 +571,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^端点不可达：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^端点不可达：(.*)$").matchEntire(text)?.let { match ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "端點無法連線：$detail"
@@ -532,16 +582,16 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^ASN  (.+) · 未知运营商$").matchEntire(text)?.let { match ->
+    translationRegex("^ASN  (.+) · 未知运营商$").matchEntire(text)?.let { match ->
         val asn = match.groupValues[1]
         val carrier = localizeWeaveText("未知运营商", language)
         return "ASN  $asn · $carrier"
     }
-    Regex("^应用规则 · (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^应用规则 · (.+)$").matchEntire(text)?.let { match ->
         val prefix = localizeWeaveText("应用规则", language)
         return "$prefix · ${match.groupValues[1]}"
     }
-    Regex("^本地规则 · (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^本地规则 · (.+)$").matchEntire(text)?.let { match ->
         val prefix = localizeWeaveText("本地规则", language)
         val suffix = match.groupValues[1]
         val separator = suffix.indexOf(' ')
@@ -552,7 +602,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         }
         return "$prefix · $localizedSuffix"
     }
-    Regex("^(.+) 加密解析 · (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) 加密解析 · (.+)$").matchEntire(text)?.let { match ->
         val transport = localizeWeaveText(match.groupValues[1], language)
         val endpoint = localizeWeaveText(match.groupValues[2], language)
         return "$transport ${when (language) {
@@ -564,7 +614,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> "加密解析"
         }} · $endpoint"
     }
-    Regex("^STUN 端口 (\\d+) 已按规则阻断$").matchEntire(text)?.let { match ->
+    translationRegex("^STUN 端口 (\\d+) 已按规则阻断$").matchEntire(text)?.let { match ->
         val port = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "STUN 連接埠 $port 已按規則阻擋"
@@ -575,7 +625,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+)/(\\d+) 个上游可达$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+)/(\\d+) 个上游可达$").matchEntire(text)?.let { match ->
         val available = match.groupValues[1]
         val total = match.groupValues[2]
         return when (language) {
@@ -587,12 +637,12 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^HTTPS (\\d+) · (端点可达|服务端错误)$").matchEntire(text)?.let { match ->
+    translationRegex("^HTTPS (\\d+) · (端点可达|服务端错误)$").matchEntire(text)?.let { match ->
         val code = match.groupValues[1]
         val status = localizeWeaveText(match.groupValues[2], language)
         return "HTTPS $code · $status"
     }
-    Regex("^(.+) 没有指定订阅$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) 没有指定订阅$").matchEntire(text)?.let { match ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 未指定訂閱"
@@ -603,7 +653,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) 没有指定节点$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) 没有指定节点$").matchEntire(text)?.let { match ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 未指定節點"
@@ -614,7 +664,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$").matchEntire(text)?.let { match ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 指向的訂閱不可用於 Mihomo；目前僅支援 Clash YAML"
@@ -625,7 +675,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) 指向的节点已不存在，请重新选择$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) 指向的节点已不存在，请重新选择$").matchEntire(text)?.let { match ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 指向的節點已不存在，請重新選擇"
@@ -636,7 +686,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^Mihomo TUN 启动失败，错误码 (\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^Mihomo TUN 启动失败，错误码 (\\d+)$").matchEntire(text)?.let { match ->
         val code = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "Mihomo TUN 啟動失敗，錯誤碼 $code"
@@ -647,7 +697,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^无法写入订阅 (.+) 的运行时副本$").matchEntire(text)?.let { match ->
+    translationRegex("^无法写入订阅 (.+) 的运行时副本$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "無法寫入訂閱 $name 的執行副本"
@@ -658,7 +708,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^第三方信息服务标记为 (.*)；这不是恶意判定$").matchEntire(text)?.let { match ->
+    translationRegex("^第三方信息服务标记为 (.*)；这不是恶意判定$").matchEntire(text)?.let { match ->
         val labels = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "第三方資訊服務標記為 $labels；這不是惡意判定"
@@ -669,7 +719,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^未取得 IPv4 公网地址 · (.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^未取得 IPv4 公网地址 · (.*)$").matchEntire(text)?.let { match ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "未取得 IPv4 公網地址 · $detail"
@@ -680,7 +730,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^检测到 (.*)；与“仅 IPv4”设置不一致$").matchEntire(text)?.let { match ->
+    translationRegex("^检测到 (.*)；与“仅 IPv4”设置不一致$").matchEntire(text)?.let { match ->
         val address = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "偵測到 $address；與「僅 IPv4」設定不一致"
@@ -691,7 +741,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) · (.+)；这是配置证据，不是外部泄漏测试$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) · (.+)；这是配置证据，不是外部泄漏测试$").matchEntire(text)?.let { match ->
         val transport = localizeWeaveText(match.groupValues[1], language)
         val profile = localizeWeaveText(match.groupValues[2], language)
         return when (language) {
@@ -703,7 +753,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+) GB 已用$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) GB 已用$").matchEntire(text)?.let { match ->
         val amount = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$amount GB 已用"
@@ -714,7 +764,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^节点  (\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^节点  (\\d+)$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "節點  $count"
@@ -725,7 +775,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^中位 (\\d+)ms$").matchEntire(text)?.let { match ->
+    translationRegex("^中位 (\\d+)ms$").matchEntire(text)?.let { match ->
         val latency = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "中位數 ${latency}ms"
@@ -736,7 +786,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+) ms · 丢(\\d+)%$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) ms · 丢(\\d+)%$").matchEntire(text)?.let { match ->
         val latency = match.groupValues[1]
         val loss = match.groupValues[2]
         return when (language) {
@@ -748,7 +798,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(\\d+) ms · 抖(\\d+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(\\d+) ms · 抖(\\d+)$").matchEntire(text)?.let { match ->
         val latency = match.groupValues[1]
         val jitter = match.groupValues[2]
         return when (language) {
@@ -760,7 +810,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^边缘节点  (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^边缘节点  (.+)$").matchEntire(text)?.let { match ->
         val edge = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "邊緣節點  $edge"
@@ -771,7 +821,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^确认短码：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^确认短码：(.*)$").matchEntire(text)?.let { match ->
         val code = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "確認短碼：$code"
@@ -782,7 +832,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^添加 (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^添加 (.+)$").matchEntire(text)?.let { match ->
         val app = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "新增 $app"
@@ -793,7 +843,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^删除后，(.+) 将改用默认出口。$").matchEntire(text)?.let { match ->
+    translationRegex("^删除后，(.+) 将改用默认出口。$").matchEntire(text)?.let { match ->
         val app = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "刪除後，$app 將改用預設出口。"
@@ -804,7 +854,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$").matchEntire(text)?.let { match ->
+    translationRegex("^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         val count = match.groupValues[2]
         return when (language) {
@@ -816,7 +866,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$").matchEntire(text)?.let { match ->
+    translationRegex("^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "引用它的 $count 條應用程式規則也會刪除，這些應用程式隨後使用預設出口。"
@@ -827,7 +877,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$").matchEntire(text)?.let { match ->
+    translationRegex("^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$").matchEntire(text)?.let { match ->
         val completed = match.groupValues[1]
         val total = match.groupValues[2]
         val elapsed = match.groupValues[3]
@@ -840,7 +890,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已刷新 (\\d+) 个远程订阅$").matchEntire(text)?.let { match ->
+    translationRegex("^已刷新 (\\d+) 个远程订阅$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已重新整理 $count 個遠端訂閱"
@@ -851,7 +901,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已完成 (\\d+) 个，(\\d+) 个失败$").matchEntire(text)?.let { match ->
+    translationRegex("^已完成 (\\d+) 个，(\\d+) 个失败$").matchEntire(text)?.let { match ->
         val completed = match.groupValues[1]
         val failed = match.groupValues[2]
         return when (language) {
@@ -863,7 +913,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$").matchEntire(text)?.let { match ->
+    translationRegex("^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已安全同步 $count 個訂閱；同源訂閱已原位更新"
@@ -874,7 +924,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^生成时间：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^生成时间：(.*)$").matchEntire(text)?.let { match ->
         val time = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "產生時間：$time"
@@ -885,7 +935,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^来源：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^来源：(.*)$").matchEntire(text)?.let { match ->
         val source = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "來源：$source"
@@ -896,7 +946,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$").matchEntire(text)?.let { match ->
+    translationRegex("^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$").matchEntire(text)?.let { match ->
         val available = match.groupValues[1]
         val total = match.groupValues[2]
         val median = match.groupValues[3]
@@ -911,7 +961,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^v(.+) · (\\d+) 条 · (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^v(.+) · (\\d+) 条 · (.+)$").matchEntire(text)?.let { match ->
         val version = match.groupValues[1]
         val count = match.groupValues[2]
         val integrity = match.groupValues[3]
@@ -924,7 +974,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^正在刷新 (.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^正在刷新 (.+)$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "正在重新整理 $name"
@@ -935,7 +985,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已删除订阅「(.+)」$").matchEntire(text)?.let { match ->
+    translationRegex("^已删除订阅「(.+)」$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已刪除訂閱「$name」"
@@ -946,7 +996,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已导入策略包「(.+)」$").matchEntire(text)?.let { match ->
+    translationRegex("^已导入策略包「(.+)」$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已匯入策略包「$name」"
@@ -957,7 +1007,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^策略包超过 (\\d+) KiB 限制$").matchEntire(text)?.let { match ->
+    translationRegex("^策略包超过 (\\d+) KiB 限制$").matchEntire(text)?.let { match ->
         val size = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "策略包超過 $size KiB 限制"
@@ -968,7 +1018,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+)，正在安全更新运行配置$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+)，正在安全更新运行配置$").matchEntire(text)?.let { match ->
         val prefix = match.groupValues[1]
         val localizedPrefix = localizeWeaveText(prefix, language)
         return when (language) {
@@ -980,7 +1030,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+)，正在安全应用$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+)，正在安全应用$").matchEntire(text)?.let { match ->
         val prefix = match.groupValues[1]
         val localizedPrefix = localizeWeaveText(prefix, language)
         return when (language) {
@@ -992,7 +1042,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^最近可用快照：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^最近可用快照：(.*)$").matchEntire(text)?.let { match ->
         val snapshot = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最近可用快照：$snapshot"
@@ -1003,7 +1053,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^最近失败：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^最近失败：(.*)$").matchEntire(text)?.let { match ->
         val failure = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最近失敗：$failure"
@@ -1014,7 +1064,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^远程订阅已安全更新 · (.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^远程订阅已安全更新 · (.*)$").matchEntire(text)?.let { match ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "遠端訂閱已安全更新 · $detail"
@@ -1025,7 +1075,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^订阅文件已安全替换 · (.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^订阅文件已安全替换 · (.*)$").matchEntire(text)?.let { match ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "訂閱檔案已安全替換 · $detail"
@@ -1036,7 +1086,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^已安全导入「(.+)」$").matchEntire(text)?.let { match ->
+    translationRegex("^已安全导入「(.+)」$").matchEntire(text)?.let { match ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已安全匯入「$name」"
@@ -1047,7 +1097,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+) · (\\d+) → (\\d+) 节点$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+) · (\\d+) → (\\d+) 节点$").matchEntire(text)?.let { match ->
         val summary = localizeWeaveText(match.groupValues[1], language)
         val oldCount = match.groupValues[2]
         val newCount = match.groupValues[3]
@@ -1060,7 +1110,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^· (.+)：(.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^· (.+)：(.+)$").matchEntire(text)?.let { match ->
         val title = localizeWeaveText(match.groupValues[1], language)
         val detail = localizeWeaveText(match.groupValues[2], language)
         val separator = when (language) {
@@ -1071,7 +1121,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         }
         return "· $title$separator$detail"
     }
-    Regex("^审计提示：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^审计提示：(.*)$").matchEntire(text)?.let { match ->
         val details = match.groupValues[1]
             .split("；")
             .joinToString(when (language) {
@@ -1087,7 +1137,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^审计阻止：(.*)$").matchEntire(text)?.let { match ->
+    translationRegex("^审计阻止：(.*)$").matchEntire(text)?.let { match ->
         val details = match.groupValues[1]
             .split("；")
             .joinToString(when (language) {
@@ -1103,7 +1153,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    Regex("^(.+)：(.+)$").matchEntire(text)?.let { match ->
+    translationRegex("^(.+)：(.+)$").matchEntire(text)?.let { match ->
         val prefix = match.groupValues[1]
         val localizedPrefix = translationTable(language)[prefix] ?: return@let
         val localizedValue = localizeWeaveText(match.groupValues[2], language)
@@ -1146,6 +1196,190 @@ private fun supplementalUiTranslations(language: WeaveLanguage): Map<String, Str
     SUPPLEMENTAL_TRANSLATIONS.mapValues { (_, value) -> value.resolve(language) }
 
 private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
+    "使用模式" to SupplementalTranslation("Usage mode", "使用模式", "使用モード", "Mode d’utilisation", "Nutzungsmodus"),
+    "新手模式" to SupplementalTranslation("Beginner mode", "新手模式", "初心者モード", "Mode débutant", "Einsteigermodus"),
+    "标准模式" to SupplementalTranslation("Standard mode", "標準模式", "標準モード", "Mode standard", "Standardmodus"),
+    "三步引导连接，并暂停应用分流、策略包与本地规则" to SupplementalTranslation(
+        "Guide connection in three steps and pause app routing, policy packs and local rules",
+        "以三步引導連線，並暫停應用程式分流、策略包與本機規則",
+        "3 ステップで接続を案内し、アプリルーティング、ポリシーパック、ローカルルールを一時停止します",
+        "Guider la connexion en trois étapes et suspendre le routage par application, les packs et les règles locales",
+        "In drei Schritten verbinden und App-Routing, Richtlinienpakete sowie lokale Regeln pausieren",
+    ),
+    "恢复完整分流、诊断与全部可审计网络设置" to SupplementalTranslation(
+        "Restore full routing, diagnostics and all auditable network settings",
+        "恢復完整分流、診斷與所有可稽核的網路設定",
+        "完全なルーティング、診断、監査可能な全ネットワーク設定を復元します",
+        "Rétablir le routage complet, les diagnostics et tous les réglages réseau auditables",
+        "Vollständiges Routing, Diagnose und alle prüfbaren Netzwerkeinstellungen wiederherstellen",
+    ),
+    "自订导航" to SupplementalTranslation("Custom navigation", "自訂導航", "ナビゲーションをカスタマイズ", "Navigation personnalisée", "Navigation anpassen"),
+    "调整底部导航的真实顺序，也可隐藏分流或订阅。连接与设置是安全入口，始终保留。" to SupplementalTranslation(
+        "Change the real bottom-navigation order and optionally hide Routing or Subscriptions. Connect and Settings are safety entries and always remain.",
+        "調整底部導航的實際順序，也可隱藏分流或訂閱。連線與設定是安全入口，會始終保留。",
+        "下部ナビゲーションの実際の順序を変更し、ルーティングや購読を非表示にできます。接続と設定は安全のため常に残ります。",
+        "Modifiez l’ordre réel de la navigation inférieure et masquez éventuellement Routage ou Abonnements. Connexion et Réglages restent toujours accessibles.",
+        "Die tatsächliche Reihenfolge der unteren Navigation ändern und Routing oder Abonnements optional ausblenden. Verbinden und Einstellungen bleiben immer erhalten.",
+    ),
+    "上移" to SupplementalTranslation("Move up", "上移", "上へ", "Monter", "Nach oben"),
+    "下移" to SupplementalTranslation("Move down", "下移", "下へ", "Descendre", "Nach unten"),
+    "恢复默认导航" to SupplementalTranslation("Restore default navigation", "恢復預設導航", "既定のナビゲーションに戻す", "Rétablir la navigation par défaut", "Standardnavigation wiederherstellen"),
+    "快速开始" to SupplementalTranslation("Quick start", "快速開始", "クイックスタート", "Démarrage rapide", "Schnellstart"),
+    "按顺序完成三步即可连接；高级分流不会在新手模式中后台生效。" to SupplementalTranslation(
+        "Complete the three steps in order to connect; advanced routing does not run in the background in Beginner mode.",
+        "依序完成三個步驟即可連線；進階分流不會在新手模式中於背景生效。",
+        "3 ステップを順に完了すると接続できます。初心者モードでは高度なルーティングはバックグラウンドで動作しません。",
+        "Effectuez les trois étapes dans l’ordre pour vous connecter ; le routage avancé ne s’exécute pas en arrière-plan en mode débutant.",
+        "Die drei Schritte der Reihe nach abschließen; erweitertes Routing läuft im Einsteigermodus nicht im Hintergrund.",
+    ),
+    "已选择直连，无需订阅" to SupplementalTranslation("Direct access selected; no subscription required", "已選擇直連，無需訂閱", "直接接続を選択済み。購読は不要です", "Connexion directe sélectionnée ; aucun abonnement requis", "Direktverbindung gewählt; kein Abonnement erforderlich"),
+    "导入一个订阅" to SupplementalTranslation("Import a subscription", "匯入一個訂閱", "購読をインポート", "Importer un abonnement", "Abonnement importieren"),
+    "选择默认出口" to SupplementalTranslation("Choose the default exit", "選擇預設出口", "デフォルト出口を選択", "Choisir la sortie par défaut", "Standardausgang wählen"),
+    "开启网络保护" to SupplementalTranslation("Enable network protection", "開啟網路保護", "ネットワーク保護を有効化", "Activer la protection réseau", "Netzwerkschutz aktivieren"),
+    "已完成" to SupplementalTranslation("Completed", "已完成", "完了", "Terminé", "Abgeschlossen"),
+    "导入订阅" to SupplementalTranslation("Import subscription", "匯入訂閱", "購読をインポート", "Importer un abonnement", "Abonnement importieren"),
+    "选择出口" to SupplementalTranslation("Choose exit", "選擇出口", "出口を選択", "Choisir la sortie", "Ausgang wählen"),
+    "开始连接" to SupplementalTranslation("Connect now", "開始連線", "接続を開始", "Se connecter", "Jetzt verbinden"),
+    "断开连接" to SupplementalTranslation("Disconnect", "中斷連線", "切断", "Se déconnecter", "Trennen"),
+    "新手保护方案" to SupplementalTranslation("Beginner protection profile", "新手保護方案", "初心者向け保護プロファイル", "Profil de protection débutant", "Schutzprofil für Einsteiger"),
+    "规则模式 · 高级规则暂停 · 沿用加密 DNS 与双栈保护" to SupplementalTranslation(
+        "Rule mode · advanced rules paused · encrypted DNS and dual-stack protection retained",
+        "規則模式 · 進階規則暫停 · 保留加密 DNS 與雙棧保護",
+        "ルールモード · 高度なルールを一時停止 · 暗号化 DNS とデュアルスタック保護を維持",
+        "Mode règles · règles avancées suspendues · DNS chiffré et protection double pile conservés",
+        "Regelmodus · erweiterte Regeln pausiert · verschlüsseltes DNS und Dual-Stack-Schutz bleiben aktiv",
+    ),
+    "已进入新手模式，高级分流规则已暂停" to SupplementalTranslation("Beginner mode enabled; advanced routing rules are paused", "已進入新手模式，進階分流規則已暫停", "初心者モードを有効化し、高度なルーティングルールを一時停止しました", "Mode débutant activé ; les règles de routage avancées sont suspendues", "Einsteigermodus aktiviert; erweiterte Routingregeln sind pausiert"),
+    "已进入标准模式，正在恢复完整分流配置" to SupplementalTranslation("Standard mode enabled; restoring the full routing configuration", "已進入標準模式，正在恢復完整分流設定", "標準モードを有効化し、完全なルーティング設定を復元しています", "Mode standard activé ; restauration de la configuration de routage complète", "Standardmodus aktiviert; vollständige Routingkonfiguration wird wiederhergestellt"),
+    "白绿" to SupplementalTranslation("White & green", "白綠", "ホワイト＆グリーン", "Blanc et vert", "Weiß-Grün"),
+    "纯净白底、柔和青绿与清晰深色文字" to SupplementalTranslation(
+        "Pure white surfaces, soft green accents and crisp dark text",
+        "純淨白底、柔和青綠與清晰深色文字",
+        "清潔な白い面、柔らかなグリーン、読みやすい濃色文字",
+        "Surfaces blanches, accents verts doux et texte sombre net",
+        "Klare weiße Flächen, sanftes Grün und gut lesbarer dunkler Text",
+    ),
+    "墨蓝黑画布、柔白文字与克制青绿高光" to SupplementalTranslation(
+        "Ink-black canvas, soft white text and restrained green highlights",
+        "墨藍黑畫布、柔白文字與克制青綠高光",
+        "墨黒のキャンバス、柔らかな白文字、控えめなグリーンのハイライト",
+        "Toile noir encre, texte blanc doux et reflets verts discrets",
+        "Tintenschwarze Fläche, weicher Weißtext und dezente grüne Akzente",
+    ),
+    "澄澈深蓝、海玻璃青与冷白层次" to SupplementalTranslation(
+        "Clear deep blue, sea-glass cyan and cool white layers",
+        "澄澈深藍、海玻璃青與冷白層次",
+        "澄んだ深い青、シーグラスの青緑、クールホワイトの階層",
+        "Bleu profond limpide, cyan verre de mer et couches blanc froid",
+        "Klares Tiefblau, Seeglas-Türkis und kühle Weißabstufungen",
+    ),
+    "深松绿画布、薄荷高光与柔和对比" to SupplementalTranslation(
+        "Deep pine canvas, mint highlights and gentle contrast",
+        "深松綠畫布、薄荷高光與柔和對比",
+        "深い松葉色、ミントのハイライト、穏やかなコントラスト",
+        "Toile vert pin, reflets menthe et contraste doux",
+        "Dunkles Tannengrün, Mint-Akzente und sanfter Kontrast",
+    ),
+    "从其他客户端迁移" to SupplementalTranslation("Migrate from another client", "從其他客戶端遷移", "他のクライアントから移行", "Migrer depuis un autre client", "Aus einem anderen Client migrieren"),
+    "继续" to SupplementalTranslation("Continue", "繼續", "続ける", "Continuer", "Weiter"),
+    "Android 不允许 Weave 读取其他应用的私有数据。请选择来源并确认，然后在系统窗口中选择该客户端主动导出的 YAML、JSON 或文本文件。" to SupplementalTranslation(
+        "Android does not let Weave read another app's private data. Select and confirm the source, then choose a YAML, JSON or text file exported by that client in the system picker.",
+        "Android 不允許 Weave 讀取其他應用程式的私有資料。請選擇並確認來源，再於系統視窗選取該客戶端主動匯出的 YAML、JSON 或文字檔。",
+        "Android では Weave が他アプリの非公開データを読み取れません。移行元を確認し、システム画面でそのクライアントが書き出した YAML、JSON、テキストを選択してください。",
+        "Android n’autorise pas Weave à lire les données privées d’une autre application. Confirmez la source puis choisissez, dans le sélecteur système, un fichier YAML, JSON ou texte exporté par ce client.",
+        "Android erlaubt Weave keinen Zugriff auf private Daten anderer Apps. Quelle bestätigen und anschließend eine vom Client exportierte YAML-, JSON- oder Textdatei im Systemdialog wählen.",
+    ),
+    "文件只会在本机解析、校验并加密保存；不会上传，也不会修改来源客户端。" to SupplementalTranslation(
+        "The file is parsed, validated and encrypted only on this device; it is not uploaded and the source client is not modified.",
+        "檔案只會在本機解析、驗證並加密保存；不會上傳，也不會修改來源客戶端。",
+        "ファイルは端末内だけで解析・検証・暗号化保存され、アップロードも移行元の変更も行いません。",
+        "Le fichier est analysé, validé et chiffré uniquement sur cet appareil ; il n’est pas envoyé et le client source n’est pas modifié.",
+        "Die Datei wird nur auf diesem Gerät analysiert, geprüft und verschlüsselt; sie wird nicht hochgeladen und der Quellclient nicht verändert.",
+    ),
+    "正在导入" to SupplementalTranslation("Importing", "正在匯入", "インポート中", "Importation…", "Wird importiert"),
+    "确认并选择文件" to SupplementalTranslation("Confirm and choose file", "確認並選擇檔案", "確認してファイルを選択", "Confirmer et choisir le fichier", "Bestätigen und Datei wählen"),
+    "浏览器隐私实验室" to SupplementalTranslation("Browser privacy lab", "瀏覽器隱私實驗室", "ブラウザープライバシーラボ", "Laboratoire de confidentialité du navigateur", "Browser-Datenschutzlabor"),
+    "运行 WebRTC 与浏览器身份检测" to SupplementalTranslation("Run WebRTC and browser identity test", "執行 WebRTC 與瀏覽器身分檢測", "WebRTC とブラウザー識別を検査", "Tester WebRTC et l’identité du navigateur", "WebRTC und Browser-Identität testen"),
+    "本次检测只在内存中运行。WebRTC 会向 stun.l.google.com:19302 发送一次 ICE 探测；不上传检测报告。" to SupplementalTranslation(
+        "This test runs only in memory. WebRTC sends one ICE probe to stun.l.google.com:19302; the report is not uploaded.",
+        "本次檢測只在記憶體中執行。WebRTC 會向 stun.l.google.com:19302 傳送一次 ICE 探測；不會上傳報告。",
+        "検査はメモリ内だけで実行されます。WebRTC は stun.l.google.com:19302 に ICE 探査を1回送信し、レポートはアップロードしません。",
+        "Ce test s’exécute uniquement en mémoire. WebRTC envoie une sonde ICE à stun.l.google.com:19302 ; le rapport n’est pas envoyé.",
+        "Der Test läuft nur im Arbeitsspeicher. WebRTC sendet eine ICE-Abfrage an stun.l.google.com:19302; der Bericht wird nicht hochgeladen.",
+    ),
+    "正在收集本机浏览器表面与 ICE 候选…" to SupplementalTranslation("Collecting the local browser surface and ICE candidates…", "正在收集本機瀏覽器表面與 ICE 候選…", "ブラウザー表面と ICE 候補を収集中…", "Collecte de la surface du navigateur et des candidats ICE…", "Lokale Browser-Oberfläche und ICE-Kandidaten werden erfasst…"),
+    "浏览器检测结果无法解析" to SupplementalTranslation("The browser test result could not be parsed", "無法解析瀏覽器檢測結果", "ブラウザー検査結果を解析できません", "Impossible d’analyser le résultat du test navigateur", "Browser-Testergebnis konnte nicht ausgewertet werden"),
+    "浏览器检测超时，请重新检测" to SupplementalTranslation("The browser test timed out; run it again", "瀏覽器檢測逾時，請重新檢測", "ブラウザー検査がタイムアウトしました。再度実行してください", "Le test du navigateur a expiré ; relancez-le", "Der Browser-Test hat das Zeitlimit überschritten; bitte erneut ausführen"),
+    "重新检测" to SupplementalTranslation("Run again", "重新檢測", "再検査", "Relancer le test", "Erneut testen"),
+    "WebRTC 候选" to SupplementalTranslation("WebRTC candidates", "WebRTC 候選", "WebRTC 候補", "Candidats WebRTC", "WebRTC-Kandidaten"),
+    "当前 WebView 不支持 RTCPeerConnection，结果未知。" to SupplementalTranslation(
+        "This WebView does not support RTCPeerConnection; the result is unknown.",
+        "目前 WebView 不支援 RTCPeerConnection，結果未知。",
+        "現在の WebView は RTCPeerConnection に対応していないため、結果は不明です。",
+        "Ce WebView ne prend pas en charge RTCPeerConnection ; le résultat est indéterminé.",
+        "Diese WebView unterstützt RTCPeerConnection nicht; das Ergebnis ist unbekannt.",
+    ),
+    "未取得 ICE 候选。可能是 STUN 被阻止、网络超时或浏览器策略限制；不能单独据此判定无泄漏。" to SupplementalTranslation(
+        "No ICE candidate was obtained. STUN may be blocked, the network may have timed out, or browser policy may restrict it; this alone does not prove there is no leak.",
+        "未取得 ICE 候選。可能是 STUN 被阻擋、網路逾時或瀏覽器策略限制；不能僅據此判定無洩漏。",
+        "ICE 候補を取得できませんでした。STUN のブロック、ネットワークのタイムアウト、またはブラウザーポリシーが原因の可能性があり、これだけでリークがないとは判断できません。",
+        "Aucun candidat ICE n’a été obtenu. STUN peut être bloqué, le réseau peut avoir expiré ou la politique du navigateur peut le limiter ; cela seul ne prouve pas l’absence de fuite.",
+        "Es wurde kein ICE-Kandidat ermittelt. STUN könnte blockiert sein, das Netzwerk könnte eine Zeitüberschreitung haben oder die Browser-Richtlinie könnte den Test einschränken; allein daraus folgt nicht, dass kein Leak besteht.",
+    ),
+    "host 数字地址会暴露本地网络表面；srflx 通常是当前 WebRTC 公网出口，必须与 VPN 出口对照后才能判断泄漏。" to SupplementalTranslation(
+        "A numeric host address exposes local-network surface; srflx is usually the current WebRTC public egress and must be compared with the VPN egress before judging a leak.",
+        "host 數字位址會暴露本機網路表面；srflx 通常是目前 WebRTC 的公網出口，必須與 VPN 出口對照後才能判斷洩漏。",
+        "host の数値アドレスはローカルネットワークの表面を露出します。srflx は通常、現在の WebRTC 公開出口であり、リークの判定には VPN 出口との比較が必要です。",
+        "Une adresse host numérique expose la surface du réseau local ; srflx correspond généralement à la sortie publique WebRTC et doit être comparée à la sortie VPN avant de conclure à une fuite.",
+        "Eine numerische host-Adresse legt die lokale Netzwerkoberfläche offen; srflx ist normalerweise der aktuelle öffentliche WebRTC-Ausgang und muss vor einer Leak-Bewertung mit dem VPN-Ausgang verglichen werden.",
+    ),
+    "在真实浏览器中复核" to SupplementalTranslation("Verify in the real browser", "在真實瀏覽器中複核", "実際のブラウザーで再確認", "Vérifier dans le navigateur réel", "Im echten Browser prüfen"),
+    "WebView 不能代表 Chrome、Firefox 的扩展、Secure DNS 或 WebRTC 策略。以下页面会交给系统浏览器打开。" to SupplementalTranslation(
+        "WebView does not represent Chrome or Firefox extensions, Secure DNS, or WebRTC policies. The following pages open in the system browser.",
+        "WebView 不能代表 Chrome、Firefox 的擴充功能、Secure DNS 或 WebRTC 策略。以下頁面將由系統瀏覽器開啟。",
+        "WebView は Chrome や Firefox の拡張機能、Secure DNS、WebRTC ポリシーを再現しません。以下のページはシステムブラウザーで開きます。",
+        "WebView ne représente pas les extensions, le DNS sécurisé ni les politiques WebRTC de Chrome ou Firefox. Les pages suivantes s’ouvrent dans le navigateur système.",
+        "Die WebView bildet Erweiterungen, Secure DNS oder WebRTC-Richtlinien von Chrome und Firefox nicht ab. Die folgenden Seiten werden im Systembrowser geöffnet.",
+    ),
+    "WebRTC 泄漏测试" to SupplementalTranslation("WebRTC leak test", "WebRTC 洩漏測試", "WebRTC リークテスト", "Test de fuite WebRTC", "WebRTC-Leak-Test"),
+    "浏览器身份表面" to SupplementalTranslation("Browser identity surface", "瀏覽器身分表面", "ブラウザー識別表面", "Surface d’identité du navigateur", "Browser-Identitätsfläche"),
+    "平台" to SupplementalTranslation("Platform", "平台", "プラットフォーム", "Plateforme", "Plattform"),
+    "时区 / 屏幕" to SupplementalTranslation("Time zone / screen", "時區 / 螢幕", "タイムゾーン / 画面", "Fuseau / écran", "Zeitzone / Bildschirm"),
+    "硬件提示" to SupplementalTranslation("Hardware hints", "硬體提示", "ハードウェア情報", "Indices matériels", "Hardware-Hinweise"),
+    "客户端提示" to SupplementalTranslation("Client hints", "客戶端提示", "クライアントヒント", "Indications client", "Client-Hinweise"),
+    "隐私信号" to SupplementalTranslation("Privacy signals", "隱私訊號", "プライバシーシグナル", "Signaux de confidentialité", "Datenschutzsignale"),
+    "出口交叉验证" to SupplementalTranslation("Egress cross-check", "出口交叉驗證", "出口の照合", "Vérification croisée de la sortie", "Ausgangs-Abgleich"),
+    "正在读取 HTTPS 代理出口…" to SupplementalTranslation("Reading the HTTPS proxy egress…", "正在讀取 HTTPS 代理出口…", "HTTPS プロキシ出口を取得中…", "Lecture de la sortie proxy HTTPS…", "HTTPS-Proxy-Ausgang wird ermittelt…"),
+    "未取得可比对的 HTTPS 代理出口，WebRTC 结果保持未知。" to SupplementalTranslation(
+        "No comparable HTTPS proxy egress was obtained; the WebRTC result remains unknown.",
+        "未取得可比對的 HTTPS 代理出口，WebRTC 結果保持未知。",
+        "比較可能な HTTPS プロキシ出口を取得できず、WebRTC の結果は不明のままです。",
+        "Aucune sortie proxy HTTPS comparable n’a été obtenue ; le résultat WebRTC reste indéterminé.",
+        "Es wurde kein vergleichbarer HTTPS-Proxy-Ausgang ermittelt; das WebRTC-Ergebnis bleibt unbekannt.",
+    ),
+    "未取得可比对的 WebRTC 公网候选，不作无泄漏结论。" to SupplementalTranslation(
+        "No comparable public WebRTC candidate was obtained; this does not establish that there is no leak.",
+        "未取得可比對的 WebRTC 公網候選，不作無洩漏結論。",
+        "比較可能な WebRTC 公開候補を取得できず、リークがないとは判定しません。",
+        "Aucun candidat WebRTC public comparable n’a été obtenu ; cela ne prouve pas l’absence de fuite.",
+        "Es wurde kein vergleichbarer öffentlicher WebRTC-Kandidat ermittelt; daraus folgt nicht, dass kein Leak besteht.",
+    ),
+    "WebRTC 公网候选与 HTTPS 代理出口一致。" to SupplementalTranslation("The public WebRTC candidate matches the HTTPS proxy egress.", "WebRTC 公網候選與 HTTPS 代理出口一致。", "WebRTC 公開候補は HTTPS プロキシ出口と一致します。", "Le candidat WebRTC public correspond à la sortie proxy HTTPS.", "Der öffentliche WebRTC-Kandidat entspricht dem HTTPS-Proxy-Ausgang."),
+    "WebRTC 公网候选与 HTTPS 代理出口不一致，请检查分流或泄漏。" to SupplementalTranslation("The public WebRTC candidate differs from the HTTPS proxy egress; check routing or a possible leak.", "WebRTC 公網候選與 HTTPS 代理出口不一致，請檢查分流或洩漏。", "WebRTC 公開候補が HTTPS プロキシ出口と一致しません。ルーティングまたはリークを確認してください。", "Le candidat WebRTC public diffère de la sortie proxy HTTPS ; vérifiez le routage ou une fuite possible.", "Der öffentliche WebRTC-Kandidat weicht vom HTTPS-Proxy-Ausgang ab; Routing oder mögliches Leak prüfen."),
+    "DNS 泄漏不能仅靠本机代码准确判定；必须由独立权威 DNS 服务观察查询来源。下方外部测试才是实际 DNS 泄漏验证。" to SupplementalTranslation(
+        "A DNS leak cannot be determined accurately by local code alone; an independent authoritative DNS service must observe the query source. The external test below performs the real DNS leak verification.",
+        "DNS 洩漏無法僅靠本機程式碼準確判定；必須由獨立權威 DNS 服務觀察查詢來源。下方外部測試才是實際 DNS 洩漏驗證。",
+        "DNS リークは端末内のコードだけで正確に判定できません。独立した権威 DNS サービスが問い合わせ元を観測する必要があります。下の外部テストが実際の DNS リーク検証です。",
+        "Une fuite DNS ne peut pas être déterminée précisément par le seul code local ; un service DNS faisant autorité indépendant doit observer la source des requêtes. Le test externe ci-dessous réalise la vérification réelle.",
+        "Ein DNS-Leak lässt sich nicht allein durch lokalen Code zuverlässig bestimmen; ein unabhängiger autoritativer DNS-Dienst muss die Anfragequelle beobachten. Der externe Test unten führt die tatsächliche DNS-Leak-Prüfung durch.",
+    ),
+    "这些字段组合后可能用于跨站指纹识别；本页只在本机展示，不保存唯一标识。" to SupplementalTranslation(
+        "Combined, these fields may enable cross-site fingerprinting. This page displays them locally and stores no unique identifier.",
+        "這些欄位組合後可能用於跨網站指紋辨識；本頁只在本機顯示，不儲存唯一識別碼。",
+        "これらの項目の組み合わせはサイト横断フィンガープリントに利用される可能性があります。このページは端末内で表示するだけで、一意な識別子を保存しません。",
+        "Combinés, ces champs peuvent servir à une empreinte intersite. Cette page les affiche uniquement sur l’appareil et ne conserve aucun identifiant unique.",
+        "In Kombination können diese Felder für websiteübergreifendes Fingerprinting genutzt werden. Diese Seite zeigt sie nur lokal an und speichert keine eindeutige Kennung.",
+    ),
     "DNS 泄漏测试" to SupplementalTranslation(
         english = "DNS leak test",
         traditional = "DNS 洩漏測試",
@@ -1743,7 +1977,6 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "罂粟田" to SupplementalTranslation("Poppy Field", "罌粟田", "ポピー畑", "Champ de coquelicots", "Mohnfeld"),
     "暮色花园" to SupplementalTranslation("Twilight Garden", "暮色花園", "黄昏の庭", "Jardin crépusculaire", "Dämmergarten"),
     "深海蓝" to SupplementalTranslation("Deep Ocean", "深海藍", "ディープオーシャン", "Bleu océan profond", "Tiefsee-Blau"),
-    "石墨灰" to SupplementalTranslation("Graphite", "石墨灰", "グラファイト", "Graphite", "Graphit"),
     "夜松青" to SupplementalTranslation("Night Pine", "夜松青", "ナイトパイン", "Pin nocturne", "Nachtkiefer"),
     "雾蓝、海玻璃与一笔暖橙" to SupplementalTranslation("Mist blue, sea glass and a stroke of warm orange"),
     "青绿、薰衣草与水面灰蓝" to SupplementalTranslation("Verdigris, lavender and water-surface blue-gray"),
@@ -1755,13 +1988,6 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
         "深い藍色、ミストティール、低輝度のシルバーグレー。夜間の読書向け",
         "Indigo profond, bleu brume et gris argenté peu lumineux pour la lecture nocturne",
         "Tiefes Indigo, Nebelblaugrün und gedämpftes Silbergrau zum Lesen bei Nacht",
-    ),
-    "中性石墨与柔银，克制、清晰、低干扰" to SupplementalTranslation(
-        "Neutral graphite and soft silver: restrained, clear and low-distraction",
-        "中性石墨與柔銀，克制、清晰、低干擾",
-        "ニュートラルなグラファイトと柔らかなシルバー。控えめで明瞭、低刺激",
-        "Graphite neutre et argent doux : sobre, lisible et peu distrayant",
-        "Neutrales Graphit und weiches Silber: zurückhaltend, klar und ablenkungsarm",
     ),
     "墨绿画布与冷薄荷，柔和但保持对比" to SupplementalTranslation(
         "Ink-green canvas and cool mint: soft while keeping contrast",
@@ -1901,6 +2127,13 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "没有可用的 Wi‑Fi 或移动数据网络" to SupplementalTranslation("No usable Wi‑Fi or mobile-data network is available"),
     "没有可用的底层网络" to SupplementalTranslation("No usable underlying network is available"),
     "正在安全应用新规则" to SupplementalTranslation("Safely applying new rules"),
+    "正在切换到安全规则模式" to SupplementalTranslation(
+        "Switching to safe rule mode",
+        "正在切換到安全規則模式",
+        "安全なルールモードに切り替え中",
+        "Passage au mode règles sécurisé",
+        "Wechsel in den sicheren Regelmodus",
+    ),
     "正在验证配置" to SupplementalTranslation("Validating configuration"),
     "已断开" to SupplementalTranslation("Disconnected"),
     "安全代理已连接" to SupplementalTranslation("Secure proxy connected"),
@@ -1949,11 +2182,20 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "订阅格式发生变化" to SupplementalTranslation("The subscription format changed"),
 )
 
-private val translationTableCache = ConcurrentHashMap<WeaveLanguage, Map<String, String>>()
+private data class CachedTranslationTable(
+    val language: WeaveLanguage,
+    val values: Map<String, String>,
+)
 
-private fun translationTable(language: WeaveLanguage): Map<String, String> =
-    translationTableCache.getOrPut(language) {
-        commonUiTranslations(language) + supplementalUiTranslations(language) + when (language) {
+@Volatile
+private var cachedTranslationTable: CachedTranslationTable? = null
+private val TRANSLATION_CACHE_LOCK = Any()
+
+private fun translationTable(language: WeaveLanguage): Map<String, String> {
+    cachedTranslationTable?.takeIf { it.language == language }?.let { return it.values }
+    return synchronized(TRANSLATION_CACHE_LOCK) {
+        cachedTranslationTable?.takeIf { it.language == language }?.values ?: run {
+            val values = commonUiTranslations(language) + supplementalUiTranslations(language) + when (language) {
     WeaveLanguage.TRADITIONAL_CHINESE -> mapOf(
         "連接" to "連接",
         "连接" to "連接",
@@ -2427,9 +2669,12 @@ private fun translationTable(language: WeaveLanguage): Map<String, String> =
         "出站保护暂时失败，请检查网络后重试" to "Ausgangsschutz fehlgeschlagen; Netzwerk prüfen und erneut versuchen",
         "网络已恢复，代理已重新连接" to "Netzwerk wiederhergestellt; Proxy erneut verbunden",
     )
-    WeaveLanguage.SIMPLIFIED_CHINESE -> emptyMap()
+                WeaveLanguage.SIMPLIFIED_CHINESE -> emptyMap()
+            }
+            values.also { cachedTranslationTable = CachedTranslationTable(language, it) }
         }
     }
+}
 
 /**
  * Strings shared by screens that are fed from runtime state rather than a single screen's

@@ -11,8 +11,8 @@ android {
         applicationId = "io.weave.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 52
-        versionName = "0.3.0-alpha50"
+        versionCode = 62
+        versionName = "0.3.0-alpha60"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -32,6 +32,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        // A locally installable, optimized build for device profiling. It has the same R8 and
+        // resource-shrinking settings as release, but uses the debug certificate so it can be
+        // installed over the development APK without requiring a signing key in this repository.
+        create("localOptimized") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += listOf("release")
         }
     }
 
@@ -66,6 +75,10 @@ android {
     }
 
     packaging {
+        // The pinned Go/Mihomo core is highly compressible (~47 MB -> ~17 MB on arm64). Let the
+        // package manager extract it at install time: GitHub APKs stay small and OEM linkers get
+        // ordinary filesystem libraries instead of relying on direct APK mmap support.
+        jniLibs.useLegacyPackaging = true
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }

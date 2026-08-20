@@ -2,6 +2,7 @@ package io.weave.client.core.engine
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.core.bridge.NativeTunCallback
 import io.weave.client.domain.ConnectionState
@@ -22,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
+@Immutable
 data class EngineRuntimeSnapshot(
     val nodeName: String,
     val protocol: String,
@@ -31,6 +33,7 @@ data class EngineRuntimeSnapshot(
     val attributedAppConnections: Long,
 )
 
+@Immutable
 data class NodeHealthSnapshot(
     val name: String,
     val protocol: String,
@@ -178,10 +181,16 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             )
             val result = NativeBridge.startTun(
                 fd = tunFd,
-                stack = "mixed",
+                // Match CMFA's Android default. The system stack avoids the extra userspace
+                // translation layer on Android and follows the platform's socket lifecycle
+                // during Wi-Fi/cellular handover.
+                stack = MihomoTunDefaults.STACK,
                 gateway = "172.19.0.1/30,fdfe:dcba:9876::1/126",
                 portal = "172.19.0.2,fdfe:dcba:9876::2",
-                dns = "172.19.0.2,fdfe:dcba:9876::2",
+                // CMFA enables DNS hijacking for any resolver destination. Restricting this to
+                // only the virtual Android DNS address lets raw/private DNS packets hit Weave's
+                // port-53 reject rules instead of reaching Mihomo's resolver.
+                dns = MihomoTunDefaults.DNS_HIJACK,
                 callback = object : NativeTunCallback {
                     override fun markSocket(fd: Int) {
                         if (!protectSocket(fd) && protectFailed.compareAndSet(false, true)) {

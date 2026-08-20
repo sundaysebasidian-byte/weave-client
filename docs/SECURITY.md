@@ -49,8 +49,9 @@ Weave 的信任边界，固定端点与触发条件见 [`NETWORK_ENDPOINT_INVENT
 - Weave 不把 Android Always-on 或“阻止无 VPN 连接”伪装成应用内状态；设置页只打开系统页面并明确
   提示用户手动开启。只有系统开关开启后，应用进程崩溃或被强制停止时才有系统级 kill switch 保障。
 - 连接中删除最后一个代理时立即关闭 VPN/内核，不让事务回滚继续使用已经删除的内存态凭据。
-- Mihomo 出站 socket 在 `VpnService.protect()` 后绑定到当前已验证的非 VPN 网络；全部底层网络
-  丢失时把 VPN 上游显式设为空，恢复后通过事务重载重建连接。
+- Mihomo 出站 socket 只在 `VpnService.protect()` 后离开 TUN。Android 10+ 不把 socket 绑定到某个
+ 可能在换网时失效的 `Network` 对象，而由系统选择当前非 VPN 物理网络；Android 8/9 保留
+  `setUnderlyingNetworks` 元数据更新。全部底层网络丢失时，应用保持 fail-closed 并在恢复后重连。
 - 无第三方广告、统计或崩溃 SDK。遥测如未来加入必须显式 opt-in。
 - IP 质量检测仅在用户主动点击时运行，固定使用 HTTPS、4 秒超时和 128 KiB 响应上限；结果只在内存中展示。
   它不会把 DNS 泄漏、WebRTC 候选地址或网站信誉伪装成已测试结论。

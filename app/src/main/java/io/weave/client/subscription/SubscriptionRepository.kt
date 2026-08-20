@@ -2,6 +2,7 @@ package io.weave.client.subscription
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import io.weave.client.domain.EditableSubscription
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
@@ -251,7 +252,11 @@ class SubscriptionRepository(
     suspend fun importFile(name: String, uri: Uri): Subscription = withContext(Dispatchers.IO) {
         val payload = contentResolver.openInputStream(uri)?.use(localReader::read)
             ?: throw SubscriptionImportException("无法读取所选订阅文件")
-        importPayload(name, LOCAL_IMPORT_SOURCE, payload)
+        importPayload(
+            importedSubscriptionName(name, displayName(uri)),
+            LOCAL_IMPORT_SOURCE,
+            payload,
+        )
     }
 
     suspend fun importQr(name: String, rawValue: String): Subscription =
@@ -268,6 +273,18 @@ class SubscriptionRepository(
 
     private fun importPayload(name: String, source: String, payload: String): Subscription =
         replacePayload(null, name, source, payload)
+
+    private fun displayName(uri: Uri): String? = runCatching {
+        contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
 
     private fun replacePayload(
         subscriptionId: String?,

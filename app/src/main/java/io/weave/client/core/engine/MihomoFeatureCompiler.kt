@@ -15,7 +15,7 @@ data class AutomaticGroupConfig(
     /** Active health probes should notice a dead mobile path without probing every few seconds. */
     val intervalSeconds: Int = 60,
     val timeoutMs: Int = 5_000,
-    val maxFailedTimes: Int = 1,
+    val maxFailedTimes: Int = 3,
 )
 
 /**
@@ -147,20 +147,23 @@ object MihomoFeatureCompiler {
             tolerance = 80,
             intervalSeconds = 60,
             timeoutMs = 5_000,
-            maxFailedTimes = 1,
+            // A single lost probe is common while a mobile radio is waking up. Keep the
+            // currently usable node for a few rounds instead of making DEFAULT empty or
+            // needlessly switching away from the user's selected region.
+            maxFailedTimes = 3,
         )
         AutomaticStrategy.FAILOVER -> AutomaticGroupConfig(
             type = "fallback",
             intervalSeconds = 45,
             timeoutMs = 5_000,
-            maxFailedTimes = 1,
+            maxFailedTimes = 3,
         )
         AutomaticStrategy.LOAD_BALANCE -> AutomaticGroupConfig(
             type = "load-balance",
             strategy = "consistent-hashing",
             intervalSeconds = 60,
             timeoutMs = 5_000,
-            maxFailedTimes = 1,
+            maxFailedTimes = 3,
         )
     }
 

@@ -1,20 +1,17 @@
 # Weave（暂定名）
 
-一款面向 Android、iOS、macOS 与 Windows 的开源规则代理客户端：以 CMFA 的兼容性和低学习成本为基线，
-吸收 Karing 的多订阅、复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性
-放在架构中心。
+一款面向 Android 的开源规则代理客户端：以 CMFA 的兼容性和低学习成本为基线，吸收 Karing 的多订阅、
+复杂规则与按应用分流能力，同时把可审计、安全默认值和内核可替换性放在架构中心。仓库中的其他平台
+目录保留为历史实验代码，不属于当前 Android 发行版。
 
-> 当前里程碑是 **Android 0.3.0-alpha50 / macOS 0.1.0-alpha06 / iOS 0.1.0-alpha01**。Android 四个 ABI 的
+> 当前里程碑是 **Android 0.3.0-alpha60**（Android-only 预览版）。Android 四个 ABI 的
 > CMFA/Mihomo
 > 核心已从锁定源码本地复现并接入；Clash YAML、URI/Base64、sing-box JSON 与基础 V2Ray JSON
 > 可从 HTTPS、粘贴文本、系统文件选择器、相机二维码或二维码图片安全导入，并编译为隔离 provider，
 > Android `VpnService` 会把 TUN fd 交给核心，并通过 `protect(fd)` 与 UID/包名回调完成出站
 > 和按应用路由。Android 16 ARM64 模拟器与 Pixel 8 / Android 17 真机均已用真实 OpenVPN
 > 订阅完成双栈 TUN、固定节点、Chrome 应用归属、系统网络验证、Wi‑Fi/蜂窝切换和断开清理
-> 闭环。macOS 版是原生 SwiftUI Apple Silicon 客户端，已集成相同锁定 commit 的 arm64
-> Mihomo、本地代理、订阅加密库和跨端局域网互传。iOS 已有原生 SwiftUI App、加密订阅库、
-> 域名分流编译器与独立 Packet Tunnel target；实际数据面仍需嵌入经审计的 iOS 移动内核并用
-> Apple Network Extension entitlement 签名。三个平台都仍是开发预览版，不应作为生产 VPN 使用。
+> 闭环。当前发行只覆盖 Android；其他平台目录不随 Android 预览版构建，也不应作为生产 VPN 使用。
 
 Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点和第三方 DNS 由用户自行选择，
 其运营者可能看到连接所必需的元数据。公开预览版的实际数据处理见
@@ -41,7 +38,8 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
 - 首页可手动选择默认订阅策略、固定节点或直连；选择订阅后可对该订阅全部节点进行三轮质量
   测速，并直接固定到选中的节点；连接中修改会安全热重载。
 - Android 长连接遇到 Wi‑Fi/蜂窝切换或底层 Network 短暂重建时，会在保持前台服务和 fail-closed
-  的前提下自动重建上一次健康运行时；单个出站 socket 的保护/绑定瞬态失败不再立即要求用户手动重连。
+  的前提下恢复上一次健康运行时；Android 10+ 的核心出站 socket 只调用 `protect()`，由系统跟随
+  当前物理网络，避免把连接钉在已经失效的 Network 对象上。
 - 出口选择采用“先选订阅、再选节点”的两步条件流程；节点只显示核心名称，不拼接订阅名、
   协议或空延迟说明，并清理开头的旗帜 Emoji 与 `\u...` 转义装饰。
 - 已导入订阅可查看和搜索全部节点、修改名称或 HTTPS 地址，也可用本地文件原位替换；
@@ -84,7 +82,9 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
 - 分流页提供 Route Lens 路由解释器，可输入应用包名、域名、端口和协议，展示命中规则、DNS、
   出口、UDP/QUIC 与 IPv6 风险；它只模拟本地配置，不伪造网络测试结果。
 - 设置页提供 Privacy Observatory 隐私观测，逐项区分已确认、未知和未测试，覆盖 VPN、加密 DNS、
-  DNS 旁路拒绝、过滤、IPv6、WebRTC/STUN、显式直连和断开清理，不输出误导性的安全百分比；
+  DNS 旁路拒绝、过滤、IPv6、WebRTC/STUN、显式直连和断开清理；用户主动运行时并行检查 HTTPS
+  IPv4/IPv6 出口，并在本机 WebView 中采集一次 ICE 候选和浏览器身份表面，与代理出口交叉比对。
+  DNS 泄漏仍需由独立权威测试服务观察，不输出误导性的安全百分比；
   Android 的 Always-on / “阻止无 VPN 连接”仍需用户在系统 VPN 设置中打开，应用不会伪造已开启状态。
 - 连接页和订阅详情都可读取 CMFA 真实运行组的节点质量，并手动触发三轮 provider 健康检查；
   未加载的订阅会临时加入候选运行配置，不改变默认出口；核心未初始化/失败延迟哨兵会在数据边界丢弃，不参与排序或展示。
@@ -92,7 +92,9 @@ Weave 本身不提供、销售或推荐代理节点。导入的订阅、节点�
   和带宽等未实际探测的字段保持未知，不生成伪造数值。
 - 设置页支持离线策略包（`weave-policy/v1`）：本机校验 SHA-256，可选 Ed25519 签名，Keystore
   加密保存，启用/停用后安全热重载；规则只接受受限域名、CIDR 和进程匹配，未签名包明确标记为需复核。
-- 代理模式没有隐式直连兜底；默认订阅失效或底层网络丢失时保持失败关闭。核心出站 socket 只绑定到已验证的非 VPN Wi-Fi、蜂窝或以太网。
+- 代理模式没有隐式直连兜底；默认订阅失效或底层网络丢失时保持失败关闭。核心出站 socket 通过
+  `VpnService.protect()` 绕过 TUN，Android 10+ 由系统选择当前非 VPN Wi‑Fi、蜂窝或以太网；Android 8/9
+  额外更新 VPN 的 underlying-network 元数据。
 - 代理服务器域名强制交给所选 DoH/DoT 上游解析；明文 `default-nameserver` 只承担加密
   DNS 上游域名的引导解析，不再用于每个代理服务器域名。
 - 订阅正文、URL、节点元数据和自定义 DNS 端点均使用 Keystore AES-GCM 保护；Clash 导入只保留
@@ -128,10 +130,12 @@ WinUI 入口已经包含订阅导入/删除、先选订阅再选节点和连接�
 ## macOS Apple Silicon
 
 macOS 14+ 可运行 [Weave.app](macos/build/Weave.app)，或在 `macos/` 执行
-`./build-app.sh` 重新构建。连接页先选订阅，再选自动策略或该订阅的具体节点；当前启动绑定
-`127.0.0.1:7890` 的本地代理；连接时会事务化接管当前 macOS 网络服务的 HTTP/HTTPS/SOCKS 代理并关闭 PAC，停止、崩溃
-或下次启动时恢复原设置。完整设备 VPN 和按应用分流需要 Apple Developer 为 Packet Tunnel extension
-授予 Network Extension entitlement，未获权限时界面不会显示虚假的 VPN 成功状态。macOS/iOS
+`./build-app.sh` 重新构建。连接页先选订阅，再选自动策略或该订阅的具体节点；默认启动 Mihomo
+原生 `utun_weave` 双栈 TUN，接管 IPv4、IPv6、UDP 和 DNS，并阻断常见 STUN 端口。TUN 接口或
+IPv4/IPv6 路由未就绪时会拒绝连接，不会把 `127.0.0.1:7890` 的本地代理误报成全设备 VPN；
+关闭设置中的双栈 TUN 开关后，才会主动使用本地 HTTP/HTTPS/SOCKS 代理，并通过事务化快照接管当前
+macOS 网络服务、关闭 PAC，停止、崩溃或下次启动时恢复原设置。面向朋友的签名系统级 VPN 和按应用
+分流仍需要 Apple Developer 为 Packet Tunnel extension 授予 Network Extension entitlement。macOS/iOS
 仅用于私有朋友分发，不是本仓库的公开发布目标。
 
 ## iOS
