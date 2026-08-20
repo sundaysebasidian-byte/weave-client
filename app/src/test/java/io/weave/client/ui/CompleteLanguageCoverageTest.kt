@@ -10,7 +10,7 @@ class CompleteLanguageCoverageTest {
     fun `visible static copy has no simplified Chinese fallback in latin locales`() {
         val sourceStrings = visibleSourceFiles()
             .flatMap { file ->
-                STRING_LITERAL.findAll(file.readText()).map { it.groupValues[1] }.asIterable()
+                stringLiterals(file.readText()).asIterable()
             }
             .filter(::isAuditableChineseLiteral)
             .toSortedSet()
@@ -59,7 +59,50 @@ class CompleteLanguageCoverageTest {
     private fun isHanCharacter(value: Char): Boolean =
         value.code in 0x3400..0x4DBF || value.code in 0x4E00..0x9FFF
 
-    private companion object {
-        val STRING_LITERAL = Regex("\"((?:\\\\.|[^\"\\\\])*)\"")
+    /**
+     * Reads ordinary Kotlin string literals without a backtracking regex. The visible source
+     * audit is run on CI's Java runtime too, where a large triple-quoted HTML literal can make
+     * Pattern recurse deeply enough to throw StackOverflowError. Triple-quoted blocks are
+     * implementation payloads rather than visible Compose copy, so they are skipped safely.
+     */
+    private fun stringLiterals(source: String): Sequence<String> = sequence {
+        var index = 0
+        while (index < source.length) {
+            if (source.startsWith("\"\"\"", index)) {
+                val end = source.indexOf("\"\"\"", index + 3)
+                index = if (end >= 0) end + 3 else source.length
+                continue
+            }
+            if (source[index] != '\"') {
+                index += 1
+                continue
+            }
+
+            index += 1
+            val literal = StringBuilder()
+            var closed = false
+            while (index < source.length) {
+                when (val character = source[index]) {
+                    '\\' -> {
+                        literal.append(character)
+                        index += 1
+                        if (index < source.length) {
+                            literal.append(source[index])
+                            index += 1
+                        }
+                    }
+                    '\"' -> {
+                        index += 1
+                        closed = true
+                        break
+                    }
+                    else -> {
+                        literal.append(character)
+                        index += 1
+                    }
+                }
+            }
+            if (closed) yield(literal.toString())
+        }
     }
 }
