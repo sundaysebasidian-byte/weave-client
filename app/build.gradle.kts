@@ -84,7 +84,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     // 1.19.0 / Lifecycle 2.11.0 require compileSdk 37. Keep SDK 36 compatible
     // versions until API 37 is installed on the build and device-test matrix.
     implementation("androidx.core:core:1.18.0")
