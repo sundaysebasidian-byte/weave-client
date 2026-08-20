@@ -9,6 +9,14 @@ val LocalWeaveLanguage = staticCompositionLocalOf { WeaveLanguage.SIMPLIFIED_CHI
 
 private val TRANSLATION_REGEX_CACHE = ConcurrentHashMap<String, Regex>()
 
+/**
+ * Some runtime messages are assembled from other localized messages. Keep that composition
+ * bounded so a malformed or self-referential message can never crash the UI with recursive
+ * localization (the audit test exercises every visible literal).
+ */
+private const val MAX_TRANSLATION_DEPTH = 12
+private val TRANSLATION_DEPTH = ThreadLocal.withInitial<Int> { 0 }
+
 /** Dynamic UI patterns are stable constants; compile each one once instead of per text render. */
 private fun translationRegex(pattern: String): Regex {
     TRANSLATION_REGEX_CACHE[pattern]?.let { return it }
@@ -24,8 +32,16 @@ private fun translationRegex(pattern: String): Regex {
  */
 fun localizeWeaveText(text: String, language: WeaveLanguage): String {
     if (language == WeaveLanguage.SIMPLIFIED_CHINESE || text.isBlank()) return text
-    translationTable(language)[text]?.let { return it }
-    return translateCommonPatterns(text, language) ?: text
+    val depth = TRANSLATION_DEPTH.get() ?: 0
+    if (depth >= MAX_TRANSLATION_DEPTH) return text
+    TRANSLATION_DEPTH.set(depth + 1)
+    return try {
+        translationTable(language)[text]?.let { it }
+            ?: translateCommonPatterns(text, language)
+            ?: text
+    } finally {
+        TRANSLATION_DEPTH.set(depth)
+    }
 }
 
 private fun translateCommonPatterns(text: String, language: WeaveLanguage): String? {
