@@ -1,0 +1,37 @@
+name: Windows preview
+on:
+  push:
+    branches: ['codex/windows-test-package']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Bundle pinned official Mihomo
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-windows-amd64-v1-v1.19.30.zip'
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP/core.zip"
+          if ((Get-FileHash "$env:RUNNER_TEMP/core.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278') { throw 'Core hash mismatch' }
+          Expand-Archive "$env:RUNNER_TEMP/core.zip" "$env:RUNNER_TEMP/core"
+          New-Item -ItemType Directory -Force windows/src/Weave.Windows/runtime | Out-Null
+          $exe = @(Get-ChildItem "$env:RUNNER_TEMP/core" -Recurse -Filter '*.exe')
+          if ($exe.Count -ne 1) { throw 'Unexpected core archive' }
+          Copy-Item $exe[0].FullName windows/src/Weave.Windows/runtime/mihomo.exe
+          & windows/src/Weave.Windows/runtime/mihomo.exe -v
+          if ($LASTEXITCODE -ne 0) { throw 'Core cannot execute' }
+      - name: Build and test x64 preview
+        shell: pwsh
+        run: ./windows/build.ps1 -Platform x64 -Configuration Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-x64-test
+          path: windows/artifacts/x64/
+          if-no-files-found: error

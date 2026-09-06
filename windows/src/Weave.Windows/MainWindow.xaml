@@ -6,8 +6,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Title="Weave">
-    <Grid x:Name="RootGrid" Background="{ThemeResource WeaveCanvasBrush}">
+    <Grid x:Name="RootGrid" RequestedTheme="Light" Background="{ThemeResource WeaveCanvasBrush}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -17,28 +18,39 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <StackPanel Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <Image Source="ms-appx:///Assets/Weave.png" Width="52" Height="52" AutomationProperties.Name="Weave"/>
+                <StackPanel Spacing="4">
                 <TextBlock Text="WEAVE" FontSize="28" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                <TextBlock Text="PRIVATE NETWORK · WINDOWS PREVIEW" FontSize="11" CharacterSpacing="170" Foreground="{ThemeResource WeaveMutedBrush}" />
+                <TextBlock Text="你的网络，从容掌握" FontSize="11" CharacterSpacing="170" Foreground="{ThemeResource WeaveMutedBrush}" />
+                </StackPanel>
             </StackPanel>
             <Border Grid.Column="1" Background="{ThemeResource WeaveCardBrush}" CornerRadius="18" Padding="16,8">
                 <TextBlock x:Name="StatusText" Text="未连接" Foreground="{ThemeResource WeaveMutedBrush}" />
             </Border>
         </Grid>
 
-        <ScrollViewer Grid.Row="1" Padding="34,8,34,34">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="34,0,34,18">
+<Button Content="连接" Tag="0" Click="Navigate_Click"/>
+<Button Content="订阅" Tag="1" Click="Navigate_Click"/>
+<Button Content="分流" Tag="2" Click="Navigate_Click"/>
+<Button Content="设置" Tag="3" Click="Navigate_Click"/>
+<ProgressRing x:Name="BusyRing" Width="22" Height="22" IsActive="False" Visibility="Collapsed"/>
+</StackPanel>
+<ScrollViewer Grid.Row="2" Padding="34,8,34,34">
             <StackPanel MaxWidth="840" Spacing="18">
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                <Border x:Name="ConnectionPanel" Style="{StaticResource GlassCard}" >
                     <StackPanel Spacing="14">
                         <TextBlock Text="连接" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <TextBlock Text="先选订阅，再选节点。自动策略会在该订阅内测速并切换。" Foreground="{ThemeResource WeaveMutedBrush}" />
+                        <TextBlock Text="选择出口，连接你的世界。自动模式会在当前订阅内测速。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
                         <ComboBox x:Name="SubscriptionComboBox" Header="订阅" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged" />
-                        <ComboBox x:Name="NodeComboBox" Header="节点（留空为自动测速）" DisplayMemberPath="DisplayName" />
-                        <Button x:Name="ConnectButton" Content="连接" Click="ConnectButton_Click" HorizontalAlignment="Left" Padding="26,11" Background="{ThemeResource WeaveAccentBrush}" />
+                        <ComboBox x:Name="NodeComboBox" Header="节点" PlaceholderText="自动选择 · 最低延迟" DisplayMemberPath="DisplayName" />
+                        <Button Content="恢复自动选择" Click="AutomaticNode_Click" HorizontalAlignment="Left"/>
+                        <Button x:Name="ConnectButton" Content="连接" Click="ConnectButton_Click" HorizontalAlignment="Stretch" Padding="26,14" Background="{ThemeResource WeaveAccentBrush}" Foreground="{ThemeResource WeaveCanvasBrush}" />
                     </StackPanel>
                 </Border>
 
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                <Border x:Name="RoutesPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="14">
                         <TextBlock Text="应用分流" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
                         <TextBlock Text="按 Windows 进程名分流。添加或修改规则后，需要断开再连接才能应用。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
@@ -55,7 +67,7 @@
                             <Button Grid.Column="3" Content="添加 / 更新" Click="AddRouteButton_Click" VerticalAlignment="Bottom" />
                         </Grid>
                         <ComboBox x:Name="RouteNodeComboBox" Header="固定节点（仅固定节点时使用）" DisplayMemberPath="DisplayName" />
-                        <ListView x:Name="RouteListView" MinHeight="100">
+                        <ListView x:Name="RouteListView" MaxHeight="320">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Padding="2,7">
@@ -75,7 +87,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                <Border x:Name="ImportPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="14">
                         <TextBlock Text="导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
                         <TextBlock Text="本地导入内容使用 Windows DPAPI 加密保存；远程订阅只接受 HTTPS。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
@@ -90,10 +102,10 @@
                     </StackPanel>
                 </Border>
 
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                <Border x:Name="SubscriptionsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="10">
                         <TextBlock Text="已导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <ListView x:Name="SubscriptionListView" SelectionChanged="SubscriptionListView_SelectionChanged" MinHeight="130">
+                        <ListView x:Name="SubscriptionListView" SelectionChanged="SubscriptionListView_SelectionChanged" MaxHeight="260">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Padding="2,8">
@@ -113,7 +125,17 @@
                     </StackPanel>
                 </Border>
 
-                <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
+                <Border x:Name="SettingsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}">
+<StackPanel Spacing="18">
+<TextBlock Text="设置" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/>
+<ComboBox x:Name="ThemeSelector" Header="外观" SelectionChanged="ThemeSelector_SelectionChanged"><x:String>浅色</x:String><x:String>白绿</x:String><x:String>深色</x:String></ComboBox>
+<ToggleSwitch x:Name="Ipv6Toggle" Header="IPv6 双栈" IsOn="True"/>
+<ComboBox x:Name="DnsSelector" Header="DNS"><x:String>加密 DNS</x:String><x:String>广告过滤</x:String><x:String>家庭过滤</x:String></ComboBox>
+<TextBlock Text="网络设置在下次连接时生效。过滤依赖 DNS 服务，并非拦截所有广告。TUN 需要管理员权限。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+<TextBlock Text="订阅由 Windows DPAPI 加密保存。内核运行并不代表网站可达或泄漏检测通过。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+</StackPanel></Border>
+<ListView x:Name="SubscriptionNodesList" Visibility="Collapsed" MaxHeight="300" SelectionMode="None" DisplayMemberPath="DisplayName"/>
+<TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
             </StackPanel>
         </ScrollViewer>
     </Grid>

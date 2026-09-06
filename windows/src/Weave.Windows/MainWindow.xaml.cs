@@ -10,11 +10,25 @@ public sealed partial class MainWindow : Window
 {
     private readonly WeaveAppModel _model = new();
     private readonly CancellationTokenSource _lifetime = new();
+    private bool _busy;
+    private bool _closed;
+    private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
     public MainWindow()
     {
         InitializeComponent();
-        _model.Load();
+        try { _model.Load(); }
+        catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
+        _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
+        DnsSelector.SelectedIndex = 0;
+        try
+        {
+            if (File.Exists(_themePath) && int.TryParse(File.ReadAllText(_themePath), out var theme) && theme is >= 0 and <= 2)
+                ThemeSelector.SelectedIndex = theme;
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        if (ThemeSelector.SelectedIndex < 0) ThemeSelector.SelectedIndex = 0;
         SubscriptionComboBox.ItemsSource = _model.Subscriptions;
         SubscriptionListView.ItemsSource = _model.Subscriptions;
         RouteSubscriptionComboBox.ItemsSource = _model.Subscriptions;
@@ -42,6 +56,7 @@ public sealed partial class MainWindow : Window
         if (SubscriptionListView.SelectedItem is SubscriptionRecord selected)
         {
             SubscriptionComboBox.SelectedItem = selected;
+            SubscriptionNodesList.ItemsSource = selected.Nodes;
         }
     }
 
@@ -176,13 +191,14 @@ public sealed partial class MainWindow : Window
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         if (_model.IsConnected)
         {
             await RunActionAsync(async () =>
             {
                 await _model.DisconnectAsync();
                 ConnectButton.Content = "连接";
-                MessageText.Text = "已断开，系统网络配置保持不变";
+                MessageText.Text = "已停止本地内核。请确认系统网络已恢复。";
                 UpdateStatus();
             });
             return;
@@ -197,6 +213,7 @@ public sealed partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             var node = NodeComboBox.SelectedItem as ProxyNode;
+            _model.NetworkOptions = new WindowsNetworkOptions { Ipv6Enabled = Ipv6Toggle.IsOn, DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription.Id, node?.Id, _lifetime.Token);
             ConnectButton.Content = "断开连接";
             MessageText.Text = "Mihomo 已启动。Windows TUN 需要系统允许网络适配器与路由变更。";
@@ -206,6 +223,14 @@ public sealed partial class MainWindow : Window
 
     private async Task RunActionAsync(Func<Task> action)
     {
+        if (_busy || _closed) return;
+        _busy = true;
+        BusyRing.Visibility = Visibility.Visible;
+        BusyRing.IsActive = true;
+        ConnectButton.IsEnabled = false;
+        ImportPanel.IsEnabled = false;
+        RoutesPanel.IsEnabled = false;
+        SubscriptionsPanel.IsEnabled = false;
         try
         {
             await action();
@@ -218,6 +243,16 @@ public sealed partial class MainWindow : Window
         {
             MessageText.Text = exception.Message;
         }
+        finally
+        {
+            _busy = false;
+            BusyRing.IsActive = false;
+            BusyRing.Visibility = Visibility.Collapsed;
+            ConnectButton.IsEnabled = true;
+            ImportPanel.IsEnabled = true;
+            RoutesPanel.IsEnabled = true;
+            SubscriptionsPanel.IsEnabled = true;
+        }
 
         UpdateStatus();
     }
@@ -225,12 +260,42 @@ public sealed partial class MainWindow : Window
     private void UpdateStatus()
     {
         StatusText.Text = _model.Status;
+        ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
+    }
+
+    private void AutomaticNode_Click(object sender, RoutedEventArgs e) => NodeComboBox.SelectedItem = null;
+
+    private void Navigate_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string page }) return;
+        ConnectionPanel.Visibility = page == "0" ? Visibility.Visible : Visibility.Collapsed;
+        ImportPanel.Visibility = SubscriptionsPanel.Visibility = SubscriptionNodesList.Visibility = page == "1" ? Visibility.Visible : Visibility.Collapsed;
+        RoutesPanel.Visibility = page == "2" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPanel.Visibility = page == "3" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ThemeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var index = ThemeSelector.SelectedIndex;
+        RootGrid.RequestedTheme = index == 2 ? ElementTheme.Dark : ElementTheme.Light;
+        // An element-local accent keeps the white-green palette separate from the base theme.
+        if (index == 1)
+            RootGrid.Resources["WeaveAccentBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 22, 167, 108));
+        else
+            RootGrid.Resources.Remove("WeaveAccentBrush");
+        // ThemeResource resolution is refreshed when the theme changes, including light -> white-green.
+        RootGrid.RequestedTheme = index == 2 ? ElementTheme.Light : ElementTheme.Dark;
+        RootGrid.RequestedTheme = index == 2 ? ElementTheme.Dark : ElementTheme.Light;
+        try { Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!); File.WriteAllText(_themePath, index.ToString()); }
+        catch (IOException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
+        catch (UnauthorizedAccessException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
     }
 
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {
+        _closed = true;
         _lifetime.Cancel();
-        await _model.DisposeAsync();
-        _lifetime.Dispose();
+        try { await _model.DisposeAsync(); }
+        finally { _lifetime.Dispose(); }
     }
 }

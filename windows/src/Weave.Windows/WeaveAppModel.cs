@@ -13,6 +13,9 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private readonly SubscriptionImporter _importer = new();
     private readonly MihomoConfigBuilder _configBuilder = new();
     private MihomoProcess? _process;
+    private readonly SemaphoreSlim _connectionGate = new(1, 1);
+    public event EventHandler? StatusChanged;
+    public WindowsNetworkOptions NetworkOptions { get; set; } = new();
 
     public WeaveAppModel()
     {
@@ -132,10 +135,19 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public async Task ConnectAsync(string subscriptionId, string? nodeId, CancellationToken cancellationToken)
     {
+        await _connectionGate.WaitAsync(cancellationToken);
+        try
+        {
         if (_process is not null)
         {
-            return;
+            if (_process.IsRunning) return;
+            await _process.DisposeAsync();
+            _process = null;
         }
+
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (!new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+            throw new InvalidOperationException("TUN 需要管理员权限。请退出 Weave，右键应用选择“以管理员身份运行”。");
 
         var executable = FindMihomo();
         if (executable is null)
@@ -149,17 +161,19 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             AppRoutes,
             subscriptionId,
             nodeId,
-            new WindowsNetworkOptions { EnableTun = true },
+            NetworkOptions,
             runtime);
         var process = new MihomoProcess(executable);
         process.Exited += (_, _) =>
         {
             if (ReferenceEquals(_process, process))
             {
-                _process = null;
                 Status = "核心已停止";
+                StatusChanged?.Invoke(this, EventArgs.Empty);
             }
         };
+        try
+        {
         var validation = await process.ValidateConfigAsync(bundle, cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
@@ -168,13 +182,29 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         Status = "正在启动 TUN";
-        await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
         _process = process;
+        await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
+        if (!process.IsRunning) throw new InvalidOperationException("核心在启动时退出，请检查权限及配置。");
         Status = "已连接 · Mihomo TUN";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch
+        {
+            _process = null;
+            await process.DisposeAsync().ConfigureAwait(false);
+            Status = "启动失败";
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+            throw;
+        }
+        }
+        finally { _connectionGate.Release(); }
     }
 
     public async Task DisconnectAsync()
     {
+        await _connectionGate.WaitAsync();
+        try
+        {
         var process = _process;
         _process = null;
         if (process is not null)
@@ -183,6 +213,9 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         Status = "未连接";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        finally { _connectionGate.Release(); }
     }
 
     public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);

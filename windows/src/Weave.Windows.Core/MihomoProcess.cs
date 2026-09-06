@@ -59,14 +59,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.Exited += (_, _) =>
         {
-            lock (_gate)
-            {
-                if (ReferenceEquals(_process, process))
-                {
-                    _process = null;
-                }
-            }
-
+            // Retain the exited handle until StopAsync disposes it and its log readers.
             Exited?.Invoke(this, EventArgs.Empty);
         };
         if (!process.Start())
@@ -118,6 +111,9 @@ public sealed class MihomoProcess : IAsyncDisposable
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        // Drain both pipes before waiting; a full diagnostic pipe otherwise deadlocks validation.
+        var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
         try
         {
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
@@ -125,11 +121,13 @@ public sealed class MihomoProcess : IAsyncDisposable
         catch (OperationCanceledException)
         {
             try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            cancellationToken.ThrowIfCancellationRequested();
             return (false, "Mihomo 配置检查超时");
         }
 
-        var output = (await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false) +
-                      await process.StandardError.ReadToEndAsync().ConfigureAwait(false)).Trim();
+        var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
         return (process.ExitCode == 0, output);
     }
 
@@ -148,6 +146,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         cancellation?.Cancel();
         if (process is null)
         {
+            cancellation?.Dispose();
             return;
         }
 
@@ -216,6 +215,8 @@ public sealed class MihomoProcess : IAsyncDisposable
         {
             // Shutdown is expected to cancel log readers.
         }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
     }
 
     private static string Quote(string path) => $"\"{path.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";

@@ -5,22 +5,39 @@
     xmlns:local="using:Weave.Windows">
     <Application.Resources>
         <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F5F7F9" />
+                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F4F6F8" />
                     <SolidColorBrush x:Key="WeaveCardBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#18212B" />
-                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#6E7A86" />
-                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#B9ED4A" />
+                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#1D252D" />
+                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#5D6873" />
+                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#3F596F" />
+                    <SolidColorBrush x:Key="WeaveRimBrush" Color="#DDE5ED" />
+                    <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#EDF2F7" Offset="1"/></LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#11171C" />
-                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#1B242B" />
-                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#F0F4F6" />
-                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#A7B4BC" />
-                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#C4F45A" />
+                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#07100E" />
+                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#101C19" />
+                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#F2F7F5" />
+                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#A8BBB4" />
+                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#8DD9B4" />
+                    <SolidColorBrush x:Key="WeaveRimBrush" Color="#30483C" />
+                    <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#20382E" Offset="0"/><GradientStop Color="#101C19" Offset="1"/></LinearGradientBrush>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+            <Style x:Key="GlassCard" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource WeaveGlassBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource WeaveRimBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="26"/>
+                <Setter Property="Padding" Value="24"/>
+            </Style>
+            <Style TargetType="Button"><Setter Property="CornerRadius" Value="14"/><Setter Property="Padding" Value="18,12"/></Style>
+            <Style TargetType="ComboBox"><Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="44"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
+            <Style TargetType="TextBox"><Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="44"/></Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

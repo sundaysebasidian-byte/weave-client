@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Weave.Windows.Core.Tests/**/*.cs" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 </Project>
