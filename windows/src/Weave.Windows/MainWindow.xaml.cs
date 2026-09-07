@@ -12,6 +12,8 @@ public sealed partial class MainWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private bool _busy;
     private bool _initialized;
+    private string _page = "0";
+    private readonly Dictionary<string, double> _scrollOffsets = new();
     private bool _closed;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
@@ -19,6 +21,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _initialized = true;
+        AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1160, 800));
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
@@ -45,6 +48,7 @@ public sealed partial class MainWindow : Window
 
         Closed += MainWindow_Closed;
         UpdateStatus();
+        UpdateNavigation();
     }
 
     private void SubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -269,6 +273,8 @@ public sealed partial class MainWindow : Window
     {
         StatusText.Text = _model.Status;
         ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
+        HeroStatus.Text = _model.IsConnected ? "已连接" : "尚未连接";
+        HeroDetail.Text = _model.IsConnected ? "Mihomo TUN · 内核运行中" : "本地内核 · 等待连接";
     }
 
     private void AutomaticNode_Click(object sender, RoutedEventArgs e) => NodeComboBox.SelectedItem = null;
@@ -276,10 +282,45 @@ public sealed partial class MainWindow : Window
     private void Navigate_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string page }) return;
+        if (_page == page) return;
+        _scrollOffsets[_page] = ContentScroll.VerticalOffset;
+        _page = page;
         ConnectionPanel.Visibility = page == "0" ? Visibility.Visible : Visibility.Collapsed;
         ImportPanel.Visibility = SubscriptionsPanel.Visibility = SubscriptionNodesList.Visibility = page == "1" ? Visibility.Visible : Visibility.Collapsed;
         RoutesPanel.Visibility = page == "2" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "3" ? Visibility.Visible : Visibility.Collapsed;
+        UpdateNavigation();
+        DispatcherQueue.TryEnqueue(() => ContentScroll.ChangeView(null, _scrollOffsets.GetValueOrDefault(_page), null, true));
+    }
+
+    private void UpdateNavigation()
+    {
+        if (!_initialized) return;
+        var titles = new[] { "连接", "订阅", "应用分流", "设置" };
+        var subtitles = new[] { "你的网络，从容掌握。", "整理订阅，找到适合你的出口。", "不同应用，各有去向。", "让外观和网络，符合你的习惯。" };
+        var index = int.Parse(_page);
+        PageTitle.Text = titles[index];
+        PageSubtitle.Text = subtitles[index];
+        var buttons = new[] { Nav0, Nav1, Nav2, Nav3 };
+        var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[RootGrid.RequestedTheme == ElementTheme.Dark ? "Dark" : "Light"];
+        for (var i = 0; i < buttons.Length; i++)
+        {
+            buttons[i].Background = i == index ? (Microsoft.UI.Xaml.Media.Brush)theme["WeaveGlassBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            buttons[i].Foreground = (Microsoft.UI.Xaml.Media.Brush)theme[i == index ? "WeaveInkBrush" : "WeaveMutedBrush"];
+            buttons[i].FontWeight = i == index ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
+        }
+    }
+
+    private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_initialized) return;
+        var narrow = e.NewSize.Width < 1000;
+        HeroColumn.Width = narrow ? new GridLength(0) : new GridLength(0.85, GridUnitType.Star);
+        Grid.SetColumn(ConnectionHero, narrow ? 1 : 0);
+        Grid.SetRow(ExitCard, narrow ? 1 : 0);
+        Grid.SetRow(ConnectionNote, narrow ? 2 : 1);
+        while (ConnectionPanel.RowDefinitions.Count < 3) ConnectionPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        ConnectionHero.MinHeight = narrow ? 210 : 330;
     }
 
     private void ThemeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -295,6 +336,7 @@ public sealed partial class MainWindow : Window
         // ThemeResource resolution is refreshed when the theme changes, including light -> white-green.
         RootGrid.RequestedTheme = index == 2 ? ElementTheme.Light : ElementTheme.Dark;
         RootGrid.RequestedTheme = index == 2 ? ElementTheme.Dark : ElementTheme.Light;
+        UpdateNavigation();
         try { Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!); File.WriteAllText(_themePath, index.ToString()); }
         catch (IOException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
         catch (UnauthorizedAccessException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
