@@ -10,11 +10,8 @@ $ErrorActionPreference = "Stop"
 $solution = Join-Path $PSScriptRoot "Weave.Windows.sln"
 $runtime = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }
 
-Write-Host "Restoring Windows solution..."
-dotnet restore $solution
-if ($LASTEXITCODE -ne 0) { throw "Restore failed" }
 Write-Host "Building $Configuration|$Platform..."
-dotnet build $solution -c $Configuration -p:Platform=$Platform --no-restore
+msbuild $solution /restore /p:Configuration=$Configuration /p:Platform=$Platform
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration
 if ($LASTEXITCODE -ne 0) { throw "Core tests failed" }
@@ -26,9 +23,9 @@ if (-not (Test-Path $core)) {
 
 $output = Join-Path $PSScriptRoot "artifacts\$Platform"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-dotnet publish (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
-    -c $Configuration -p:Platform=$Platform -r $runtime `
-    --self-contained true -o $output
+msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
+    /restore /t:Publish /p:Configuration=$Configuration /p:Platform=$Platform `
+    /p:RuntimeIdentifier=$runtime /p:SelfContained=true /p:PublishDir="$output\"
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
 Copy-Item (Join-Path $PSScriptRoot 'START-HERE.txt') $output
 Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $output 'LICENSE-Weave.txt')

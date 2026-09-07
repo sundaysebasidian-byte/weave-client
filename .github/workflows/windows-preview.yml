@@ -14,6 +14,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - uses: microsoft/setup-msbuild@v2
       - name: Bundle pinned official Mihomo
         shell: pwsh
         run: |
