@@ -13,6 +13,7 @@ $runtime = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }
 Write-Host "Building $Configuration|$Platform..."
 msbuild $solution /restore /p:Configuration=$Configuration /p:Platform=$Platform
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+$env:WEAVE_TEST_CORE = Join-Path $PSScriptRoot 'src\Weave.Windows\runtime\mihomo.exe'
 dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration
 if ($LASTEXITCODE -ne 0) { throw "Core tests failed" }
 

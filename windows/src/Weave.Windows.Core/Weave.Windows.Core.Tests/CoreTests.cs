@@ -3,6 +3,23 @@ namespace Weave.Windows.Core.Tests;
 public sealed class CoreTests
 {
     [Fact]
+    public async Task BundledCoreAcceptsGeneratedConfiguration()
+    {
+        var executable = Environment.GetEnvironmentVariable("WEAVE_TEST_CORE");
+        if (string.IsNullOrWhiteSpace(executable)) return;
+        var record = new SubscriptionImporter().ImportText("test", "inline://test", "proxies:\n  - name: test\n    type: ss\n    server: example.com\n    port: 443\n    cipher: aes-128-gcm\n    password: test-only\n");
+        var folder = Path.Combine(Path.GetTempPath(), "weave-core-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bundle = new MihomoConfigBuilder().Build(new[] { record }, Array.Empty<WindowsAppRoute>(), record.Id, null, new WindowsNetworkOptions(), folder);
+            await using var process = new MihomoProcess(executable);
+            var result = await process.ValidateConfigAsync(bundle);
+            Assert.True(result.IsValid, result.Diagnostics);
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    }
+
+    [Fact]
     public void NodeNameRemovesDecorativePrefixButKeepsCoreName()
     {
         Assert.Equal("de-n1 (0.3x)", NodeName.Core("🇩🇪 de-n1 (0.3x)"));
