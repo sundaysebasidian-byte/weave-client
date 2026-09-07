@@ -33,7 +33,7 @@
   </ItemGroup>
   <Target Name="PublishXamlResources" AfterTargets="Publish">
     <ItemGroup>
-      <WeaveXamlResource Include="$(TargetDir)**\*.xbf;$(TargetDir)resources.pri" />
+      <WeaveXamlResource Include="$(TargetDir)**\*.xbf;$(TargetDir)*.pri" />
     </ItemGroup>
     <Copy SourceFiles="@(WeaveXamlResource)" DestinationFiles="@(WeaveXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
