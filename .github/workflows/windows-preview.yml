@@ -34,9 +34,14 @@ jobs:
       - name: Check packaged app starts
         shell: pwsh
         run: |
+          $env:WEAVE_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP/weave-startup.txt"
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
           Start-Sleep -Seconds 8
-          if ($app.HasExited) { throw "App exited during startup: $($app.ExitCode)" }
+          if ($app.HasExited) {
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-2)} -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty Message
+            throw "App exited during startup: $($app.ExitCode)"
+          }
           Stop-Process -Id $app.Id
       - uses: actions/upload-artifact@v4
         with:

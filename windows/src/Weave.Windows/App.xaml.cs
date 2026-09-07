@@ -8,12 +8,25 @@ public partial class App : Application
 
     public App()
     {
-        InitializeComponent();
+        UnhandledException += (_, args) => RecordStartupFailure(args.Exception);
+        try { InitializeComponent(); }
+        catch (Exception error) { RecordStartupFailure(error); throw; }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        MainWindow = new MainWindow();
-        MainWindow.Activate();
+        try
+        {
+            MainWindow = new MainWindow();
+            MainWindow.Activate();
+        }
+        catch (Exception error) { RecordStartupFailure(error); throw; }
+    }
+
+    private static void RecordStartupFailure(Exception error)
+    {
+        // Opt-in build diagnostic only; normal users do not create a crash report.
+        var path = Environment.GetEnvironmentVariable("WEAVE_STARTUP_DIAGNOSTIC");
+        if (!string.IsNullOrEmpty(path)) File.WriteAllText(path, error.ToString());
     }
 }
