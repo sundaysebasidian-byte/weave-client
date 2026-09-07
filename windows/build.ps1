@@ -30,5 +30,8 @@ dotnet publish (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj"
     -c $Configuration -p:Platform=$Platform -r $runtime `
     --self-contained true -o $output
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
+Copy-Item (Join-Path $PSScriptRoot 'START-HERE.txt') $output
+Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $output 'LICENSE-Weave.txt')
+Invoke-WebRequest 'https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.30/LICENSE' -OutFile (Join-Path $output 'LICENSE-Mihomo.txt')
 
 Write-Host "Published to $output"

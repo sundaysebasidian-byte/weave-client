@@ -1,0 +1,21 @@
+Weave Windows x64 test build
+
+1. Extract the entire archive to a folder. Do not run from inside the ZIP.
+2. Open Weave.Windows.exe and import your subscription.
+3. Close Weave. Right-click Weave.Windows.exe and select Run as administrator for TUN.
+4. Select a subscription and node, then connect.
+
+Windows 10 22H2 / Windows 11 on Intel or AMD x64.
+The .NET runtime and Mihomo are bundled. Keep all DLLs and the runtime folder.
+This is an unsigned test build, not a stable release. Do not disable Windows security.
+Windows may show a reputation warning because this build is unsigned.
+
+This package uses official Mihomo v1.19.30 (not Android's patched core).
+Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.30
+Core archive SHA256: 8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278
+Weave source: https://github.com/sundaysebasidian-byte/weave-client/tree/codex/windows-test-package
+
+No subscription is included. Import your own trusted configuration.
+Connected means the local core is running; it is not proof of internet reachability,
+DNS protection or successful IPv6 routing. Windows 10/11 real-device testing is pending.
+Disconnect before quitting. No automatic update or public release is performed.
