@@ -105,6 +105,7 @@ public sealed partial class MainWindow : Window
 
     private void DeleteRouteButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         if (sender is Button { Tag: string processName })
         {
             _model.RemoveRoute(processName);
@@ -162,6 +163,7 @@ public sealed partial class MainWindow : Window
 
     private async void DeleteSubscriptionButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy) return;
         if (sender is not Button { Tag: string id } ||
             _model.Subscriptions.FirstOrDefault(item => item.Id == id) is not { } record)
         {
@@ -228,9 +230,9 @@ public sealed partial class MainWindow : Window
         BusyRing.Visibility = Visibility.Visible;
         BusyRing.IsActive = true;
         ConnectButton.IsEnabled = false;
-        ImportPanel.IsEnabled = false;
-        RoutesPanel.IsEnabled = false;
-        SubscriptionsPanel.IsEnabled = false;
+        ImportPanel.IsHitTestVisible = false;
+        RoutesPanel.IsHitTestVisible = false;
+        SubscriptionsPanel.IsHitTestVisible = false;
         try
         {
             await action();
@@ -249,9 +251,9 @@ public sealed partial class MainWindow : Window
             BusyRing.IsActive = false;
             BusyRing.Visibility = Visibility.Collapsed;
             ConnectButton.IsEnabled = true;
-            ImportPanel.IsEnabled = true;
-            RoutesPanel.IsEnabled = true;
-            SubscriptionsPanel.IsEnabled = true;
+            ImportPanel.IsHitTestVisible = true;
+            RoutesPanel.IsHitTestVisible = true;
+            SubscriptionsPanel.IsHitTestVisible = true;
         }
 
         UpdateStatus();
