@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _initialized = true;
+        RootGrid.Loaded += CapturePreviewIfRequested;
         AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1160, 800));
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
@@ -321,6 +322,26 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(ConnectionNote, narrow ? 2 : 1);
         while (ConnectionPanel.RowDefinitions.Count < 3) ConnectionPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         ConnectionHero.MinHeight = narrow ? 210 : 330;
+    }
+
+    private async void CapturePreviewIfRequested(object sender, RoutedEventArgs e)
+    {
+        // Explicit CI-only render capture, never enabled during normal use.
+        var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
+        if (string.IsNullOrEmpty(path)) return;
+        await Task.Delay(700);
+        var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
+        await bitmap.RenderAsync(RootGrid);
+        var buffer = await bitmap.GetPixelsAsync();
+        using var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(buffer);
+        var pixels = new byte[buffer.Length];
+        reader.ReadBytes(pixels);
+        var folder = await global::Windows.Storage.StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(path)!);
+        var file = await folder.CreateFileAsync(Path.GetFileName(path), global::Windows.Storage.CreationCollisionOption.ReplaceExisting);
+        using var stream = await file.OpenAsync(global::Windows.Storage.FileAccessMode.ReadWrite);
+        var encoder = await global::Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(global::Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(global::Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, global::Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
+        await encoder.FlushAsync();
     }
 
     private void ThemeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
