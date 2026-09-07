@@ -35,6 +35,8 @@ jobs:
         shell: pwsh
         run: |
           $env:WEAVE_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP/weave-startup.txt"
+          Get-ChildItem windows/src/Weave.Windows/bin -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
+          Get-ChildItem windows/artifacts/x64 -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
           Start-Sleep -Seconds 8
           if ($app.HasExited) {

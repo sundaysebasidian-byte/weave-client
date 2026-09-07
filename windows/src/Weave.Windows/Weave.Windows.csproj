@@ -31,4 +31,10 @@
     <Content Include="Assets\Weave.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="runtime\mihomo.exe" Condition="Exists('runtime\mihomo.exe')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="PublishXamlResources" AfterTargets="Publish">
+    <ItemGroup>
+      <WeaveXamlResource Include="$(TargetDir)**\*.xbf;$(TargetDir)resources.pri" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WeaveXamlResource)" DestinationFiles="@(WeaveXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
