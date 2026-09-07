@@ -8,7 +8,7 @@ public partial class App : Application
 
     public App()
     {
-        UnhandledException += (_, args) => RecordStartupFailure(args.Exception);
+        UnhandledException += (_, args) => RecordStartupFailure(new Exception(args.Message, args.Exception));
         try { InitializeComponent(); }
         catch (Exception error) { RecordStartupFailure(error); throw; }
     }
@@ -27,6 +27,6 @@ public partial class App : Application
     {
         // Opt-in build diagnostic only; normal users do not create a crash report.
         var path = Environment.GetEnvironmentVariable("WEAVE_STARTUP_DIAGNOSTIC");
-        if (!string.IsNullOrEmpty(path)) File.WriteAllText(path, error.ToString());
+        if (!string.IsNullOrEmpty(path)) File.AppendAllText(path, error + Environment.NewLine);
     }
 }

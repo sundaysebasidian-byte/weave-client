@@ -11,12 +11,14 @@ public sealed partial class MainWindow : Window
     private readonly WeaveAppModel _model = new();
     private readonly CancellationTokenSource _lifetime = new();
     private bool _busy;
+    private bool _initialized;
     private bool _closed;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
     public MainWindow()
     {
         InitializeComponent();
+        _initialized = true;
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
@@ -47,12 +49,14 @@ public sealed partial class MainWindow : Window
 
     private void SubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_initialized) return;
         NodeComboBox.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
         NodeComboBox.SelectedItem = null;
     }
 
     private void SubscriptionListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_initialized) return;
         if (SubscriptionListView.SelectedItem is SubscriptionRecord selected)
         {
             SubscriptionComboBox.SelectedItem = selected;
@@ -62,12 +66,14 @@ public sealed partial class MainWindow : Window
 
     private void RouteSubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_initialized) return;
         RouteNodeComboBox.ItemsSource = (RouteSubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
         RouteNodeComboBox.SelectedItem = null;
     }
 
     private void RouteTargetModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_initialized) return;
         RouteNodeComboBox.IsEnabled = RouteTargetModeComboBox.SelectedIndex == 1;
         RouteSubscriptionComboBox.IsEnabled = RouteTargetModeComboBox.SelectedIndex is 0 or 1;
         if (RouteTargetModeComboBox.SelectedIndex != 1)
@@ -278,6 +284,7 @@ public sealed partial class MainWindow : Window
 
     private void ThemeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_initialized) return;
         var index = ThemeSelector.SelectedIndex;
         RootGrid.RequestedTheme = index == 2 ? ElementTheme.Dark : ElementTheme.Light;
         // An element-local accent keeps the white-green palette separate from the base theme.
