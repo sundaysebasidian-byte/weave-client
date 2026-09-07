@@ -110,9 +110,7 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine($"    - {YamlString(endpoint)}");
         }
 
-        builder.AppendLine("proxies:");
-        builder.AppendLine("  - name: DIRECT");
-        builder.AppendLine("    type: direct");
+        // DIRECT is built into Mihomo; redefining it is a duplicate-name error.
         builder.AppendLine("proxy-providers:");
         foreach (var subscription in subscriptions)
         {
