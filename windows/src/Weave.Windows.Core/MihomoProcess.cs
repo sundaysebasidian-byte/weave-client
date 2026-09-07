@@ -49,7 +49,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
-            Arguments = $"-d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)} --no-color",
+            Arguments = $"-d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)}",
             WorkingDirectory = bundle.Directory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -96,7 +96,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
-            Arguments = $"-t -d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)} --no-color",
+            Arguments = $"-t -d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)}",
             WorkingDirectory = bundle.Directory,
             UseShellExecute = false,
             CreateNoWindow = true,
