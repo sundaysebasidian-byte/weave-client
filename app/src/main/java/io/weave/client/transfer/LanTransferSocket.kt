@@ -21,6 +21,7 @@ class OneTimeLanTransferServer {
     private var socket: ServerSocket? = null
     private var job: Job? = null
 
+    @Synchronized
     fun start(packet: ByteArray, expiryMs: Long = 5 * 60_000L): LanTransferLink {
         stop()
         val host = localPrivateIpv4()
@@ -36,9 +37,10 @@ class OneTimeLanTransferServer {
         val consumed = AtomicBoolean(false)
         socket = server
         job = scope.launch {
+            try {
             launch {
                 delay(expiryMs)
-                stop()
+                stop(server)
             }
             while (!server.isClosed && !consumed.get()) {
                 runCatching { server.accept() }.getOrNull()?.use { client ->
@@ -76,11 +78,20 @@ class OneTimeLanTransferServer {
                     }
                 }
             }
-            stop()
+            } finally {
+                stop(server)
+            }
         }
         return LanTransferLink(host, server.localPort, token, key)
     }
 
+    @Synchronized
+    private fun stop(ownedSocket: ServerSocket) {
+        if (socket === ownedSocket) stop()
+        else runCatching { ownedSocket.close() }
+    }
+
+    @Synchronized
     fun stop() {
         runCatching { socket?.close() }
         socket = null

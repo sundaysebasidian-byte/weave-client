@@ -11,8 +11,9 @@ android {
         applicationId = "io.weave.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 62
-        versionName = "0.3.0-alpha60"
+        // Local preview build; keep the application ID/signature for a data-preserving update.
+        versionCode = 83
+        versionName = "0.3.0-alpha77"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -49,6 +50,11 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // Runtime caches are not distribution assets, even if a local core test created one.
+        ignoreAssetsPattern = "${ignoreAssetsPattern.orEmpty()}:cache.db"
+    }
+
     ndkVersion = "29.0.14206865"
 
     externalNativeBuild {
@@ -62,9 +68,17 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            val configuredAbis = if (
+                providers.gradleProperty("weaveArm64Only").orNull == "true"
+            ) {
+                listOf("arm64-v8a")
+            } else {
+                listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            }
+            include(*configuredAbis.toTypedArray())
             // A universal APK would bundle all four native cores (~230 MB). Publish
-            // the matching ABI split instead; Android Studio/Play can select it.
+            // the matching ABI split instead; Android Studio/Play can select it. GitHub
+            // maintainers can pass -PweaveArm64Only=true for a phone-only artifact.
             isUniversalApk = false
         }
     }
@@ -97,6 +111,16 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.zxing:core:3.5.4")
+    // On-device live QR preview/analysis. No image capture, cloud decoder or downloaded model.
+    implementation("androidx.camera:camera-camera2:1.5.3")
+    implementation("androidx.camera:camera-lifecycle:1.5.3")
+    implementation("androidx.camera:camera-view:1.5.3")
+    // Safe YAML data parsing for nested Clash providers; never construct arbitrary Java objects.
+    implementation("org.yaml:snakeyaml:2.5")
+
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

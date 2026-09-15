@@ -13,15 +13,31 @@ import kotlinx.coroutines.withContext
 
 class SubscriptionRepository(
     context: Context,
-    private val fetcher: SafeSubscriptionFetcher = SafeSubscriptionFetcher(),
+    fetcher: SafeSubscriptionFetcher? = null,
     private val parser: SubscriptionPayloadParser = SubscriptionPayloadParser(),
     private val store: SubscriptionSecretStore = SubscriptionSecretStore(context),
     private val localReader: LocalSubscriptionReader = LocalSubscriptionReader(),
     private val qrDecoder: QrSubscriptionDecoder = QrSubscriptionDecoder(),
 ) {
+    // Subscription traffic follows the user's current system/VPN route.
+    private val safeFetcher = fetcher ?: SafeSubscriptionFetcher()
+    private val providerResolver = ClashProviderResolver(
+        fetch = { safeFetcher.fetch(it, adaptMainSubscription = false) },
+    )
+    private val preparation = SubscriptionPreparation(providerResolver, parser)
     private val contentResolver = context.applicationContext.contentResolver
 
     fun loadMetadata(): List<Subscription> = store.list().map(::toDomain)
+
+    /** One encrypted-index read for both UI lists; caller owns the IO dispatcher. */
+    fun loadSnapshot(): Pair<List<Subscription>, List<ProxyNode>> {
+        val records = store.list()
+        return records.map(::toDomain) to records.flatMap { subscription ->
+            subscription.nodes.map { node ->
+                ProxyNode(node.id, node.name, "", subscription.id, node.protocol, null)
+            }
+        }
+    }
 
     fun loadNodes(): List<ProxyNode> = store.list().flatMap { subscription ->
         subscription.nodes.map { node ->
@@ -64,6 +80,7 @@ class SubscriptionRepository(
                 sourceUrl = source.takeIf {
                     kind == SubscriptionSourceKind.REMOTE
                 }.orEmpty(),
+                importCounts = store.importCounts(record.id),
             )
         }
 
@@ -77,11 +94,14 @@ class SubscriptionRepository(
     }
 
     suspend fun exportForLanTransfer(
-        selectedIds: Set<String> = emptySet(),
+        selectedIds: Set<String>,
     ): List<TransferSubscription> =
         withContext(Dispatchers.IO) {
-            store.list()
-                .filter { selectedIds.isEmpty() || it.id in selectedIds }
+            val records = store.list()
+            val allowed = io.weave.client.transfer.SubscriptionShareSelection.validate(
+                records.mapTo(linkedSetOf()) { it.id }, selectedIds,
+            )
+            records.filter { it.id in allowed }
                 .map { subscription ->
                 TransferSubscription(
                     id = subscription.id,
@@ -125,7 +145,7 @@ class SubscriptionRepository(
 
         val validated = items.map { item ->
             val existing = existingFor(item)
-            val prepared = prepareRuntimePayload(item.payload).also { (_, parsed) ->
+            val prepared = prepareRuntimePayload(item.payload, item.source).also { (_, parsed) ->
                 if (parsed.nodeCount == 0) {
                     throw SubscriptionImportException("订阅中没有可用节点")
                 }
@@ -199,12 +219,13 @@ class SubscriptionRepository(
         rawUrl: String,
     ): SubscriptionUpdate = withContext(Dispatchers.IO) {
         requireExisting(subscriptionId)
-        val fetched = fetcher.fetch(rawUrl)
+        val fetched = safeFetcher.fetch(rawUrl)
         replacePayloadWithDiff(
             subscriptionId = subscriptionId,
             name = name,
-            source = fetched.finalUri.toString(),
+            source = SubscriptionRequestCompatibility.adapt(java.net.URI(rawUrl.trim())).toString(),
             payload = fetched.body,
+            resolutionSource = fetched.finalUri.toString(),
         )
     }
 
@@ -231,8 +252,9 @@ class SubscriptionRepository(
     }
 
     suspend fun import(name: String, rawUrl: String): Subscription = withContext(Dispatchers.IO) {
-        val fetched = fetcher.fetch(rawUrl)
-        importPayload(name, fetched.finalUri.toString(), fetched.body)
+        val fetched = safeFetcher.fetch(rawUrl)
+        replacePayload(null, name, SubscriptionRequestCompatibility.adapt(java.net.URI(rawUrl.trim())).toString(), fetched.body,
+            resolutionSource = fetched.finalUri.toString())
     }
 
     /** Accepts either a remote HTTPS subscription or pasted URI/Base64/JSON content. */
@@ -241,9 +263,9 @@ class SubscriptionRepository(
         if (value.toByteArray(Charsets.UTF_8).size > MAX_INLINE_BYTES) {
             throw SubscriptionImportException("粘贴内容超过 ${MAX_INLINE_BYTES / (1024 * 1024)} MiB 限制")
         }
-        if (value.startsWith("https://", ignoreCase = true)) {
-            val fetched = fetcher.fetch(value)
-            importPayload(name, fetched.finalUri.toString(), fetched.body)
+        if (qrDecoder.isRemoteLink(value)) {
+            // Pasted client wrapper links must follow the same decoding/HTTPS policy as QR.
+            importQr(name, value)
         } else {
             importPayload(name, INLINE_IMPORT_SOURCE, value)
         }
@@ -291,8 +313,10 @@ class SubscriptionRepository(
         name: String,
         source: String,
         payload: String,
+        resolutionSource: String = source,
     ): Subscription {
-        val (runtimePayload, parsed) = prepareRuntimePayload(payload)
+        val prepared = prepareRuntimePayload(payload, resolutionSource)
+        val (runtimePayload, parsed) = prepared
         if (parsed.nodeCount == 0) {
             throw SubscriptionImportException("订阅中没有可用节点")
         }
@@ -303,6 +327,7 @@ class SubscriptionRepository(
                 payload = runtimePayload,
                 parsed = parsed,
                 id = subscriptionId ?: java.util.UUID.randomUUID().toString(),
+                counts = prepared.counts,
             ),
         )
     }
@@ -312,10 +337,12 @@ class SubscriptionRepository(
         name: String,
         source: String,
         payload: String,
+        resolutionSource: String = source,
     ): SubscriptionUpdate {
         val previous = store.get(subscriptionId)
             ?: throw SubscriptionImportException("订阅不存在")
-        val (runtimePayload, parsed) = prepareRuntimePayload(payload)
+        val prepared = prepareRuntimePayload(payload, resolutionSource)
+        val (runtimePayload, parsed) = prepared
         if (parsed.nodeCount == 0) {
             throw SubscriptionImportException("订阅中没有可用节点")
         }
@@ -337,6 +364,7 @@ class SubscriptionRepository(
             payload = runtimePayload,
             parsed = parsed,
             id = subscriptionId,
+            counts = prepared.counts,
         )
         return SubscriptionUpdate(toDomain(updated), diff, audit)
     }
@@ -347,13 +375,8 @@ class SubscriptionRepository(
         }
     }
 
-    private fun prepareRuntimePayload(payload: String): Pair<String, ParsedSubscription> {
-        val parsed = parser.parse(payload)
-        val normalized = parser.normalizeForMihomo(payload, parsed)
-        // Reparse the generated provider so metadata, stable node IDs, and the runtime payload
-        // always describe the exact same node set.
-        return normalized to parser.parse(normalized)
-    }
+    private fun prepareRuntimePayload(payload: String, source: String = ""): PreparedSubscription =
+        preparation.prepare(payload, source)
 
     private fun toDomain(record: StoredSubscription) = Subscription(
         id = record.id,

@@ -9,6 +9,26 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class IpQualityProbeTest {
+    @Test fun `repeated endpoint probes expose zero partial and total failure`() = runBlocking {
+        val calls = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
+        val partial = IpQualityProbe(IpQualityHttpTransport { url, timeout ->
+            if (url.contains("generate_204")) {
+                assertTrue(timeout <= 1500)
+                if (calls.computeIfAbsent(url) { AtomicInteger() }.incrementAndGet() == 2) {
+                    throw java.io.IOException("fixture timeout")
+                }
+            }
+            response("", 30)
+        }).run()
+        assertEquals(6, partial.latencyAttempts)
+        assertEquals(4, partial.latencySuccesses)
+        assertEquals(33, partial.probeFailurePercent)
+        val failed = IpQualityProbe(IpQualityHttpTransport { _, _ -> throw java.io.IOException("fixture") }).run()
+        assertEquals(100, failed.probeFailurePercent)
+        assertEquals(0, failed.latencySuccesses)
+        val success = IpQualityProbe(IpQualityHttpTransport { _, _ -> response("", 30) }).run()
+        assertEquals(0, success.probeFailurePercent)
+    }
     @Test
     fun `parsers accept public ip metadata and cloudflare trace`() {
         assertEquals("8.8.8.8", IpQualityParsers.ipFromJson("{\"ip\":\"8.8.8.8\"}"))

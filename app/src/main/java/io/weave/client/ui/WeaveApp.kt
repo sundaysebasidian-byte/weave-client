@@ -14,11 +14,12 @@ import android.os.Looper
 import android.os.PersistableBundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,6 +77,8 @@ import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SyncAlt
@@ -90,7 +93,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -109,13 +111,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -158,10 +160,8 @@ import io.weave.client.domain.DistributionProfile
 import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
-import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
-import io.weave.client.domain.NavigationConfiguration
 import io.weave.client.domain.NavigationItem
 import io.weave.client.domain.NodeDisplayName
 import io.weave.client.domain.RouteKind
@@ -208,20 +208,21 @@ private fun WeaveNavigationDock(
 ) {
     LiquidGlassPanel(
         modifier = Modifier
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = 18.dp)
             .padding(
                 bottom = WindowInsets.navigationBars.asPaddingValues()
                     .calculateBottomPadding() + 8.dp,
             )
             .fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
+        shape = RoundedCornerShape(WeaveUiTokens.navigationRadius),
+        elevation = WeaveUiTokens.navigationElevation,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(68.dp)
-                .padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .height(WeaveUiTokens.navigationHeight)
+                .padding(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             destinations.forEach { item ->
@@ -240,15 +241,23 @@ private fun WeaveNavigationDock(
                 Surface(
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp)
+                        .height(WeaveUiTokens.navigationItemHeight)
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null,
                             onClick = { onSelect(item) },
                         ),
-                    shape = RoundedCornerShape(23.dp),
+                    shape = RoundedCornerShape(WeaveUiTokens.compactPanelRadius),
                     color = container,
                     contentColor = content,
+                    border = if (active) {
+                        androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        )
+                    } else {
+                        null
+                    },
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -257,13 +266,13 @@ private fun WeaveNavigationDock(
                         Icon(
                             item.icon,
                             contentDescription = localizedContentDescription(item.label),
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(21.dp),
                         )
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(1.dp))
                         Text(
                             item.label,
                             color = content,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
                         )
                     }
@@ -278,7 +287,7 @@ private fun WeaveNavigationDock(
  * user-provided names and node metadata pass through unchanged via localizeWeaveText().
  */
 @Composable
-private fun Text(
+internal fun Text(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
@@ -312,7 +321,7 @@ private fun Text(
 }
 
 @Composable
-private fun localizedContentDescription(text: String): String {
+internal fun localizedContentDescription(text: String): String {
     val language = LocalWeaveLanguage.current
     return remember(text, language) { localizeWeaveText(text, language) }
 }
@@ -327,7 +336,10 @@ private fun localizedContentDescription(text: String): String {
 @Composable
 private fun rememberSmoothLazyListState(): LazyListState {
     val cacheWindow = remember {
-        LazyLayoutCacheWindow(ahead = 240.dp, behind = 80.dp)
+        // Keep only the next card warm. A wider window made fast flings compete with the current
+        // frame for shadow/clip/text work, especially on mid-range devices and long diagnostics
+        // lists. The viewport itself is still rendered normally by LazyColumn.
+        LazyLayoutCacheWindow(ahead = 96.dp, behind = 24.dp)
     }
     return rememberLazyListState(cacheWindow = cacheWindow)
 }
@@ -342,25 +354,10 @@ fun WeaveApp(
     onAcceptVpnDisclosure: () -> Unit,
     onSensitiveSurfaceChanged: (Boolean) -> Unit,
 ) {
-    val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
-    val routes by viewModel.routes.collectAsStateWithLifecycle()
-    val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
-    val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
-    val nodes by viewModel.nodes.collectAsStateWithLifecycle()
-    val importState by viewModel.importState.collectAsStateWithLifecycle()
-    val editorState by viewModel.editorState.collectAsStateWithLifecycle()
-    val lanTransferState by viewModel.lanTransferState.collectAsStateWithLifecycle()
     val networkPreferences by viewModel.networkPreferences.collectAsStateWithLifecycle()
-    val language by viewModel.language.collectAsStateWithLifecycle()
-    val subscriptionHealth by viewModel.subscriptionHealth.collectAsStateWithLifecycle()
-    val recoveryState by viewModel.recoveryState.collectAsStateWithLifecycle()
-    val policyPackState by viewModel.policyPackState.collectAsStateWithLifecycle()
-    val localRouteRuleState by viewModel.localRouteRuleState.collectAsStateWithLifecycle()
-    val subscriptionRefreshState by viewModel.subscriptionRefreshState.collectAsStateWithLifecycle()
-    val ipQualityState by viewModel.ipQualityState.collectAsStateWithLifecycle()
-    val dnsProbeState by viewModel.dnsProbeState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var destination by remember { mutableStateOf(Destination.HOME) }
+    var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
+    val destinationState = rememberSaveableStateHolder()
     var showImportDialog by remember { mutableStateOf(false) }
     var showProxyMigration by remember { mutableStateOf(false) }
     var showLanTransferDialog by remember { mutableStateOf(false) }
@@ -370,38 +367,36 @@ fun WeaveApp(
     var managedSubscriptionId by remember { mutableStateOf<String?>(null) }
     var showVpnDisclosure by remember { mutableStateOf(false) }
     var showRouteLens by remember { mutableStateOf(false) }
-    var showPrivacyObservatory by remember { mutableStateOf(false) }
-    var showBrowserPrivacyLab by remember { mutableStateOf(false) }
+    var showNetworkPrivacyCenter by remember { mutableStateOf(false) }
     var browserPrivacyResult by remember { mutableStateOf<BrowserPrivacyResult?>(null) }
+    var browserPrivacyError by remember { mutableStateOf<String?>(null) }
+    var browserProbeRunId by remember { mutableStateOf(0) }
     var showRecoveryCenter by remember { mutableStateOf(false) }
     var showPolicyPacks by remember { mutableStateOf(false) }
     var showLocalRouteRules by remember { mutableStateOf(false) }
-    var showIpQuality by remember { mutableStateOf(false) }
+    var resumeRevision by remember { mutableStateOf(0) }
 
-    val visibleDestinations = remember(
-        networkPreferences.experienceMode,
-        networkPreferences.navigation,
-    ) {
-        if (networkPreferences.experienceMode == ExperienceMode.NEWCOMER) {
-            listOf(Destination.HOME, Destination.SUBSCRIPTIONS, Destination.SETTINGS)
-        } else {
-            networkPreferences.navigation.visibleItems().map { Destination.from(it) }
+    fun openNetworkPrivacyCenter(runFullCheck: Boolean) {
+        showNetworkPrivacyCenter = true
+        if (runFullCheck && viewModel.ipQualityState.value.report == null) {
+            browserPrivacyResult = null
+            browserPrivacyError = null
+            browserProbeRunId++
+            viewModel.runIpQualityProbe()
         }
     }
-    LaunchedEffect(visibleDestinations) {
-        if (destination !in visibleDestinations) destination = Destination.HOME
-    }
+
+    val visibleDestinations = Destination.entries.toList()
 
     val sensitiveSurfaceVisible = showImportDialog ||
         showProxyMigration ||
         showLanTransferDialog ||
         managedSubscriptionId != null ||
-        showIpQuality ||
+        showNetworkPrivacyCenter ||
         showPolicyPacks ||
         showLocalRouteRules ||
         showRecoveryCenter ||
-        showPrivacyObservatory ||
-        showBrowserPrivacyLab
+        browserProbeRunId > 0
     LaunchedEffect(sensitiveSurfaceVisible) {
         // Sensitive URLs, credentials and one-time transfer keys should not enter screenshots or
         // the recent-apps preview. Normal navigation remains screenshot-friendly.
@@ -419,10 +414,12 @@ fun WeaveApp(
     // Dashboard counters are useful while the page is visible, but keeping a 2–3 second native
     // query loop alive while the app is backgrounded costs battery for no user-visible benefit.
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, destination) {
+    DisposableEffect(lifecycleOwner, destination, showNetworkPrivacyCenter, showDefaultRoutePicker) {
         fun updateVisibility() {
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeRevision++
             viewModel.setDashboardVisible(
                 destination == Destination.HOME &&
+                    !showNetworkPrivacyCenter && !showDefaultRoutePicker &&
                     lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
             )
         }
@@ -435,20 +432,14 @@ fun WeaveApp(
         }
     }
 
-    LaunchedEffect(dashboard.statusMessage, language) {
-        dashboard.statusMessage?.let {
-            snackbar.showSnackbar(localizeWeaveText(it, language))
-            viewModel.dismissMessage()
-        }
-    }
-
-    LaunchedEffect(importState.completedId) {
-        if (importState.completedId != null) {
+    DashboardEffects(
+        viewModel = viewModel,
+        snackbar = snackbar,
+        onImportCompleted = {
             showImportDialog = false
             showProxyMigration = false
-            viewModel.resetImportState()
-        }
-    }
+        },
+    )
 
     val background = MaterialTheme.colorScheme.background
     Box(
@@ -463,6 +454,7 @@ fun WeaveApp(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
                 WeaveNavigationDock(
@@ -473,100 +465,105 @@ fun WeaveApp(
             },
             contentWindowInsets = WindowInsets(0),
         ) { innerPadding ->
+            destinationState.SaveableStateProvider(destination.name) {
             when (destination) {
-            Destination.HOME -> HomeScreen(
-                state = dashboard,
-                experienceMode = networkPreferences.experienceMode,
-                subscriptionCount = subscriptions.size,
-                pausedAdvancedRuleCount = if (
-                    networkPreferences.experienceMode == ExperienceMode.NEWCOMER
-                ) {
-                    routes.size + policyPackState.packs.count { it.active } +
-                        localRouteRuleState.rules.size
-                } else {
-                    0
-                },
-                onConnect = {
-                    when (dashboard.connectionState) {
-                        ConnectionState.CONNECTED -> onRequestDisconnection()
-                        ConnectionState.CONNECTING -> Unit
-                        ConnectionState.DISCONNECTED, ConnectionState.ERROR -> {
-                            if (dashboard.coreAvailable && vpnDisclosureAccepted) {
-                                onRequestConnection()
-                            } else if (dashboard.coreAvailable) {
-                                showVpnDisclosure = true
+            Destination.HOME -> {
+                val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+                HomeScreen(
+                    onScrolling = viewModel::setDashboardScrolling,
+                    state = dashboard,
+                    onConnect = {
+                        when (dashboard.connectionState) {
+                            ConnectionState.CONNECTED -> onRequestDisconnection()
+                            ConnectionState.CONNECTING -> Unit
+                            ConnectionState.DISCONNECTED, ConnectionState.ERROR -> {
+                                if (dashboard.coreAvailable && vpnDisclosureAccepted) {
+                                    onRequestConnection()
+                                } else if (dashboard.coreAvailable) {
+                                    showVpnDisclosure = true
+                                } else {
+                                    viewModel.connect()
+                                }
                             }
-                            else viewModel.connect()
                         }
-                    }
-                },
-                onModeSelected = viewModel::selectMode,
-                onDefaultRouteClick = { showDefaultRoutePicker = true },
-                onOpenSubscriptions = { destination = Destination.SUBSCRIPTIONS },
-                onMoreClick = { destination = Destination.SETTINGS },
-                onIpQuality = {
-                    showIpQuality = true
-                    viewModel.runIpQualityProbe()
-                },
-                contentPadding = innerPadding,
-            )
-            Destination.ROUTES -> RoutesScreen(
-                routes = routes,
-                onRouteClick = { packageName ->
-                    editingRoute = routes.firstOrNull { it.packageName == packageName }
-                },
-                onAdd = { showAppPicker = true },
-                onRouteLens = { showRouteLens = true },
-                contentPadding = innerPadding,
-            )
-            Destination.SUBSCRIPTIONS -> SubscriptionsScreen(
-                subscriptions = subscriptions,
-                migrationClients = installedApps.filter(InstalledApp::migrationCandidate),
-                onAdd = { showImportDialog = true },
-                onMigrate = { showProxyMigration = true },
-                onTransfer = { showLanTransferDialog = true },
-                refreshState = subscriptionRefreshState,
-                onRefresh = viewModel::refreshAllRemoteSubscriptions,
-                onSubscriptionClick = { subscriptionId ->
-                    managedSubscriptionId = subscriptionId
-                    viewModel.openSubscriptionEditor(subscriptionId)
-                },
-                contentPadding = innerPadding,
-            )
-            Destination.SETTINGS -> SettingsScreen(
-                preferences = networkPreferences,
-                language = language,
-                dnsProbeState = dnsProbeState,
-                contentPadding = innerPadding,
-                onOpenVpnSettings = onOpenVpnSettings,
-                onAutomaticStrategySelected = viewModel::setAutomaticStrategy,
-                onStrategyScopeSelected = viewModel::setStrategyScope,
-                onDnsTransportSelected = viewModel::setDnsTransport,
-                onDnsProfileSelected = viewModel::setDnsProfile,
-                onDnsRoutingModeSelected = viewModel::setDnsRoutingMode,
-                onCustomDnsEndpointSaved = viewModel::setCustomDnsEndpoint,
-                onProbeDnsProviders = viewModel::probeDnsProviders,
-                onIpv6ModeSelected = viewModel::setIpv6Mode,
-                onBlockUdpStunChanged = viewModel::setBlockUdpStun,
-                onDomesticDirectChanged = viewModel::setDomesticDirect,
-                onPaletteSelected = viewModel::setWeavePalette,
-                onExperienceModeSelected = viewModel::setExperienceMode,
-                onNavigationConfigurationSaved = viewModel::setNavigationConfiguration,
-                onLanguageSelected = viewModel::setLanguage,
-                onShowVpnDisclosure = { showVpnDisclosure = true },
-                onOpenPrivacyObservatory = { showPrivacyObservatory = true },
-                onOpenRecoveryCenter = {
-                    viewModel.refreshRecoveryState()
-                    showRecoveryCenter = true
-                },
-                onOpenPolicyPacks = { showPolicyPacks = true },
-                onOpenLocalRouteRules = {
-                    viewModel.clearLocalRouteRuleError()
-                    showLocalRouteRules = true
-                },
-            )
+                    },
+                    onModeSelected = viewModel::selectMode,
+                    onDefaultRouteClick = { showDefaultRoutePicker = true },
+                    onMoreClick = { destination = Destination.SETTINGS },
+                    onIpQuality = { openNetworkPrivacyCenter(runFullCheck = true) },
+                    contentPadding = innerPadding,
+                )
+            }
+            Destination.ROUTES -> {
+                val routes by viewModel.routes.collectAsStateWithLifecycle()
+                RoutesScreen(
+                    onPreset = viewModel::applyRoutingPreset,
+                    routes = routes,
+                    onRouteClick = { packageName ->
+                        editingRoute = routes.firstOrNull { it.packageName == packageName }
+                    },
+                    onAdd = { showAppPicker = true },
+                    onRouteLens = { showRouteLens = true },
+                    contentPadding = innerPadding,
+                )
+            }
+            Destination.SUBSCRIPTIONS -> {
+                val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+                val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+                val subscriptionRefreshState by viewModel.subscriptionRefreshState.collectAsStateWithLifecycle()
+                SubscriptionsScreen(
+                    subscriptions = subscriptions,
+                    migrationClients = installedApps.filter(InstalledApp::migrationCandidate),
+                    onAdd = { showImportDialog = true },
+                    onMigrate = { showProxyMigration = true },
+                    onTransfer = { showLanTransferDialog = true },
+                    refreshState = subscriptionRefreshState,
+                    onRefresh = viewModel::refreshAllRemoteSubscriptions,
+                    onSubscriptionClick = { subscriptionId ->
+                        managedSubscriptionId = subscriptionId
+                        viewModel.openSubscriptionEditor(subscriptionId)
+                    },
+                    contentPadding = innerPadding,
+                )
+            }
+            Destination.SETTINGS -> {
+                val language by viewModel.language.collectAsStateWithLifecycle()
+                val dnsProbeState by viewModel.dnsProbeState.collectAsStateWithLifecycle()
+                SettingsScreen(
+                    preferences = networkPreferences,
+                    language = language,
+                    dnsProbeState = dnsProbeState,
+                    contentPadding = innerPadding,
+                    onOpenVpnSettings = onOpenVpnSettings,
+                    onAutomaticStrategySelected = viewModel::setAutomaticStrategy,
+                    onStrategyScopeSelected = viewModel::setStrategyScope,
+                    onDnsTransportSelected = viewModel::setDnsTransport,
+                    onDnsProfileSelected = viewModel::setDnsProfile,
+                    onDnsRoutingModeSelected = viewModel::setDnsRoutingMode,
+                    onCustomDnsEndpointSaved = viewModel::setCustomDnsEndpoint,
+                    onProbeDnsProviders = viewModel::probeDnsProviders,
+                    onIpv6ModeSelected = viewModel::setIpv6Mode,
+                    onBlockUdpStunChanged = viewModel::setBlockUdpStun,
+                    onDomesticDirectChanged = viewModel::setDomesticDirect,
+                    onPaletteSelected = viewModel::setWeavePalette,
+                    onLanguageSelected = viewModel::setLanguage,
+                    onShowVpnDisclosure = { showVpnDisclosure = true },
+                    onOpenPrivacyObservatory = { openNetworkPrivacyCenter(runFullCheck = false) },
+                    onOpenRecoveryCenter = {
+                        viewModel.refreshRecoveryState()
+                        showRecoveryCenter = true
+                    },
+                    onOpenPolicyPacks = { showPolicyPacks = true },
+                    onOpenLocalRouteRules = {
+                        viewModel.clearLocalRouteRuleError()
+                        showLocalRouteRules = true
+                    },
+                )
+            }
             }
         }
+    }
+
     }
 
     if (showVpnDisclosure) {
@@ -582,6 +579,9 @@ fun WeaveApp(
     }
 
     if (showRouteLens) {
+        val routes by viewModel.routes.collectAsStateWithLifecycle()
+        val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        val localRouteRuleState by viewModel.localRouteRuleState.collectAsStateWithLifecycle()
         RouteLensDialog(
             routes = routes,
             mode = dashboard.routingMode,
@@ -592,33 +592,54 @@ fun WeaveApp(
         )
     }
 
-    if (showPrivacyObservatory) {
-        PrivacyObservatoryDialog(
-            report = viewModel.privacyReport(),
+    if (showNetworkPrivacyCenter) {
+        val ipQualityState by viewModel.ipQualityState.collectAsStateWithLifecycle()
+        val commonEndpointState by viewModel.commonEndpointState.collectAsStateWithLifecycle()
+        val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+        val diagnosticDashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        val diagnosticRoutes by viewModel.routes.collectAsStateWithLifecycle()
+        val privacyReport = remember(diagnosticDashboard.connectionState,
+            diagnosticDashboard.routingMode, diagnosticDashboard.defaultRouteTarget,
+            diagnosticRoutes, networkPreferences, resumeRevision) { viewModel.privacyReport() }
+        NetworkPrivacyCenterDialog(
+            downloadState = downloadState,
+            onDownloadProbe = viewModel::runDownloadProbe,
+            onOpenVpnSettings = onOpenVpnSettings,
+            report = privacyReport,
             ipQualityState = ipQualityState,
+            endpointState = commonEndpointState,
             browserResult = browserPrivacyResult,
-            onRunActiveChecks = {
+            browserProbeRunId = browserProbeRunId,
+            browserError = browserPrivacyError,
+            onRunFullCheck = {
                 browserPrivacyResult = null
+                browserPrivacyError = null
+                browserProbeRunId++
                 viewModel.runIpQualityProbe()
-                showPrivacyObservatory = false
-                showBrowserPrivacyLab = true
             },
-            onDismiss = { showPrivacyObservatory = false },
-        )
-    }
-
-    if (showBrowserPrivacyLab) {
-        BrowserPrivacyLabDialog(
-            exitProbe = ipQualityState,
-            onCompleted = { browserPrivacyResult = it },
+            onRunBrowserCheck = {
+                browserPrivacyResult = null
+                browserPrivacyError = null
+                browserProbeRunId++
+            },
+            onBrowserResult = {
+                browserPrivacyError = null
+                browserPrivacyResult = it
+            },
+            onBrowserError = {
+                browserPrivacyResult = null
+                browserPrivacyError = it
+            },
             onDismiss = {
-                showBrowserPrivacyLab = false
-                showPrivacyObservatory = true
+                showNetworkPrivacyCenter = false
+                browserProbeRunId = 0
+                viewModel.clearIpQualityState()
             },
         )
     }
 
     if (showRecoveryCenter) {
+        val recoveryState by viewModel.recoveryState.collectAsStateWithLifecycle()
         RecoveryCenterDialog(
             state = recoveryState,
             onClearSafeMode = viewModel::clearRecoverySafeMode,
@@ -628,6 +649,7 @@ fun WeaveApp(
     }
 
     if (showPolicyPacks) {
+        val policyPackState by viewModel.policyPackState.collectAsStateWithLifecycle()
         PolicyPackDialog(
             state = policyPackState,
             onImport = viewModel::importPolicyPack,
@@ -638,6 +660,7 @@ fun WeaveApp(
     }
 
     if (showLocalRouteRules) {
+        val localRouteRuleState by viewModel.localRouteRuleState.collectAsStateWithLifecycle()
         LocalRouteRulesDialog(
             state = localRouteRuleState,
             onAdd = viewModel::addLocalRouteRule,
@@ -647,18 +670,8 @@ fun WeaveApp(
         )
     }
 
-    if (showIpQuality) {
-        IpQualityDialog(
-            state = ipQualityState,
-            onRun = viewModel::runIpQualityProbe,
-            onDismiss = {
-                showIpQuality = false
-                viewModel.clearIpQualityState()
-            },
-        )
-    }
-
     if (showImportDialog) {
+        val importState by viewModel.importState.collectAsStateWithLifecycle()
         ImportSubscriptionDialog(
             state = importState,
             onDismiss = {
@@ -670,12 +683,15 @@ fun WeaveApp(
             onImport = viewModel::importSubscription,
             onImportFile = viewModel::importSubscriptionFile,
             onImportQrImage = viewModel::importSubscriptionQrImage,
-            onScanQr = viewModel::importSubscriptionQrBitmap,
+            onScanQr = viewModel::importSubscriptionQr,
         )
     }
 
     if (showProxyMigration) {
+        val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+        val importState by viewModel.importState.collectAsStateWithLifecycle()
         ProxyMigrationDialog(
+            onRescan = { viewModel.ensureInstalledAppsLoaded(forceRefresh = true) },
             clients = installedApps.filter(InstalledApp::migrationCandidate),
             state = importState,
             onDismiss = {
@@ -685,10 +701,16 @@ fun WeaveApp(
                 }
             },
             onImportFile = viewModel::importSubscriptionFile,
+            onPasteOrScan = {
+                showProxyMigration = false
+                showImportDialog = true
+            },
         )
     }
 
     if (showLanTransferDialog) {
+        val lanTransferState by viewModel.lanTransferState.collectAsStateWithLifecycle()
+        val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
         LanTransferDialog(
             state = lanTransferState,
             subscriptions = subscriptions,
@@ -706,6 +728,8 @@ fun WeaveApp(
     }
 
     if (showAppPicker) {
+        val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+        val routes by viewModel.routes.collectAsStateWithLifecycle()
         AppPickerDialog(
             apps = installedApps.filterNot { app ->
                 routes.any { it.packageName == app.packageName }
@@ -719,7 +743,15 @@ fun WeaveApp(
     }
 
     editingRoute?.let { route ->
+        val favorites by viewModel.favoriteNodes.collectAsStateWithLifecycle()
+        val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+        val nodes by viewModel.nodes.collectAsStateWithLifecycle()
+        val subscriptionHealth by viewModel.subscriptionHealth.collectAsStateWithLifecycle()
+        val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
             RouteTargetDialog(
+                favorites = favorites,
+                onFavorite = viewModel::toggleFavoriteNode,
+                onSubscriptionSelected = viewModel::selectHealthSubscription,
                 route = route,
                 subscriptions = subscriptions,
                 nodes = nodes,
@@ -739,7 +771,15 @@ fun WeaveApp(
     }
 
     if (showDefaultRoutePicker) {
+        val favorites by viewModel.favoriteNodes.collectAsStateWithLifecycle()
+        val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+        val nodes by viewModel.nodes.collectAsStateWithLifecycle()
+        val subscriptionHealth by viewModel.subscriptionHealth.collectAsStateWithLifecycle()
         DefaultRouteTargetDialog(
+            favorites = favorites,
+            onFavorite = viewModel::toggleFavoriteNode,
+            onSubscriptionSelected = viewModel::selectHealthSubscription,
             selectedTarget = dashboard.defaultRouteTarget,
             subscriptions = subscriptions,
             nodes = nodes,
@@ -755,6 +795,12 @@ fun WeaveApp(
     }
 
     managedSubscriptionId?.let { subscriptionId ->
+        val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+        val nodes by viewModel.nodes.collectAsStateWithLifecycle()
+        val editorState by viewModel.editorState.collectAsStateWithLifecycle()
+        val subscriptionHealth by viewModel.subscriptionHealth.collectAsStateWithLifecycle()
+        val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        val routes by viewModel.routes.collectAsStateWithLifecycle()
         val subscription = subscriptions.firstOrNull { it.id == subscriptionId }
         if (subscription != null) {
             SubscriptionManagerDialog(
@@ -795,6 +841,35 @@ fun WeaveApp(
     }
 }
 
+/**
+ * Effects that are independent from the currently visible destination. Keeping their flow
+ * collection in a child prevents dashboard/status emissions from invalidating the whole shell.
+ */
+@Composable
+private fun DashboardEffects(
+    viewModel: AppViewModel,
+    snackbar: SnackbarHostState,
+    onImportCompleted: () -> Unit,
+) {
+    val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+    val language by viewModel.language.collectAsStateWithLifecycle()
+    val importState by viewModel.importState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(dashboard.statusMessage, language) {
+        dashboard.statusMessage?.let {
+            snackbar.showSnackbar(localizeWeaveText(it, language))
+            viewModel.dismissMessage()
+        }
+    }
+
+    LaunchedEffect(importState.completedId) {
+        if (importState.completedId != null) {
+            onImportCompleted()
+            viewModel.resetImportState()
+        }
+    }
+}
+
 @Composable
 private fun ImportSubscriptionDialog(
     state: SubscriptionImportState,
@@ -802,32 +877,24 @@ private fun ImportSubscriptionDialog(
     onImport: (name: String, url: String) -> Unit,
     onImportFile: (name: String, uri: Uri) -> Unit,
     onImportQrImage: (name: String, uri: Uri) -> Unit,
-    onScanQr: (name: String, bitmap: Bitmap) -> Unit,
+    onScanQr: (name: String, value: String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var scannerError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicturePreview(),
-    ) { bitmap ->
-        if (bitmap == null) {
-            scannerError = "没有取得相机预览，请重试"
-        } else {
-            onScanQr(name, bitmap)
-        }
-    }
+    var showScanner by remember { mutableStateOf(false) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) cameraLauncher.launch(null)
+        if (granted) showScanner = true
         else scannerError = "需要相机权限才能扫描二维码"
     }
     fun launchCamera() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
         ) {
-            cameraLauncher.launch(null)
+            showScanner = true
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -841,6 +908,12 @@ private fun ImportSubscriptionDialog(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         uri?.let { onImportQrImage(name, it) }
+    }
+    if (showScanner) {
+        LiveQrScanner(onDismiss = { showScanner = false }, onResult = { value ->
+            showScanner = false
+            onScanQr(name, value)
+        })
     }
 
     AlertDialog(
@@ -945,13 +1018,17 @@ private fun ImportSubscriptionDialog(
 
 @Composable
 private fun ProxyMigrationDialog(
+    onRescan: () -> Unit,
     clients: List<InstalledApp>,
     state: SubscriptionImportState,
     onDismiss: () -> Unit,
     onImportFile: (name: String, uri: Uri) -> Unit,
+    onPasteOrScan: () -> Unit,
 ) {
-    var selectedPackage by remember(clients) {
-        mutableStateOf(clients.firstOrNull()?.packageName)
+    val context = LocalContext.current
+    var selectedPackage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(clients) {
+        if (clients.none { it.packageName == selectedPackage }) selectedPackage = clients.firstOrNull()?.packageName
     }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -963,7 +1040,13 @@ private fun ProxyMigrationDialog(
         icon = { Icon(Icons.Rounded.SyncAlt, contentDescription = null) },
         title = { Text("从其他客户端迁移", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("支持 CMFA、Clash、Karing、FlClash、Clash Mi、Hiddify、v2rayNG、NekoBox、SagerNet 与 sing-box 的兼容订阅导出。", fontSize = 12.sp)
+                TextButton(onClick = onRescan, enabled = !state.running) { Text("重新检测客户端") }
+                if (clients.isEmpty()) Text("未检测到可见客户端，仍可直接导入文件、链接或二维码。", fontSize = 12.sp)
+                Text("识别依据为应用包名或名称，不代表安全认证；其他设备的兼容配置也可导入。", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "Android 不允许 Weave 读取其他应用的私有数据。请选择来源并确认，然后在系统窗口中选择该客户端主动导出的 YAML、JSON 或文本文件。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -996,6 +1079,18 @@ private fun ProxyMigrationDialog(
                         }
                     }
                 }
+                if (selectedPackage != null) TextButton(onClick = {
+                    selectedPackage?.let { selected ->
+                        context.packageManager.getLaunchIntentForPackage(selected)?.let { intent ->
+                            runCatching { context.startActivity(intent) }
+                        }
+                    }
+                }) { Text("打开所选客户端") }
+                TextButton(onClick = onPasteOrScan, enabled = !state.running) {
+                    Icon(Icons.Rounded.QrCodeScanner, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("粘贴链接或扫描二维码")
+                }
                 state.error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
@@ -1009,7 +1104,7 @@ private fun ProxyMigrationDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = selectedPackage != null && !state.running,
+                enabled = !state.running,
                 onClick = {
                     filePicker.launch(
                         arrayOf(
@@ -1043,31 +1138,29 @@ private fun LanTransferDialog(
     onStartExport: (Set<String>) -> Unit,
     onStopExport: () -> Unit,
     onImport: (String, String) -> Unit,
-    onScanQr: (Bitmap) -> Unit,
+    onScanQr: (String) -> Unit,
 ) {
     var importLink by remember { mutableStateOf("") }
     var confirmationCode by remember { mutableStateOf("") }
-    var selectedIds by remember(subscriptions) {
-        mutableStateOf<Set<String>>(subscriptions.mapTo(linkedSetOf()) { it.id })
+    var selectedIds by remember {
+        mutableStateOf<Set<String>>(emptySet())
     }
+    val availableIds = remember(subscriptions) { subscriptions.mapTo(linkedSetOf()) { it.id } }
+    LaunchedEffect(availableIds) { selectedIds = selectedIds.intersect(availableIds) }
     var scannerError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicturePreview(),
-    ) { bitmap ->
-        if (bitmap == null) scannerError = "没有取得相机预览，请重试" else onScanQr(bitmap)
-    }
+    var showScanner by remember { mutableStateOf(false) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) cameraLauncher.launch(null)
+        if (granted) showScanner = true
         else scannerError = "需要相机权限才能扫描二维码"
     }
     fun launchCamera() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
         ) {
-            cameraLauncher.launch(null)
+            showScanner = true
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -1076,6 +1169,12 @@ private fun LanTransferDialog(
         state.exportLink.takeIf(String::isNotEmpty)?.let { link ->
             runCatching { QrCodeGenerator.create(link).asImageBitmap() }.getOrNull()
         }
+    }
+    if (showScanner) {
+        LiveQrScanner(onDismiss = { showScanner = false }, onResult = { value ->
+            showScanner = false
+            onScanQr(value)
+        })
     }
 
     AlertDialog(
@@ -1098,6 +1197,14 @@ private fun LanTransferDialog(
                 item { TargetSectionLabel("导出到另一台设备") }
                 if (state.exportLink.isEmpty()) {
                     item {
+                        Text("只分享勾选的订阅，未勾选的不会包含在二维码或链接中。", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row {
+                            TextButton(onClick = { selectedIds = availableIds }, enabled = !state.running) { Text("全选") }
+                            TextButton(onClick = { selectedIds = emptySet() }, enabled = !state.running) { Text("全不选") }
+                        }
+                    }
+                    item {
                         Text(
                             "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1110,18 +1217,20 @@ private fun LanTransferDialog(
                         contentType = { "lan-transfer-subscription" },
                     ) { subscription ->
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().toggleable(
+                                value = subscription.id in selectedIds,
+                                enabled = !state.running,
+                                role = Role.Checkbox,
+                                onValueChange = { checked ->
+                                    selectedIds = if (checked) selectedIds + subscription.id else selectedIds - subscription.id
+                                },
+                            ),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(
                                 checked = subscription.id in selectedIds,
-                                onCheckedChange = { checked ->
-                                    selectedIds = if (checked) {
-                                        selectedIds + subscription.id
-                                    } else {
-                                        selectedIds - subscription.id
-                                    }
-                                },
+                                enabled = !state.running,
+                                onCheckedChange = null,
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -1146,6 +1255,11 @@ private fun LanTransferDialog(
                         }
                     }
                 } else {
+                    item {
+                        Text("本次分享的订阅", fontWeight = FontWeight.SemiBold)
+                        state.sharedNames.forEach { Text(it, translate = false, fontSize = 12.sp) }
+                        TextButton(onClick = onStopExport) { Text("修改分享范围") }
+                    }
                     qrBitmap?.let { bitmap ->
                         item {
                             Image(
@@ -1318,7 +1432,7 @@ private fun copySensitiveText(context: Context, label: String, value: String) {
 private const val SENSITIVE_CLIPBOARD_TTL_MS = 60_000L
 
 @Composable
-private fun SubscriptionManagerDialog(
+internal fun SubscriptionManagerDialog(
     subscription: Subscription,
     nodes: List<ProxyNode>,
     state: SubscriptionEditorState,
@@ -1431,274 +1545,286 @@ private fun SubscriptionManagerDialog(
             }
         },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            LazyColumn(
+                state = rememberLazyListState(),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)
+                    .testTag("subscription-detail-list"),
             ) {
-                if (state.loading) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    }
-                } else {
-                    Text(
-                        "来源：${editor?.sourceKind?.label ?: "无法读取"}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it.take(80) },
-                        label = { Text("订阅名称") },
-                        singleLine = true,
-                        enabled = !state.running,
+                item(key = "details", contentType = "subscription-details") {
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextButton(
-                        onClick = { onRename(name) },
-                        enabled = !state.running && name.trim() != editor?.name,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("保存名称")
-                    }
-                    OutlinedTextField(
-                        value = sourceUrl,
-                        onValueChange = { sourceUrl = it.take(4096) },
-                        label = {
-                            Text(
-                                if (editor?.sourceKind ==
-                                    io.weave.client.domain.SubscriptionSourceKind.REMOTE
-                                ) {
-                                    "HTTPS 订阅地址"
-                                } else {
-                                    "改为 HTTPS 订阅地址（可选）"
-                                },
-                            )
-                        },
-                        singleLine = true,
-                        enabled = !state.running,
-                        visualTransformation = if (revealSourceUrl) {
-                            VisualTransformation.None
+                        if (state.loading) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
                         } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = if (sourceUrl.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = { revealSourceUrl = !revealSourceUrl },
+                            Text(
+                                "来源：${editor?.sourceKind?.label ?: "无法读取"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                            )
+                            editor?.importCounts?.let { counts ->
+                                val language = LocalWeaveLanguage.current
+                                Text(
+                                    "${localizeWeaveText("导入计数", language)} · ${localizeWeaveText("主文件", language)} ${counts.root} · ${localizeWeaveText("集合节点", language)} ${counts.providers} (${counts.collections}) · ${localizeWeaveText("最终导入", language)} ${counts.imported}",
+                                    translate = false, fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            OutlinedTextField(
+                                value = name,
+                                onValueChange = { name = it.take(80) },
+                                label = { Text("订阅名称") },
+                                singleLine = true,
+                                enabled = !state.running,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            TextButton(
+                                onClick = { onRename(name) },
+                                enabled = !state.running && name.trim() != editor?.name,
+                            ) {
+                                Text("保存名称")
+                            }
+                            OutlinedTextField(
+                                value = sourceUrl,
+                                onValueChange = { sourceUrl = it.take(4096) },
+                                label = {
+                                    Text(
+                                        if (editor?.sourceKind ==
+                                            io.weave.client.domain.SubscriptionSourceKind.REMOTE
+                                        ) {
+                                            "HTTPS 订阅地址"
+                                        } else {
+                                            "改为 HTTPS 订阅地址（可选）"
+                                        },
+                                    )
+                                },
+                                singleLine = true,
+                                enabled = !state.running,
+                                visualTransformation = if (revealSourceUrl) {
+                                    VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                                trailingIcon = if (sourceUrl.isNotEmpty()) {
+                                    {
+                                        IconButton(
+                                            onClick = { revealSourceUrl = !revealSourceUrl },
+                                        ) {
+                                            Icon(
+                                                if (revealSourceUrl) {
+                                                    Icons.Rounded.VisibilityOff
+                                                } else {
+                                                    Icons.Rounded.Visibility
+                                                },
+                                                contentDescription = if (revealSourceUrl) {
+                                                    localizedContentDescription("隐藏订阅地址")
+                                                } else {
+                                                    localizedContentDescription("显示订阅地址")
+                                                },
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        filePicker.launch(
+                                            arrayOf(
+                                                "text/*",
+                                                "application/json",
+                                                "application/yaml",
+                                                "application/x-yaml",
+                                                "application/octet-stream",
+                                            ),
+                                        )
+                                    },
+                                    enabled = !state.running,
                                 ) {
-                                    Icon(
-                                        if (revealSourceUrl) {
-                                            Icons.Rounded.VisibilityOff
-                                        } else {
-                                            Icons.Rounded.Visibility
-                                        },
-                                        contentDescription = if (revealSourceUrl) {
-                                            localizedContentDescription("隐藏订阅地址")
-                                        } else {
-                                            localizedContentDescription("显示订阅地址")
-                                        },
+                                    Text("选择文件替换")
+                                }
+                                Button(
+                                    onClick = { onReplaceRemote(name, sourceUrl) },
+                                    enabled = !state.running && sourceUrl.isNotBlank(),
+                                ) {
+                                    Text("更新远程订阅")
+                                }
+                            }
+                            state.error?.let { error ->
+                                Text(
+                                    error,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                            if (state.running) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.dp,
                                     )
                                 }
                             }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                filePicker.launch(
-                                    arrayOf(
-                                        "text/*",
-                                        "application/json",
-                                        "application/yaml",
-                                        "application/x-yaml",
-                                        "application/octet-stream",
-                                    ),
-                                )
-                            },
-                            enabled = !state.running,
-                        ) {
-                            Text("选择文件替换")
-                        }
-                        Button(
-                            onClick = { onReplaceRemote(name, sourceUrl) },
-                            enabled = !state.running && sourceUrl.isNotBlank(),
-                        ) {
-                            Text("更新远程订阅")
-                        }
-                    }
-                    state.error?.let { error ->
-                        Text(
-                            error,
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 12.sp,
-                        )
-                    }
-                    if (state.running) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                    }
-                    state.audit?.let { audit ->
-                        val auditColor = when (audit.severity) {
-                            SubscriptionAuditSeverity.CLEAN -> MaterialTheme.colorScheme.secondary
-                            SubscriptionAuditSeverity.REVIEW -> MaterialTheme.colorScheme.tertiary
-                            SubscriptionAuditSeverity.BLOCKED -> MaterialTheme.colorScheme.error
-                        }
-                        LiquidGlassPanel(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("订阅安全审计", color = auditColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            state.audit?.let { audit ->
+                                val auditColor = when (audit.severity) {
+                                    SubscriptionAuditSeverity.CLEAN -> MaterialTheme.colorScheme.secondary
+                                    SubscriptionAuditSeverity.REVIEW -> MaterialTheme.colorScheme.tertiary
+                                    SubscriptionAuditSeverity.BLOCKED -> MaterialTheme.colorScheme.error
+                                }
+                                LiquidGlassPanel(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text("订阅安全审计", color = auditColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text(
+                                            "${audit.summary} · ${audit.oldNodeCount} → ${audit.newNodeCount} 节点",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 11.sp,
+                                            lineHeight = 16.sp,
+                                        )
+                                        audit.findings.take(3).forEach { finding ->
+                                            Text(
+                                                "· ${finding.title}：${finding.detail}",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp,
+                                                lineHeight = 16.sp,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            WeaveDivider()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Text(
-                                    "${audit.summary} · ${audit.oldNodeCount} → ${audit.newNodeCount} 节点",
+                                    "节点  ${nodes.size}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = onCheckHealth,
+                                    enabled = vpnConnected && !health.running && !state.running,
+                                ) {
+                                    if (health.running) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Spacer(Modifier.width(7.dp))
+                                    }
+                                    Text(if (health.running) "测速中" else "多次测速并排序")
+                                }
+                            }
+                            Text(
+                                "HTTP 探测结果，不等同于 ICMP/UDP 丢包率；少量样本仅供参考。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                            )
+                            health.error?.let {
+                                Text(
+                                    it,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     lineHeight = 16.sp,
                                 )
-                                audit.findings.take(3).forEach { finding ->
-                                    Text(
-                                        "· ${finding.title}：${finding.detail}",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 11.sp,
-                                        lineHeight = 16.sp,
-                                    )
+                            }
+                            if (health.checkedAtMillis != null && health.nodes.isNotEmpty()) {
+                                val measured = health.nodes.mapNotNull { it.latencyMs }.sorted()
+                                val available = health.nodes.count { it.successfulSamples > 0 }
+                                val median = measured.getOrNull(measured.size / 2)
+                                val worstP95 = health.nodes.mapNotNull { it.p95LatencyMs }.maxOrNull()
+                                Text(
+                                    "${localizeWeaveText("可用", LocalWeaveLanguage.current)} $available/${health.nodes.size} · ${localizeWeaveText("中位", LocalWeaveLanguage.current)} ${median ?: "—"} ms · P95 ${worstP95 ?: "—"} ms",
+                                    translate = false,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                )
+                                Text(
+                                    probeResultText(health.nodes.sumOf { it.samples }, health.nodes.sumOf { it.successfulSamples }, LocalWeaveLanguage.current),
+                                    translate = false, fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (qualityRows.isNotEmpty()) {
+                                Text(
+                                    "质量矩阵",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                                Text(
+                                    "只展示当前内核实际测到的字段；未测项目保持“—”，不估算 DNS、TLS 或带宽。",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                )
+                                qualityRows.take(8).forEach { row ->
+                                    QualityMatrixEntry(row)
                                 }
                             }
-                        }
-                    }
-                    WeaveDivider()
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "节点  ${nodes.size}",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            onClick = onCheckHealth,
-                            enabled = vpnConnected && !health.running && !state.running,
-                        ) {
-                            if (health.running) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
+                            if (!vpnConnected && health.error == null) {
+                                Text(
+                                    "连接 VPN 后可检测当前运行配置中的节点",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
                                 )
-                                Spacer(Modifier.width(7.dp))
                             }
-                            Text(if (health.running) "测速中" else "多次测速并排序")
+                            if (nodes.size > 8) {
+                                OutlinedTextField(
+                                    value = nodeQuery,
+                                    onValueChange = { nodeQuery = it.take(120) },
+                                    label = { Text("搜索节点或协议") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
                     }
-                    Text(
-                        "连续 3 轮探测，按中位延迟、抖动与丢包综合排序",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                    )
-                    health.error?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                        )
-                    }
-                    if (health.checkedAtMillis != null && health.nodes.isNotEmpty()) {
-                        val measured = health.nodes.mapNotNull { it.latencyMs }.sorted()
-                        val available = health.nodes.count { it.successfulSamples > 0 }
-                        val median = measured.getOrNull(measured.size / 2)
-                        val worstP95 = health.nodes.mapNotNull { it.p95LatencyMs }.maxOrNull()
-                        val averageLoss = health.nodes
-                            .map { it.packetLossPercent }
-                            .average()
-                            .toInt()
-                        Text(
-                            if (median != null) {
-                                "最近一次：可用 $available/${health.nodes.size} · 中位 ${median} ms · P95 ${worstP95 ?: median} ms · 平均丢包 $averageLoss%"
-                            } else {
-                                "最近一次：未发现可用节点"
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                        )
-                    }
-                    if (qualityRows.isNotEmpty()) {
-                        Text(
-                            "质量矩阵",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        Text(
-                            "只展示当前内核实际测到的字段；未测项目保持“—”，不估算 DNS、TLS 或带宽。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                        )
-                        qualityRows.take(8).forEach { row ->
-                            QualityMatrixEntry(row)
-                        }
-                    }
-                    if (!vpnConnected && health.error == null) {
-                        Text(
-                            "连接 VPN 后可检测当前运行配置中的节点",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                        )
-                    }
-                    if (nodes.size > 8) {
-                        OutlinedTextField(
-                            value = nodeQuery,
-                            onValueChange = { nodeQuery = it.take(120) },
-                            label = { Text("搜索节点或协议") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+                }
+                if (!state.loading) {
                     if (filteredNodes.isEmpty()) {
-                        Text(
-                            "没有匹配的节点",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(vertical = 16.dp),
-                        )
+                        item(key = "empty", contentType = "subscription-empty") {
+                            Text(
+                                "没有匹配的节点",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(vertical = 16.dp),
+                            )
+                        }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 260.dp),
-                        ) {
-                            items(
-                                items = orderedNodes,
-                                key = { it.id },
-                                contentType = { "subscription-node" },
-                            ) { node ->
-                                SubscriptionNodeRow(
-                                    node = node,
-                                    health = healthByName[NodeDisplayName.core(node.name)],
-                                    checked = health.checkedAtMillis != null,
-                                )
-                            }
+                        items(
+                            items = orderedNodes,
+                            key = { "node.${it.id}" },
+                            contentType = { "subscription-node" },
+                        ) { node ->
+                            SubscriptionNodeRow(
+                                node = node,
+                                health = healthByName[NodeDisplayName.core(node.name)],
+                                checked = health.checkedAtMillis != null,
+                            )
                         }
                     }
                 }
@@ -1768,16 +1894,8 @@ private fun SubscriptionNodeRow(
             )
         }
         Text(
-            text = when {
-                health?.latencyMs != null && health.packetLossPercent > 0 ->
-                    "${health.latencyMs} ms · 丢${health.packetLossPercent}%"
-                health?.latencyMs != null && (health.jitterMs ?: 0) >= 25 ->
-                    "${health.latencyMs} ms · 抖${health.jitterMs}"
-                health?.latencyMs != null -> "${health.latencyMs} ms"
-                health != null && checked -> "超时"
-                health != null -> "未检测"
-                else -> "—"
-            },
+            text = nodeProbeResultText(health, checked, LocalWeaveLanguage.current),
+            translate = false,
             color = when {
                 health?.latencyMs != null && health.packetLossPercent > 0 ->
                     MaterialTheme.colorScheme.tertiary
@@ -1823,16 +1941,24 @@ private fun QualityMatrixEntry(row: io.weave.client.core.engine.QualityMatrixRow
                 buildString {
                     append(row.protocol)
                     append(" · ")
-                    append(row.medianLatencyMs?.let { "中位 ${it}ms" } ?: "延迟—")
+                    append(localizeWeaveText("中位", LocalWeaveLanguage.current))
+                    append(" ${row.medianLatencyMs ?: "—"} ms")
                     append(" · ")
                     append(row.p95LatencyMs?.let { "P95 ${it}ms" } ?: "P95—")
-                    append(" · 抖")
+                    append(" · ")
+                    append(localizeWeaveText("抖动", LocalWeaveLanguage.current))
+                    append(" ")
                     append(row.jitterMs?.toString() ?: "—")
-                    append(" · 丢${row.packetLossPercent}% · ${row.successfulSamples}/${row.totalSamples}")
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 10.sp,
                 lineHeight = 15.sp,
+                translate = false,
+            )
+            Text(
+                probeResultText(row.totalSamples, row.successfulSamples, LocalWeaveLanguage.current),
+                translate = false, fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1944,6 +2070,9 @@ private fun AppPickerDialog(
 
 @Composable
 private fun RouteTargetDialog(
+    favorites: Set<String>,
+    onFavorite: (ProxyNode) -> Unit,
+    onSubscriptionSelected: (String) -> Unit,
     route: AppRoute,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
@@ -1979,6 +2108,9 @@ private fun RouteTargetDialog(
 
     ConditionalTargetDialog(
         title = route.appName,
+        favorites = favorites,
+        onFavorite = onFavorite,
+        onSubscriptionSelected = onSubscriptionSelected,
         selectedTarget = route.target,
         subscriptions = subscriptions,
         nodes = nodes,
@@ -1995,6 +2127,9 @@ private fun RouteTargetDialog(
 
 @Composable
 private fun DefaultRouteTargetDialog(
+    favorites: Set<String>,
+    onFavorite: (ProxyNode) -> Unit,
+    onSubscriptionSelected: (String) -> Unit,
     selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
@@ -2006,6 +2141,9 @@ private fun DefaultRouteTargetDialog(
 ) {
     ConditionalTargetDialog(
         title = "默认出口",
+        favorites = favorites,
+        onFavorite = onFavorite,
+        onSubscriptionSelected = onSubscriptionSelected,
         selectedTarget = selectedTarget,
         subscriptions = subscriptions,
         nodes = nodes,
@@ -2021,6 +2159,9 @@ private fun DefaultRouteTargetDialog(
 
 @Composable
 private fun ConditionalTargetDialog(
+    favorites: Set<String>,
+    onFavorite: (ProxyNode) -> Unit,
+    onSubscriptionSelected: (String) -> Unit,
     title: String,
     selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
@@ -2034,7 +2175,12 @@ private fun ConditionalTargetDialog(
     onSelect: (RouteTarget) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
-    var selectedSubscriptionId by remember(title) { mutableStateOf<String?>(null) }
+    var selectedSubscriptionId by remember(title) { mutableStateOf(selectedTarget?.subscriptionId) }
+    var nodeSearch by remember { mutableStateOf("") }
+    var favoritesOnly by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedSubscriptionId) {
+        selectedSubscriptionId?.let(onSubscriptionSelected)
+    }
     val selectedSubscription = subscriptions.firstOrNull {
         it.id == selectedSubscriptionId
     }
@@ -2047,9 +2193,12 @@ private fun ConditionalTargetDialog(
     val healthByName = remember(selectedHealth?.nodes) {
         selectedHealth?.nodes.orEmpty().associateBy { NodeDisplayName.core(it.name) }
     }
-    val orderedNodes = remember(subscriptionNodes, selectedHealth?.nodes) {
-        subscriptionNodes.sortedWith(
-            compareBy<ProxyNode> {
+    val orderedNodes = remember(subscriptionNodes, selectedHealth?.nodes, favorites, favoritesOnly, nodeSearch) {
+        subscriptionNodes.filter {
+            (!favoritesOnly || "${it.subscriptionId}/${it.id}" in favorites) &&
+                (nodeSearch.isBlank() || it.name.contains(nodeSearch, ignoreCase = true))
+        }.sortedWith(
+            compareBy<ProxyNode> { "${it.subscriptionId}/${it.id}" !in favorites }.thenBy {
                 healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs == null
             }.thenBy {
                 healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs ?: Int.MAX_VALUE
@@ -2121,6 +2270,18 @@ private fun ConditionalTargetDialog(
                         }
                     }
                 } else {
+                    item {
+                        OutlinedTextField(
+                            value = nodeSearch,
+                            onValueChange = { nodeSearch = it.take(100) },
+                            label = { Text("搜索节点") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
+                            Text(if (favoritesOnly) "显示全部节点" else "只看收藏")
+                        }
+                    }
                     item { TargetSectionLabel("出口") }
                     item {
                         TargetOptionRow(
@@ -2183,6 +2344,12 @@ private fun ConditionalTargetDialog(
                                 lineHeight = 16.sp,
                             )
                         }
+                        selectedHealth?.checkedAtMillis?.let { time ->
+                            Text("检测时间", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
+                                translate = false, fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     items(
                         items = orderedNodes,
@@ -2190,6 +2357,8 @@ private fun ConditionalTargetDialog(
                         contentType = { "target-node" },
                     ) { node ->
                         SelectableNodeOptionRow(
+                            favorite = "${node.subscriptionId}/${node.id}" in favorites,
+                            onFavorite = { onFavorite(node) },
                             node = node,
                             health = healthByName[NodeDisplayName.core(node.name)],
                             checked = selectedHealth?.checkedAtMillis != null,
@@ -2243,6 +2412,8 @@ private fun ConditionalTargetDialog(
 
 @Composable
 private fun SelectableNodeOptionRow(
+    favorite: Boolean,
+    onFavorite: () -> Unit,
     node: ProxyNode,
     health: io.weave.client.core.engine.NodeHealthSnapshot?,
     checked: Boolean,
@@ -2260,6 +2431,11 @@ private fun SelectableNodeOptionRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        IconButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
+            Icon(if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                contentDescription = localizedContentDescription(if (favorite) "取消收藏" else "收藏节点"),
+                tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Icon(
             Icons.Rounded.Language,
             contentDescription = null,
@@ -2283,15 +2459,8 @@ private fun SelectableNodeOptionRow(
             )
         }
         Text(
-            when {
-                health?.latencyMs != null && health.packetLossPercent > 0 ->
-                    "${health.latencyMs} ms · 丢${health.packetLossPercent}%"
-                health?.latencyMs != null && (health.jitterMs ?: 0) >= 25 ->
-                    "${health.latencyMs} ms · 抖${health.jitterMs}"
-                health?.latencyMs != null -> "${health.latencyMs} ms"
-                health != null && checked -> "超时"
-                else -> "—"
-            },
+            nodeProbeResultText(health, checked, LocalWeaveLanguage.current),
+            translate = false,
             color = when {
                 health?.latencyMs != null && health.packetLossPercent > 0 ->
                     MaterialTheme.colorScheme.tertiary
@@ -2362,207 +2531,6 @@ private fun TargetOptionRow(
     }
 }
 
-@Composable
-private fun MonetAtmosphere(
-    palette: WeavePalette,
-    modifier: Modifier = Modifier,
-) {
-    val background = MaterialTheme.colorScheme.background
-    if (palette.group == WeaveAppearanceGroup.MINIMAL) {
-        if (palette != WeavePalette.MINIMAL_WHITE_GREEN) {
-            // Most minimal palettes deliberately use a single stable canvas. This avoids the
-            // visual noise and GPU work of the four art atmospheres.
-            Box(modifier = modifier.background(background))
-            return
-        }
-        // White/green keeps the same restrained layout but receives two cached, very low-contrast
-        // refractions so the glass panels feel dimensional without looking tinted or dirty.
-        val green = MaterialTheme.colorScheme.primaryContainer
-        Canvas(
-            modifier = modifier
-                .background(background)
-                .drawWithCache {
-                    val upper = Brush.radialGradient(
-                        listOf(green.copy(alpha = 0.48f), Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.88f, 0f),
-                        radius = size.minDimension * 0.72f,
-                    )
-                    val lower = Brush.radialGradient(
-                        listOf(green.copy(alpha = 0.22f), Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(0f, size.height * 0.82f),
-                        radius = size.minDimension * 0.66f,
-                    )
-                    onDrawBehind {
-                        drawRect(upper)
-                        drawRect(lower)
-                    }
-                },
-        ) {}
-        return
-    }
-    val teal = MaterialTheme.colorScheme.primaryContainer
-    val lavender = MaterialTheme.colorScheme.secondaryContainer
-    val sunrise = MaterialTheme.colorScheme.tertiary
-    // Gradients are cached until the palette or window size changes. The dashboard can update
-    // every couple of seconds while connected; rebuilding five shader objects for each state
-    // emission made scrolling and page switching needlessly expensive on mid-range devices.
-    Canvas(
-        modifier = modifier
-            .background(background)
-            .drawWithCache {
-                val linear = Brush.linearGradient(
-                    colors = listOf(background, lavender.copy(alpha = 0.38f), background),
-                    start = androidx.compose.ui.geometry.Offset.Zero,
-                    end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                )
-                val tealBrush = Brush.radialGradient(
-                    colors = listOf(teal.copy(alpha = 0.42f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
-                    radius = size.minDimension * 0.72f,
-                )
-                val lavenderBrush = Brush.radialGradient(
-                    colors = listOf(lavender.copy(alpha = 0.46f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
-                    radius = size.minDimension * 0.78f,
-                )
-                val sunriseBrush = Brush.radialGradient(
-                    colors = listOf(sunrise.copy(alpha = 0.30f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
-                    radius = size.minDimension * 0.38f,
-                )
-                val lowerBrush = Brush.radialGradient(
-                    colors = listOf(teal.copy(alpha = 0.18f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.52f, size.height * 0.78f),
-                    radius = size.width * 0.72f,
-                )
-                onDrawBehind {
-                    drawRect(linear)
-                    drawCircle(
-                        brush = tealBrush,
-                        radius = size.minDimension * 0.72f,
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.24f),
-                    )
-                    drawCircle(
-                        brush = lavenderBrush,
-                        radius = size.minDimension * 0.78f,
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.48f),
-                    )
-                    drawCircle(
-                        brush = sunriseBrush,
-                        radius = size.minDimension * 0.38f,
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.08f),
-                    )
-                    drawOval(
-                        brush = lowerBrush,
-                        topLeft = androidx.compose.ui.geometry.Offset(-size.width * 0.18f, size.height * 0.66f),
-                        size = androidx.compose.ui.geometry.Size(size.width * 1.4f, size.height * 0.24f),
-                    )
-                }
-            },
-    ) {}
-}
-
-@Composable
-private fun liquidGlassEdge(): Color =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.35f) {
-        Color.White.copy(alpha = 0.17f)
-    } else {
-        Color.White.copy(alpha = 0.72f)
-    }
-
-@Composable
-private fun WeaveDivider(modifier: Modifier = Modifier) {
-    HorizontalDivider(
-        modifier = modifier.padding(horizontal = 16.dp),
-        thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-    )
-}
-
-@Composable
-private fun LiquidGlassPanel(
-    modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(26.dp),
-    onClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit,
-) {
-    val minimal = LocalWeavePalette.current.group == WeaveAppearanceGroup.MINIMAL
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
-    val surface = MaterialTheme.colorScheme.surface
-    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
-    val secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
-    val tertiary = MaterialTheme.colorScheme.tertiary
-    // Brushes are immutable for a palette. Cache the shader description instead of rebuilding
-    // its colors and list whenever a LazyColumn composes or reuses a card.
-    val glassBrush = remember(
-        minimal,
-        dark,
-        surface,
-        primaryContainer,
-        secondaryContainer,
-        tertiary,
-    ) {
-        if (minimal) {
-            Brush.linearGradient(
-                colors = if (dark) {
-                    listOf(
-                        androidx.compose.ui.graphics.lerp(surface, Color.White, 0.035f),
-                        surface,
-                        androidx.compose.ui.graphics.lerp(surface, primaryContainer, 0.08f),
-                    )
-                } else {
-                    listOf(
-                        androidx.compose.ui.graphics.lerp(surface, Color.White, 0.42f),
-                        surface,
-                        androidx.compose.ui.graphics.lerp(surface, primaryContainer, 0.07f),
-                    )
-                },
-            )
-        } else {
-            Brush.linearGradient(
-                colors = if (dark) {
-                    listOf(
-                        surface,
-                        androidx.compose.ui.graphics.lerp(surface, secondaryContainer, 0.14f),
-                        androidx.compose.ui.graphics.lerp(surface, primaryContainer, 0.18f),
-                        surface,
-                    )
-                } else {
-                    listOf(
-                        androidx.compose.ui.graphics.lerp(surface, Color.White, 0.30f),
-                        androidx.compose.ui.graphics.lerp(surface, primaryContainer, 0.15f),
-                        androidx.compose.ui.graphics.lerp(surface, secondaryContainer, 0.16f),
-                        androidx.compose.ui.graphics.lerp(surface, tertiary, 0.07f),
-                        surface,
-                    )
-                },
-            )
-        }
-    }
-    val edge = if (minimal) {
-        if (dark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.80f)
-    } else {
-        liquidGlassEdge()
-    }
-    Box(
-        modifier = modifier
-            // Keep the original visual chain on every frame. Performance work is limited to
-            // brush/list calculation and must never flatten a card during a gesture.
-            .shadow(if (minimal) 3.dp else 8.dp, shape, clip = false)
-            .clip(shape)
-            .background(glassBrush)
-            .border(
-                1.dp,
-                edge,
-                shape,
-            )
-            .then(
-                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
-            ),
-    ) {
-        content()
-    }
-}
 
 @Composable
 private fun ScreenHeader(
@@ -2596,50 +2564,71 @@ private fun ScreenHeader(
 }
 
 @Composable
+private fun HeaderActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(WeaveUiTokens.headerActionSize),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = CircleShape,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
+        ),
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .padding(11.dp)
+                .size(20.dp),
+        )
+    }
+}
+
+@Composable
 private fun HomeScreen(
+    onScrolling: (Boolean) -> Unit,
     state: DashboardState,
-    experienceMode: ExperienceMode,
-    subscriptionCount: Int,
-    pausedAdvancedRuleCount: Int,
     onConnect: () -> Unit,
     onModeSelected: (RoutingMode) -> Unit,
     onDefaultRouteClick: () -> Unit,
-    onOpenSubscriptions: () -> Unit,
     onMoreClick: () -> Unit,
     onIpQuality: () -> Unit,
     contentPadding: PaddingValues,
 ) {
+    val scrollState = rememberSmoothLazyListState()
+    LaunchedEffect(scrollState) {
+        androidx.compose.runtime.snapshotFlow { scrollState.isScrollInProgress }
+            .collect { onScrolling(it) }
+    }
+    DisposableEffect(Unit) { onDispose { onScrolling(false) } }
     LazyColumn(
-        state = rememberSmoothLazyListState(),
+        state = scrollState,
         modifier = Modifier
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding()),
         contentPadding = PaddingValues(
-            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 20.dp,
-            bottom = 24.dp,
+            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+                WeaveUiTokens.screenTop,
+            bottom = WeaveUiTokens.screenBottom,
         ),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(WeaveUiTokens.sectionGap),
     ) {
         item {
             ScreenHeader(
                 eyebrow = "私密网络",
                 title = "Weave",
                 action = {
-                    Surface(
+                    HeaderActionButton(
+                        icon = Icons.Rounded.MoreHoriz,
+                        contentDescription = localizedContentDescription("更多"),
                         onClick = onMoreClick,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = CircleShape,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            liquidGlassEdge(),
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Rounded.MoreHoriz,
-                            contentDescription = localizedContentDescription("更多"),
-                            modifier = Modifier.padding(10.dp),
-                        )
-                    }
+                    )
                 },
             )
         }
@@ -2648,62 +2637,52 @@ private fun HomeScreen(
             ConnectionHero(state = state, onConnect = onConnect)
         }
 
-        if (experienceMode == ExperienceMode.NEWCOMER) {
-            item {
-                NewcomerQuickStartCard(
-                    state = state,
-                    subscriptionCount = subscriptionCount,
-                    pausedAdvancedRuleCount = pausedAdvancedRuleCount,
-                    onOpenSubscriptions = onOpenSubscriptions,
-                    onSelectExit = onDefaultRouteClick,
-                    onConnect = onConnect,
-                    onOpenSettings = onMoreClick,
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(
+                    text = "运行模式",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 22.dp),
                 )
-            }
-        } else {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text(
-                        text = "运行模式",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 22.dp),
-                    )
-                    LiquidGlassPanel(
-                        modifier = Modifier.padding(horizontal = 20.dp),
-                        shape = RoundedCornerShape(24.dp),
+                LiquidGlassPanel(
+                    modifier = Modifier
+                        .padding(horizontal = WeaveUiTokens.screenHorizontal)
+                        .fillMaxWidth(),
+                    shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.padding(5.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            RoutingMode.entries.forEach { mode ->
-                                Surface(
-                                    onClick = { onModeSelected(mode) },
-                                    modifier = Modifier.weight(1f),
-                                    color = if (mode == state.routingMode) {
-                                        MaterialTheme.colorScheme.primaryContainer
+                        RoutingMode.entries.forEach { mode ->
+                            Surface(
+                                onClick = { onModeSelected(mode) },
+                                modifier = Modifier.weight(1f),
+                                color = if (mode == state.routingMode) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    Color.Transparent
+                                },
+                                shape = RoundedCornerShape(17.dp),
+                            ) {
+                                Text(
+                                    text = mode.label,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    fontWeight = if (mode == state.routingMode) {
+                                        FontWeight.SemiBold
                                     } else {
-                                        Color.Transparent
+                                        FontWeight.Medium
                                     },
-                                    shape = RoundedCornerShape(19.dp),
-                                ) {
-                                    Text(
-                                        text = mode.label,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                        fontWeight = if (mode == state.routingMode) {
-                                            FontWeight.SemiBold
-                                        } else {
-                                            FontWeight.Medium
-                                        },
-                                        color = if (mode == state.routingMode) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                                    )
-                                }
+                                    color = if (mode == state.routingMode) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 11.dp),
+                                )
                             }
                         }
                     }
@@ -2715,221 +2694,82 @@ private fun HomeScreen(
             CurrentRouteCard(state, onClick = onDefaultRouteClick)
         }
 
-        if (experienceMode == ExperienceMode.STANDARD) {
-            item {
-                Surface(
-                    onClick = onIpQuality,
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.74f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, liquidGlassEdge()),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Icon(
-                                Icons.Rounded.Language,
-                                contentDescription = null,
-                                modifier = Modifier.padding(9.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(11.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("IP 质量检测", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "公网出口、地区、ASN、代理标签与真实 HTTPS 延迟",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Icon(
-                            Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    StatCard(
-                        icon = Icons.Rounded.SwapVert,
-                        label = "实时流量",
-                        value = "↓ ${formatRate(state.downloadBytesPerSecond)}",
-                        supporting = "↑ ${formatRate(state.uploadBytesPerSecond)}",
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatCard(
-                        icon = Icons.Rounded.Speed,
-                        label = "网络延迟",
-                        value = state.activeNode?.latencyMs
-                            ?.takeIf { it in 1..10_000 }
-                            ?.let { "$it ms" }
-                            ?: "—",
-                        supporting = if (
-                            state.activeNode?.latencyMs?.let { it in 1..10_000 } == true
-                        ) {
-                            "可用"
-                        } else {
-                            "等待测速"
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NewcomerQuickStartCard(
-    state: DashboardState,
-    subscriptionCount: Int,
-    pausedAdvancedRuleCount: Int,
-    onOpenSubscriptions: () -> Unit,
-    onSelectExit: () -> Unit,
-    onConnect: () -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    val directSelected = state.defaultRouteTarget?.kind == RouteKind.DIRECT
-    val sourceReady = subscriptionCount > 0 || directSelected
-    val exitReady = state.defaultRouteTarget != null
-    val connected = state.connectionState == ConnectionState.CONNECTED
-    LiquidGlassPanel(
-        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("快速开始", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "按顺序完成三步即可连接；高级分流不会在新手模式中后台生效。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-            )
-            NewcomerStep(
-                number = 1,
-                title = if (directSelected) "已选择直连，无需订阅" else "导入一个订阅",
-                completed = sourceReady,
-                onClick = onOpenSubscriptions,
-            )
-            NewcomerStep(
-                number = 2,
-                title = "选择默认出口",
-                completed = exitReady,
-                onClick = onSelectExit,
-            )
-            NewcomerStep(
-                number = 3,
-                title = "开启网络保护",
-                completed = connected,
-                onClick = onConnect,
-            )
-            Button(
-                onClick = when {
-                    connected -> onConnect
-                    !sourceReady -> onOpenSubscriptions
-                    !exitReady -> onSelectExit
-                    else -> onConnect
-                },
-                enabled = state.connectionState != ConnectionState.CONNECTING,
-                modifier = Modifier.fillMaxWidth(),
+        item {
+            Surface(
+                onClick = onIpQuality,
+                modifier = Modifier
+                    .padding(horizontal = WeaveUiTokens.screenHorizontal)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(WeaveUiTokens.compactPanelRadius),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.68f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
+                ),
             ) {
-                Text(
-                    when {
-                        connected -> "断开连接"
-                        !sourceReady -> "导入订阅"
-                        !exitReady -> "选择出口"
-                        else -> "开始连接"
-                    },
-                )
-            }
-            if (pausedAdvancedRuleCount > 0) {
-                Surface(
-                    onClick = onOpenSettings,
-                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.66f),
-                    shape = RoundedCornerShape(16.dp),
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
                     ) {
-                        Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(9.dp))
-                        Text(
-                            "$pausedAdvancedRuleCount 项高级规则已暂停 · 切换标准模式可恢复",
-                            modifier = Modifier.weight(1f),
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
+                        Icon(
+                            Icons.Rounded.Language,
+                            contentDescription = null,
+                            modifier = Modifier.padding(9.dp),
                         )
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NewcomerStep(
-    number: Int,
-    title: String,
-    completed: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        color = if (completed) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
-        },
-        shape = RoundedCornerShape(17.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (completed) {
-                Icon(
-                    Icons.Rounded.CheckCircle,
-                    contentDescription = localizedContentDescription("已完成"),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-            } else {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    Text(
-                        number.toString(),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                    Spacer(Modifier.width(11.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("网络与隐私检测", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "IP 出口、DNS、WebRTC 与浏览器身份表面",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Icon(
+                        Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            Spacer(Modifier.width(11.dp))
-            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+
+        item {
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                StatCard(
+                    icon = Icons.Rounded.SwapVert,
+                    label = "实时流量",
+                    value = "↓ ${formatRate(state.downloadBytesPerSecond)}",
+                    supporting = "↑ ${formatRate(state.uploadBytesPerSecond)}",
+                    modifier = Modifier.weight(1f),
+                )
+                StatCard(
+                    icon = Icons.Rounded.Speed,
+                    label = "网络延迟",
+                    value = state.activeNode?.latencyMs
+                        ?.takeIf { it in 1..10_000 }
+                        ?.let { "$it ms" }
+                        ?: "—",
+                    supporting = if (
+                        state.activeNode?.latencyMs?.let { it in 1..10_000 } == true
+                    ) {
+                        "可用"
+                    } else {
+                        "等待测速"
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
@@ -2952,6 +2792,7 @@ private fun ConnectionHero(
             .padding(horizontal = 20.dp)
             .fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
+        elevation = WeaveUiTokens.heroElevation,
     ) {
         Column(modifier = Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3071,12 +2912,18 @@ private fun CurrentRouteCard(
         ) {
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ),
             ) {
                 Icon(
                     Icons.Rounded.Bolt,
                     contentDescription = null,
-                    modifier = Modifier.padding(13.dp),
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .size(22.dp),
                 )
             }
             Spacer(Modifier.width(14.dp))
@@ -3134,17 +2981,31 @@ private fun StatCard(
 ) {
     LiquidGlassPanel(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(WeaveUiTokens.compactPanelRadius),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.height(18.dp))
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Column(modifier = Modifier.padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(11.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .size(18.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            Spacer(Modifier.height(14.dp))
             Text(value, fontWeight = FontWeight.Bold, fontSize = 17.sp)
             Text(supporting, color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp)
         }
@@ -3153,6 +3014,7 @@ private fun StatCard(
 
 @Composable
 private fun RoutesScreen(
+    onPreset: (Boolean) -> Unit,
     routes: List<AppRoute>,
     onRouteClick: (String) -> Unit,
     onAdd: () -> Unit,
@@ -3176,36 +3038,16 @@ private fun RoutesScreen(
                 title = "应用分流",
                 action = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Surface(
+                        HeaderActionButton(
+                            icon = Icons.Rounded.Visibility,
+                            contentDescription = localizedContentDescription("路由解释"),
                             onClick = onRouteLens,
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                liquidGlassEdge(),
-                            ),
-                        ) {
-                            Icon(
-                                Icons.Rounded.Visibility,
-                                contentDescription = localizedContentDescription("路由解释"),
-                                modifier = Modifier.padding(10.dp),
-                            )
-                        }
-                        Surface(
+                        )
+                        HeaderActionButton(
+                            icon = Icons.Rounded.Add,
+                            contentDescription = localizedContentDescription("添加规则"),
                             onClick = onAdd,
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                liquidGlassEdge(),
-                            ),
-                        ) {
-                            Icon(
-                                Icons.Rounded.Add,
-                                contentDescription = localizedContentDescription("添加规则"),
-                                modifier = Modifier.padding(10.dp),
-                            )
-                        }
+                        )
                     }
                 },
             )
@@ -3221,6 +3063,12 @@ private fun RoutesScreen(
         }
         item {
             PolicySummaryCard(routes)
+        }
+        item {
+            Row(modifier = Modifier.padding(horizontal = 20.dp)) {
+                TextButton(onClick = { onPreset(true) }) { Text("大陆直连 · 海外代理") }
+                TextButton(onClick = { onPreset(false) }) { Text("全部代理") }
+            }
         }
         item {
             Text(
@@ -3239,7 +3087,7 @@ private fun RoutesScreen(
         }
         item {
             Text(
-                text = "当前按“应用规则 > 本地域名/IP规则 > 默认出口”匹配；路由解释可在连接前预览命中结果。",
+                text = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
@@ -3356,9 +3204,7 @@ private data class AppBadgeColors(
 private fun appBadgeColors(tint: Long): AppBadgeColors {
     val base = Color(tint)
     return when (LocalWeavePalette.current) {
-        WeavePalette.MINIMAL_DARK,
-        WeavePalette.MINIMAL_DEEP_OCEAN,
-        WeavePalette.MINIMAL_NIGHT_PINE -> AppBadgeColors(
+        WeavePalette.MINIMAL_DARK -> AppBadgeColors(
             // The stored app tints are intentionally light for light themes. Blend them into
             // the dark surface so the hue remains recognizable without
             // leaving a pale square that competes with the row text.
@@ -3409,7 +3255,7 @@ private fun SubscriptionsScreen(
                 eyebrow = "本机加密管理",
                 title = "订阅",
                 action = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         IconButton(
                             onClick = onRefresh,
                             enabled = !refreshState.running,
@@ -3431,6 +3277,7 @@ private fun SubscriptionsScreen(
                         }
                         Surface(
                             onClick = onAdd,
+                            modifier = Modifier.size(42.dp),
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = CircleShape,
                             border = null,
@@ -3438,7 +3285,9 @@ private fun SubscriptionsScreen(
                             Icon(
                                 Icons.Rounded.Add,
                                 contentDescription = localizedContentDescription("添加订阅"),
-                                modifier = Modifier.padding(10.dp),
+                                modifier = Modifier
+                                    .padding(11.dp)
+                                    .size(20.dp),
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
@@ -3498,44 +3347,42 @@ private fun SubscriptionsScreen(
                 }
             }
         }
-        if (migrationClients.isNotEmpty()) {
-            item {
-                LiquidGlassPanel(
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                    onClick = onMigrate,
+        item {
+            LiquidGlassPanel(
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                onClick = onMigrate,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        shape = RoundedCornerShape(13.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(13.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                        ) {
-                            Icon(
-                                Icons.Rounded.SyncAlt,
-                                contentDescription = null,
-                                modifier = Modifier.padding(10.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("从其他客户端迁移", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "检测到 ${migrationClients.size} 个兼容客户端 · 由你确认后选择导出文件",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                            )
-                        }
                         Icon(
-                            Icons.Rounded.ChevronRight,
-                            contentDescription = localizedContentDescription("继续"),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Icons.Rounded.SyncAlt,
+                            contentDescription = null,
+                            modifier = Modifier.padding(10.dp),
                         )
                     }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("从其他客户端迁移", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "导入其他客户端导出的订阅文件、链接或二维码",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Icon(
+                        Icons.Rounded.ChevronRight,
+                        contentDescription = localizedContentDescription("继续"),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -3677,8 +3524,6 @@ private fun SettingsScreen(
     onBlockUdpStunChanged: (Boolean) -> Unit,
     onDomesticDirectChanged: (Boolean) -> Unit,
     onPaletteSelected: (WeavePalette) -> Unit,
-    onExperienceModeSelected: (ExperienceMode) -> Unit,
-    onNavigationConfigurationSaved: (NavigationConfiguration) -> Unit,
     onLanguageSelected: (WeaveLanguage) -> Unit,
     onShowVpnDisclosure: () -> Unit,
     onOpenPrivacyObservatory: () -> Unit,
@@ -3687,8 +3532,6 @@ private fun SettingsScreen(
     onOpenLocalRouteRules: () -> Unit,
 ) {
     var showPalette by remember { mutableStateOf(false) }
-    var showExperienceMode by remember { mutableStateOf(false) }
-    var showNavigationEditor by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     var showAutomaticStrategy by remember { mutableStateOf(false) }
     var showStrategyScope by remember { mutableStateOf(false) }
@@ -3715,24 +3558,6 @@ private fun SettingsScreen(
         item {
             SettingsGroup {
                 LinkSetting(
-                    icon = Icons.Rounded.Tune,
-                    title = "使用模式",
-                    subtitle = preferences.experienceMode.label,
-                    onClick = { showExperienceMode = true },
-                )
-                WeaveDivider()
-                if (preferences.experienceMode == ExperienceMode.STANDARD) {
-                    LinkSetting(
-                        icon = Icons.Rounded.Route,
-                        title = "自订导航",
-                        subtitle = preferences.navigation.visibleItems().joinToString(" · ") {
-                            localizeWeaveText(it.label, language)
-                        },
-                        onClick = { showNavigationEditor = true },
-                    )
-                    WeaveDivider()
-                }
-                LinkSetting(
                     icon = Icons.Rounded.AutoAwesome,
                     title = "外观",
                     subtitle = "${preferences.weavePalette.group.label} · ${preferences.weavePalette.label}",
@@ -3750,96 +3575,84 @@ private fun SettingsScreen(
         item { SettingsSectionLabel("连接") }
         item {
             SettingsGroup {
-                if (preferences.experienceMode == ExperienceMode.STANDARD) {
-                    LinkSetting(
-                        icon = Icons.Rounded.Speed,
-                        title = "自动节点策略",
-                        subtitle = "${preferences.automaticStrategy.label} · ${preferences.strategyScope.label}",
-                        onClick = { showAutomaticStrategy = true },
-                    )
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.SwapVert,
-                        title = "策略组范围",
-                        subtitle = preferences.strategyScope.description,
-                        onClick = { showStrategyScope = true },
-                    )
-                    WeaveDivider()
-                }
+                LinkSetting(
+                    icon = Icons.Rounded.Speed,
+                    title = "自动节点策略",
+                    subtitle = "${preferences.automaticStrategy.label} · ${preferences.strategyScope.label}",
+                    onClick = { showAutomaticStrategy = true },
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.SwapVert,
+                    title = "策略组范围",
+                    subtitle = preferences.strategyScope.description,
+                    onClick = { showStrategyScope = true },
+                )
+                WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Bolt,
                     title = "Always-on 与断网保护",
                     subtitle = "系统级保护 · 需同时开启 Always-on 与阻止无 VPN 连接",
                     onClick = onOpenVpnSettings,
                 )
-                if (preferences.experienceMode == ExperienceMode.STANDARD) {
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.Language,
-                        title = "IPv4 / IPv6",
-                        subtitle = preferences.ipv6Mode.label,
-                        onClick = { showIpv6Mode = true },
-                    )
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.Apps,
-                        title = "局域网共享",
-                        subtitle = "仅在订阅页主动生成后临时开启",
-                        onClick = { showLanSharingDetails = true },
-                    )
-                }
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Language,
+                    title = "IPv4 / IPv6",
+                    subtitle = preferences.ipv6Mode.label,
+                    onClick = { showIpv6Mode = true },
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Apps,
+                    title = "局域网共享",
+                    subtitle = "仅在订阅页主动生成后临时开启",
+                    onClick = { showLanSharingDetails = true },
+                )
             }
         }
         item { SettingsSectionLabel("网络与安全") }
         item {
             SettingsGroup {
-                if (preferences.experienceMode == ExperienceMode.STANDARD) {
-                    LinkSetting(
-                        icon = Icons.Rounded.Dns,
-                        title = "DNS",
-                        subtitle = if (
-                            preferences.dnsProfile == DnsProfile.AD_BLOCK ||
-                            preferences.dnsProfile == DnsProfile.FAMILY
-                        ) {
-                            "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + 本地规则"
-                        } else {
-                            "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + fake-IP"
-                        },
-                        onClick = { showDnsSettings = true },
-                    )
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.Tune,
-                        title = "高级路由",
-                        subtitle = "应用规则优先 · 修改后安全热重载",
-                        onClick = { showRoutingDetails = true },
-                    )
-                    WeaveDivider()
-                    ToggleSetting(
-                        icon = Icons.Rounded.Language,
-                        title = "国内智能直连",
-                        subtitle = "默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先",
-                        checked = preferences.domesticDirect,
-                        onCheckedChange = onDomesticDirectChanged,
-                    )
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.Security,
-                        title = "安全与隐私",
-                        subtitle = "Keystore 加密 · 明文按会话清理",
-                        onClick = { showSecurityDetails = true },
-                    )
-                } else {
-                    LinkSetting(
-                        icon = Icons.Rounded.Security,
-                        title = "新手保护方案",
-                        subtitle = "规则模式 · 高级规则暂停 · 沿用加密 DNS 与双栈保护",
-                    )
-                }
+                LinkSetting(
+                    icon = Icons.Rounded.Dns,
+                    title = "DNS",
+                    subtitle = if (
+                        preferences.dnsProfile == DnsProfile.AD_BLOCK ||
+                        preferences.dnsProfile == DnsProfile.FAMILY
+                    ) {
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + 本地规则"
+                    } else {
+                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + fake-IP"
+                    },
+                    onClick = { showDnsSettings = true },
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Tune,
+                    title = "高级路由",
+                    subtitle = "应用规则优先 · 修改后安全热重载",
+                    onClick = { showRoutingDetails = true },
+                )
+                WeaveDivider()
+                ToggleSetting(
+                    icon = Icons.Rounded.Language,
+                    title = "国内智能直连",
+                    subtitle = "默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先",
+                    checked = preferences.domesticDirect,
+                    onCheckedChange = onDomesticDirectChanged,
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Security,
+                    title = "安全与隐私",
+                    subtitle = "Keystore 加密 · 明文按会话清理",
+                    onClick = { showSecurityDetails = true },
+                )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Visibility,
-                    title = "隐私观测",
+                    title = "网络与隐私检测",
                     subtitle = "本地证据检查 · 不生成虚假安全百分比",
                     onClick = onOpenPrivacyObservatory,
                 )
@@ -3850,30 +3663,28 @@ private fun SettingsScreen(
                     subtitle = "查看失败记录、解除安全模式",
                     onClick = onOpenRecoveryCenter,
                 )
-                if (preferences.experienceMode == ExperienceMode.STANDARD) {
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.Policy,
-                        title = "离线策略包",
-                        subtitle = "本地导入、哈希校验、可回滚启停",
-                        onClick = onOpenPolicyPacks,
-                    )
-                    WeaveDivider()
-                    LinkSetting(
-                        icon = Icons.Rounded.Tune,
-                        title = "本地域名 / IP 规则",
-                        subtitle = "本机加密保存 · 应用规则优先 · 连接前可解释",
-                        onClick = onOpenLocalRouteRules,
-                    )
-                    WeaveDivider()
-                    ToggleSetting(
-                        icon = Icons.Rounded.Block,
-                        title = "阻止 UDP STUN",
-                        subtitle = "降低 WebRTC 暴露风险；可能影响音视频通话",
-                        checked = preferences.blockUdpStun,
-                        onCheckedChange = onBlockUdpStunChanged,
-                    )
-                }
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Policy,
+                    title = "离线策略包",
+                    subtitle = "本地导入、哈希校验、可回滚启停",
+                    onClick = onOpenPolicyPacks,
+                )
+                WeaveDivider()
+                LinkSetting(
+                    icon = Icons.Rounded.Tune,
+                    title = "本地域名 / IP 规则",
+                    subtitle = "本机加密保存 · 应用规则优先 · 连接前可解释",
+                    onClick = onOpenLocalRouteRules,
+                )
+                WeaveDivider()
+                ToggleSetting(
+                    icon = Icons.Rounded.Block,
+                    title = "阻止 UDP STUN",
+                    subtitle = "降低 WebRTC 暴露风险；可能影响音视频通话",
+                    checked = preferences.blockUdpStun,
+                    onCheckedChange = onBlockUdpStunChanged,
+                )
             }
         }
         item { SettingsSectionLabel("关于") }
@@ -3907,30 +3718,6 @@ private fun SettingsScreen(
             onSelect = {
                 onAutomaticStrategySelected(it)
                 showAutomaticStrategy = false
-            },
-        )
-    }
-    if (showExperienceMode) {
-        SettingChoiceDialog(
-            title = "使用模式",
-            options = ExperienceMode.entries,
-            selected = preferences.experienceMode,
-            label = ExperienceMode::label,
-            description = ExperienceMode::description,
-            onDismiss = { showExperienceMode = false },
-            onSelect = {
-                onExperienceModeSelected(it)
-                showExperienceMode = false
-            },
-        )
-    }
-    if (showNavigationEditor) {
-        NavigationEditorDialog(
-            configuration = preferences.navigation,
-            onDismiss = { showNavigationEditor = false },
-            onSave = {
-                onNavigationConfigurationSaved(it)
-                showNavigationEditor = false
             },
         )
     }
@@ -4514,6 +4301,7 @@ private fun RouteLensDialog(
                 modifier = Modifier.heightIn(max = 560.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
+                item { ConnectionTracePanel(routes) }
                 item {
                     OutlinedTextField(
                         value = ip,
@@ -5418,109 +5206,6 @@ private fun DnsProbePanel(
 }
 
 @Composable
-private fun NavigationEditorDialog(
-    configuration: NavigationConfiguration,
-    onDismiss: () -> Unit,
-    onSave: (NavigationConfiguration) -> Unit,
-) {
-    var draft by remember(configuration) { mutableStateOf(configuration.normalized()) }
-
-    fun move(item: NavigationItem, offset: Int) {
-        val order = draft.order.toMutableList()
-        val current = order.indexOf(item)
-        val target = (current + offset).coerceIn(order.indices)
-        if (current == target) return
-        order.removeAt(current)
-        order.add(target, item)
-        draft = draft.copy(order = order)
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("自订导航", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "调整底部导航的真实顺序，也可隐藏分流或订阅。连接与设置是安全入口，始终保留。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
-                )
-                draft.order.forEachIndexed { index, item ->
-                    val hideable = item in NavigationConfiguration.HIDEABLE_ITEMS
-                    val visible = item !in draft.hidden
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
-                        shape = RoundedCornerShape(17.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                when (item) {
-                                    NavigationItem.HOME -> Icons.Rounded.Home
-                                    NavigationItem.ROUTES -> Icons.Rounded.Route
-                                    NavigationItem.SUBSCRIPTIONS -> Icons.Rounded.Dns
-                                    NavigationItem.SETTINGS -> Icons.Rounded.Settings
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(item.label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                            IconButton(
-                                onClick = { move(item, -1) },
-                                enabled = index > 0,
-                            ) {
-                                Icon(
-                                    Icons.Rounded.KeyboardArrowUp,
-                                    contentDescription = localizedContentDescription("上移"),
-                                )
-                            }
-                            IconButton(
-                                onClick = { move(item, 1) },
-                                enabled = index < draft.order.lastIndex,
-                            ) {
-                                Icon(
-                                    Icons.Rounded.KeyboardArrowDown,
-                                    contentDescription = localizedContentDescription("下移"),
-                                )
-                            }
-                            Switch(
-                                checked = visible,
-                                enabled = hideable,
-                                onCheckedChange = { checked ->
-                                    draft = draft.copy(
-                                        hidden = if (checked) {
-                                            draft.hidden - item
-                                        } else {
-                                            draft.hidden + item
-                                        },
-                                    ).normalized()
-                                },
-                            )
-                        }
-                    }
-                }
-                TextButton(
-                    onClick = { draft = NavigationConfiguration() },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Rounded.RestartAlt, contentDescription = null)
-                    Spacer(Modifier.width(7.dp))
-                    Text("恢复默认导航")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(draft.normalized()) }) { Text("保存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-}
-
-@Composable
 private fun <T> SettingChoiceDialog(
     title: String,
     options: List<T>,
@@ -5680,20 +5365,15 @@ private fun AppearanceOptionRow(
 @Composable
 private fun PaletteSwatch(palette: WeavePalette) {
     val colors = when (palette) {
+        WeavePalette.MINIMAL_PAPER -> listOf(Color(0xFF171717), Color(0xFFF0F0F0), Color.White)
         WeavePalette.MINIMAL_LIGHT -> listOf(
             Color(0xFF1D252D), Color(0xFFDCE7EE), Color(0xFFF4F6F8),
         )
         WeavePalette.MINIMAL_DARK -> listOf(
-            Color(0xFFF2F7F5), Color(0xFF78D5AA), Color(0xFF07100E),
+            Color(0xFFF1F3F6), Color(0xFFC5DCEB), Color(0xFF0B0E13),
         )
         WeavePalette.MINIMAL_WHITE_GREEN -> listOf(
-            Color(0xFF13231D), Color(0xFF16A76C), Color(0xFFF4F8F6),
-        )
-        WeavePalette.MINIMAL_DEEP_OCEAN -> listOf(
-            Color(0xFFF0FAFC), Color(0xFF7DD6E6), Color(0xFF03131C),
-        )
-        WeavePalette.MINIMAL_NIGHT_PINE -> listOf(
-            Color(0xFFF0F8F2), Color(0xFF83D6A3), Color(0xFF06150E),
+            Color(0xFF151813), Color(0xFF2C6E16), Color.White,
         )
         WeavePalette.IMPRESSION_SUNRISE -> listOf(
             Color(0xFF3E5875), Color(0xFFA0BAB1), Color(0xFFDF9A7D),

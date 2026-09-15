@@ -150,7 +150,7 @@ class MihomoFeatureCompilerTest {
                 "https://doh.pub/dns-query",
                 "https://dns.alidns.com/dns-query",
             ),
-            policy["'geosite:geolocation-!cn'"],
+            policy["'geosite:proxy'"],
         )
     }
 

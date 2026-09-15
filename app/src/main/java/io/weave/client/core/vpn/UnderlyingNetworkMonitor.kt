@@ -23,16 +23,23 @@ internal class UnderlyingNetworkMonitor(
     private val capabilityLock = Any()
     private val capabilities = mutableMapOf<Network, NetworkCapabilities>()
     private val blockedNetworks = mutableSetOf<Network>()
+    private val losingUntil = mutableMapOf<Network, Long>()
+    @Volatile
     private var registered = false
     @Volatile
     private var lastPublished: List<Network> = emptyList()
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            // API 26+ immediately follows onAvailable with onCapabilitiesChanged. Android's
-            // documentation explicitly warns against synchronously querying capabilities from
-            // inside callbacks because the result can already be stale (or temporarily null).
-            capabilitiesFor(network)?.let { remembered ->
+            if (!registered) return
+            synchronized(capabilityLock) { losingUntil -= network }
+            // API 26+ normally follows onAvailable with onCapabilitiesChanged. Prefer the
+            // callback snapshot; the synchronous read is only a startup fallback when that
+            // callback has not arrived yet.
+            (capabilitiesFor(network)
+                ?: connectivityManager.getNetworkCapabilities(network)?.also {
+                    rememberCapabilities(network, it)
+                })?.let { remembered ->
                 update(network, remembered.isEligible() && !isBlocked(network))
             }
         }
@@ -41,18 +48,25 @@ internal class UnderlyingNetworkMonitor(
             network: Network,
             networkCapabilities: NetworkCapabilities,
         ) {
+            if (!registered) return
             rememberCapabilities(network, networkCapabilities)
             update(network, networkCapabilities.isEligible() && !isBlocked(network))
         }
 
         override fun onLost(network: Network) {
+            if (!registered) return
             forgetNetwork(network)
             update(network, false)
         }
 
         override fun onLosing(network: Network, maxMsToLive: Int) {
-            // A handover can keep the old Network in the callback set until onLost(). Publish
-            // immediately so Android 8/9 can move the VPN metadata before the old route expires.
+            if (!registered) return
+            // A handover can keep the old Network in the callback set until onLost(). Keep it as a
+            // last-resort fallback, but prefer a newly available Wi-Fi/cellular network so new
+            // protected sockets do not continue opening on a route that is about to disappear.
+            synchronized(capabilityLock) {
+                losingUntil[network] = System.currentTimeMillis() + maxMsToLive
+            }
             publishCurrent(force = true)
         }
 
@@ -60,6 +74,7 @@ internal class UnderlyingNetworkMonitor(
             network: Network,
             linkProperties: android.net.LinkProperties,
         ) {
+            if (!registered) return
             // DHCP, IPv6 prefix and carrier DNS changes do not necessarily change capabilities.
             // They still invalidate a long-lived protected socket path, so feed the same debounced
             // recovery path used for a Wi-Fi/cellular handover.
@@ -67,6 +82,7 @@ internal class UnderlyingNetworkMonitor(
         }
 
         override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
+            if (!registered) return
             setBlocked(network, blocked)
             update(network, !blocked && capabilitiesFor(network).isEligible())
         }
@@ -74,15 +90,20 @@ internal class UnderlyingNetworkMonitor(
 
     fun start() {
         if (registered) return
-        connectivityManager.registerNetworkCallback(
-            NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-                .build(),
-            callback,
-        )
         registered = true
+        try {
+            connectivityManager.registerNetworkCallback(
+                NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                    .build(),
+                callback,
+            )
+        } catch (error: Throwable) {
+            registered = false
+            throw error
+        }
         // Callbacks deliver their initial state asynchronously. Seed it synchronously so the
         // first proxy socket cannot race ahead of validated-network discovery.
         initialNetworks().forEach { network ->
@@ -95,24 +116,28 @@ internal class UnderlyingNetworkMonitor(
 
     fun stop() {
         if (!registered) return
+        // Flip the guard before unregistering. Android may deliver a callback already queued on
+        // another thread after unregisterNetworkCallback() returns.
+        registered = false
         runCatching { connectivityManager.unregisterNetworkCallback(callback) }
         tracker.clear()
         synchronized(capabilityLock) {
             capabilities.clear()
             blockedNetworks.clear()
+            losingUntil.clear()
         }
         lastPublished = emptyList()
-        registered = false
     }
 
     fun currentNetworks(): List<Network> {
+        if (!registered) return emptyList()
         val tracked = orderedNetworks()
         if (tracked.isNotEmpty()) return tracked
         // A callback can be registered in the small window between ConnectivityManager
         // publishing activeNetwork and delivering its capability callback. Seed the first TUN
         // synchronously from activeNetwork so the core does not fail just because of that race.
         val active = connectivityManager.activeNetwork ?: return emptyList()
-        return if (connectivityManager.getNetworkCapabilities(active).isEligible()) {
+        return if (!isBlocked(active) && connectivityManager.getNetworkCapabilities(active).isEligible()) {
             listOf(active)
         } else {
             emptyList()
@@ -135,6 +160,7 @@ internal class UnderlyingNetworkMonitor(
     }
 
     private fun publishCurrent(force: Boolean = false) {
+        if (!registered) return
         val networks = orderedNetworks()
         if (!force && networks == lastPublished) return
         lastPublished = networks
@@ -154,6 +180,8 @@ internal class UnderlyingNetworkMonitor(
         .sortedWith(
             compareBy<Pair<Network, NetworkCapabilities>> { (_, value) ->
                 value.isValidated().not()
+            }.thenBy { (network, _) ->
+                isLosing(network)
             }.thenBy { (_, value) ->
                 networkPreference(value)
             }.thenBy { (network, _) -> network.networkHandle },
@@ -180,7 +208,12 @@ internal class UnderlyingNetworkMonitor(
         synchronized(capabilityLock) {
             capabilities -= network
             blockedNetworks -= network
+            losingUntil -= network
         }
+    }
+
+    private fun isLosing(network: Network): Boolean = synchronized(capabilityLock) {
+        losingUntil[network]?.let { it > System.currentTimeMillis() } == true
     }
 
     private fun networkPreference(capabilities: NetworkCapabilities?): Int = when {

@@ -41,12 +41,27 @@ object BundledGeodataInstaller {
                 pending.delete()
                 "随包 Geo 数据校验失败"
             }
+            moveReplace(pending, destination)
+        }
+    }
+
+    /** Android OEM filesystems do not all implement ATOMIC_MOVE. */
+    private fun moveReplace(source: File, target: File) {
+        runCatching {
             Files.move(
-                pending.toPath(),
-                destination.toPath(),
+                source.toPath(),
+                target.toPath(),
                 StandardCopyOption.ATOMIC_MOVE,
                 StandardCopyOption.REPLACE_EXISTING,
             )
+        }.recoverCatching {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.getOrElse {
+            check(source.renameTo(target)) { "无法替换 Geo 数据文件：${target.name}" }
         }
     }
 

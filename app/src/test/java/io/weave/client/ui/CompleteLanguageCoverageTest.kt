@@ -33,7 +33,11 @@ class CompleteLanguageCoverageTest {
 
     private fun visibleSourceFiles(): List<File> = listOf(
         "src/main/java/io/weave/client/ui/WeaveApp.kt",
+        "src/main/java/io/weave/client/ui/LiveQrScanner.kt",
         "src/main/java/io/weave/client/ui/BrowserPrivacyLab.kt",
+        "src/main/java/io/weave/client/ui/NetworkPrivacyCenter.kt",
+        "src/main/java/io/weave/client/ui/ProbeResultText.kt",
+        "src/main/java/io/weave/client/ui/ConnectionTracePanel.kt",
         "src/main/java/io/weave/client/ui/AppViewModel.kt",
         "src/main/java/io/weave/client/domain/Models.kt",
         "src/main/java/io/weave/client/core/diagnostics/PrivacyObservatory.kt",

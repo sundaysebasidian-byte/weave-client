@@ -44,6 +44,10 @@ object NativeBridge {
     val isLoaded: Boolean
         get() = loadAttempt?.isSuccess == true
 
+    /** Native libraries may be mapped successfully even when coreInit has not completed. */
+    val isInitialized: Boolean
+        get() = initialized
+
     /**
      * Checks the split APK payload without loading the native engine into this process.
      *
@@ -125,7 +129,9 @@ object NativeBridge {
         }
     }
 
-    fun reset() = nativeReset()
+    fun reset() {
+        if (initialized) nativeReset()
+    }
 
     fun startTun(
         fd: Int,
@@ -134,15 +140,24 @@ object NativeBridge {
         portal: String,
         dns: String,
         callback: NativeTunCallback,
-    ): Int = nativeStartTun(fd, stack, gateway, portal, dns, callback)
+    ): Int = if (initialized && fd >= 0) {
+        nativeStartTun(fd, stack, gateway, portal, dns, callback)
+    } else {
+        -1
+    }
 
-    fun stopTun() = nativeStopTun()
+    fun stopTun() {
+        if (initialized) nativeStopTun()
+    }
 
-    fun notifyInstalledAppsChanged(apps: String) = nativeNotifyInstalledAppsChanged(apps)
+    fun notifyInstalledAppsChanged(apps: String) {
+        if (initialized) nativeNotifyInstalledAppsChanged(apps)
+    }
 
-    fun queryTraffic(total: Boolean): LongArray = nativeQueryTraffic(total)
+    fun queryTraffic(total: Boolean): LongArray =
+        if (initialized) nativeQueryTraffic(total) else longArrayOf(0L, 0L)
 
-    fun queryGroup(name: String): String? = nativeQueryGroup(name)
+    fun queryGroup(name: String): String? = if (initialized) nativeQueryGroup(name) else null
 
     suspend fun healthCheck(name: String): Result<Unit> {
         requireLoaded()
@@ -162,17 +177,29 @@ object NativeBridge {
     }
 
     private fun requireLoaded() {
-        check(loadAttempt?.isSuccess == true) {
-            loadAttempt?.exceptionOrNull()?.message ?: "Mihomo 原生库未加载"
+        check(loadAttempt?.isSuccess == true && initialized) {
+            loadAttempt?.exceptionOrNull()?.message
+                ?: if (loadAttempt?.isSuccess == true) {
+                    "Mihomo 原生内核未初始化"
+                } else {
+                    "Mihomo 原生库未加载"
+                }
         }
     }
 
     private fun ensureLoaded(context: Context): Result<Unit> {
-        loadAttempt?.let { return it }
+        // Do not permanently cache a failure.  On a few OEM builds the first linker attempt can
+        // race package extraction or a transient class-loader state; a later connect should be
+        // allowed to retry the normal load and the private-path fallback.
+        loadAttempt?.takeIf { it.isSuccess }?.let { return it }
         return synchronized(this) {
-            loadAttempt ?: runCatching {
+            loadAttempt?.takeIf { it.isSuccess } ?: runCatching {
                 loadNativeLibraries(context)
-            }.also { loadAttempt = it }
+            }.also { result ->
+                // Keep only a successful result as the process-wide load gate.  A failed result
+                // must not poison all future connection attempts in this process.
+                loadAttempt = result.takeIf { it.isSuccess }
+            }
         }
     }
 
@@ -253,16 +280,35 @@ object NativeBridge {
                     pending.outputStream().use { output -> input.copyTo(output) }
                 }
                 check(pending.length() == entry.size) { "Mihomo 原生库复制不完整：$name" }
-                Files.move(
-                    pending.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
+                moveReplace(pending, target)
             }
         }
         Log.i(LOG_TAG, "Loaded native libraries from app-private fallback path for ABI $abi")
         return destination
+    }
+
+    /**
+     * Replace a file using the strongest operation available on the current Android filesystem.
+     * Some OEM/data-cache filesystems reject ATOMIC_MOVE even when both files are in one
+     * directory, so fall back to a regular replace and finally File.renameTo().
+     */
+    private fun moveReplace(source: File, target: File) {
+        runCatching {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.recoverCatching {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.getOrElse {
+            check(source.renameTo(target)) { "无法替换文件：${target.name}" }
+        }
     }
 
     private const val LOG_TAG = "WeaveNativeBridge"

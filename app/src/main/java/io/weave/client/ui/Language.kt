@@ -45,6 +45,61 @@ fun localizeWeaveText(text: String, language: WeaveLanguage): String {
 }
 
 private fun translateCommonPatterns(text: String, language: WeaveLanguage): String? {
+    if (text.startsWith("安全拦截 · ")) {
+        return localizeWeaveText("安全拦截", language) + " · " + text.substringAfter(" · ")
+    }
+    translationRegex("^(.*) \\[(S0[1-6])\\]$").matchEntire(text)?.let { match ->
+        return "${localizeWeaveText(match.groupValues[1], language)} [${match.groupValues[2]}]"
+    }
+    translationRegex("^有 (\\d+) 项本地配置需要注意；未知项必须外部复核$").matchEntire(text)?.let { match ->
+        val count = match.groupValues[1]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "有 $count 項本機設定需要注意；未知項目必須外部複核"
+            WeaveLanguage.ENGLISH -> "$count local configuration item(s) need attention; unknown items require external verification"
+            WeaveLanguage.JAPANESE -> "ローカル設定 $count 件に注意が必要です。不明な項目は外部検証してください"
+            WeaveLanguage.FRENCH -> "$count élément(s) de configuration locale nécessitent votre attention ; les éléments inconnus doivent être vérifiés à l’extérieur"
+            WeaveLanguage.GERMAN -> "$count lokale Konfigurationseinträge benötigen Aufmerksamkeit; unbekannte Einträge müssen extern geprüft werden"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    translationRegex("^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$").matchEntire(text)?.let { match ->
+        val completed = match.groupValues[1]
+        val total = match.groupValues[2]
+        val elapsed = match.groupValues[3]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "完成 $completed/$total 項 · $elapsed ms"
+            WeaveLanguage.ENGLISH -> "$completed/$total checks complete · $elapsed ms"
+            WeaveLanguage.JAPANESE -> "$completed/$total 件完了 · $elapsed ms"
+            WeaveLanguage.FRENCH -> "$completed/$total vérifications terminées · $elapsed ms"
+            WeaveLanguage.GERMAN -> "$completed/$total Prüfungen abgeschlossen · $elapsed ms"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    translationRegex("^可达 (\\d+)/(\\d+) 项 · (\\d+) ms$").matchEntire(text)?.let { match ->
+        val available = match.groupValues[1]
+        val total = match.groupValues[2]
+        val elapsed = match.groupValues[3]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "可達 $available/$total 項 · $elapsed ms"
+            WeaveLanguage.ENGLISH -> "$available/$total sites reachable · $elapsed ms"
+            WeaveLanguage.JAPANESE -> "$available/$total 件が到達可能 · $elapsed ms"
+            WeaveLanguage.FRENCH -> "$available/$total sites accessibles · $elapsed ms"
+            WeaveLanguage.GERMAN -> "$available/$total Sites erreichbar · $elapsed ms"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    translationRegex("^解锁入口 (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+        val available = match.groupValues[1]
+        val total = match.groupValues[2]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "解鎖入口 $available/$total"
+            WeaveLanguage.ENGLISH -> "Unlock entry points $available/$total"
+            WeaveLanguage.JAPANESE -> "解除入口 $available/$total"
+            WeaveLanguage.FRENCH -> "Points d’entrée débloqués $available/$total"
+            WeaveLanguage.GERMAN -> "Freischaltbare Einstiege $available/$total"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
     translationRegex("^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$").matchEntire(text)?.let { match ->
         val count = match.groupValues[1]
         return when (language) {
@@ -1196,6 +1251,101 @@ private fun supplementalUiTranslations(language: WeaveLanguage): Map<String, Str
     SUPPLEMENTAL_TRANSLATIONS.mapValues { (_, value) -> value.resolve(language) }
 
 private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
+    "节点减少超过一半，已阻止覆盖并保留原订阅" to SupplementalTranslation("More than half the nodes disappeared. Replacement blocked; the existing subscription is retained.", "節點減少超過一半，已阻止覆蓋並保留原訂閱", "ノードが半分以上減ったため、上書きを中止し元の購読を保持しました。", "Plus de la moitié des nœuds ont disparu. Remplacement bloqué, abonnement existant conservé.", "Mehr als die Hälfte der Knoten fehlt. Ersetzen blockiert, bestehendes Abonnement bleibt erhalten."),
+    "成功" to SupplementalTranslation("Succeeded", "成功", "成功", "Réussites", "Erfolgreich"),
+    "抖动" to SupplementalTranslation("Jitter", "抖動", "ジッター", "Gigue", "Jitter"),
+    "导入计数" to SupplementalTranslation("Import counts", "匯入計數", "インポート件数", "Compteurs d’import", "Importzahlen"),
+    "主文件" to SupplementalTranslation("Main file", "主檔案", "メインファイル", "Fichier principal", "Hauptdatei"),
+    "集合节点" to SupplementalTranslation("Provider nodes", "集合節點", "プロバイダーノード", "Nœuds des fournisseurs", "Provider-Knoten"),
+    "最终导入" to SupplementalTranslation("Imported", "最終匯入", "インポート済み", "Importés", "Importiert"),
+    "订阅压缩格式不受支持" to SupplementalTranslation("Unsupported subscription compression", "訂閱壓縮格式不受支援", "未対応の購読圧縮形式", "Compression de l’abonnement non prise en charge", "Nicht unterstützte Abonnement-Komprimierung"),
+    "订阅规范化前后节点不一致，已停止保存" to SupplementalTranslation("Node consistency check failed; nothing was saved", "訂閱正規化前後節點不一致，已停止儲存", "ノード整合性チェックに失敗したため保存しませんでした", "Échec du contrôle des nœuds ; aucune sauvegarde", "Knotenkonsistenzprüfung fehlgeschlagen; nichts gespeichert"),
+    "探测失败率" to SupplementalTranslation("Probe failure", "探測失敗率", "プローブ失敗率", "Échecs de sonde", "Probe-Fehlerrate"),
+    "HTTP 探测结果，不等同于 ICMP/UDP 丢包率；少量样本仅供参考。" to SupplementalTranslation("HTTP probe results, not ICMP/UDP packet loss; small samples are indicative only.", "HTTP 探測結果，不等同於 ICMP/UDP 丟包率；少量樣本僅供參考。", "HTTP プローブ結果であり、ICMP/UDP パケット損失率ではありません。少数のサンプルは参考値です。", "Résultats HTTP, pas une mesure de perte ICMP/UDP ; petit échantillon indicatif.", "HTTP-Proben, kein ICMP/UDP-Paketverlust; kleine Stichproben sind nur Anhaltspunkte."),
+    "素纸" to SupplementalTranslation("Plain paper", "素紙", "プレーンペーパー", "Papier sobre", "Schlichtes Papier"),
+    "黑白留白、平整卡片，无玻璃高光与投影" to SupplementalTranslation("Black and white, flat cards, no glass highlights or shadows", "黑白留白、平整卡片，無玻璃高光與投影", "白黒の余白とフラットなカード。ガラスの光沢や影なし", "Noir et blanc, cartes plates, sans reflets ni ombres", "Schwarzweiß, flache Karten, ohne Glasglanz oder Schatten"),
+    "重新检测客户端" to SupplementalTranslation("Rescan clients", "重新偵測用戶端", "クライアントを再検出", "Rechercher à nouveau", "Clients erneut suchen"),
+    "未检测到可见客户端，仍可直接导入文件、链接或二维码。" to SupplementalTranslation("No visible client found. You can still import a file, link or QR code.", "未偵測到可見用戶端，仍可直接匯入檔案、連結或 QR Code。", "クライアントが見つかりません。ファイル・リンク・QR コードから引き続きインポートできます。", "Aucun client visible trouvé. Vous pouvez importer un fichier, un lien ou un QR code.", "Kein sichtbarer Client gefunden. Dateien, Links und QR-Codes können trotzdem importiert werden."),
+    "识别依据为应用包名或名称，不代表安全认证；其他设备的兼容配置也可导入。" to SupplementalTranslation("Detection uses package IDs or names, not security certification. Compatible exports from other devices also work.", "識別依據為應用程式套件名稱或名稱，不代表安全認證；其他裝置的相容設定也可匯入。", "パッケージ ID または名前による検出で、安全性の認証ではありません。他の端末の対応設定もインポート可能です。", "Détection par identifiant ou nom, sans certification de sécurité. Les exports compatibles d’autres appareils sont acceptés.", "Erkennung anhand von Paket-ID oder Name, keine Sicherheitszertifizierung. Kompatible Exporte anderer Geräte sind ebenfalls möglich."),
+    "支持 CMFA、Clash、Karing、FlClash、Clash Mi、Hiddify、v2rayNG、NekoBox、SagerNet 与 sing-box 的兼容订阅导出。" to SupplementalTranslation("Compatible subscription exports: CMFA, Clash, Karing, FlClash, Clash Mi, Hiddify, v2rayNG, NekoBox, SagerNet and sing-box.", "支援 CMFA、Clash、Karing、FlClash、Clash Mi、Hiddify、v2rayNG、NekoBox、SagerNet 與 sing-box 的相容訂閱匯出。", "対応する購読エクスポート：CMFA、Clash、Karing、FlClash、Clash Mi、Hiddify、v2rayNG、NekoBox、SagerNet、sing-box。", "Exports compatibles : CMFA, Clash, Karing, FlClash, Clash Mi, Hiddify, v2rayNG, NekoBox, SagerNet et sing-box.", "Kompatible Abonnement-Exporte: CMFA, Clash, Karing, FlClash, Clash Mi, Hiddify, v2rayNG, NekoBox, SagerNet und sing-box."),
+    "节点缺少名称或协议类型" to SupplementalTranslation("Node name or protocol type is missing", "節點缺少名稱或協定類型", "ノード名またはプロトコルがありません", "Nom ou protocole du nœud manquant", "Knotenname oder Protokolltyp fehlt"),
+    "只分享勾选的订阅，未勾选的不会包含在二维码或链接中。" to SupplementalTranslation("Only selected subscriptions are shared. Unchecked subscriptions are excluded from the QR code and link.", "只分享勾選的訂閱，未勾選的不會包含在 QR Code 或連結中。", "選択した購読のみ共有します。未選択の購読は QR コードやリンクに含まれません。", "Seuls les abonnements cochés sont partagés. Les autres sont exclus du QR code et du lien.", "Nur ausgewählte Abonnements werden geteilt. Nicht ausgewählte sind im QR-Code und Link nicht enthalten."),
+    "全选" to SupplementalTranslation("Select all", "全選", "すべて選択", "Tout sélectionner", "Alle auswählen"),
+    "全不选" to SupplementalTranslation("Select none", "全不選", "すべて解除", "Tout désélectionner", "Auswahl aufheben"),
+    "本次分享的订阅" to SupplementalTranslation("Subscriptions in this share", "本次分享的訂閱", "今回共有する購読", "Abonnements partagés", "Abonnements in dieser Freigabe"),
+    "修改分享范围" to SupplementalTranslation("Change selection", "修改分享範圍", "共有対象を変更", "Modifier la sélection", "Auswahl ändern"),
+    "请先选择要分享的订阅" to SupplementalTranslation("Select subscriptions to share first", "請先選擇要分享的訂閱", "共有する購読を選択してください", "Sélectionnez les abonnements à partager", "Zuerst Abonnements zum Teilen auswählen"),
+    "所选订阅已变化，请重新选择" to SupplementalTranslation("Selected subscriptions changed. Select them again.", "所選訂閱已變化，請重新選擇", "選択した購読が変更されました。選び直してください。", "Les abonnements sélectionnés ont changé. Sélectionnez-les à nouveau.", "Die ausgewählten Abonnements haben sich geändert. Bitte erneut auswählen."),
+    "系统 VPN 设置" to SupplementalTranslation("System VPN settings", "系統 VPN 設定", "システム VPN 設定", "Paramètres VPN du système", "VPN-Systemeinstellungen"),
+    "取消收藏" to SupplementalTranslation("Remove favorite", "取消收藏", "お気に入りを解除", "Retirer des favoris", "Favorit entfernen"),
+    "收藏节点" to SupplementalTranslation("Favorite node", "收藏節點", "ノードをお気に入りに追加", "Ajouter aux favoris", "Knoten als Favorit markieren"),
+    "搜索节点" to SupplementalTranslation("Search nodes", "搜尋節點", "ノードを検索", "Rechercher des nœuds", "Knoten suchen"),
+    "显示全部节点" to SupplementalTranslation("Show all nodes", "顯示全部節點", "すべてのノード", "Tous les nœuds", "Alle Knoten anzeigen"),
+    "只看收藏" to SupplementalTranslation("Favorites only", "只看收藏", "お気に入りのみ", "Favoris uniquement", "Nur Favoriten"),
+    "检测时间" to SupplementalTranslation("Measured at", "檢測時間", "測定日時", "Date de mesure", "Messzeitpunkt"),
+    "正在载入本地订阅" to SupplementalTranslation("Loading local subscriptions", "正在載入本機訂閱", "ローカル購読を読み込み中", "Chargement des abonnements locaux", "Lokale Abonnements werden geladen"),
+    "订阅读取失败，请重新打开应用" to SupplementalTranslation("Could not read subscriptions. Reopen the app.", "訂閱讀取失敗，請重新開啟應用", "購読の読み込みに失敗しました。アプリを開き直してください。", "Lecture des abonnements impossible. Rouvrez l’application.", "Abonnements nicht lesbar. App erneut öffnen."),
+    "系统已确认始终开启 VPN 和阻止无 VPN 连接" to SupplementalTranslation("Android confirms always-on VPN with blocking of non-VPN connections.", "系統已確認永遠開啟 VPN 並阻止無 VPN 連線", "システムが常時接続 VPN と VPN 外接続の遮断を確認しました。", "Android confirme le VPN permanent et le blocage hors VPN.", "Android bestätigt Always-on-VPN und die Sperre von Verbindungen ohne VPN."),
+    "系统断网保护尚未开启；请在系统 VPN 设置中开启" to SupplementalTranslation("System kill switch is off. Enable it in VPN settings.", "系統斷網保護尚未開啟；請在 VPN 設定中開啟", "システムのキルスイッチは無効です。VPN 設定で有効にしてください。", "Le coupe-circuit système est désactivé. Activez-le dans les paramètres VPN.", "System-Kill-Switch ist aus. In den VPN-Einstellungen aktivieren."),
+    "连接后可读取系统断网保护状态；旧版系统需在 VPN 设置中确认" to SupplementalTranslation("Connect to read system protection status; older Android versions require checking VPN settings.", "連線後可讀取系統斷網保護狀態；舊版系統需在 VPN 設定中確認", "接続後に保護状態を取得できます。古い Android では VPN 設定で確認してください。", "Connectez-vous pour lire la protection système ; vérifiez les paramètres VPN sur les anciennes versions.", "Nach dem Verbinden lässt sich der Schutzstatus lesen; ältere Android-Versionen bitte in den VPN-Einstellungen prüfen."),
+    "下载测速（最多 1 MiB）" to SupplementalTranslation("Download test (up to 1 MiB)", "下載測速（最多 1 MiB）", "ダウンロード測定（最大 1 MiB）", "Test de téléchargement (1 MiB max.)", "Download-Test (max. 1 MiB)"),
+    "测量当前出口的短时下载吞吐，包含连接耗时，不代表线路峰值。" to SupplementalTranslation("Measures short download throughput via the current exit, including connection time; not peak line speed.", "測量目前出口的短時下載吞吐，包含連線耗時，不代表線路峰值。", "現在の出口で短時間のダウンロードを測定します。接続時間を含み、回線の最高速度ではありません。", "Mesure un court téléchargement via la sortie actuelle, connexion incluse ; ce n’est pas le débit maximal.", "Misst einen kurzen Download über den aktuellen Ausgang inklusive Verbindungsaufbau, nicht die maximale Bandbreite."),
+    "下载测速失败" to SupplementalTranslation("Download test failed", "下載測速失敗", "ダウンロード測定に失敗", "Échec du test de téléchargement", "Download-Test fehlgeschlagen"),
+    "应用连接记录" to SupplementalTranslation("App connection observations", "應用連線紀錄", "アプリの接続記録", "Connexions des applications", "App-Verbindungsbeobachtungen"),
+    "仅记录应用归属、协议和端口，不保存访问地址；不代表内核最终命中规则。" to SupplementalTranslation("Records only app ownership, protocol and port, not addresses. This does not prove the final core rule match.", "僅記錄應用歸屬、協定及連接埠，不儲存位址；不代表核心最終命中規則。", "アプリの帰属、プロトコル、ポートのみ記録し、アドレスは保存しません。コアの最終ルール一致を示すものではありません。", "Enregistre l’application, le protocole et le port, pas les adresses. Cela ne prouve pas la règle finale du moteur.", "Erfasst nur App-Zuordnung, Protokoll und Port, keine Adressen. Belegt nicht die endgültige Regel des Kerns."),
+    "开始记录" to SupplementalTranslation("Start recording", "開始記錄", "記録開始", "Démarrer", "Aufzeichnung starten"),
+    "停止记录" to SupplementalTranslation("Stop recording", "停止記錄", "記録停止", "Arrêter", "Aufzeichnung stoppen"),
+    "刷新记录" to SupplementalTranslation("Refresh records", "重新整理紀錄", "記録を更新", "Actualiser", "Aufzeichnungen aktualisieren"),
+    "清除记录" to SupplementalTranslation("Clear records", "清除紀錄", "記録を消去", "Effacer", "Aufzeichnungen löschen"),
+    "记录已开启；访问目标应用后返回并刷新" to SupplementalTranslation("Recording is on. Use the target app, then return and refresh.", "記錄已開啟；使用目標應用後返回並重新整理", "記録中です。対象アプリを使用してから戻り、更新してください。", "Enregistrement actif. Utilisez l’application cible, puis revenez et actualisez.", "Aufzeichnung aktiv. Ziel-App nutzen, dann zurückkehren und aktualisieren."),
+    "规则优先级" to SupplementalTranslation("Rule priority", "規則優先順序", "ルールの優先順位", "Priorité des règles", "Regelpriorität"),
+    "安全拦截" to SupplementalTranslation("Security block", "安全攔截", "セキュリティ遮断", "Blocage de sécurité", "Sicherheitssperre"),
+    "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认" to SupplementalTranslation("Security blocks > app rules > offline packs > local domain/IP rules > mainland direct > default exit. Geo rules and final matches require core confirmation.", "安全攔截 > 應用規則 > 離線規則包 > 本機網域/IP 規則 > 國內直連 > 預設出口；地域規則及最終命中需由核心確認", "安全遮断 > アプリルール > オフラインルール > ローカルドメイン/IP > 中国本土への直接接続 > 既定の出口。地域ルールと最終一致はコアによる確認が必要です。", "Sécurité > applications > règles hors ligne > domaines/IP locaux > accès direct en Chine > sortie par défaut. Les règles géographiques et finales nécessitent la confirmation du moteur.", "Sperren > App-Regeln > Offline-Pakete > lokale Domain/IP-Regeln > Festland-Direktzugriff > Standardausgang. Geo-Regeln und endgültige Treffer müssen vom Kern bestätigt werden."),
+    "大陆直连 · 海外代理" to SupplementalTranslation("Mainland direct · overseas proxy", "大陸直連 · 海外代理", "中国本土は直接・海外はプロキシ", "Chine en direct · étranger via proxy", "Festland direkt · Ausland über Proxy"),
+    "全部代理" to SupplementalTranslation("Proxy all traffic", "全部代理", "すべてプロキシ", "Tout via proxy", "Alles über Proxy"),
+    "订阅节点结构无法读取；原订阅已保留，请更新或重新导入这份订阅" to SupplementalTranslation("Cannot read the subscription node structure. The original is retained; update or reimport this subscription.", "無法讀取訂閱節點結構；原訂閱已保留，請更新或重新匯入此訂閱", "購読のノード構造を読み取れません。元の購読は保持されています。更新または再インポートしてください。", "Structure des nœuds illisible. L’abonnement original est conservé ; mettez-le à jour ou réimportez-le.", "Knotenstruktur nicht lesbar. Das Original bleibt erhalten; Abonnement aktualisieren oder erneut importieren."),
+    "对准二维码即可识别；轻点画面可对焦，不会拍照或保存图片" to SupplementalTranslation("Point at a QR code; tap to focus. No photos are taken or saved.", "對準 QR Code 即可辨識；輕點畫面對焦，不會拍照或儲存圖片", "QR コードに向けてください。タップでピント調整。写真は撮影・保存しません。", "Visez le QR code ; touchez pour faire la mise au point. Aucune photo n’est prise ni enregistrée.", "Auf den QR-Code richten; zum Fokussieren tippen. Es werden keine Fotos aufgenommen oder gespeichert."),
+    "无法开启相机，请检查权限或使用识别图片" to SupplementalTranslation("Unable to open the camera. Check permissions or scan an image instead.", "無法開啟相機，請檢查權限或使用辨識圖片", "カメラを開けません。権限を確認するか画像を読み取ってください。", "Impossible d’ouvrir la caméra. Vérifiez les autorisations ou scannez une image.", "Kamera lässt sich nicht öffnen. Berechtigungen prüfen oder ein Bild scannen."),
+    "开启补光" to SupplementalTranslation("Turn on light", "開啟補光", "ライトをオン", "Allumer la lumière", "Licht einschalten"),
+    "关闭补光" to SupplementalTranslation("Turn off light", "關閉補光", "ライトをオフ", "Éteindre la lumière", "Licht ausschalten"),
+    "打开所选客户端" to SupplementalTranslation("Open selected client", "開啟所選用戶端", "選択したクライアントを開く", "Ouvrir le client sélectionné", "Ausgewählten Client öffnen"),
+    "粘贴链接或扫描二维码" to SupplementalTranslation("Paste a link or scan a QR code", "貼上連結或掃描 QR Code", "リンクを貼り付けるか QR コードをスキャン", "Coller un lien ou scanner un QR code", "Link einfügen oder QR-Code scannen"),
+    "导入其他客户端导出的订阅文件、链接或二维码" to SupplementalTranslation("Import a subscription file, link or QR code exported by another client", "匯入其他用戶端匯出的訂閱檔案、連結或 QR Code", "他のクライアントから書き出した購読ファイル・リンク・QR コードをインポート", "Importer un fichier, lien ou QR code d’abonnement exporté par un autre client", "Von einem anderen Client exportierte Abonnementdateien, Links oder QR-Codes importieren"),
+    "网络与隐私检测" to SupplementalTranslation("Network & privacy checks", "網路與隱私檢測", "ネットワークとプライバシーの検査", "Contrôles réseau et confidentialité", "Netzwerk- und Datenschutzprüfungen"),
+    "本地证据 + 当前出口 + 浏览器表面" to SupplementalTranslation("Local evidence + current egress + browser surface", "本機證據 + 目前出口 + 瀏覽器表面", "ローカル証拠 + 現在の出口 + ブラウザー表面", "Preuves locales + sortie actuelle + surface du navigateur", "Lokale Nachweise + aktueller Ausgang + Browseroberfläche"),
+    "IP 出口、DNS、WebRTC 与浏览器身份表面" to SupplementalTranslation("IP egress, DNS, WebRTC and browser identity surface", "IP 出口、DNS、WebRTC 與瀏覽器身分表面", "IP 出口、DNS、WebRTC、ブラウザー識別情報の表面", "Sortie IP, DNS, WebRTC et surface d’identité du navigateur", "IP-Ausgang, DNS, WebRTC und Browser-Identitätsoberfläche"),
+    "运行完整检测" to SupplementalTranslation("Run full check", "執行完整檢測", "完全検査を実行", "Lancer le contrôle complet", "Vollständige Prüfung starten"),
+    "仅重新检测浏览器表面" to SupplementalTranslation("Recheck browser surface only", "僅重新檢測瀏覽器表面", "ブラウザー表面のみ再検査", "Revérifier uniquement la surface du navigateur", "Nur Browseroberfläche erneut prüfen"),
+    "本地配置证据" to SupplementalTranslation("Local configuration evidence", "本機設定證據", "ローカル設定の証拠", "Preuves de configuration locale", "Nachweise der lokalen Konfiguration"),
+    "IP 出口质量" to SupplementalTranslation("IP egress quality", "IP 出口品質", "IP 出口品質", "Qualité de la sortie IP", "IP-Ausgangsqualität"),
+    "常用站点连通性" to SupplementalTranslation("Common site reachability", "常用網站連通性", "よく使うサイトの接続性", "Accessibilité des sites courants", "Erreichbarkeit gängiger Websites"),
+    "常用站点与解锁入口" to SupplementalTranslation("Common sites and unlock entry points", "常用網站與解鎖入口", "よく使うサイトと解除入口", "Sites courants et points d’entrée de déblocage", "Gängige Websites und Freischalt-Einstiege"),
+    "通过当前 VPN 出口发送轻量 HTTPS 探测，不下载网页内容；Netflix、Facebook、Disney+ 是入口响应证据，不等于账号或内容已解锁。" to SupplementalTranslation("Sends lightweight HTTPS probes through the current VPN exit without downloading page content; Netflix, Facebook and Disney+ are entry-response evidence, not proof that an account or content is unlocked.", "透過目前 VPN 出口傳送輕量 HTTPS 探測，不下載網頁內容；Netflix、Facebook、Disney+ 是入口回應證據，不等於帳號或內容已解鎖。", "現在の VPN 出口から軽量な HTTPS 探査を送信し、ページ本文はダウンロードしません。Netflix、Facebook、Disney+ は入口の応答を示すだけで、アカウントやコンテンツの利用可能性を保証しません。", "Envoie de légères sondes HTTPS via la sortie VPN sans télécharger le contenu ; Netflix, Facebook et Disney+ indiquent seulement une réponse d’entrée, pas le déblocage d’un compte ou d’un contenu.", "Sendet leichte HTTPS-Prüfungen über den aktuellen VPN-Ausgang, ohne Seiteninhalte herunterzuladen; Netflix, Facebook und Disney+ belegen nur eine Antwort des Einstiegs, nicht die Freischaltung eines Kontos oder Inhalts."),
+    "正在测试常用站点…" to SupplementalTranslation("Testing common sites…", "正在測試常用網站…", "よく使うサイトを検査中…", "Test des sites courants…", "Gängige Websites werden geprüft…"),
+    "运行完整检测后测试 X、TikTok、YouTube、Google、GPT、Claude、Netflix、Facebook 和 Disney+ 的当前出口连通性。" to SupplementalTranslation("Run the full check to test reachability from the current exit to X, TikTok, YouTube, Google, GPT, Claude, Netflix, Facebook and Disney+.", "執行完整檢測後測試 X、TikTok、YouTube、Google、GPT、Claude、Netflix、Facebook 與 Disney+ 的目前出口連通性。", "完全検査を実行すると、X、TikTok、YouTube、Google、GPT、Claude、Netflix、Facebook、Disney+ への現在の出口からの接続性を確認します。", "Lancez le contrôle complet pour tester l’accessibilité de X, TikTok, YouTube, Google, GPT, Claude, Netflix, Facebook et Disney+ depuis la sortie actuelle.", "Starten Sie die vollständige Prüfung, um die Erreichbarkeit von X, TikTok, YouTube, Google, GPT, Claude, Netflix, Facebook und Disney+ über den aktuellen Ausgang zu testen."),
+    "连接 VPN 后才能测试常用站点" to SupplementalTranslation("Connect the VPN before testing common sites", "連線 VPN 後才能測試常用網站", "よく使うサイトを検査するには VPN に接続してください", "Connectez le VPN avant de tester les sites courants", "Verbinde das VPN, bevor du gängige Websites testest"),
+    "常用站点检测失败" to SupplementalTranslation("Common site test failed", "常用網站檢測失敗", "よく使うサイトの検査に失敗しました", "Échec du test des sites courants", "Test gängiger Websites fehlgeschlagen"),
+    "域名解析失败" to SupplementalTranslation("Domain resolution failed", "網域解析失敗", "ドメイン解決に失敗しました", "Échec de la résolution du domaine", "Domänenauflösung fehlgeschlagen"),
+    "暂时不可达" to SupplementalTranslation("Temporarily unreachable", "暫時無法到達", "一時的に到達できません", "Temporairement inaccessible", "Vorübergehend nicht erreichbar"),
+    "可达" to SupplementalTranslation("Reachable", "可達", "到達可能", "Accessible", "Erreichbar"),
+    "入口可用" to SupplementalTranslation("Entry reachable", "入口可用", "入口に到達可能", "Point d’entrée accessible", "Einstieg erreichbar"),
+    "受限" to SupplementalTranslation("Restricted", "受限", "制限あり", "Restreint", "Eingeschränkt"),
+    "可能受限" to SupplementalTranslation("Possibly restricted", "可能受限", "制限の可能性", "Possiblement restreint", "Möglicherweise eingeschränkt"),
+    "未响应" to SupplementalTranslation("No response", "未回應", "応答なし", "Aucune réponse", "Keine Antwort"),
+    "取消检测" to SupplementalTranslation("Cancel test", "取消檢測", "検査をキャンセル", "Annuler le test", "Prüfung abbrechen"),
+    "站点" to SupplementalTranslation("Sites", "網站", "サイト", "Sites", "Websites"),
+    "浏览器隐私表面" to SupplementalTranslation("Browser privacy surface", "瀏覽器隱私表面", "ブラウザーのプライバシー表面", "Surface de confidentialité du navigateur", "Datenschutzoberfläche des Browsers"),
+    "外部复核入口" to SupplementalTranslation("External verification", "外部複核入口", "外部検証", "Vérification externe", "Externe Überprüfung"),
+    "WebRTC / IPv6 测试" to SupplementalTranslation("WebRTC / IPv6 test", "WebRTC / IPv6 測試", "WebRTC / IPv6 テスト", "Test WebRTC / IPv6", "WebRTC-/IPv6-Test"),
+    "证据状态" to SupplementalTranslation("Evidence status", "證據狀態", "証拠の状態", "État des preuves", "Nachweisstatus"),
+    "IP 出口" to SupplementalTranslation("IP egress", "IP 出口", "IP 出口", "Sortie IP", "IP-Ausgang"),
+    "中位" to SupplementalTranslation("median", "中位數", "中央値", "médiane", "Median"),
+    "浏览器" to SupplementalTranslation("Browser", "瀏覽器", "ブラウザー", "Navigateur", "Browser"),
+    "本地配置未发现注意项；这不是对外部网络的绝对安全承诺" to SupplementalTranslation("No local configuration warnings were found; this is not an absolute safety guarantee for the external network.", "本機設定未發現注意項；這不是對外部網路的絕對安全承諾", "ローカル設定に注意項目はありません。外部ネットワークの絶対的な安全を保証するものではありません", "Aucun avertissement de configuration locale ; cela ne garantit pas une sécurité absolue du réseau externe", "Keine Warnungen in der lokalen Konfiguration; dies ist keine absolute Sicherheitsgarantie für das externe Netzwerk"),
+    "点击“运行完整检测”后读取当前代理出口；未连接 VPN 时不会伪造出口结果。" to SupplementalTranslation("Run the full check to read the current proxy egress; no egress result is fabricated while VPN is disconnected.", "點擊「執行完整檢測」後讀取目前代理出口；未連線 VPN 時不會偽造出口結果。", "「完全検査を実行」を押すと現在のプロキシ出口を読み取ります。VPN 未接続時に出口結果を偽装することはありません", "Lancez le contrôle complet pour lire la sortie proxy actuelle ; aucun résultat n’est inventé lorsque le VPN est déconnecté", "Starten Sie die vollständige Prüfung, um den aktuellen Proxy-Ausgang zu lesen; bei getrenntem VPN wird kein Ausgangsergebnis erfunden."),
+    "应用内结果只代表本机或当前 HTTPS 出口证据。DNS、IPv6 和 WebRTC 泄漏仍应在真实浏览器中用独立测试站复核。" to SupplementalTranslation("In-app results represent only local or current HTTPS egress evidence. Verify DNS, IPv6 and WebRTC leaks in a real browser with independent test sites.", "應用內結果只代表本機或目前 HTTPS 出口證據。DNS、IPv6 與 WebRTC 洩漏仍應在真實瀏覽器中以獨立測試站複核。", "アプリ内の結果は端末または現在の HTTPS 出口の証拠だけを示します。DNS、IPv6、WebRTC のリークは実ブラウザーの独立したテストサイトで確認してください", "Les résultats de l’application ne représentent que les preuves locales ou de la sortie HTTPS actuelle. Vérifiez les fuites DNS, IPv6 et WebRTC dans un vrai navigateur avec des sites indépendants.", "In-App-Ergebnisse zeigen nur lokale Nachweise oder Nachweise des aktuellen HTTPS-Ausgangs. Prüfen Sie DNS-, IPv6- und WebRTC-Leaks in einem echten Browser mit unabhängigen Testseiten."),
+    "结果只在本机内存中展示，不上传检测报告；第三方地区、ASN、代理标签和浏览器指纹字段都可能存在误判。" to SupplementalTranslation("Results are shown only in local memory and reports are not uploaded; third-party region, ASN, proxy labels and browser fingerprint fields may be inaccurate.", "結果只在本機記憶體中顯示，不會上傳檢測報告；第三方地區、ASN、代理標籤與瀏覽器指紋欄位可能有誤判。", "結果は端末のメモリ内だけに表示され、レポートはアップロードされません。第三者の地域、ASN、プロキシラベル、ブラウザー指紋項目には誤判があり得ます", "Les résultats restent en mémoire locale et les rapports ne sont pas envoyés ; les régions, ASN, étiquettes proxy et champs d’empreinte du navigateur tiers peuvent être inexacts.", "Ergebnisse werden nur im lokalen Speicher angezeigt und Berichte nicht hochgeladen; Angaben Dritter zu Region, ASN, Proxy-Kennzeichnungen und Browser-Fingerabdruck können falsch sein."),
+    "仅展示前 8 个候选；完整结果只在本机内存中使用。" to SupplementalTranslation("Only the first 8 candidates are shown; the full result is used only in local memory.", "僅顯示前 8 個候選；完整結果只在本機記憶體中使用。", "最初の 8 件だけ表示します。完全な結果は端末のメモリ内だけで使用されます", "Seuls les 8 premiers candidats sont affichés ; le résultat complet reste en mémoire locale.", "Nur die ersten 8 Kandidaten werden angezeigt; das vollständige Ergebnis wird nur im lokalen Speicher verwendet."),
     "使用模式" to SupplementalTranslation("Usage mode", "使用模式", "使用モード", "Mode d’utilisation", "Nutzungsmodus"),
     "新手模式" to SupplementalTranslation("Beginner mode", "新手模式", "初心者モード", "Mode débutant", "Einsteigermodus"),
     "标准模式" to SupplementalTranslation("Standard mode", "標準模式", "標準モード", "Mode standard", "Standardmodus"),
@@ -1310,6 +1460,8 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "正在收集本机浏览器表面与 ICE 候选…" to SupplementalTranslation("Collecting the local browser surface and ICE candidates…", "正在收集本機瀏覽器表面與 ICE 候選…", "ブラウザー表面と ICE 候補を収集中…", "Collecte de la surface du navigateur et des candidats ICE…", "Lokale Browser-Oberfläche und ICE-Kandidaten werden erfasst…"),
     "浏览器检测结果无法解析" to SupplementalTranslation("The browser test result could not be parsed", "無法解析瀏覽器檢測結果", "ブラウザー検査結果を解析できません", "Impossible d’analyser le résultat du test navigateur", "Browser-Testergebnis konnte nicht ausgewertet werden"),
     "浏览器检测超时，请重新检测" to SupplementalTranslation("The browser test timed out; run it again", "瀏覽器檢測逾時，請重新檢測", "ブラウザー検査がタイムアウトしました。再度実行してください", "Le test du navigateur a expiré ; relancez-le", "Der Browser-Test hat das Zeitlimit überschritten; bitte erneut ausführen"),
+    "浏览器检测已中断，请重新检测" to SupplementalTranslation("The browser test was interrupted; run it again", "瀏覽器檢測已中斷，請重新檢測", "ブラウザー検査が中断されました。再度実行してください", "Le test du navigateur a été interrompu ; relancez-le", "Der Browser-Test wurde unterbrochen; bitte erneut ausführen"),
+    "浏览器检测无法调度，请重新检测" to SupplementalTranslation("The browser test could not be scheduled; run it again", "瀏覽器檢測無法排程，請重新檢測", "ブラウザー検査を開始できません。再度実行してください", "Impossible de planifier le test du navigateur ; relancez-le", "Der Browser-Test konnte nicht eingeplant werden; bitte erneut ausführen"),
     "重新检测" to SupplementalTranslation("Run again", "重新檢測", "再検査", "Relancer le test", "Erneut testen"),
     "WebRTC 候选" to SupplementalTranslation("WebRTC candidates", "WebRTC 候選", "WebRTC 候補", "Candidats WebRTC", "WebRTC-Kandidaten"),
     "当前 WebView 不支持 RTCPeerConnection，结果未知。" to SupplementalTranslation(
@@ -2075,6 +2227,34 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "二维码订阅地址必须使用 HTTPS" to SupplementalTranslation("The subscription URL in the QR code must use HTTPS"),
     "代理内核无法加载，请重新安装应用" to SupplementalTranslation("The proxy core could not load; reinstall the app"),
     "代理配置或内核启动失败，已保留上一份安全状态" to SupplementalTranslation("Proxy configuration or core startup failed; the last safe state was retained"),
+    "代理启动失败，VPN 未连接；请查看恢复中心的最近失败记录" to SupplementalTranslation(
+        "Proxy startup failed. VPN is not connected; check the latest failure in Recovery Center",
+        "代理啟動失敗，VPN 未連線；請查看復原中心的最近失敗記錄",
+        "プロキシを起動できませんでした。VPN は未接続です。復旧センターの最新のエラーを確認してください",
+        "Échec du démarrage du proxy. Le VPN n’est pas connecté ; consultez le dernier échec dans le centre de récupération",
+        "Proxy-Start fehlgeschlagen. VPN ist nicht verbunden; prüfen Sie den letzten Fehler im Wiederherstellungszentrum",
+    ),
+    "DNS 配置未通过校验，请检查自定义 DNS 地址或重新选择预设" to SupplementalTranslation(
+        "DNS configuration is invalid; check the custom DNS address or select a preset",
+        "DNS 設定未通過驗證，請檢查自訂 DNS 位址或重新選擇預設",
+        "DNS 設定が無効です。カスタム DNS アドレスを確認するか、プリセットを選択してください",
+        "Configuration DNS invalide ; vérifiez l’adresse DNS personnalisée ou sélectionnez un préréglage",
+        "Ungültige DNS-Konfiguration; prüfen Sie die eigene DNS-Adresse oder wählen Sie eine Voreinstellung",
+    ),
+    "系统 VPN 路由尚未就绪，请关闭其他 VPN 后重新连接" to SupplementalTranslation(
+        "System VPN routing is not ready; close other VPNs and reconnect",
+        "系統 VPN 路由尚未就緒，請關閉其他 VPN 後重新連線",
+        "システムの VPN ルートが準備できていません。他の VPN を終了して再接続してください",
+        "Le routage VPN du système n’est pas prêt ; fermez les autres VPN puis reconnectez-vous",
+        "Die VPN-Routen des Systems sind noch nicht bereit; schließen Sie andere VPNs und verbinden Sie sich erneut",
+    ),
+    "订阅节点参数未通过内核校验，请更新订阅或检查协议、端口及认证字段；原订阅未删除" to SupplementalTranslation(
+        "Node parameters failed core validation; update the subscription or check protocol, port and authentication fields. The original subscription was not deleted",
+        "訂閱節點參數未通過核心驗證，請更新訂閱或檢查協定、連接埠及驗證欄位；原訂閱未刪除",
+        "ノードの設定がコア検証に失敗しました。サブスクリプションを更新するか、プロトコル、ポート、認証項目を確認してください。元の設定は削除されていません",
+        "Les paramètres du nœud ont échoué à la validation ; actualisez l’abonnement ou vérifiez le protocole, le port et l’authentification. L’abonnement original est conservé",
+        "Knotenparameter haben die Kernprüfung nicht bestanden; aktualisieren Sie das Abonnement oder prüfen Sie Protokoll, Port und Authentifizierung. Das ursprüngliche Abonnement bleibt erhalten",
+    ),
     "传输 token 无效" to SupplementalTranslation("Invalid transfer token"),
     "传输中包含重复的同一订阅，已停止同步" to SupplementalTranslation("The transfer contains the same subscription more than once; sync stopped"),
     "传输中包含重复的订阅 ID，已停止同步" to SupplementalTranslation("The transfer contains duplicate subscription IDs; sync stopped"),
@@ -2144,6 +2324,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "系统拒绝建立 VPN TUN 接口" to SupplementalTranslation("The system refused to establish the VPN TUN interface"),
     "系统或其他 VPN 已接管连接；请关闭 Pixel VPN 或其他代理后重试" to SupplementalTranslation("The system or another VPN owns the connection; disable Pixel VPN or another proxy and retry"),
     "所选订阅已不存在，请重新选择出口" to SupplementalTranslation("The selected subscription no longer exists; choose an exit again"),
+    "订阅节点未成功载入，请重新选择出口或更新订阅" to SupplementalTranslation("Subscription nodes could not be loaded; choose another exit or refresh the subscription", "訂閱節點未成功載入，請重新選擇出口或更新訂閱", "購読のノードを読み込めません。出口を選び直すか、購読を更新してください", "Impossible de charger les nœuds ; choisissez une autre sortie ou actualisez l’abonnement", "Die Knoten konnten nicht geladen werden; bitte einen anderen Ausgang wählen oder das Abonnement aktualisieren"),
     "新配置已安全生效" to SupplementalTranslation("The new configuration is active safely"),
     "新配置与原配置均无法启动，VPN 已安全关闭" to SupplementalTranslation("Neither the new nor original configuration could start; the VPN was safely stopped"),
     "正在应用新规则" to SupplementalTranslation("Applying new rules"),

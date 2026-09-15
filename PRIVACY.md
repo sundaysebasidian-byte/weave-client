@@ -1,6 +1,6 @@
 # Weave privacy notice
 
-Last updated: 2026-08-20
+Last updated: 2026-09-14
 
 This notice describes the open-source preview builds in this repository. A
 distributor that changes Weave, adds analytics, or operates a hosted service
@@ -30,6 +30,11 @@ and removed when the VPN stops. Application routing rules, DNS preferences, and
 the VPN disclosure acknowledgement are stored locally and excluded from Android
 backup.
 
+Live QR scanning requests the camera only after the user chooses Scan. Camera frames are
+decoded on the device, are not photographed or saved, and are not uploaded. Analysis stops
+when the scanner closes or the app leaves the foreground. After a code is accepted, a
+subscription URL can be fetched by the normal user-initiated import workflow.
+
 To implement routing, the Android VPN process can access packet metadata, DNS
 requests, the local UID/package attribution of a connection, and the proxy rule
 that matched it. The preview build does not upload that information to a Weave
@@ -40,6 +45,9 @@ server.
 When used, Weave connects to parties outside this project:
 
 - subscription URLs imported by the user;
+- HTTPS node-provider URLs explicitly referenced by an imported subscription, fetched only
+  during import/update (at most 16 providers and 5 MiB combined); rule-provider URLs are not
+  fetched, and a failed child fetch leaves the previous encrypted subscription untouched;
 - proxy servers and destination services selected by the user's configuration;
 - the configured DoH or DoT resolver;
 - `www.gstatic.com/generate_204` during an on-demand Mihomo availability test;
@@ -48,6 +56,12 @@ When used, Weave connects to parties outside this project:
   `www.gstatic.com/generate_204`) only when the user taps “IP 质量检测”. These endpoints see the
   request's current proxy exit and may return IP, region, ASN and security-label metadata. Weave
   keeps the report in memory and does not send it to a Weave service;
+- common-site reachability endpoints (`x.com`, `www.tiktok.com`, `www.youtube.com`,
+  `www.google.com/generate_204`, `chatgpt.com` and `claude.ai`) only when the user runs the full
+  “网络与隐私检测” while the VPN is connected. Weave sends a small HTTPS `GET` with a byte-range,
+  records only status and round-trip time, and does not read or retain page content. A site can
+  still see the selected proxy exit, and a 401/403/429 means the service responded but may require
+  login, region access or rate-limit clearance;
 - Google's public STUN endpoint (`stun.l.google.com:19302`) for one WebRTC ICE probe only when the
   user opens the browser privacy lab and runs the test. The endpoint can see the request's network
   exit. ICE candidates and browser-surface fields remain in memory and are not uploaded by Weave;

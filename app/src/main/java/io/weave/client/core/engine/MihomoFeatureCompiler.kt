@@ -265,7 +265,11 @@ object MihomoFeatureCompiler {
         return linkedMapOf(
             (if (preferences.domesticDirect) "'geosite:cn,private'" else "'geosite:cn'") to
                 policyNameServers(domestic),
-            "'geosite:geolocation-!cn'" to policyNameServers(overseas),
+            // The APK deliberately ships MetaCubeX's lite GeoSite dataset. It has a
+            // stable `proxy` category, but does not include the full dataset's
+            // `geolocation-!cn` synthetic category. Referencing the latter makes Mihomo
+            // reject the whole config before TUN startup on a clean device.
+            "'geosite:proxy'" to policyNameServers(overseas),
         )
     }
 

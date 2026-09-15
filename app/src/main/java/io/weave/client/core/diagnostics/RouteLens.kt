@@ -11,6 +11,8 @@ import io.weave.client.domain.RoutingMode
 import io.weave.client.routing.LocalRouteRule
 import io.weave.client.routing.LocalRuleAction
 import io.weave.client.routing.LocalRuleMatcher
+import io.weave.client.routing.LocalRuleType
+import io.weave.client.core.engine.MihomoFeatureCompiler
 
 enum class LensState {
     VERIFIED,
@@ -58,13 +60,15 @@ object RouteLens {
         localRules: List<LocalRouteRule> = emptyList(),
     ): RouteLensResult {
         val rulesActive = mode == RoutingMode.RULE
+        val safetyRule = leadingMatch(query, preferences)
         val appRoute = routes.firstOrNull { rulesActive && it.packageName == query.packageName }
-        val localRule = appRoute?.let { null } ?: LocalRuleMatcher.firstMatch(
+        val localRule = if (appRoute != null || safetyRule != null) null else LocalRuleMatcher.firstMatch(
             host = query.domain,
             ip = query.ip,
             rules = localRules.takeIf { rulesActive }.orEmpty(),
         )
         val selected = when {
+            safetyRule != null -> RouteTarget(RouteKind.BLOCK, "阻止")
             mode == RoutingMode.DIRECT -> RouteTarget(RouteKind.DIRECT, "直连")
             appRoute != null -> appRoute.target
             localRule?.action == LocalRuleAction.DIRECT -> RouteTarget(RouteKind.DIRECT, "直连")
@@ -73,6 +77,7 @@ object RouteLens {
             else -> null
         }
         val matchedRule = when {
+            safetyRule != null -> "安全拦截 · $safetyRule"
             mode == RoutingMode.DIRECT -> "全局直连模式"
             appRoute != null -> "应用规则 · ${appRoute.appName}"
             localRule != null -> "本地规则 · ${localRule.type.label} ${localRule.value}"
@@ -97,10 +102,19 @@ object RouteLens {
             add(
                 RouteLensCheck(
                     title = "最终出口",
-                    state = if (selected == null) LensState.ATTENTION else LensState.VERIFIED,
+                    state = when {
+                        selected == null -> LensState.ATTENTION
+                        safetyRule == null && rulesActive && appRoute == null && localRule == null -> LensState.UNKNOWN
+                        else -> LensState.VERIFIED
+                    },
                     detail = target,
                 ),
             )
+            add(RouteLensCheck(
+                title = "规则优先级",
+                state = LensState.UNKNOWN,
+                detail = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
+            ))
             add(dnsCheck(preferences))
             add(udpCheck(query, preferences))
             add(
@@ -136,6 +150,28 @@ object RouteLens {
             checks = checks,
             localRule = localRule,
         )
+    }
+
+    private fun leadingMatch(query: RouteLensQuery, preferences: NetworkPreferences): String? {
+        val transportRule = Regex("AND,\\(\\(NETWORK,(TCP|UDP)\\),\\(DST-PORT,(\\d+)(?:-(\\d+))?\\)\\),REJECT")
+        return MihomoFeatureCompiler.leadingRules(preferences).firstOrNull { rule ->
+            val transport = transportRule.matchEntire(rule)
+            if (transport != null) {
+                val from = transport.groupValues[2].toInt()
+                val to = transport.groupValues[3].toIntOrNull() ?: from
+                query.protocol.equals(transport.groupValues[1], ignoreCase = true) && query.port in from..to
+            } else {
+                val parts = rule.split(',')
+                val type = when (parts.firstOrNull()) {
+                    "DOMAIN-SUFFIX" -> LocalRuleType.DOMAIN_SUFFIX
+                    "IP-CIDR" -> LocalRuleType.IP_CIDR
+                    "IP-CIDR6" -> LocalRuleType.IP_CIDR6
+                    else -> null
+                }
+                type != null && parts.size >= 3 && LocalRuleMatcher.firstMatch(query.domain, query.ip,
+                    listOf(LocalRouteRule(type = type, value = parts[1], action = LocalRuleAction.REJECT))) != null
+            }
+        }
     }
 
     private fun dnsCheck(preferences: NetworkPreferences): RouteLensCheck {

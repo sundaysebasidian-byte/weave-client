@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 enum class IpQualityState {
     VERIFIED,
@@ -27,6 +29,8 @@ data class IpQualityLatency(
     val latencyMs: Int?,
     val state: IpQualityState,
     val detail: String,
+    val attemptedSamples: Int = 1,
+    val successfulSamples: Int = if (latencyMs != null) 1 else 0,
 )
 
 data class IpQualityMetadata(
@@ -59,6 +63,11 @@ data class IpQualityReport(
     val successfulLatencyCount: Int
         get() = latency.count { it.latencyMs != null }
 
+    val latencyAttempts: Int get() = latency.sumOf { it.attemptedSamples }
+    val latencySuccesses: Int get() = latency.sumOf { it.successfulSamples }
+    val probeFailurePercent: Int?
+        get() = latencyAttempts.takeIf { it > 0 }?.let { (it - latencySuccesses) * 100 / it }
+
     val medianLatencyMs: Int?
         get() = latency.mapNotNull { it.latencyMs }.sorted().let { values ->
             values.getOrNull(values.size / 2)
@@ -88,7 +97,7 @@ class IpQualityProbe(
         ipv6Mode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
         now: Long = System.currentTimeMillis(),
     ): IpQualityReport = coroutineScope {
-        val startedAt = System.currentTimeMillis()
+        val startedAt = System.nanoTime()
         // Independent probes must not queue six full timeout windows. On a blocked or broken
         // path the old serial implementation looked frozen for up to 24 seconds.
         val resultJobs = listOf(
@@ -113,10 +122,10 @@ class IpQualityProbe(
         )
         val latencyJobs = listOf(
             async(Dispatchers.IO) {
-                probeLatency("Cloudflare 204", CLOUDFLARE_204_ENDPOINT)
+                probeLatencySeries("Cloudflare 204", CLOUDFLARE_204_ENDPOINT)
             },
             async(Dispatchers.IO) {
-                probeLatency("Google 204", GOOGLE_204_ENDPOINT)
+                probeLatencySeries("Google 204", GOOGLE_204_ENDPOINT)
             },
         )
         val results = resultJobs.awaitAll()
@@ -134,8 +143,8 @@ class IpQualityProbe(
             metadata = metadata,
             ipv6Mode = ipv6Mode,
         )
-        val completed = results.count { it.completed } + latency.count { it.latencyMs != null }
-        val total = results.size + latency.size
+        val completed = results.count { it.completed } + latency.sumOf { it.successfulSamples }
+        val total = results.size + latency.sumOf { it.attemptedSamples }
         IpQualityReport(
             generatedAtEpochMillis = now,
             ipv4 = ipv4,
@@ -145,7 +154,7 @@ class IpQualityProbe(
             checks = checks,
             completedProbes = completed,
             totalProbes = total,
-            elapsedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+            elapsedMillis = ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(0L),
         )
     }
 
@@ -163,8 +172,26 @@ class IpQualityProbe(
         ProbeResult(label, value = null, completed = false, error = error.safeMessage())
     }
 
+    private suspend fun probeLatencySeries(provider: String, endpoint: String): IpQualityLatency {
+        val samples = buildList {
+            repeat(3) {
+                currentCoroutineContext().ensureActive()
+                add(probeLatency(provider, endpoint))
+            }
+        }
+        val delays = samples.mapNotNull { it.latencyMs }.sorted()
+        return samples.last().copy(
+            latencyMs = delays.getOrNull(delays.size / 2),
+            state = if (delays.size == samples.size) IpQualityState.VERIFIED else IpQualityState.ATTENTION,
+            detail = if (delays.isNotEmpty()) "HTTPS 端点可达" else samples.last().detail,
+            attemptedSamples = samples.size,
+            successfulSamples = delays.size,
+        )
+    }
+
     private fun probeLatency(provider: String, endpoint: String): IpQualityLatency = runCatching {
-        val response = transport.get(endpoint, timeoutMillis)
+        // Two concurrent series, each bounded to three short probes; no background polling.
+        val response = transport.get(endpoint, minOf(timeoutMillis, 1500))
         require(response.statusCode in 200..299) { "HTTP ${response.statusCode}" }
         val latency = response.elapsedMillis.coerceIn(1L, MAX_LATENCY_MILLIS.toLong()).toInt()
         IpQualityLatency(provider, latency, IpQualityState.VERIFIED, "HTTPS 端点可达")

@@ -1,6 +1,7 @@
 package io.weave.client.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
@@ -44,6 +45,7 @@ import io.weave.client.domain.WeaveLanguage
 import io.weave.client.core.ipquality.IpAddressValidator
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class BrowserIceCandidate(
     val type: String,
@@ -90,12 +92,7 @@ internal fun BrowserPrivacyLabDialog(
         // destroys the newly created WebView when onCreated() triggers the first recomposition.
         val ownedWebView = webView
         onDispose {
-            ownedWebView?.apply {
-                stopLoading()
-                loadUrl("about:blank")
-                removeAllViews()
-                destroy()
-            }
+            releasePrivacyProbeWebView(ownedWebView)
         }
     }
 
@@ -121,11 +118,17 @@ internal fun BrowserPrivacyLabDialog(
                         PrivacyProbeWebView(
                             onCreated = { webView = it },
                             onResult = {
+                                releasePrivacyProbeWebView(webView)
+                                webView = null
                                 failure = null
                                 result = it
                                 onCompleted(it)
                             },
-                            onError = { failure = it },
+                            onError = {
+                                releasePrivacyProbeWebView(webView)
+                                webView = null
+                                failure = it
+                            },
                         )
                     }
                 }
@@ -250,7 +253,7 @@ internal fun BrowserPrivacyLabDialog(
 }
 
 @Composable
-private fun BrowserIdentitySummary(result: BrowserPrivacyResult, language: WeaveLanguage) {
+internal fun BrowserIdentitySummary(result: BrowserPrivacyResult, language: WeaveLanguage) {
     fun l(source: String) = localizeWeaveText(source, language)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(l("浏览器身份表面"), style = MaterialTheme.typography.titleSmall)
@@ -312,7 +315,7 @@ internal fun WebRtcExitCrossCheck(
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun PrivacyProbeWebView(
+internal fun PrivacyProbeWebView(
     onCreated: (WebView) -> Unit,
     onResult: (BrowserPrivacyResult) -> Unit,
     onError: (String) -> Unit,
@@ -320,7 +323,7 @@ private fun PrivacyProbeWebView(
     AndroidView(
         modifier = Modifier.fillMaxWidth().height(1.dp),
         factory = { context ->
-            WebView(context).apply {
+            PrivacyProbeHostWebView(context).apply {
                 settings.javaScriptEnabled = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
@@ -332,44 +335,15 @@ private fun PrivacyProbeWebView(
                 settings.setSupportMultipleWindows(false)
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 settings.safeBrowsingEnabled = true
-                webViewClient = object : WebViewClient() {
-                    private var pollingStarted = false
-                    private var reportDelivered = false
-
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView,
-                        request: WebResourceRequest,
-                    ): Boolean = request.url.scheme != "https" ||
-                        request.url.host != "weave.invalid"
-
-                    override fun onPageFinished(view: WebView, url: String) {
-                        if (pollingStarted) return
-                        pollingStarted = true
-                        pollReport(view, attempt = 0)
-                    }
-
-                    private fun pollReport(view: WebView, attempt: Int) {
-                        if (reportDelivered) return
-                        view.evaluateJavascript(
-                            "JSON.stringify(window.__weaveReport || null)",
-                        ) { encoded ->
-                            if (reportDelivered) return@evaluateJavascript
-                            val parsed = runCatching { parseBrowserResult(encoded) }.getOrNull()
-                            if (parsed != null) {
-                                reportDelivered = true
-                                onResult(parsed)
-                            } else if (attempt + 1 < PROBE_MAX_ATTEMPTS) {
-                                view.postDelayed(
-                                    { pollReport(view, attempt + 1) },
-                                    PROBE_POLL_INTERVAL_MS,
-                                )
-                            } else {
-                                reportDelivered = true
-                                onError("浏览器检测超时，请重新检测")
-                            }
-                        }
-                    }
-                }
+                val client = PrivacyProbeClient(
+                    onResult = onResult,
+                    onError = onError,
+                )
+                probeClient = client
+                webViewClient = client
+                // Publish the instance before loading HTML. A very fast WebView callback must
+                // still be owned by the current composition so it can be cancelled safely.
+                onCreated(this)
                 loadDataWithBaseURL(
                     "https://weave.invalid/",
                     PRIVACY_PROBE_HTML,
@@ -377,10 +351,113 @@ private fun PrivacyProbeWebView(
                     "UTF-8",
                     null,
                 )
-                onCreated(this)
             }
         },
+        onRelease = ::releasePrivacyProbeWebView,
     )
+}
+
+/**
+ * WebView callbacks can outlive a Compose item by a few frames. Always cancel the client before
+ * destroying the view; otherwise a delayed evaluateJavascript/postDelayed callback can touch a
+ * destroyed Chromium instance and crash the process on some Android WebView releases.
+ */
+internal fun releasePrivacyProbeWebView(view: WebView?) {
+    view ?: return
+    val host = view as? PrivacyProbeHostWebView
+    if (host != null && host.released.compareAndSet(false, true)) {
+        host.probeClient?.cancel(view)
+    } else if (host != null) {
+        return
+    }
+    runCatching { view.stopLoading() }
+    runCatching { view.webViewClient = WebViewClient() }
+    runCatching { view.loadUrl("about:blank") }
+    runCatching { view.removeAllViews() }
+    runCatching { view.destroy() }
+}
+
+private class PrivacyProbeHostWebView(context: Context) : WebView(context) {
+    val released = AtomicBoolean(false)
+    var probeClient: PrivacyProbeClient? = null
+}
+
+private class PrivacyProbeClient(
+    private val onResult: (BrowserPrivacyResult) -> Unit,
+    private val onError: (String) -> Unit,
+) : WebViewClient() {
+    private val cancelled = AtomicBoolean(false)
+    private val reportDelivered = AtomicBoolean(false)
+    private var pollingStarted = false
+    private var pendingPoll: Runnable? = null
+
+    fun cancel(view: WebView) {
+        cancelled.set(true)
+        reportDelivered.set(true)
+        pendingPoll?.let { view.removeCallbacks(it) }
+        pendingPoll = null
+    }
+
+    override fun shouldOverrideUrlLoading(
+        view: WebView,
+        request: WebResourceRequest,
+    ): Boolean = request.url.scheme != "https" || request.url.host != "weave.invalid"
+
+    override fun onPageFinished(view: WebView, url: String) {
+        if (pollingStarted || !isActive(view)) return
+        pollingStarted = true
+        pollReport(view, attempt = 0)
+    }
+
+    private fun isActive(view: WebView): Boolean =
+        // Android's public WebView API does not expose a portable destroyed-state query in all
+        // SDK stubs. releasePrivacyProbeWebView() flips this flag before calling destroy(), which
+        // is the race we need to close here.
+        !cancelled.get() && !reportDelivered.get()
+
+    private fun deliverError(view: WebView, message: String) {
+        if (!cancelled.get() && reportDelivered.compareAndSet(false, true)) {
+            pendingPoll = null
+            onError(message)
+        }
+    }
+
+    private fun pollReport(view: WebView, attempt: Int) {
+        if (!isActive(view)) return
+        try {
+            view.evaluateJavascript(
+                "JSON.stringify(window.__weaveReport || null)",
+            ) { encoded ->
+                if (!isActive(view)) return@evaluateJavascript
+                val parsed = runCatching { parseBrowserResult(encoded) }.getOrNull()
+                if (parsed != null) {
+                    if (reportDelivered.compareAndSet(false, true)) {
+                        pendingPoll = null
+                        onResult(parsed)
+                    }
+                } else if (attempt + 1 < PROBE_MAX_ATTEMPTS) {
+                    val next = Runnable {
+                        pendingPoll = null
+                        pollReport(view, attempt + 1)
+                    }
+                    pendingPoll = next
+                    runCatching {
+                        if (!view.postDelayed(next, PROBE_POLL_INTERVAL_MS)) {
+                            pendingPoll = null
+                            deliverError(view, "浏览器检测无法调度，请重新检测")
+                        }
+                    }.onFailure {
+                        pendingPoll = null
+                        deliverError(view, "浏览器检测无法调度，请重新检测")
+                    }
+                } else {
+                    deliverError(view, "浏览器检测超时，请重新检测")
+                }
+            }
+        } catch (_: RuntimeException) {
+            deliverError(view, "浏览器检测已中断，请重新检测")
+        }
+    }
 }
 
 private fun parseBrowserResult(encoded: String): BrowserPrivacyResult {

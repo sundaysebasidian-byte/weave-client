@@ -1,0 +1,13 @@
+# Weave startup and first protected-connection path.
+# Keep this profile deliberately small: it complements the Compose library profiles without
+# forcing the complete client, subscription parser, or native engine into the startup budget.
+Lio/weave/client/MainActivity;
+HSPLio/weave/client/MainActivity;->**(**)**
+Lio/weave/client/ui/WeaveAppKt;
+HSPLio/weave/client/ui/WeaveAppKt;->**(**)**
+Lio/weave/client/ui/theme/ThemeKt;
+HSPLio/weave/client/ui/theme/ThemeKt;->**(**)**
+Lio/weave/client/core/vpn/WeaveVpnService;
+HSPLio/weave/client/core/vpn/WeaveVpnService;->**(**)**
+Lio/weave/client/core/engine/MihomoEngineAdapter;
+HSPLio/weave/client/core/engine/MihomoEngineAdapter;->**(**)**

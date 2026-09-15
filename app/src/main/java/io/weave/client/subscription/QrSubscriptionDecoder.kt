@@ -13,6 +13,12 @@ sealed interface QrSubscriptionInput {
  * Converts common subscription QR payloads without logging or retaining their contents.
  */
 class QrSubscriptionDecoder {
+    fun isRemoteLink(value: String): Boolean = runCatching {
+        URI(value.trim()).scheme?.lowercase(java.util.Locale.ROOT).let {
+            it == "https" || it == "http" || it in WRAPPER_SCHEMES
+        }
+    }.getOrDefault(false)
+
     fun decode(rawValue: String): QrSubscriptionInput {
         val value = rawValue.trim()
         require(value.isNotEmpty()) { "二维码内容为空" }
@@ -57,6 +63,6 @@ class QrSubscriptionDecoder {
 
     private companion object {
         const val MAX_QR_PAYLOAD_LENGTH = 32 * 1024
-        val WRAPPER_SCHEMES = setOf("clash", "karing", "sing-box", "hiddify")
+        val WRAPPER_SCHEMES = setOf("clash", "clashmeta", "clash-verge", "clashmi", "karing", "sing-box", "hiddify")
     }
 }

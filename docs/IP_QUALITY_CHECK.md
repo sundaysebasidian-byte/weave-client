@@ -8,6 +8,8 @@ Android 端的 IP 质量检测位于连接首页，只有用户主动点击时�
 - `ipwho.is`：读取 IP、国家/地区/城市、ASN、组织/ISP 和第三方代理、VPN、Tor、托管标签。
 - Cloudflare trace：读取边缘机房和另一个出口视角。
 - Cloudflare 与 Google 的 `generate_204`：测量真实 HTTPS 可达性与 RTT。
+- 完整检测还会并行探测 X、TikTok、YouTube、Google、GPT、Claude、Netflix、Facebook 和 Disney+；这些请求只取 HTTPS 状态行和
+  RTT，不读取网页正文，用来区分“当前出口无法连通”和“服务已响应但需要登录/地区权限”。
 
 所有请求都通过当前 Android VPN 数据路径发出，并限制 HTTPS、超时和响应大小。公网地址会拒绝回环、私网、链路本地、组播、CGNAT 和文档保留网段。
 

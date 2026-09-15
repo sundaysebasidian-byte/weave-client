@@ -14,6 +14,22 @@ import org.junit.Test
 
 class RouteLensTest {
     @Test
+    fun `safety rule is explained before an app direct rule`() {
+        val result = RouteLens.evaluate(RouteLensQuery(packageName = "test", domain = "dns.google", port = 443),
+            listOf(AppRoute("test", "Test", "T", RouteTarget(RouteKind.DIRECT, "直连"), 0L)),
+            RoutingMode.RULE, RouteTarget(RouteKind.AUTO, "自动选择"), NetworkPreferences())
+        assertEquals(RouteKind.BLOCK, result.targetKind)
+        assertTrue(result.matchedRule.startsWith("安全拦截"))
+    }
+
+    @Test
+    fun `DNS port is blocked even in direct mode`() {
+        val result = RouteLens.evaluate(RouteLensQuery(domain = "example.com", port = 853),
+            emptyList(), RoutingMode.DIRECT, null, NetworkPreferences())
+        assertEquals(RouteKind.BLOCK, result.targetKind)
+    }
+
+    @Test
     fun `application rule wins over default target`() {
         val result = RouteLens.evaluate(
             query = RouteLensQuery(

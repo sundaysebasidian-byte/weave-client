@@ -7,11 +7,8 @@ import io.weave.client.domain.AutomaticStrategy
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
-import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
-import io.weave.client.domain.NavigationConfiguration
-import io.weave.client.domain.NavigationItem
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
@@ -32,6 +29,13 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit { putString(KEY_ROUTING_MODE, mode.name) }
     }
 
+    // Opaque subscription/node IDs only; no node names, hosts or credentials.
+    fun favoriteNodeIds(): Set<String> = preferences.getStringSet("favorite_node_ids", emptySet()).orEmpty().toSet()
+
+    fun setFavoriteNodeIds(ids: Set<String>) {
+        preferences.edit { putStringSet("favorite_node_ids", ids.take(512).toSet()) }
+    }
+
     fun networkPreferences() = NetworkPreferences(
         automaticStrategy = enumPreference(
             KEY_AUTOMATIC_STRATEGY,
@@ -43,14 +47,16 @@ class RuntimeSettingsStore(context: Context) {
         ),
         dnsTransport = enumPreference(KEY_DNS_TRANSPORT, DnsTransport.DOH),
         dnsProfile = enumPreference(KEY_DNS_PROFILE, DnsProfile.PRIVACY),
-        dnsRoutingMode = enumPreference(KEY_DNS_ROUTING_MODE, DnsRoutingMode.SINGLE),
+        // Keep mainland services on the selected domestic resolver while sending overseas
+        // domains (for example, OpenAI endpoints) to the encrypted overseas policy. A single
+        // domestic resolver can return blocked/poisoned answers and make a healthy proxy look
+        // offline. Users who need one resolver for every domain can still choose "统一解析".
+        dnsRoutingMode = enumPreference(KEY_DNS_ROUTING_MODE, DnsRoutingMode.SMART),
         customDnsEndpoint = readCustomDnsEndpoint(),
         ipv6Mode = enumPreference(KEY_IPV6_MODE, Ipv6Mode.DUAL_STACK),
         blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
         domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
         weavePalette = weavePalette(),
-        experienceMode = enumPreference(KEY_EXPERIENCE_MODE, ExperienceMode.NEWCOMER),
-        navigation = navigationConfiguration(),
     )
 
     fun setAutomaticStrategy(strategy: AutomaticStrategy) {
@@ -109,24 +115,6 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit { putString(KEY_WEAVE_PALETTE, palette.name) }
     }
 
-    fun setExperienceMode(mode: ExperienceMode) {
-        preferences.edit { putString(KEY_EXPERIENCE_MODE, mode.name) }
-    }
-
-    fun setNavigationConfiguration(configuration: NavigationConfiguration) {
-        val normalized = configuration.normalized()
-        preferences.edit {
-            putString(
-                KEY_NAVIGATION_ORDER,
-                normalized.order.joinToString(",", transform = NavigationItem::name),
-            )
-            putStringSet(
-                KEY_NAVIGATION_HIDDEN,
-                normalized.hidden.mapTo(linkedSetOf(), NavigationItem::name),
-            )
-        }
-    }
-
     fun language(): WeaveLanguage = enumPreference(
         KEY_LANGUAGE,
         WeaveLanguage.SIMPLIFIED_CHINESE,
@@ -179,35 +167,12 @@ class RuntimeSettingsStore(context: Context) {
             setWeavePalette(WeavePalette.MINIMAL_WHITE_GREEN)
             return WeavePalette.MINIMAL_WHITE_GREEN
         }
+        if (stored == "MINIMAL_DEEP_OCEAN" || stored == "MINIMAL_NIGHT_PINE") {
+            setWeavePalette(WeavePalette.MINIMAL_DARK)
+            return WeavePalette.MINIMAL_DARK
+        }
         return WeavePalette.entries.firstOrNull { it.name == stored }
             ?: WeavePalette.MINIMAL_LIGHT
-    }
-
-    private fun navigationConfiguration(): NavigationConfiguration {
-        val storedOrder = preferences.getString(KEY_NAVIGATION_ORDER, null)
-            ?.split(',')
-            ?.mapNotNull { value ->
-                NavigationItem.entries.firstOrNull { it.name == value.trim() }
-            }
-            .orEmpty()
-        val legacyOrder = when (preferences.getString(KEY_NAVIGATION_LAYOUT, null)) {
-            "SUBSCRIPTIONS_FIRST" -> listOf(
-                NavigationItem.HOME,
-                NavigationItem.SUBSCRIPTIONS,
-                NavigationItem.ROUTES,
-                NavigationItem.SETTINGS,
-            )
-            else -> NavigationItem.entries.toList()
-        }
-        val hidden = preferences.getStringSet(KEY_NAVIGATION_HIDDEN, emptySet())
-            .orEmpty()
-            .mapNotNullTo(linkedSetOf()) { stored ->
-                NavigationItem.entries.firstOrNull { it.name == stored }
-            }
-        return NavigationConfiguration(
-            order = storedOrder.ifEmpty { legacyOrder },
-            hidden = hidden,
-        ).normalized()
     }
 
     private fun readCustomDnsEndpoint(): String {
@@ -240,11 +205,7 @@ class RuntimeSettingsStore(context: Context) {
         const val KEY_BLOCK_UDP_STUN = "block_udp_stun"
         const val KEY_DOMESTIC_DIRECT = "domestic_direct"
         const val KEY_WEAVE_PALETTE = "weave_palette"
-        const val KEY_EXPERIENCE_MODE = "experience_mode"
-        const val KEY_NAVIGATION_ORDER = "navigation_order_v2"
-        const val KEY_NAVIGATION_HIDDEN = "navigation_hidden_v2"
         // Kept read-only so alpha52's two navigation presets migrate without losing intent.
-        const val KEY_NAVIGATION_LAYOUT = "navigation_layout"
         const val KEY_LANGUAGE = "language"
         val CUSTOM_DNS_AAD = "weave.settings.custom-dns.v1".toByteArray(Charsets.UTF_8)
     }

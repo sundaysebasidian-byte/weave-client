@@ -54,7 +54,7 @@ proxies:
 proxy-providers:
   weave-smoke:
     type: file
-    path: mihomo-feature-provider.yaml
+    path: providers/mihomo-feature-provider.yaml
 proxy-groups:
   - name: LOWEST
     type: url-test

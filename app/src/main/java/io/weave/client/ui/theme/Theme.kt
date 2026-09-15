@@ -2,6 +2,7 @@ package io.weave.client.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -30,30 +31,25 @@ private data class PaletteTokens(
 )
 
 private fun paletteTokens(palette: WeavePalette, dark: Boolean): PaletteTokens = when (palette) {
+    WeavePalette.MINIMAL_PAPER -> PaletteTokens(
+        ink = Color(0xFF171717), accent = Color(0xFF252525), lavender = Color(0xFFF0F0F0),
+        coral = Color(0xFF555555), canvas = Color.White, paper = Color(0xFFFAFAFA),
+        muted = Color(0xFF606060), good = Color(0xFF353535),
+    )
     WeavePalette.MINIMAL_LIGHT -> PaletteTokens(
         ink = Color(0xFF1D252D), accent = Color(0xFF3F596F), lavender = Color(0xFFE8EDF1),
         coral = Color(0xFF9B6254), canvas = Color(0xFFF4F6F8), paper = Color(0xFFFBFCFD),
         muted = Color(0xFF5D6873), good = Color(0xFF3D6F63),
     )
     WeavePalette.MINIMAL_DARK -> PaletteTokens(
-        ink = Color(0xFFF2F7F5), accent = Color(0xFF8DD9B4), lavender = Color(0xFF20332D),
-        coral = Color(0xFFE7B7A7), canvas = Color(0xFF07100E), paper = Color(0xFF101C19),
-        muted = Color(0xFFA8BBB4), good = Color(0xFF78D5AA),
+        ink = Color(0xFFF1F3F6), accent = Color(0xFFC5DCEB), lavender = Color(0xFF283440),
+        coral = Color(0xFFDFAFA6), canvas = Color(0xFF0B0E13), paper = Color(0xFF171C23),
+        muted = Color(0xFFADB6C2), good = Color(0xFF8CCCB3),
     )
     WeavePalette.MINIMAL_WHITE_GREEN -> PaletteTokens(
-        ink = Color(0xFF13231D), accent = Color(0xFF16A76C), lavender = Color(0xFFDDF6E9),
-        coral = Color(0xFFB55E4B), canvas = Color(0xFFF4F8F6), paper = Color(0xFFFFFFFF),
-        muted = Color(0xFF5C6D66), good = Color(0xFF11885A),
-    )
-    WeavePalette.MINIMAL_DEEP_OCEAN -> PaletteTokens(
-        ink = Color(0xFFF0FAFC), accent = Color(0xFF7DD6E6), lavender = Color(0xFF153849),
-        coral = Color(0xFFE8B4A8), canvas = Color(0xFF03131C), paper = Color(0xFF0B2532),
-        muted = Color(0xFFA3C2CB), good = Color(0xFF78D4B6),
-    )
-    WeavePalette.MINIMAL_NIGHT_PINE -> PaletteTokens(
-        ink = Color(0xFFF0F8F2), accent = Color(0xFF9AD9B1), lavender = Color(0xFF1B3B2D),
-        coral = Color(0xFFE5B7A4), canvas = Color(0xFF06150E), paper = Color(0xFF0F271B),
-        muted = Color(0xFFA8C1B1), good = Color(0xFF83D6A3),
+        ink = Color(0xFF151813), accent = Color(0xFF2C6E16), lavender = Color(0xFFEAF2E6),
+        coral = Color(0xFFA94E40), canvas = Color.White, paper = Color(0xFFF9FAF8),
+        muted = Color(0xFF646960), good = Color(0xFF2C6E16),
     )
     WeavePalette.IMPRESSION_SUNRISE -> if (dark) {
         PaletteTokens(
@@ -125,17 +121,30 @@ private fun materialColors(
     minimalDark: Boolean,
     minimalLight: Boolean,
     minimalWhiteGreen: Boolean,
-) = if (dark && minimalDark) {
-    // Minimal dark palettes share a restrained scheme structure but keep their own ink/accent
-    // tokens. That gives the user real alternatives without changing the four art palettes.
+    minimalPaper: Boolean,
+) = if (minimalPaper) {
+    lightColorScheme(
+        primary = tokens.ink, onPrimary = Color.White,
+        primaryContainer = Color(0xFFECECEC), onPrimaryContainer = tokens.ink,
+        secondary = tokens.accent, onSecondary = Color.White,
+        secondaryContainer = Color(0xFFF0F0F0), onSecondaryContainer = tokens.ink,
+        tertiary = tokens.coral, onTertiary = Color.White,
+        background = tokens.canvas, onBackground = tokens.ink,
+        surface = tokens.paper, onSurface = tokens.ink,
+        surfaceVariant = Color(0xFFF2F2F2), onSurfaceVariant = tokens.muted,
+        outline = Color(0xFF767676), outlineVariant = Color(0xFFE2E2E2),
+        error = Color(0xFFBA1A1A),
+    )
+} else if (dark && minimalDark) {
+    // A neutral near-black canvas with distinct, low-chroma layers, not a green-tinted wash.
     darkColorScheme(
         primary = tokens.accent,
         onPrimary = tokens.canvas,
-        primaryContainer = mix(tokens.accent, tokens.canvas, 0.30f),
+        primaryContainer = Color(0xFF273746),
         onPrimaryContainer = tokens.ink,
         secondary = tokens.good,
         onSecondary = tokens.canvas,
-        secondaryContainer = mix(tokens.good, tokens.canvas, 0.28f),
+        secondaryContainer = Color(0xFF233832),
         onSecondaryContainer = tokens.ink,
         tertiary = tokens.coral,
         onTertiary = tokens.canvas,
@@ -143,32 +152,32 @@ private fun materialColors(
         onBackground = tokens.ink,
         surface = tokens.paper,
         onSurface = tokens.ink,
-        surfaceVariant = mix(tokens.paper, tokens.accent, 0.11f),
+        surfaceVariant = Color(0xFF232A34),
         onSurfaceVariant = tokens.muted,
-        outline = tokens.muted.copy(alpha = 0.56f),
-        outlineVariant = tokens.muted.copy(alpha = 0.20f),
+        outline = Color(0xFF626D7B),
+        outlineVariant = Color(0xFF333C48),
         error = Color(0xFFFFB4AB),
     )
 } else if (!dark && minimalWhiteGreen) {
     lightColorScheme(
-        primary = Color(0xFF087A50),
+        primary = Color(0xFF2C6E16),
         onPrimary = Color.White,
-        primaryContainer = Color(0xFFD8F4E5),
-        onPrimaryContainer = Color(0xFF063C29),
-        secondary = Color(0xFF26745A),
+        primaryContainer = Color(0xFFE6F0DF),
+        onPrimaryContainer = Color(0xFF204F11),
+        secondary = Color(0xFF2C6E16),
         onSecondary = Color.White,
-        secondaryContainer = Color(0xFFE2F4EA),
-        onSecondaryContainer = Color(0xFF153D30),
+        secondaryContainer = Color(0xFFEAF2E6),
+        onSecondaryContainer = Color(0xFF23401A),
         tertiary = Color(0xFF8A5A4C),
         onTertiary = Color.White,
-        background = Color(0xFFF4F8F6),
-        onBackground = Color(0xFF13231D),
-        surface = Color(0xFFFEFFFE),
-        onSurface = Color(0xFF13231D),
-        surfaceVariant = Color(0xFFE7F0EB),
-        onSurfaceVariant = Color(0xFF52645D),
-        outline = Color(0xFF7B8D85),
-        outlineVariant = Color(0xFFD4E2DA),
+        background = Color.White,
+        onBackground = Color(0xFF151813),
+        surface = Color(0xFFF9FAF8),
+        onSurface = Color(0xFF151813),
+        surfaceVariant = Color(0xFFF1F3F0),
+        onSurfaceVariant = Color(0xFF60665C),
+        outline = Color(0xFF858D7F),
+        outlineVariant = Color(0xFFE0E5DC),
         error = Color(0xFFBA1A1A),
     )
 } else if (!dark && minimalLight) {
@@ -245,62 +254,62 @@ private val WeaveTypography = Typography(
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
-        letterSpacing = (-0.55).sp,
+        fontSize = 29.sp,
+        lineHeight = 35.sp,
+        letterSpacing = (-0.45).sp,
     ),
     headlineSmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 23.sp,
-        lineHeight = 29.sp,
-        letterSpacing = (-0.25).sp,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        letterSpacing = (-0.18).sp,
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 19.sp,
-        lineHeight = 25.sp,
-        letterSpacing = (-0.15).sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
+        letterSpacing = (-0.10).sp,
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 22.sp,
+        fontSize = 15.sp,
+        lineHeight = 21.sp,
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 23.sp,
+        fontSize = 15.sp,
+        lineHeight = 22.sp,
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 13.sp,
+        fontSize = 12.sp,
         lineHeight = 18.sp,
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
+        fontSize = 11.sp,
         lineHeight = 16.sp,
     ),
 )
 
 private val WeaveShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(34.dp),
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(30.dp),
 )
 
 val LocalWeavePalette = staticCompositionLocalOf { WeavePalette.MINIMAL_LIGHT }
@@ -316,6 +325,7 @@ fun WeaveTheme(
     val resolvedDarkTheme = when {
         palette.forceDark -> true
         palette == WeavePalette.MINIMAL_LIGHT ||
+            palette == WeavePalette.MINIMAL_PAPER ||
             palette == WeavePalette.MINIMAL_WHITE_GREEN -> false
         else -> darkTheme
     }
@@ -328,10 +338,19 @@ fun WeaveTheme(
                 minimalDark = palette.forceDark,
                 minimalLight = palette == WeavePalette.MINIMAL_LIGHT,
                 minimalWhiteGreen = palette == WeavePalette.MINIMAL_WHITE_GREEN,
+                minimalPaper = palette == WeavePalette.MINIMAL_PAPER,
             ),
             typography = WeaveTypography,
             shapes = WeaveShapes,
-            content = content,
+            content = {
+                // A transparent Scaffold/custom glass Box has no Surface to supply this.
+                // Without an explicit root content color, uncolored titles/icons stay black
+                // even when the color scheme itself correctly switches to dark mode.
+                CompositionLocalProvider(
+                    LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                    content = content,
+                )
+            },
         )
     }
 }

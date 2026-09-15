@@ -24,7 +24,10 @@ data class ParsedNode(
     val protocol: String,
 )
 
-class SubscriptionImportException(message: String) : IllegalArgumentException(message)
+class SubscriptionImportException(
+    message: String,
+    cause: Throwable? = null,
+) : IllegalArgumentException(message, cause)
 
 /**
  * Parses only enough untrusted input to classify it and build safe metadata.
@@ -46,10 +49,16 @@ class SubscriptionPayloadParser {
 
         detectStructured(payload)?.let { return it }
 
+        // A number of Clash panels (including older Walless endpoints) wrap the complete YAML or
+        // JSON document in Base64 even when the selected target is Clash.  Decode once, then run
+        // the same structured detectors again; treating the decoded document as a URI list would
+        // otherwise report "no usable nodes" despite a valid `proxies:` section.
         val uriPayload = if (payload.lineSequence().any(::looksLikeProxyUri)) {
             payload
         } else {
-            decodeBase64(payload)
+            decodeBase64(payload).also { decoded ->
+                detectStructured(decoded)?.let { return it }
+            }
         }
 
         val nodes = uriPayload.lineSequence()
@@ -89,10 +98,16 @@ class SubscriptionPayloadParser {
      */
     fun normalizeForMihomo(input: String, parsed: ParsedSubscription = parse(input)): String =
         when (parsed.format) {
-            SubscriptionFormat.CLASH_YAML -> sanitizeClashProvider(input)
+            SubscriptionFormat.CLASH_YAML -> sanitizeClashProvider(
+                ClashSubscriptionDocument.unwrap(input),
+            )
             SubscriptionFormat.URI_LIST -> renderClash(uriSpecs(uriPayload(input)))
-            SubscriptionFormat.SING_BOX_JSON -> renderClash(singBoxSpecs(input))
-            SubscriptionFormat.V2RAY_JSON -> renderClash(v2RaySpecs(input))
+            SubscriptionFormat.SING_BOX_JSON -> renderClash(
+                singBoxSpecs(structuredPayload(input, SING_BOX_MARKER)),
+            )
+            SubscriptionFormat.V2RAY_JSON -> renderClash(
+                v2RaySpecs(structuredPayload(input, V2RAY_MARKER)),
+            )
         }
 
     /**
@@ -101,50 +116,30 @@ class SubscriptionPayloadParser {
      * could turn on an external controller, LAN proxy port, script or remote rule provider.
      */
     private fun sanitizeClashProvider(input: String): String {
-        val lines = input.trim().lineSequence().toList()
-        // A provider only needs `proxies:`. The one exception is a YAML merge anchor used by
-        // some OpenVPN/Clash exports (`x-common: &common` + `<<: *common` inside proxies). Keep
-        // only anchor definitions that are actually referenced by a proxy; every other root key
-        // (including future control-plane keys we do not know today) is discarded by default.
-        val referencedAnchors = Regex("\\*([A-Za-z0-9_.-]+)")
-            .findAll(input)
-            .map { it.groupValues[1] }
-            .toSet()
-        val anchorRootKeys = Regex("(?m)^([A-Za-z0-9_.-]+)\\s*:\\s*&([A-Za-z0-9_.-]+)")
-            .findAll(input)
-            .filter { it.groupValues[2] in referencedAnchors }
-            .map { it.groupValues[1].lowercase() }
-            .toSet()
-        val allowedRootKeys = setOf("proxies") + anchorRootKeys
-        val retained = buildString {
-            var skipIndent: Int? = null
-            lines.forEach { line ->
-                val trimmed = line.trimStart()
-                val key = trimmed.substringBefore(':', missingDelimiterValue = "")
-                    .lowercase()
-                val indent = line.indexOfFirst { !it.isWhitespace() }.takeIf { it >= 0 } ?: 0
-                if (skipIndent != null) {
-                    if (trimmed.isBlank() || indent > skipIndent) return@forEach
-                    skipIndent = null
-                }
-                // Only a root key is control-plane input. A nested `server`, `path` or `tls`
-                // property inside a proxy is ordinary node data and must be retained.
-                if (indent == 0 && key.isNotEmpty() && key !in allowedRootKeys) {
-                    skipIndent = indent
-                    return@forEach
-                }
-                appendLine(line)
-            }
-        }.trim()
-        require(retained.lineSequence().any { it.trimStart().startsWith("proxies:") }) {
-            "Clash 订阅缺少 proxies 节点列表"
+        // Resolve YAML aliases/merges before removing the control plane. Copy only actual node
+        // objects, so a root setting disguised as an anchor cannot survive into the runtime.
+        val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(input))
+        return ClashYamlCodec.write(mapOf("proxies" to nodes))
+    }
+
+    /** Returns a structured document either as supplied or after one strict Base64 decode. */
+    private fun structuredPayload(input: String, marker: Regex): String {
+        val payload = input.trim().removePrefix("\uFEFF")
+        if (marker.containsMatchIn(payload)) return payload
+        val decoded = decodeBase64(payload)
+        if (!marker.containsMatchIn(decoded)) {
+            throw SubscriptionImportException("订阅结构与已识别格式不一致")
         }
-        return retained
+        return decoded
     }
 
     private fun detectStructured(payload: String): ParsedSubscription? {
-        if (CLASH_MARKER.containsMatchIn(payload)) {
-            val nodes = parseClashNodes(payload)
+        // Providers occasionally put an UTF-8 BOM inside the Base64 envelope. Normalize it here
+        // as well as at the public parse boundary so a valid first `proxies:`/`outbounds` key is
+        // not mistaken for an opaque URI list.
+        val document = payload.trim().removePrefix("\uFEFF")
+        if (ClashSubscriptionDocument.hasRootKey(document, "proxies")) {
+            val nodes = parseClashNodes(document)
             val protocols = nodes.mapTo(sortedSetOf()) { it.protocol }
             return ParsedSubscription(
                 format = SubscriptionFormat.CLASH_YAML,
@@ -154,8 +149,8 @@ class SubscriptionPayloadParser {
             )
         }
 
-        if (payload.startsWith("{") && SING_BOX_MARKER.containsMatchIn(payload)) {
-            val outboundArray = extractJsonArray(payload, "outbounds")
+        if (document.startsWith("{") && SING_BOX_MARKER.containsMatchIn(document)) {
+            val outboundArray = extractJsonArray(document, "outbounds")
                 ?: throw SubscriptionImportException("sing-box outbounds 结构无效")
             val looksLikeSingBox = extractJsonObjects(outboundArray)
                 .firstOrNull()
@@ -177,8 +172,8 @@ class SubscriptionPayloadParser {
             }
         }
 
-        if (payload.startsWith("{") && V2RAY_MARKER.containsMatchIn(payload)) {
-            val outboundArray = extractJsonArray(payload, "outbounds")
+        if (document.startsWith("{") && V2RAY_MARKER.containsMatchIn(document)) {
+            val outboundArray = extractJsonArray(document, "outbounds")
                 ?: throw SubscriptionImportException("V2Ray outbounds 结构无效")
             val protocols = V2RAY_PROTOCOL.findAll(outboundArray)
                 .map { it.groupValues[1].lowercase() }
@@ -197,234 +192,16 @@ class SubscriptionPayloadParser {
         return null
     }
 
-    private fun parseClashNodes(payload: String): List<ParsedNode> {
-        val marker = CLASH_MARKER.find(payload) ?: return emptyList()
-        val tail = payload.substring(marker.range.last + 1)
-        val sectionEnd = TOP_LEVEL_KEY.find(tail)?.range?.first ?: tail.length
-        val section = tail.substring(0, sectionEnd)
-        parseFlowSequence(section)?.let { nodes ->
-            if (nodes.isNotEmpty()) return nodes
+    private fun parseClashNodes(payload: String): List<ParsedNode> =
+        ClashYamlCodec.nodes(ClashYamlCodec.read(payload)).map { node ->
+            val name = node["name"]?.toString()?.takeIf(String::isNotBlank)
+                ?: throw SubscriptionImportException("节点缺少名称或协议类型")
+            val protocol = node["type"]?.toString()?.lowercase(java.util.Locale.ROOT)?.takeIf(String::isNotBlank)
+                ?: throw SubscriptionImportException("节点缺少名称或协议类型")
+            // Native objects are retained by normalization; count the same objects rather than
+            // applying the smaller URI-conversion allowlist. Native validation still gates use.
+            ParsedNode(name, protocol)
         }
-        val lines = section.lineSequence().toList()
-        val anchorTypes = parseTypeAnchors(payload)
-        val entryIndent = lines.mapNotNull { line ->
-            PROXY_ENTRY.matchEntire(line)?.groupValues?.get(1)?.length
-        }.minOrNull() ?: return emptyList()
-        val nodes = mutableListOf<ParsedNode>()
-
-        var insideEntry = false
-        var pendingName: String? = null
-        var pendingType: String? = null
-        fun flush() {
-            val name = pendingName
-            val protocol = pendingType
-            if (
-                name != null &&
-                protocol != null &&
-                protocol in SUPPORTED_STRUCTURED_TYPES
-            ) {
-                nodes += ParsedNode(name.take(MAX_NODE_NAME_LENGTH), protocol)
-            }
-            pendingName = null
-            pendingType = null
-        }
-
-        lines.forEach { line ->
-            val entryMatch = PROXY_ENTRY.matchEntire(line)
-            if (entryMatch != null && entryMatch.groupValues[1].length == entryIndent) {
-                flush()
-                insideEntry = true
-                val entry = entryMatch.groupValues[2]
-                parseFlowProxy(entry)?.let { node ->
-                    pendingName = node.name
-                    pendingType = node.protocol
-                } ?: run {
-                    parseProxyProperty(entry)?.let { (key, value) ->
-                        when (key.lowercase()) {
-                            "name" -> pendingName = parseYamlScalar(value)
-                            "type" -> pendingType = parseProtocol(value)
-                        }
-                    }
-                }
-                MERGE_ANCHOR.matchEntire(entry)?.let {
-                    pendingType = anchorTypes[it.groupValues[1]]
-                }
-                return@forEach
-            }
-
-            if (!insideEntry) return@forEach
-            val propertyMatch = PROXY_PROPERTY.matchEntire(line)
-            if (
-                propertyMatch != null &&
-                propertyMatch.groupValues[1].length == entryIndent + PROPERTY_INDENT
-            ) {
-                when (propertyMatch.groupValues[2].lowercase()) {
-                    "name" -> pendingName = parseYamlScalar(propertyMatch.groupValues[3])
-                    "type" -> pendingType = parseProtocol(propertyMatch.groupValues[3])
-                }
-            }
-            val mergeMatch = PROXY_MERGE_PROPERTY.matchEntire(line)
-            if (
-                mergeMatch != null &&
-                mergeMatch.groupValues[1].length == entryIndent + PROPERTY_INDENT
-            ) {
-                pendingType = anchorTypes[mergeMatch.groupValues[2]]
-            }
-        }
-        flush()
-        return nodes
-    }
-
-    private fun parseFlowSequence(section: String): List<ParsedNode>? {
-        val value = section.trimStart()
-        if (!value.startsWith("[")) return null
-        return extractTopLevelMaps(value).mapNotNull(::parseFlowProxy)
-    }
-
-    private fun extractTopLevelMaps(value: String): List<String> {
-        val maps = mutableListOf<String>()
-        var squareDepth = 0
-        var curlyDepth = 0
-        var mapStart = -1
-        var quote: Char? = null
-        var escaped = false
-
-        value.forEachIndexed { index, char ->
-            if (quote != null) {
-                when {
-                    escaped -> escaped = false
-                    char == '\\' && quote == '"' -> escaped = true
-                    char == quote -> quote = null
-                }
-                return@forEachIndexed
-            }
-            when (char) {
-                '\'', '"' -> quote = char
-                '[' -> squareDepth++
-                ']' -> {
-                    squareDepth--
-                    if (squareDepth == 0) return maps
-                }
-                '{' -> {
-                    if (squareDepth == 1 && curlyDepth == 0) mapStart = index
-                    curlyDepth++
-                }
-                '}' -> {
-                    curlyDepth--
-                    if (squareDepth == 1 && curlyDepth == 0 && mapStart >= 0) {
-                        maps += value.substring(mapStart, index + 1)
-                        mapStart = -1
-                    }
-                }
-            }
-        }
-        return maps
-    }
-
-    private fun parseFlowProxy(value: String): ParsedNode? {
-        val trimmed = value.trim()
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null
-        var name: String? = null
-        var type: String? = null
-        splitFlowFields(trimmed.substring(1, trimmed.length - 1)).forEach { field ->
-            val separator = topLevelColon(field)
-            if (separator <= 0) return@forEach
-            val key = field.substring(0, separator).trim().trim('"', '\'').lowercase()
-            val rawValue = field.substring(separator + 1).trim()
-            when (key) {
-                "name" -> name = parseYamlScalar(rawValue)
-                "type" -> type = parseProtocol(rawValue)
-            }
-        }
-        val parsedName = name ?: return null
-        val parsedType = type?.takeIf { it in SUPPORTED_STRUCTURED_TYPES } ?: return null
-        return ParsedNode(parsedName.take(MAX_NODE_NAME_LENGTH), parsedType)
-    }
-
-    private fun splitFlowFields(value: String): List<String> {
-        val fields = mutableListOf<String>()
-        var start = 0
-        var nestedDepth = 0
-        var quote: Char? = null
-        var escaped = false
-        value.forEachIndexed { index, char ->
-            if (quote != null) {
-                when {
-                    escaped -> escaped = false
-                    char == '\\' && quote == '"' -> escaped = true
-                    char == quote -> quote = null
-                }
-                return@forEachIndexed
-            }
-            when (char) {
-                '\'', '"' -> quote = char
-                '[', '{' -> nestedDepth++
-                ']', '}' -> nestedDepth--
-                ',' -> if (nestedDepth == 0) {
-                    fields += value.substring(start, index)
-                    start = index + 1
-                }
-            }
-        }
-        fields += value.substring(start)
-        return fields
-    }
-
-    private fun topLevelColon(value: String): Int {
-        var nestedDepth = 0
-        var quote: Char? = null
-        var escaped = false
-        value.forEachIndexed { index, char ->
-            if (quote != null) {
-                when {
-                    escaped -> escaped = false
-                    char == '\\' && quote == '"' -> escaped = true
-                    char == quote -> quote = null
-                }
-                return@forEachIndexed
-            }
-            when (char) {
-                '\'', '"' -> quote = char
-                '[', '{' -> nestedDepth++
-                ']', '}' -> nestedDepth--
-                ':' -> if (nestedDepth == 0) return index
-            }
-        }
-        return -1
-    }
-
-    private fun parseTypeAnchors(payload: String): Map<String, String> = buildMap {
-        TYPE_ANCHOR.findAll(payload).forEach { anchor ->
-            val blockStart = anchor.range.last + 1
-            val blockEnd = TOP_LEVEL_KEY.find(payload, blockStart)?.range?.first ?: payload.length
-            val block = payload.substring(blockStart, blockEnd)
-            val protocol = ANCHOR_TYPE.find(block)?.groupValues?.get(1)?.lowercase()
-            if (protocol in SUPPORTED_STRUCTURED_TYPES) {
-                put(anchor.groupValues[1], requireNotNull(protocol))
-            }
-        }
-    }
-
-    private fun parseProxyProperty(value: String): Pair<String, String>? {
-        val match = INLINE_PROXY_PROPERTY.matchEntire(value) ?: return null
-        return match.groupValues[1] to match.groupValues[2]
-    }
-
-    private fun parseProtocol(value: String): String =
-        value.trim().trim('"', '\'').substringBefore(" #").trim().lowercase()
-
-    private fun parseYamlScalar(raw: String): String {
-        val value = raw.trim()
-        return when {
-            value.length >= 2 && value.startsWith("'") && value.endsWith("'") ->
-                value.substring(1, value.length - 1).replace("''", "'")
-            value.length >= 2 && value.startsWith("\"") && value.endsWith("\"") ->
-                value.substring(1, value.length - 1)
-                    .replace("\\\"", "\"")
-                    .replace("\\\\", "\\")
-            else -> value.substringBefore(" #").trim()
-        }.ifBlank { "未命名节点" }
-    }
 
     private fun extractJsonArray(payload: String, key: String): String? {
         val keyMatch = Regex(""""${Regex.escape(key)}"\s*:""").find(payload) ?: return null
@@ -591,7 +368,9 @@ class SubscriptionPayloadParser {
         }
         val name = decodePart(uri.rawFragment).ifBlank { "$scheme 节点" }
         if (scheme == "ss") return parseShadowsocks(value, name)
-        val host = uri.host ?: uri.rawAuthority.substringAfterLast('@').substringBefore(':')
+        val host = uri.host ?: uri.rawAuthority?.substringAfterLast('@')?.substringBefore(':')
+            ?.takeIf(String::isNotBlank)
+            ?: throw SubscriptionImportException("节点缺少服务器地址")
         val port = uri.port.takeIf { it > 0 }
             ?: throw SubscriptionImportException("$name 缺少端口")
         val query = queryMap(uri.rawQuery)
@@ -1005,9 +784,11 @@ class SubscriptionPayloadParser {
         }
         .toMap()
 
-    private fun decodePart(value: String): String = runCatching {
-        URLDecoder.decode(value, StandardCharsets.UTF_8.name())
-    }.getOrDefault(value)
+    // URI user-info, fragment and query values are optional Java platform types. Do not let
+    // Kotlin insert a null assertion before decoding anonymous HTTP/SOCKS or unnamed nodes.
+    private fun decodePart(value: String?): String = runCatching {
+        URLDecoder.decode(value.orEmpty(), StandardCharsets.UTF_8.name())
+    }.getOrDefault(value.orEmpty())
 
     private fun looksLikeProxyUri(line: String): Boolean = proxyScheme(line.trim()) != null
 
@@ -1049,29 +830,11 @@ class SubscriptionPayloadParser {
             "anytls",
             "openvpn",
         )
-        val CLASH_MARKER = Regex("""(?m)^\s*proxies\s*:""", RegexOption.IGNORE_CASE)
+        val CLASH_MARKER = Regex("""(?m)^[ \t]*["']?proxies["']?[ \t]*:""", RegexOption.IGNORE_CASE)
         val SING_BOX_MARKER = Regex(""""outbounds"\s*:""", RegexOption.IGNORE_CASE)
         val V2RAY_MARKER = SING_BOX_MARKER
-        val TOP_LEVEL_KEY = Regex("""(?m)^[A-Za-z0-9_-]+\s*:""")
-        val PROXY_ENTRY = Regex("""^(\s*)-\s*(.*?)\s*$""")
-        val INLINE_PROXY_PROPERTY =
-            Regex("""^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.+?)\s*$""")
-        val PROXY_PROPERTY =
-            Regex("""^(\s*)([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.+?)\s*$""")
-        val MERGE_ANCHOR = Regex("""^<<\s*:\s*\*([A-Za-z0-9_-]+)\s*$""")
-        val PROXY_MERGE_PROPERTY =
-            Regex("""^(\s*)<<\s*:\s*\*([A-Za-z0-9_-]+)\s*$""")
-        val TYPE_ANCHOR = Regex(
-            """(?m)^[A-Za-z0-9_-]+\s*:\s*&([A-Za-z0-9_-]+)\s*(?:#.*)?$""",
-        )
-        val ANCHOR_TYPE = Regex(
-            """(?m)^\s+type\s*:\s*["']?([a-zA-Z0-9_-]+)["']?\s*(?:#.*)?$""",
-            RegexOption.IGNORE_CASE,
-        )
         val JSON_TYPE = Regex(""""type"\s*:\s*"([a-zA-Z0-9_-]+)"""")
         val V2RAY_PROTOCOL = Regex(""""protocol"\s*:\s*"([a-zA-Z0-9_-]+)"""")
         val V2RAY_SUPPORTED_TYPES = setOf("vmess", "vless", "trojan", "shadowsocks", "socks", "http")
-        const val PROPERTY_INDENT = 2
-        const val MAX_NODE_NAME_LENGTH = 200
     }
 }
