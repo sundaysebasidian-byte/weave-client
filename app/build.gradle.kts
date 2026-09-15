@@ -98,7 +98,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     // 1.19.0 / Lifecycle 2.11.0 require compileSdk 37. Keep SDK 36 compatible
     // versions until API 37 is installed on the build and device-test matrix.
     implementation("androidx.core:core:1.18.0")
@@ -118,7 +118,7 @@ dependencies {
     // Safe YAML data parsing for nested Clash providers; never construct arbitrary Java objects.
     implementation("org.yaml:snakeyaml:2.5")
 
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
 
