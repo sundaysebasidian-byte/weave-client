@@ -23,7 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           # Legacy SDK "tools" is no longer available; the action installs cmdline-tools itself.
           packages: platform-tools
