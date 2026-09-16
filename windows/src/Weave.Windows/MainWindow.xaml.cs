@@ -390,7 +390,7 @@ public sealed partial class MainWindow : Window
         if (!_initialized) return;
         // Reflow individual controls, not entire cards: keep network controls close to the exit.
         SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 212 : 228);
-        var narrow = e.NewSize.Width < 980;
+        var narrow = e.NewSize.Width < 920;
         Grid.SetColumnSpan(SubscriptionComboBox, narrow ? 2 : 1);
         Grid.SetColumn(NodeSelection, narrow ? 0 : 1);
         Grid.SetRow(NodeSelection, narrow ? 1 : 0);
@@ -410,10 +410,10 @@ public sealed partial class MainWindow : Window
         if (_page == "0")
         {
             // Real XAML layout regression check; never run in regular user sessions.
-            var stacked = RootGrid.ActualWidth < 980;
+            var stacked = RootGrid.ActualWidth < 920;
             if (Grid.GetRow(NodeSelection) != (stacked ? 1 : 0) || Grid.GetRow(TunToggle) != (stacked ? 1 : 0))
                 throw new InvalidOperationException("Home controls did not reflow for the window width");
-            if (!stacked && RootGrid.ActualHeight >= 680)
+            if (!stacked && RootGrid.ActualHeight >= 600)
                 foreach (var control in new FrameworkElement[] { ConnectButton, SubscriptionComboBox, NodeComboBox, RoutingSelector, TunToggle })
                 {
                     var top = control.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y;

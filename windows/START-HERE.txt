@@ -19,7 +19,7 @@ No subscription is included. Import your own trusted configuration.
 Connected means the authenticated core, configured providers and TUN adapter are ready; it is not proof of internet reachability,
 DNS protection or successful IPv6 routing. Windows 10/11 real-device testing is pending.
 Disconnect before quitting. No automatic update or public release is performed.
-Installer version: Windows 0.3.0 Preview. Uninstalling preserves encrypted user subscriptions.
+Installer version: Windows 0.3.1 Preview. Uninstalling preserves encrypted user subscriptions.
 Language: Settings > Personalization > Language. Chinese and English switch immediately without restarting the proxy.
 Rule mode: process rules, custom domain/CIDR rules, optional bundled China-direct rules, then default exit.
 Global mode uses the default exit. Direct mode does not hide your public IP and needs no subscription.
@@ -30,5 +30,5 @@ Share links contain decryption keys: keep them private. They expire in five minu
 Allow sharing only on trusted Private networks if Windows Firewall asks; do not disable the firewall.
 Camera scanning requires Windows camera permission. Browser privacy experiments require installed Edge WebView2 Runtime.
 These experiments describe only the embedded browser, not all applications. No-result means unknown, not safe.
-Multilingual parity, tray/startup, background paired sync and a system-wide kill switch are not included.
+Full Android feature parity, tray/startup, background paired sync and a system-wide kill switch are not included.
 High-DPI rendering is supported; 120/144 Hz zero-drop performance has not been verified on physical hardware.
