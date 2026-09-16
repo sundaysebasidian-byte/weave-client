@@ -50,7 +50,6 @@ public sealed partial class MainWindow : Window
         ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => L.T(palette.Name)).ToArray();
         LanguageSelector.SelectedIndex = L.Language == "en" ? 1 : 0;
         RootGrid.Language = L.Language;
-        Microsoft.UI.Xaml.Documents.TextElement.SetFontFamily(RootGrid, new Microsoft.UI.Xaml.Media.FontFamily(L.Language == "zh-CN" ? "Microsoft YaHei UI" : "Segoe UI"));
         RoutingSelector.ItemsSource = new[] { L.T("规则"), L.T("全局"), L.T("直连") };
         RoutingSelector.SelectedIndex = 0;
         DnsSelector.ItemsSource = new[] { L.T("加密 DNS"), L.T("广告过滤"), L.T("家庭过滤"), L.T("自订 DNS") };

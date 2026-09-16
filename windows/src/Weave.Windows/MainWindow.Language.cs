@@ -24,7 +24,6 @@ public sealed partial class MainWindow
         {
             L.Language = next;
             RootGrid.Language = next;
-            Microsoft.UI.Xaml.Documents.TextElement.SetFontFamily(RootGrid, new Microsoft.UI.Xaml.Media.FontFamily(next == "zh-CN" ? "Microsoft YaHei UI" : "Segoe UI"));
             RefreshOptions(ThemeSelector, AppearancePalette.All.Select(p => L.T(p.Name)));
             RefreshOptions(DnsSelector, new[] { L.T("加密 DNS"), L.T("广告过滤"), L.T("家庭过滤"), L.T("自订 DNS") });
             RefreshOptions(RoutingSelector, new[] { L.T("规则"), L.T("全局"), L.T("直连") });
