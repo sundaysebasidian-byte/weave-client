@@ -180,7 +180,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             if (_process.IsReady) return;
             await _process.DisposeAsync();
             _process = null;
-            CleanupRuntime();
+            await CleanupRuntimeAsync().ConfigureAwait(false);
         }
 
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
@@ -205,7 +205,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             nodeId,
             options,
             runtime), cancellationToken); }
-        catch { RemoveSessionDirectory(runtime); throw; }
+        catch { await RemoveSessionDirectoryAsync(runtime).ConfigureAwait(false); throw; }
         ActiveBundle = bundle;
         var process = new MihomoProcess(executable);
         process.Exited += (_, _) =>
@@ -240,7 +240,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             _process = null;
             try { _systemProxy.Recover(); } catch { /* Recovery record is retained for the next launch. */ }
             await process.DisposeAsync().ConfigureAwait(false);
-            CleanupRuntime();
+            await CleanupRuntimeAsync().ConfigureAwait(false);
             Status = "启动失败";
             StatusChanged?.Invoke(this, EventArgs.Empty);
             throw;
@@ -262,7 +262,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
             if (process is not null) await process.DisposeAsync().ConfigureAwait(false);
         }
-        finally { CleanupRuntime(); }
+        finally { await CleanupRuntimeAsync().ConfigureAwait(false); }
 
         Status = "未连接";
         StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -277,22 +277,31 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         _importer.Dispose();
     }
 
-    private void CleanupRuntime()
+    private async Task CleanupRuntimeAsync()
     {
         var bundle = ActiveBundle;
         ActiveBundle = null;
-        if (bundle is not null) RemoveSessionDirectory(bundle.Directory);
+        if (bundle is not null) await RemoveSessionDirectoryAsync(bundle.Directory).ConfigureAwait(false);
     }
 
-    private void RemoveSessionDirectory(string path)
+    private Task RemoveSessionDirectoryAsync(string path)
     {
         var root = Path.GetFullPath(Path.Combine(_dataDirectory, "runtime"));
         // Only our own single GUID session, never a subscription-controlled path.
         if (Path.GetDirectoryName(Path.GetFullPath(path)) != root ||
-            !Guid.TryParseExact(Path.GetFileName(path), "N", out _)) return;
-        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+            !Guid.TryParseExact(Path.GetFileName(path), "N", out _)) return Task.CompletedTask;
+        return Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt <= 10; attempt++)
+            {
+                try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); return; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    if (attempt == 10) return; // Preserve an inaccessible session; never broaden the deletion target.
+                    await Task.Delay(200).ConfigureAwait(false);
+                }
+            }
+        });
     }
 
     private SubscriptionRecord PreserveIdentity(SubscriptionRecord record)
