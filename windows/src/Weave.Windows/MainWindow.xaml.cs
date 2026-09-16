@@ -16,6 +16,8 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, double> _scrollOffsets = new();
     private bool _closed;
     private CancellationTokenSource? _probeCancellation;
+    private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private bool _trafficBusy;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
     public MainWindow()
@@ -28,7 +30,8 @@ public sealed partial class MainWindow : Window
         }
         _initialized = true;
         RootGrid.Loaded += CapturePreviewIfRequested;
-        AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1160, 800));
+        var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
+        AppWindow.Resize(new global::Windows.Graphics.SizeInt32(Math.Min(1340, area.Width - 40), Math.Min(900, area.Height - 60)));
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
@@ -45,6 +48,7 @@ public sealed partial class MainWindow : Window
         SubscriptionComboBox.ItemsSource = _model.Subscriptions;
         SubscriptionListView.ItemsSource = _model.Subscriptions;
         RouteSubscriptionComboBox.ItemsSource = _model.Subscriptions;
+        ChainSubscription.ItemsSource = _model.Subscriptions;
         RouteListView.ItemsSource = _model.AppRoutes;
         RouteTargetModeComboBox.ItemsSource = new[] { "自动测速", "固定节点", "直连", "阻止" };
         RouteTargetModeComboBox.SelectedIndex = 0;
@@ -60,6 +64,9 @@ public sealed partial class MainWindow : Window
         Closed += MainWindow_Closed;
         UpdateStatus();
         UpdateNavigation();
+        RefreshAddresses_Click(this, new RoutedEventArgs());
+        _trafficTimer.Tick += TrafficTick;
+        _trafficTimer.Start();
     }
 
     private void SubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -230,7 +237,7 @@ public sealed partial class MainWindow : Window
 
         SavePreferences();
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        if (!new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+        if (TunToggle.IsOn && !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
         {
             var dialog = new ContentDialog { Title = "允许启动 Windows TUN？",
                 Content = "需要以当前 Windows 用户的管理员权限重新打开 Weave。订阅会保留；重开后点击连接。若你使用标准账户，请勿换成其他用户，否则无法读取本账户的加密订阅。",
@@ -249,12 +256,17 @@ public sealed partial class MainWindow : Window
         {
             var node = NodeComboBox.SelectedItem as ProxyNode;
             _model.NetworkOptions = new WindowsNetworkOptions { Ipv6Enabled = Ipv6Toggle.IsOn,
+                EnableTun = TunToggle.IsOn, ChinaDirect = ChinaDirectToggle.IsOn,
+                GeoDataDirectory = Path.Combine(AppContext.BaseDirectory, "geodata"),
+                DomainRules = DomainRoute.Parse(DomainRulesBox.Text),
+                ChainEntrySubscriptionId = ChainToggle.IsOn ? (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id ?? throw new InvalidDataException("请选择入口订阅") : null,
+                ChainEntryNodeId = ChainToggle.IsOn ? (ChainNode.SelectedItem as ProxyNode)?.Id ?? throw new InvalidDataException("请选择入口节点") : null,
                 RoutingMode = (RoutingMode)Math.Max(0, RoutingSelector.SelectedIndex),
                 BlockUdpStun = StunToggle.IsOn, CustomDnsEndpoint = CustomDnsBox.Text.Trim(),
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription.Id, node?.Id, _lifetime.Token);
             ConnectButton.Content = "断开连接";
-            MessageText.Text = "内核与 TUN 已就绪。可在“网络与隐私”检查实际网站连通性。";
+            MessageText.Text = TunToggle.IsOn ? "TUN 与所选出口已就绪，可开始网络检测。" : "系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。";
             UpdateStatus();
         });
     }
@@ -304,7 +316,8 @@ public sealed partial class MainWindow : Window
         StatusText.Text = _model.Status;
         ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
         HeroStatus.Text = _model.IsConnected ? "已连接" : "尚未连接";
-        HeroDetail.Text = _model.IsConnected ? "Mihomo TUN · 节点已完整载入" : "本地内核 · 等待连接";
+        HeroDetail.Text = _model.IsConnected ? _model.Status + " · 出口已核对" : "选择订阅后连接";
+        if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
     }
 
     private void AutomaticNode_Click(object sender, RoutedEventArgs e) => NodeComboBox.SelectedItem = null;
@@ -312,6 +325,10 @@ public sealed partial class MainWindow : Window
     private void Navigate_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string page }) return;
+        NavigateTo(page);
+    }
+    private void NavigateTo(string page)
+    {
         if (_page == page) return;
         _scrollOffsets[_page] = ContentScroll.VerticalOffset;
         _page = page;
@@ -320,6 +337,7 @@ public sealed partial class MainWindow : Window
         RoutesPanel.Visibility = page == "2" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "3" ? Visibility.Visible : Visibility.Collapsed;
         DiagnosticsPanel.Visibility = page == "4" ? Visibility.Visible : Visibility.Collapsed;
+        TransferPanel.Visibility = page == "5" ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigation();
         DispatcherQueue.TryEnqueue(() => ContentScroll.ChangeView(null, _scrollOffsets.GetValueOrDefault(_page), null, true));
     }
@@ -327,12 +345,11 @@ public sealed partial class MainWindow : Window
     private void UpdateNavigation()
     {
         if (!_initialized) return;
-        var titles = new[] { "连接", "订阅", "应用分流", "设置", "网络与隐私" };
-        var subtitles = new[] { "你的网络，从容掌握。", "整理订阅，找到适合你的出口。", "不同应用，各有去向。", "让外观和网络，符合你的习惯。", "以真实响应为依据，不以检测分数替代事实。" };
+        var titles = new[] { "连接", "订阅", "分流规则", "设置", "网络与隐私", "设备同步" };
         var index = int.Parse(_page);
         PageTitle.Text = titles[index];
-        PageSubtitle.Text = subtitles[index];
-        var buttons = new[] { Nav0, Nav1, Nav2, Nav3, Nav4 };
+        PageSubtitle.Text = "";
+        var buttons = new[] { Nav0, Nav1, Nav2, Nav3, Nav4, Nav5 };
         var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[RootGrid.RequestedTheme == ElementTheme.Dark ? "Dark" : "Light"];
         for (var i = 0; i < buttons.Length; i++)
         {
@@ -345,13 +362,14 @@ public sealed partial class MainWindow : Window
     private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!_initialized) return;
-        var narrow = e.NewSize.Width < 1000;
-        HeroColumn.Width = narrow ? new GridLength(0) : new GridLength(0.85, GridUnitType.Star);
-        Grid.SetColumn(ConnectionHero, narrow ? 1 : 0);
-        Grid.SetRow(ExitCard, narrow ? 1 : 0);
+        var narrow = e.NewSize.Width < 1120;
+        HeroColumn.Width = new GridLength(1.2, GridUnitType.Star);
+        Grid.SetColumnSpan(ExitCard, narrow ? 2 : 1);
+        Grid.SetColumnSpan(ConnectionNote, narrow ? 2 : 1);
+        Grid.SetColumn(ConnectionNote, narrow ? 0 : 1);
         Grid.SetRow(ConnectionNote, narrow ? 2 : 1);
         while (ConnectionPanel.RowDefinitions.Count < 3) ConnectionPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        ConnectionHero.MinHeight = narrow ? 210 : 330;
+        ConnectionHero.MinHeight = 166;
     }
 
     private async void CapturePreviewIfRequested(object sender, RoutedEventArgs e)
@@ -361,7 +379,7 @@ public sealed partial class MainWindow : Window
         if (string.IsNullOrEmpty(path)) return;
         await Task.Delay(700);
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
-        await bitmap.RenderAsync(RootGrid);
+        await bitmap.RenderAsync(RootGrid, (int)(RootGrid.ActualWidth * 2), (int)(RootGrid.ActualHeight * 2));
         var buffer = await bitmap.GetPixelsAsync();
         using var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(buffer);
         var pixels = new byte[buffer.Length];
@@ -516,7 +534,8 @@ public sealed partial class MainWindow : Window
     }
     private void StopDiagnostics_Click(object sender, RoutedEventArgs e) => _probeCancellation?.Cancel();
 
-    private sealed record Preferences(string? SubscriptionId, string? NodeId, int Mode, int Dns, bool Ipv6, bool Stun, string CustomDns);
+    private sealed record Preferences(string? SubscriptionId, string? NodeId, int Mode, int Dns, bool Ipv6, bool Stun, string CustomDns,
+        bool Tun = true, bool ChinaDirect = true, bool Chain = false, string? ChainSubscriptionId = null, string? ChainNodeId = null, string DomainRules = "");
     private string PreferencesPath => Path.Combine(Path.GetDirectoryName(_themePath)!, "preferences.bin");
     private void SavePreferences()
     {
@@ -524,7 +543,8 @@ public sealed partial class MainWindow : Window
         {
             var value = new Preferences((SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Id,
                 (NodeComboBox.SelectedItem as ProxyNode)?.Id, RoutingSelector.SelectedIndex, DnsSelector.SelectedIndex,
-                Ipv6Toggle.IsOn, StunToggle.IsOn, CustomDnsBox.Text.Trim());
+                Ipv6Toggle.IsOn, StunToggle.IsOn, CustomDnsBox.Text.Trim(), TunToggle.IsOn, ChinaDirectToggle.IsOn, ChainToggle.IsOn,
+                (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id, (ChainNode.SelectedItem as ProxyNode)?.Id, DomainRulesBox.Text);
             Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath)!);
             var pending = PreferencesPath + ".pending";
             var data = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value);
@@ -549,6 +569,10 @@ public sealed partial class MainWindow : Window
             RoutingSelector.SelectedIndex = Math.Clamp(value.Mode, 0, 2);
             DnsSelector.SelectedIndex = Math.Clamp(value.Dns, 0, 3);
             Ipv6Toggle.IsOn = value.Ipv6; StunToggle.IsOn = value.Stun; CustomDnsBox.Text = value.CustomDns;
+            TunToggle.IsOn = value.Tun; ChinaDirectToggle.IsOn = value.ChinaDirect; ChainToggle.IsOn = value.Chain;
+            ChainSubscription.SelectedItem = _model.Subscriptions.FirstOrDefault(item => item.Id == value.ChainSubscriptionId);
+            ChainNode.SelectedItem = (ChainSubscription.SelectedItem as SubscriptionRecord)?.Nodes.FirstOrDefault(node => node.Id == value.ChainNodeId);
+            DomainRulesBox.Text = value.DomainRules;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.ComponentModel.Win32Exception) { }
     }
@@ -558,7 +582,46 @@ public sealed partial class MainWindow : Window
         SavePreferences();
         _closed = true;
         _lifetime.Cancel();
-        try { await _model.DisposeAsync(); }
+        _trafficTimer.Stop();
+        try { await StopShareAsync(); await _model.DisposeAsync(); }
         finally { _lifetime.Dispose(); }
     }
+
+    private void ChainSubscription_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_initialized) return;
+        ChainNode.ItemsSource = (ChainSubscription.SelectedItem as SubscriptionRecord)?.Nodes;
+        ChainNode.SelectedIndex = -1;
+    }
+    private void RoutingMode_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_initialized) return;
+        ModeExplanation.Text = RoutingSelector.SelectedIndex switch
+        {
+            1 => "全部走默认出口（或默认链），忽略应用、域名和国内直连规则。",
+            2 => "全部直连，不经过任何代理节点。隐私端口拦截仍生效。",
+            _ => "应用规则 → 自订规则 → 局域网 / 国内直连 → 默认出口。",
+        };
+    }
+    private void ValidateRules_Click(object sender, RoutedEventArgs e)
+    {
+        try { var rules = DomainRoute.Parse(DomainRulesBox.Text); SavePreferences(); MessageText.Text = $"已保存 {rules.Count} 条规则，重新连接后生效"; }
+        catch (InvalidDataException error) { MessageText.Text = error.Message; }
+    }
+    private async void TrafficTick(object? sender, object e)
+    {
+        if (_closed || _trafficBusy || _page != "0" || !_model.IsConnected || _model.ActiveBundle is not { } bundle ||
+            (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)) return;
+        _trafficBusy = true;
+        try
+        {
+            using var controller = new MihomoController(bundle);
+            var traffic = await controller.ReadTrafficAsync(_lifetime.Token);
+            if (_closed || !_model.IsConnected || !ReferenceEquals(bundle, _model.ActiveBundle)) return;
+            DownloadRate.Text = Rate(traffic.Down); UploadRate.Text = Rate(traffic.Up);
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException) { }
+        finally { _trafficBusy = false; }
+    }
+    private static string Rate(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:F1} MB/s" : $"{Math.Max(0, bytes) / 1024.0:F1} KB/s";
 }

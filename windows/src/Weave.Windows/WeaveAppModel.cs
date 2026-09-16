@@ -12,6 +12,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private readonly AppRouteStore _routeStore;
     private readonly SubscriptionImporter _importer = new();
     private readonly MihomoConfigBuilder _configBuilder = new();
+    private readonly WindowsSystemProxy _systemProxy;
     private MihomoProcess? _process;
     public RuntimeBundle? ActiveBundle { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
@@ -20,6 +21,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public WeaveAppModel()
     {
+        _systemProxy = new WindowsSystemProxy(_dataDirectory);
         _vault = new SubscriptionVault(
             Path.Combine(_dataDirectory, "subscriptions.bin"),
             new WindowsDpapiProtector());
@@ -38,6 +40,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public void Load()
     {
+        _systemProxy.Recover();
         Subscriptions.Clear();
         AppRoutes.Clear();
         foreach (var subscription in _vault.List())
@@ -78,6 +81,17 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         await Task.Run(() => _vault.Upsert(record));
         ReplaceInCollection(record);
         return record;
+    }
+
+    public async Task ImportTransferAsync(IReadOnlyList<TransferSubscription> items)
+    {
+        // Parse every selected subscription before the single atomic vault write.
+        var parsed = await Task.Run(() => items.Select(item => _importer.ImportText(item.Name, item.Source, item.Payload)).ToArray());
+        var merged = parsed.Select(PreserveIdentity).ToArray();
+        if (merged.Select(item => item.Id).Distinct().Count() != merged.Length)
+            throw new InvalidDataException("传输包包含重复订阅，请在发送端分别选择");
+        await Task.Run(() => _vault.Merge(merged));
+        foreach (var record in merged) ReplaceInCollection(record);
     }
 
     public bool Remove(string id)
@@ -170,7 +184,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        if (!new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+        if (NetworkOptions.EnableTun && !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
             throw new InvalidOperationException("TUN 需要管理员权限。请退出 Weave，右键应用选择“以管理员身份运行”。");
 
         var executable = FindMihomo();
@@ -199,6 +213,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             if (ReferenceEquals(_process, process))
             {
                 Status = "核心已停止";
+                try { _systemProxy.Recover(); } catch { Status = "核心已停止；系统代理恢复失败，请在 Windows 设置中检查"; }
                 StatusChanged?.Invoke(this, EventArgs.Empty);
             }
         };
@@ -211,16 +226,18 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             throw new InvalidDataException($"Mihomo 配置校验失败：{validation.Diagnostics}");
         }
 
-        Status = "正在启动 TUN";
+        Status = options.EnableTun ? "正在启动 TUN" : "正在启动系统代理";
         _process = process;
         await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
         if (!process.IsReady) throw new InvalidOperationException("核心在启动时退出，请检查权限及配置。");
-        Status = "已连接 · Mihomo TUN";
+        if (!options.EnableTun) _systemProxy.Enable(bundle.MixedPort);
+        Status = options.EnableTun ? "已连接 · TUN" : "已连接 · 系统代理";
         StatusChanged?.Invoke(this, EventArgs.Empty);
         }
         catch
         {
             _process = null;
+            _systemProxy.Recover();
             await process.DisposeAsync().ConfigureAwait(false);
             CleanupRuntime();
             Status = "启动失败";
@@ -238,6 +255,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
         var process = _process;
         _process = null;
+        _systemProxy.Recover();
         if (process is not null)
         {
             await process.DisposeAsync().ConfigureAwait(false);
@@ -276,7 +294,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     private SubscriptionRecord PreserveIdentity(SubscriptionRecord record)
     {
-        var old = Subscriptions.FirstOrDefault(item => item.Id == record.Id || item.Source == record.Source);
+        var old = Subscriptions.FirstOrDefault(item => item.Id == record.Id || (item.Source == record.Source &&
+            (record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || item.Name == record.Name)));
         if (old is null) return record;
         var nodes = record.Nodes.Select(node =>
         {

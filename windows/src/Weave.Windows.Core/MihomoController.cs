@@ -82,4 +82,23 @@ public sealed class MihomoController : IDisposable
     }
 
     public void Dispose() => _client.Dispose();
+
+    public async Task<(long Down, long Up)> ReadTrafficAsync(CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(3));
+        using var response = await _client.GetAsync("traffic", HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        var buffer = new byte[4096];
+        var size = 0;
+        while (size < buffer.Length)
+        {
+            var count = await stream.ReadAsync(buffer.AsMemory(size, 1), timeout.Token).ConfigureAwait(false);
+            if (count == 0) break;
+            if (buffer[size++] == 10) break;
+        }
+        using var json = JsonDocument.Parse(buffer.AsMemory(0, size));
+        return (json.RootElement.GetProperty("down").GetInt64(), json.RootElement.GetProperty("up").GetInt64());
+    }
 }

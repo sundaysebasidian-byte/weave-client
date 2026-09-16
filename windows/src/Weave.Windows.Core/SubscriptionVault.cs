@@ -53,6 +53,20 @@ public sealed class SubscriptionVault
         }
     }
 
+    public void Merge(IReadOnlyList<SubscriptionRecord> incoming)
+    {
+        lock (_gate)
+        {
+            var records = ListUnsafe();
+            foreach (var record in incoming)
+            {
+                var index = records.FindIndex(item => item.Id == record.Id);
+                if (index < 0) records.Add(record); else records[index] = record;
+            }
+            SaveUnsafe(records);
+        }
+    }
+
     public bool Remove(string id)
     {
         lock (_gate)

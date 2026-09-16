@@ -83,12 +83,48 @@ public sealed class WindowsAppRoute
 
 public sealed class WindowsNetworkOptions
 {
+    public bool ChinaDirect { get; init; }
+    public string? GeoDataDirectory { get; init; }
+    public string? ChainEntrySubscriptionId { get; init; }
+    public string? ChainEntryNodeId { get; init; }
+    public IReadOnlyList<DomainRoute> DomainRules { get; init; } = Array.Empty<DomainRoute>();
     public RoutingMode RoutingMode { get; init; } = RoutingMode.Rule;
     public bool EnableTun { get; init; } = true;
     public bool Ipv6Enabled { get; init; } = true;
     public bool BlockUdpStun { get; init; }
     public DnsProfile DnsProfile { get; init; } = DnsProfile.Privacy;
     public string? CustomDnsEndpoint { get; init; }
+}
+
+public sealed record DomainRoute(string Kind, string Value, string Target)
+{
+    public static IReadOnlyList<DomainRoute> Parse(string text)
+    {
+        var rules = new List<DomainRoute>();
+        foreach (var line in text.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0))
+        {
+            var fields = line.Split(',').Select(field => field.Trim()).ToArray();
+            if (fields.Length != 3 || fields[0] is not ("DOMAIN" or "DOMAIN-SUFFIX" or "IP-CIDR" or "IP-CIDR6") ||
+                fields[2] is not ("DIRECT" or "PROXY" or "REJECT") || fields[1].Any(char.IsControl))
+                throw new InvalidDataException("规则格式：DOMAIN-SUFFIX,example.com,DIRECT（也支持 PROXY / REJECT）");
+            if (fields[0].StartsWith("DOMAIN", StringComparison.Ordinal))
+            {
+                if (Uri.CheckHostName(fields[1]) != UriHostNameType.Dns) throw new InvalidDataException("规则域名无效");
+            }
+            else
+            {
+                var cidr = fields[1].Split('/');
+                if (cidr.Length != 2 || !System.Net.IPAddress.TryParse(cidr[0], out var ip) ||
+                    !int.TryParse(cidr[1], out var bits) || bits < 0 || bits > (fields[0] == "IP-CIDR" ? 32 : 128) ||
+                    (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) != (fields[0] == "IP-CIDR"))
+                    throw new InvalidDataException("规则 IP 网段无效");
+            }
+            rules.Add(new(fields[0], fields[1], fields[2]));
+            if (rules.Count > 2000) throw new InvalidDataException("规则数量超过 2000 条");
+        }
+        return rules;
+    }
+    public string Compile() => $"{Kind},{Value},{(Target == "PROXY" ? "DEFAULT" : Target)}{(Kind.StartsWith("IP-", StringComparison.Ordinal) ? ",no-resolve" : "")}";
 }
 
 public sealed class RuntimeBundle

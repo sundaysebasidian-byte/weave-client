@@ -43,6 +43,19 @@ public sealed class MihomoConfigBuilder
 
         var providersDirectory = Path.Combine(runtimeDirectory, "providers");
         Directory.CreateDirectory(providersDirectory);
+        if (options.ChinaDirect && options.RoutingMode == RoutingMode.Rule)
+        {
+            foreach (var file in new[] { "GeoIP.dat", "GeoSite.dat" })
+            {
+                var source = Path.Combine(options.GeoDataDirectory ?? "", file);
+                if (!File.Exists(source)) throw new InvalidDataException("国内直连规则库缺失，请重新安装完整发行包");
+                var expected = file == "GeoIP.dat" ? "1e49d985b16d13f3407d43582af64e0431c76e204a97460e5a8f859537687d13"
+                    : "b2c9500f8e3403126a99f47bd9a5bced435c04316823b914bab6d5ee639e8cb7";
+                if (Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))).ToLowerInvariant() != expected)
+                    throw new InvalidDataException("国内直连规则库完整性校验失败，请重新安装完整发行包");
+                File.Copy(source, Path.Combine(runtimeDirectory, file));
+            }
+        }
         foreach (var subscription in usable)
         {
             var providerPath = Path.Combine(providersDirectory, ProviderFileName(subscription));
@@ -54,7 +67,7 @@ public sealed class MihomoConfigBuilder
         File.WriteAllText(configPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         var requiredSelections = new Dictionary<string, string>
         {
-            ["DEFAULT"] = selectedNodeId is null ? AutomaticGroup(selectedSubscription) : FixedGroup(selectedSubscription, selectedNodeId),
+            ["DEFAULT"] = ProxyChain.Enabled(options) ? "WEAVE-CHAIN" : selectedNodeId is null ? AutomaticGroup(selectedSubscription) : FixedGroup(selectedSubscription, selectedNodeId),
         };
         var targets = routes.Select(route => route.Target).Where(target => target.Kind == RouteKind.FixedNode).ToList();
         if (selectedNodeId is not null) targets.Add(RouteTarget.Fixed(selectedSubscription.Id, selectedNodeId));
@@ -64,6 +77,7 @@ public sealed class MihomoConfigBuilder
             var node = subscription.Nodes.First(item => item.Id == target.NodeId);
             requiredSelections[FixedGroup(subscription, node.Id)] = NodePrefix(subscription.Id) + node.RawName;
         }
+        if (ProxyChain.Enabled(options)) requiredSelections["WEAVE-CHAIN"] = "WEAVE-CHAIN-EXIT";
         return new RuntimeBundle
         {
             Directory = runtimeDirectory,
@@ -85,7 +99,7 @@ public sealed class MihomoConfigBuilder
         string? selectedNodeId,
         WindowsNetworkOptions options, int mixedPort, int controllerPort, string secret)
     {
-        var selectedGroup = selectedNodeId is null
+        var selectedGroup = ProxyChain.Enabled(options) ? "WEAVE-CHAIN" : selectedNodeId is null
             ? AutomaticGroup(selectedSubscription)
             : FixedGroup(selectedSubscription, selectedNodeId);
         var builder = new StringBuilder();
@@ -101,6 +115,8 @@ public sealed class MihomoConfigBuilder
         builder.AppendLine("find-process-mode: strict");
         builder.AppendLine("unified-delay: true");
         builder.AppendLine("tcp-concurrent: true");
+        builder.AppendLine("geodata-mode: true");
+        builder.AppendLine("geo-auto-update: false");
         builder.AppendLine("profile:");
         builder.AppendLine("  store-selected: false");
 
@@ -141,6 +157,7 @@ public sealed class MihomoConfigBuilder
         }
 
         // DIRECT is built into Mihomo; redefining it is a duplicate-name error.
+        if (ProxyChain.Enabled(options)) builder.AppendLine(ProxyChain.Build(byId, selectedSubscription, selectedNodeId, options));
         builder.AppendLine("proxy-providers:");
         foreach (var subscription in subscriptions)
         {
@@ -157,6 +174,12 @@ public sealed class MihomoConfigBuilder
         }
 
         builder.AppendLine("proxy-groups:");
+        if (ProxyChain.Enabled(options))
+        {
+            builder.AppendLine("  - name: WEAVE-CHAIN");
+            builder.AppendLine("    type: select");
+            builder.AppendLine("    proxies: [WEAVE-CHAIN-EXIT]");
+        }
         foreach (var subscription in subscriptions)
         {
             builder.AppendLine($"  - name: {YamlString(AutomaticGroup(subscription))}");
@@ -215,8 +238,20 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine("  - DST-PORT,19302-19309,REJECT");
         }
         if (options.RoutingMode == RoutingMode.Rule)
+        {
             foreach (var rule in ProcessRuleCompiler.Compile(routes, byId))
                 builder.AppendLine($"  - {YamlString(rule)}");
+            foreach (var rule in options.DomainRules) builder.AppendLine($"  - {YamlString(rule.Compile())}");
+            builder.AppendLine("  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve");
+            builder.AppendLine("  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve");
+            builder.AppendLine("  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve");
+            builder.AppendLine("  - IP-CIDR6,fc00::/7,DIRECT,no-resolve");
+            if (options.ChinaDirect)
+            {
+                builder.AppendLine("  - GEOSITE,cn,DIRECT");
+                builder.AppendLine("  - GEOIP,cn,DIRECT");
+            }
+        }
         builder.AppendLine(options.RoutingMode == RoutingMode.Direct ? "  - MATCH,DIRECT" : "  - MATCH,DEFAULT");
         return builder.ToString();
     }
