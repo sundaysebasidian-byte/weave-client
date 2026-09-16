@@ -29,8 +29,12 @@ public sealed partial class MainWindow : Window
         foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, NetworkSettingsCard, PrivacySettingsCard, RoutesPanel, NodesPanel, DiagnosticsPanel, TransferPanel })
         {
             card.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
-            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 18 : 10);
+            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 24 : 16);
         }
+        SidebarSurface.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+        SidebarSurface.Translation = new System.Numerics.Vector3(0, 0, 16);
+        ConnectButton.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+        ConnectButton.Translation = new System.Numerics.Vector3(0, 0, 10);
         _initialized = true;
         RootGrid.Loaded += CapturePreviewIfRequested;
         var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
@@ -379,8 +383,10 @@ public sealed partial class MainWindow : Window
         var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[RootGrid.RequestedTheme == ElementTheme.Dark ? "Dark" : "Light"];
         for (var i = 0; i < buttons.Length; i++)
         {
-            buttons[i].Background = i == index ? (Microsoft.UI.Xaml.Media.Brush)theme["WeaveGlassBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            buttons[i].Foreground = (Microsoft.UI.Xaml.Media.Brush)theme[i == index ? "WeaveInkBrush" : "WeaveMutedBrush"];
+            buttons[i].Background = i == index ? (Microsoft.UI.Xaml.Media.Brush)theme["WeaveSelectionBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            buttons[i].BorderThickness = new Thickness(i == index ? 1 : 0);
+            buttons[i].BorderBrush = (Microsoft.UI.Xaml.Media.Brush)theme["WeaveLightEdgeBrush"];
+            buttons[i].Foreground = (Microsoft.UI.Xaml.Media.Brush)theme[i == index ? "WeaveAccentBrush" : "WeaveMutedBrush"];
             buttons[i].FontWeight = i == index ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
         }
     }
@@ -477,22 +483,36 @@ public sealed partial class MainWindow : Window
         var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];
         glass.GradientStops[0].Color = Color(palette.Paper);
         glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
-        var topGlass = glass.GradientStops[0].Color; topGlass.A = 242;
-        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 246;
+        var topGlass = glass.GradientStops[0].Color; topGlass.A = 145;
+        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 190;
         glass.GradientStops[0].Color = topGlass; glass.GradientStops[1].Color = bottomGlass;
         var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
         sidebar.TintColor = sidebar.FallbackColor = Color(palette.Paper);
+        sidebar.TintOpacity = palette.Dark ? .48 : .28;
+        sidebar.TintLuminosityOpacity = palette.Dark ? .55 : .78;
+        var acrylic = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeavePanelAcrylic"];
+        acrylic.TintColor = acrylic.FallbackColor = Color(palette.Paper);
+        acrylic.TintOpacity = palette.Dark ? .48 : .22;
+        acrylic.TintLuminosityOpacity = palette.Dark ? .55 : .72;
         void Gradient(string key, params global::Windows.UI.Color[] colors)
         {
             var brush = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme[key];
             for (var stop = 0; stop < colors.Length; stop++) brush.GradientStops[stop].Color = colors[stop];
         }
         var paper = Color(palette.Paper); var tint = Color(palette.Tint); var accent = Color(palette.Accent);
-        Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .38), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .2));
-        Gradient("WeaveHeroBrush", Mix(paper, accent, palette.Dark ? .12 : .025), Mix(paper, tint, .68), Mix(paper, tint, .30));
-        Gradient("WeaveIconBrush", Mix(paper, accent, palette.Dark ? .23 : .03), Mix(paper, accent, palette.Dark ? .06 : .18));
-        Gradient("WeaveLightEdgeBrush", Mix(paper, Color("FFFFFF"), palette.Dark ? .25 : .9),
-            Mix(paper, Color(palette.Ink), palette.Dark ? .08 : .09), Mix(paper, Color("FFFFFF"), palette.Dark ? .13 : .8));
+        static global::Windows.UI.Color Alpha(global::Windows.UI.Color color, byte opacity) { color.A = opacity; return color; }
+        var white = Color("FFFFFF");
+        Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .50), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .28));
+        Gradient("WeaveHeroBrush", Alpha(Mix(paper, accent, .04), 150), Alpha(Mix(paper, tint, .72), 185), Alpha(Mix(paper, accent, .15), 165));
+        Gradient("WeaveIconBrush", Mix(paper, white, palette.Dark ? .10 : .9), Mix(paper, accent, palette.Dark ? .32 : .24));
+        Gradient("WeaveLightEdgeBrush", Alpha(Mix(paper, white, palette.Dark ? .36 : 1), 245),
+            Alpha(Mix(paper, accent, .32), 115), Alpha(Mix(paper, white, palette.Dark ? .24 : .95), 225));
+        Gradient("WeaveInnerEdgeBrush", Alpha(white, 12), Alpha(white, 4), Alpha(white, palette.Dark ? (byte)48 : (byte)170));
+        Gradient("WeaveSheenBrush", Alpha(white, palette.Dark ? (byte)20 : (byte)92), Alpha(white, 7), Alpha(white, 0), Alpha(white, 22));
+        Gradient("WeaveRibbonBrush", Alpha(tint, 0), Alpha(Mix(tint, accent, .24), 115), Alpha(tint, 38));
+        Gradient("WeaveSelectionBrush", Alpha(Mix(paper, white, palette.Dark ? .1 : .8), 240),
+            Alpha(Mix(paper, accent, palette.Dark ? .25 : .19), 210), Alpha(Mix(paper, tint, .3), 235));
+        Gradient("WeaveActionBrush", Mix(accent, white, .18), Mix(accent, Color(palette.Dark ? "FFFFFF" : "102E3D"), .16));
         RootGrid.RequestedTheme = palette.Dark ? ElementTheme.Dark : ElementTheme.Light;
         UpdateNavigation();
         try { Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!); File.WriteAllText(_themePath, index.ToString()); }

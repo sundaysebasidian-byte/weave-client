@@ -10,6 +10,12 @@
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
+                    <AcrylicBrush x:Key="WeavePanelAcrylic" TintColor="#EFF6FB" TintOpacity="0.22" TintLuminosityOpacity="0.72" FallbackColor="#F6FAFD"/>
+                    <LinearGradientBrush x:Key="WeaveSheenBrush" StartPoint="0,0" EndPoint="0.3,1"><GradientStop Color="#70FFFFFF" Offset="0"/><GradientStop Color="#0AFFFFFF" Offset="0.28"/><GradientStop Color="#00FFFFFF" Offset="0.72"/><GradientStop Color="#24FFFFFF" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveInnerEdgeBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#08FFFFFF" Offset="0"/><GradientStop Color="#04FFFFFF" Offset="0.5"/><GradientStop Color="#80FFFFFF" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveRibbonBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#009BCAD9" Offset="0"/><GradientStop Color="#659BCAD9" Offset="0.5"/><GradientStop Color="#18A5BED8" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveSelectionBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EEFFFFFF" Offset="0"/><GradientStop Color="#92B9D7E4" Offset="0.55"/><GradientStop Color="#D5F3FAFD" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveActionBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#398F9F" Offset="0"/><GradientStop Color="#176B80" Offset="1"/></LinearGradientBrush>
                     <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#FFFFFF"/>
                     <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#F5F8FC" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#F5F8FC"/>
                     <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EAF0F8" Offset="0"/><GradientStop Color="#F3F6FA" Offset="0.55"/><GradientStop Color="#E7EFEE" Offset="1"/></LinearGradientBrush>
@@ -25,6 +31,12 @@
                     <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#EDF2F7" Offset="1"/></LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
+                    <AcrylicBrush x:Key="WeavePanelAcrylic" TintColor="#EFF6FB" TintOpacity="0.22" TintLuminosityOpacity="0.72" FallbackColor="#F6FAFD"/>
+                    <LinearGradientBrush x:Key="WeaveSheenBrush" StartPoint="0,0" EndPoint="0.3,1"><GradientStop Color="#70FFFFFF" Offset="0"/><GradientStop Color="#0AFFFFFF" Offset="0.28"/><GradientStop Color="#00FFFFFF" Offset="0.72"/><GradientStop Color="#24FFFFFF" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveInnerEdgeBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#08FFFFFF" Offset="0"/><GradientStop Color="#04FFFFFF" Offset="0.5"/><GradientStop Color="#80FFFFFF" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveRibbonBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#009BCAD9" Offset="0"/><GradientStop Color="#659BCAD9" Offset="0.5"/><GradientStop Color="#18A5BED8" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveSelectionBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EEFFFFFF" Offset="0"/><GradientStop Color="#92B9D7E4" Offset="0.55"/><GradientStop Color="#D5F3FAFD" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveActionBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#398F9F" Offset="0"/><GradientStop Color="#176B80" Offset="1"/></LinearGradientBrush>
                     <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#0B0E13"/>
                     <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#151C29" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#151C29"/>
                     <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#111B2B" Offset="0"/><GradientStop Color="#0B101A" Offset="0.55"/><GradientStop Color="#152329" Offset="1"/></LinearGradientBrush>
@@ -41,12 +53,23 @@
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <local:UiText x:Key="UiText" />
-            <Style x:Key="GlassCard" TargetType="Border">
+            <Style x:Key="GlassCard" TargetType="ContentControl">
                 <Setter Property="Background" Value="{ThemeResource WeaveGlassBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
                 <Setter Property="CornerRadius" Value="24"/>
                 <Setter Property="Padding" Value="28"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="IsTabStop" Value="False"/>
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContentControl">
+                    <Grid>
+                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{ThemeResource WeavePanelAcrylic}" IsHitTestVisible="False"/>
+                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{TemplateBinding Background}" IsHitTestVisible="False"/>
+                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{ThemeResource WeaveSheenBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" IsHitTestVisible="False"/>
+                        <Border Margin="2" CornerRadius="22" BorderBrush="{ThemeResource WeaveInnerEdgeBrush}" BorderThickness="1" IsHitTestVisible="False"/>
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Grid>
+                </ControlTemplate></Setter.Value></Setter>
             </Style>
             <Style x:Key="SectionTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="19"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
             <Style TargetType="Button"><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="17,11"/><Setter Property="MinHeight" Value="42"/><Setter Property="FontSize" Value="13"/><Setter Property="BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/></Style>

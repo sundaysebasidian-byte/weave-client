@@ -2,18 +2,22 @@
 <Grid x:Name="RootGrid" RequestedTheme="Light" Background="{ThemeResource WeaveCanvasBrush}" UseLayoutRounding="True" SizeChanged="RootGrid_SizeChanged">
 <Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="248"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 <Rectangle Grid.ColumnSpan="2" Fill="{ThemeResource WeaveAtmosphereBrush}" IsHitTestVisible="False"/>
-<Border Background="{ThemeResource WeaveSidebarBrush}" BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,0,0.5,0">
-<Grid Padding="16,26,16,22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+<Viewbox Grid.ColumnSpan="2" Stretch="Fill" IsHitTestVisible="False"><Canvas Width="1000" Height="800"><Canvas.Clip><RectangleGeometry Rect="0,0,1000,800"/></Canvas.Clip>
+<Path Fill="{ThemeResource WeaveRibbonBrush}" Data="M 280,0 C 660,140 400,290 750,490 C 850,548 930,540 1000,560 L 1000,800 C 750,720 550,460 510,350 C 435,150 630,95 280,0 Z"/>
+<Path Fill="{ThemeResource WeaveRibbonBrush}" Opacity="0.45" Data="M 0,610 C 160,420 350,565 410,380 C 448,262 480,95 770,0 L 1000,0 C 628,130 612,278 512,475 C 410,690 160,535 0,800 Z"/>
+</Canvas></Viewbox>
+<Border x:Name="SidebarSurface" Margin="12,14,4,14" CornerRadius="28" Background="{ThemeResource WeaveSidebarBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1">
+<Grid Padding="8,20,8,18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <StackPanel Orientation="Horizontal" Spacing="12" Margin="14,0,0,26"><Image Source="ms-appx:///Assets/Weave.png" Width="44" Height="44" AutomationProperties.Name="Weave"/><StackPanel VerticalAlignment="Center" Spacing="3"><TextBlock Text="Weave" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><TextBlock Text="WINDOWS" FontSize="9" CharacterSpacing="160" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel></StackPanel>
 <ScrollViewer x:Name="SidebarNavigationScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,12"><StackPanel>
-<StackPanel Spacing="8"><Button x:Name="Nav0" Tag="0" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE80F;" FontSize="18"/><TextBlock Text="{Binding Connect, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
-<Button x:Name="Nav1" Tag="1" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE8F1;" FontSize="18"/><TextBlock Text="{Binding Subscriptions, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
-<Button x:Name="Nav2" Tag="2" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE8AB;" FontSize="18"/><TextBlock Text="{Binding Routing, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button></StackPanel>
-<StackPanel Spacing="8" Margin="0,24,0,0"><Button x:Name="Nav4" Tag="4" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE774;" FontSize="18"/><TextBlock Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
-<Button x:Name="Nav5" Tag="5" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE8AD;" FontSize="18"/><TextBlock Text="{Binding DeviceSync, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button></StackPanel>
+<StackPanel Spacing="8"><Button x:Name="Nav0" Tag="0" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52" CornerRadius="18"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE80F;" FontSize="18"/><TextBlock Text="{Binding Connect, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
+<Button x:Name="Nav1" Tag="1" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52" CornerRadius="18"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE8F1;" FontSize="18"/><TextBlock Text="{Binding Subscriptions, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
+<Button x:Name="Nav2" Tag="2" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52" CornerRadius="18"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE8AB;" FontSize="18"/><TextBlock Text="{Binding Routing, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button></StackPanel>
+<StackPanel Spacing="8" Margin="0,24,0,0"><Button x:Name="Nav4" Tag="4" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52" CornerRadius="18"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE774;" FontSize="18"/><TextBlock Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
+<Button x:Name="Nav5" Tag="5" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52" CornerRadius="18"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE8AD;" FontSize="18"/><TextBlock Text="{Binding DeviceSync, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button></StackPanel>
 </StackPanel></ScrollViewer>
 <StackPanel Grid.Row="2" Spacing="14">
-<Button x:Name="Nav3" Tag="3" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE713;" FontSize="18"/><TextBlock Text="{Binding Settings, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
+<Button x:Name="Nav3" Tag="3" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" MinHeight="52" CornerRadius="18"><StackPanel Orientation="Horizontal" Spacing="18"><FontIcon Glyph="&#xE713;" FontSize="18"/><TextBlock Text="{Binding Settings, Source={StaticResource UiText}}" FontSize="14"/></StackPanel></Button>
 <Border BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,1,0,0" Padding="0,14,0,0" Margin="16,0"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 <StackPanel Spacing="5"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74B;" FontSize="12" Foreground="{ThemeResource WeaveAccentBrush}"/><TextBlock Text="{Binding Download, Source={StaticResource UiText}}" FontSize="11" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel><TextBlock x:Name="DownloadRate" Text="—" FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/></StackPanel>
 <StackPanel Grid.Column="1" Spacing="5"><StackPanel Orientation="Horizontal" Spacing="7"><FontIcon Glyph="&#xE74A;" FontSize="12" Foreground="{ThemeResource WeaveAccentBrush}"/><TextBlock Text="{Binding Upload, Source={StaticResource UiText}}" FontSize="11" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel><TextBlock x:Name="UploadRate" Text="—" FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/></StackPanel>
@@ -29,22 +33,22 @@
 <ScrollViewer x:Name="ContentScroll" Grid.Row="1" Padding="26,2,26,24" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsDeferredScrollingEnabled="False">
 <StackPanel MaxWidth="1280" HorizontalAlignment="Stretch" Spacing="14">
 <StackPanel x:Name="ConnectionPanel" Spacing="14">
-<Border x:Name="ConnectionHero" Style="{StaticResource GlassCard}" Background="{ThemeResource WeaveHeroBrush}" Padding="20,18" MinHeight="100">
+<ContentControl x:Name="ConnectionHero" Style="{StaticResource GlassCard}" Background="{ThemeResource WeaveHeroBrush}" Padding="20,18" MinHeight="100">
 <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-<Border Width="52" Height="52" CornerRadius="18" Background="{ThemeResource WeaveIconBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1"><FontIcon Glyph="&#xE83D;" FontSize="23" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
+<Grid Width="56" Height="56"><Ellipse Fill="{ThemeResource WeaveIconBrush}" Stroke="{ThemeResource WeaveLightEdgeBrush}" StrokeThickness="1"/><Ellipse Margin="4" Stroke="{ThemeResource WeaveInnerEdgeBrush}" StrokeThickness="1"/><Path Width="23" Height="28" Stretch="Uniform" Stroke="{ThemeResource WeaveAccentBrush}" StrokeThickness="1.7" StrokeLineJoin="Round" Data="M 12,2 C 15,4 19,5 22,5 L 22,15 C 22,21 18,26 12,29 C 6,26 2,21 2,15 L 2,5 C 5,5 9,4 12,2 Z M 7,15 L 11,19 L 18,11"/></Grid>
 <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center"><TextBlock x:Name="HeroStatus" TextWrapping="Wrap" Text="{Binding ReadyToConnect, Source={StaticResource UiText}}" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Ellipse x:Name="ConnectionDot" Width="6" Height="6" Fill="{ThemeResource WeaveMutedBrush}"/><TextBlock Grid.Column="1" x:Name="HeroDetail" Text="{Binding ChooseASubscriptionToGetStarted, Source={StaticResource UiText}}" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap"/></Grid></StackPanel>
-<Button x:Name="ConnectButton" Grid.Column="2" Content="{Binding Connect, Source={StaticResource UiText}}" Click="ConnectButton_Click" VerticalAlignment="Center" MinWidth="112" Padding="22,13" CornerRadius="16" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" FontWeight="SemiBold" Background="{ThemeResource WeaveAccentBrush}" Foreground="{ThemeResource WeaveActionTextBrush}"/>
-</Grid></Border>
-<Border x:Name="ExitCard" Style="{StaticResource GlassCard}" Padding="0"><StackPanel>
+<Button x:Name="ConnectButton" Grid.Column="2" Content="{Binding Connect, Source={StaticResource UiText}}" Click="ConnectButton_Click" VerticalAlignment="Center" MinWidth="112" Padding="22,13" CornerRadius="16" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" FontWeight="SemiBold" Background="{ThemeResource WeaveActionBrush}" Foreground="{ThemeResource WeaveActionTextBrush}"><Button.ContentTemplate><DataTemplate><StackPanel Orientation="Horizontal" Spacing="9"><FontIcon Glyph="&#xE7E8;" FontSize="16"/><TextBlock Text="{Binding}"/></StackPanel></DataTemplate></Button.ContentTemplate></Button>
+</Grid></ContentControl>
+<ContentControl x:Name="ExitCard" Style="{StaticResource GlassCard}" Padding="0"><StackPanel>
 <Border BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,0,0,0.5" Padding="20,12"><Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border Width="34" Height="34" CornerRadius="11" Background="{ThemeResource WeaveIconBrush}"><FontIcon Glyph="&#xE8F1;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border><TextBlock Grid.Column="1" Text="{Binding ExitNode, Source={StaticResource UiText}}" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><Button Grid.Column="2" Content="{Binding ManageSubscriptions, Source={StaticResource UiText}}" Tag="1" Click="Navigate_Click" Padding="12,7" MinHeight="34" FontSize="12"/></Grid></Border>
 <Grid x:Name="ExitSelectors" Padding="20,16,20,18" ColumnSpacing="14" RowSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.3*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <ComboBox x:Name="SubscriptionComboBox" Header="{Binding Subscriptions, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged"/>
 <Grid x:Name="NodeSelection" Grid.Column="1" ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
 <ComboBox x:Name="NodeComboBox" Header="{Binding Node, Source={StaticResource UiText}}" PlaceholderText="{Binding AutomaticLowestLatency, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName"/>
-<Button x:Name="AutomaticNodeButton" Grid.Column="1" Padding="12,11" Content="{Binding Auto, Source={StaticResource UiText}}" Click="AutomaticNode_Click" VerticalAlignment="Bottom"/>
+<Button x:Name="AutomaticNodeButton" Grid.Column="1" Padding="12,5" MinHeight="32" Content="{Binding Auto, Source={StaticResource UiText}}" Click="AutomaticNode_Click" VerticalAlignment="Bottom"/>
 </Grid></Grid>
-</StackPanel></Border>
-<Border x:Name="ConnectionNote" Style="{StaticResource GlassCard}" Padding="0"><StackPanel>
+</StackPanel></ContentControl>
+<ContentControl x:Name="ConnectionNote" Style="{StaticResource GlassCard}" Padding="0"><StackPanel>
 <Border BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,0,0,0.5" Padding="20,12"><Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border Width="34" Height="34" CornerRadius="11" Background="{ThemeResource WeaveIconBrush}"><FontIcon Glyph="&#xE968;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border><TextBlock Grid.Column="1" Text="{Binding NetworkSettings, Source={StaticResource UiText}}" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><Button Grid.Column="2" Content="{Binding Settings, Source={StaticResource UiText}}" Tag="3" Click="Navigate_Click" Padding="12,7" MinHeight="34" FontSize="12"/></Grid></Border>
 <StackPanel Padding="20,16,20,18" Spacing="14">
 <Grid x:Name="NetworkOptions" ColumnSpacing="20" RowSpacing="14"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.3*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -59,9 +63,9 @@
 <TextBlock Text="{Binding DeviceEntryExitWebsiteSelectTheExit, Source={StaticResource UiText}}" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 </StackPanel></Expander>
 <TextBlock Text="{Binding ReconnectToApplyChanges, Source={StaticResource UiText}}" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}"/>
-</StackPanel></StackPanel></Border>
+</StackPanel></StackPanel></ContentControl>
 </StackPanel>
-                <Border x:Name="RoutesPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
+                <ContentControl x:Name="RoutesPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="14">
                         <TextBlock Text="{Binding AppRouting, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" />
                         <TextBlock Text="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
@@ -96,9 +100,9 @@
                         </ListView>
 <Expander Header="{Binding CustomDomainIPRules, Source={StaticResource UiText}}" HorizontalAlignment="Stretch"><StackPanel Spacing="12"><TextBlock Text="{Binding OneRulePerLineDOMAINSUFFIXExample, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/><TextBox x:Name="DomainRulesBox" AcceptsReturn="True" MinHeight="150" TextWrapping="Wrap" PlaceholderText="DOMAIN-SUFFIX,example.com,DIRECT"/><Button Content="{Binding ValidateAndSave, Source={StaticResource UiText}}" Click="ValidateRules_Click"/></StackPanel></Expander>
                     </StackPanel>
-                </Border>
+                </ContentControl>
 
-                <Border x:Name="ImportPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
+                <ContentControl x:Name="ImportPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="14">
                         <TextBlock Text="{Binding ImportSubscription, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" />
                         <TextBlock Text="{Binding ImportedContentIsEncryptedWithWindowsDPAPI, Source={StaticResource UiText}}" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
@@ -111,9 +115,9 @@
                         <Expander Header="{Binding PasteConfiguration, Source={StaticResource UiText}}" HorizontalAlignment="Stretch"><StackPanel Spacing="12"><TextBox x:Name="SubscriptionTextBox" Header="{Binding ClashMihomoYAMLBase64, Source={StaticResource UiText}}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
                         <Button Content="{Binding ImportText, Source={StaticResource UiText}}" Click="ImportTextButton_Click" HorizontalAlignment="Left" /></StackPanel></Expander>
                     </StackPanel>
-                </Border>
+                </ContentControl>
 
-                <Border x:Name="SubscriptionsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
+                <ContentControl x:Name="SubscriptionsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="10">
                         <TextBlock Text="{Binding YourLibrary, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" />
                         <TextBlock Text="{Binding SelectASubscriptionToViewItsNodes, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
@@ -136,26 +140,26 @@
                             </ListView.ItemTemplate>
                         </ListView>
                     </StackPanel>
-                </Border>
+                </ContentControl>
 
-<Border x:Name="SettingsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="22"><TextBlock Text="{Binding Personalization, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/>
+<ContentControl x:Name="SettingsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="22"><TextBlock Text="{Binding Personalization, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/>
 <Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="1.4*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions><ComboBox x:Name="ThemeSelector" Header="{Binding Appearance, Source={StaticResource UiText}}" SelectionChanged="ThemeSelector_SelectionChanged"/><ComboBox x:Name="LanguageSelector" Grid.Column="1" Header="{Binding Language, Source={StaticResource UiText}}" SelectionChanged="LanguageSelector_SelectionChanged"><x:String>简体中文</x:String><x:String>English</x:String></ComboBox></Grid>
-</StackPanel></Border>
-<Border x:Name="NetworkSettingsCard" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18"><TextBlock Text="{Binding NetworkSettings, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/><ToggleSwitch x:Name="ChinaDirectToggle" Header="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" IsOn="True" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}"/><TextBlock Text="{Binding OfflineRulesUpdateWithTheAppApp, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/><ToggleSwitch x:Name="Ipv6Toggle" Header="{Binding IPv6DualStack, Source={StaticResource UiText}}" IsOn="True" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}"/>
+</StackPanel></ContentControl>
+<ContentControl x:Name="NetworkSettingsCard" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18"><TextBlock Text="{Binding NetworkSettings, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/><ToggleSwitch x:Name="ChinaDirectToggle" Header="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" IsOn="True" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}"/><TextBlock Text="{Binding OfflineRulesUpdateWithTheAppApp, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/><ToggleSwitch x:Name="Ipv6Toggle" Header="{Binding IPv6DualStack, Source={StaticResource UiText}}" IsOn="True" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}"/>
 <ComboBox x:Name="DnsSelector" Header="DNS"></ComboBox>
 <TextBox x:Name="CustomDnsBox" Header="{Binding CustomEncryptedDNS, Source={StaticResource UiText}}" PlaceholderText="https://example.com/dns-query"/>
 <ToggleSwitch x:Name="StunToggle" Header="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" OnContent="{Binding OnMayAffectCalls, Source={StaticResource UiText}}"/>
 <TextBlock Text="{Binding NetworkSettingsApplyOnTheNextConnection, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
-</StackPanel></Border>
-<Border x:Name="PrivacySettingsCard" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="14"><TextBlock Text="{Binding PrivacyBoundaries, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/><TextBlock Text="{Binding SubscriptionsAreEncryptedWithWindowsDPAPIEncrypted, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
-</StackPanel></Border>
-<Border x:Name="NodesPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="14">
+</StackPanel></ContentControl>
+<ContentControl x:Name="PrivacySettingsCard" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="14"><TextBlock Text="{Binding PrivacyBoundaries, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/><TextBlock Text="{Binding SubscriptionsAreEncryptedWithWindowsDPAPIEncrypted, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+</StackPanel></ContentControl>
+<ContentControl x:Name="NodesPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="14">
 <Grid><TextBlock Text="{Binding SubscriptionNodes, Source={StaticResource UiText}}" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8"><Button Content="{Binding TestNodes, Source={StaticResource UiText}}" Click="TestNodes_Click"/><Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/></StackPanel></Grid>
 <TextBlock Text="{Binding ConnectBeforeTestingLatencyTestsRunOnly, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <ListView x:Name="SubscriptionNodesList" Height="300" SelectionMode="Single" DisplayMemberPath="DisplayName" SelectionChanged="NodeList_SelectionChanged"/>
 <TextBlock x:Name="NodeTestText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
-</StackPanel></Border>
-<Border x:Name="DiagnosticsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18">
+</StackPanel></ContentControl>
+<ContentControl x:Name="DiagnosticsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18">
 <TextBlock Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/>
 <TextBlock Text="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <CheckBox x:Name="DiagnosticConsent" Content="{Binding AllowThisTestToContactIpifyAnd, Source={StaticResource UiText}}"/>
@@ -163,9 +167,9 @@
 <ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None" DisplayMemberPath="Summary"/>
 <local:FlowPanel><Button Content="{Binding WebRTCFingerprint, Source={StaticResource UiText}}" Click="BrowserPrivacy_Click"/><Button Content="{Binding DNSResolverTest, Source={StaticResource UiText}}" Click="DnsPrivacy_Click"/></local:FlowPanel>
 <TextBlock Text="{Binding TheBrowserLabOpensAnIsolatedWebView2, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
-</StackPanel></Border>
+</StackPanel></ContentControl>
 
-<Border x:Name="TransferPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18">
+<ContentControl x:Name="TransferPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18">
 <TextBlock Text="{Binding DeviceSyncLabel, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/>
 <TextBlock Text="{Binding ConnectYourPhoneAndPCToThe, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <Expander x:Name="ReceiveSection" Header="{Binding ReceiveFromPhone, Source={StaticResource UiText}}" IsExpanded="True" HorizontalAlignment="Stretch"><StackPanel Spacing="14">
@@ -183,7 +187,7 @@
 <TextBlock x:Name="ShareStatus" Text="{Binding NotSharing, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <local:FlowPanel><Button Content="{Binding CopyLink, Source={StaticResource UiText}}" Click="CopyShareLink_Click"/><Button Content="{Binding StopSharing, Source={StaticResource UiText}}" Click="StopShare_Click"/></local:FlowPanel>
 </StackPanel></Expander>
-</StackPanel></Border>
+</StackPanel></ContentControl>
 </StackPanel>
 </ScrollViewer>
 <Grid Grid.Row="2" Padding="32,8,32,16" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

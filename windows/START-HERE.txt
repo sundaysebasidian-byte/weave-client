@@ -19,7 +19,7 @@ No subscription is included. Import your own trusted configuration.
 Connected means the authenticated core, configured providers and TUN adapter are ready; it is not proof of internet reachability,
 DNS protection or successful IPv6 routing. Windows 10/11 real-device testing is pending.
 Disconnect before quitting. No automatic update or public release is performed.
-Installer version: Windows 0.3.2 Preview. Uninstalling preserves encrypted user subscriptions.
+Installer version: Windows 0.3.3 Preview. Uninstalling preserves encrypted user subscriptions.
 Language: Settings > Personalization > Language. Chinese and English switch immediately without restarting the proxy.
 Rule mode: process rules, custom domain/CIDR rules, optional bundled China-direct rules, then default exit.
 Global mode uses the default exit. Direct mode does not hide your public IP and needs no subscription.
