@@ -19,6 +19,15 @@ No subscription is included. Import your own trusted configuration.
 Connected means the authenticated core, configured providers and TUN adapter are ready; it is not proof of internet reachability,
 DNS protection or successful IPv6 routing. Windows 10/11 real-device testing is pending.
 Disconnect before quitting. No automatic update or public release is performed.
-Installer version: Windows 0.1.0 Preview. Uninstalling preserves encrypted user subscriptions.
-Rule mode currently implements process rules, not a mainland-China automatic direct ruleset.
-Camera QR, LAN transfer, full browser privacy tests and multilingual parity are pending.
+Installer version: Windows 0.2.0 Preview. Uninstalling preserves encrypted user subscriptions.
+Rule mode: process rules, custom domain/CIDR rules, optional bundled China-direct rules, then default exit.
+Global mode uses the default exit. Direct mode does not hide your public IP and needs no subscription.
+System proxy mode covers only applications which honor Windows proxy settings. TUN needs administrator rights.
+Chains require explicit entry and exit nodes. Independent application routes do not inherit the default chain.
+Android-compatible encrypted LAN sharing: QR, QR image or link; selected subscriptions; confirm the 6-digit code.
+Share links contain decryption keys: keep them private. They expire in five minutes and are single-use.
+Allow sharing only on trusted Private networks if Windows Firewall asks; do not disable the firewall.
+Camera scanning requires Windows camera permission. Browser privacy experiments require installed Edge WebView2 Runtime.
+These experiments describe only the embedded browser, not all applications. No-result means unknown, not safe.
+Multilingual parity, tray/startup, background paired sync and a system-wide kill switch are not included.
+High-DPI rendering is supported; 120/144 Hz zero-drop performance has not been verified on physical hardware.

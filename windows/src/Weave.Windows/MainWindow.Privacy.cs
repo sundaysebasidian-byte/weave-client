@@ -33,7 +33,7 @@ public sealed partial class MainWindow
         try
         {
             await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10), _lifetime.Token);
-            var environment = await CoreWebView2Environment.CreateAsync(null, directory, new CoreWebView2EnvironmentOptions
+            var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, directory, new CoreWebView2EnvironmentOptions
             {
                 AdditionalBrowserArguments = $"--proxy-server=http://127.0.0.1:{bundle.MixedPort} --proxy-bypass-list=<-loopback> --disable-background-networking --disable-sync --no-first-run",
             });
@@ -58,7 +58,7 @@ public sealed partial class MainWindow
             await display;
             await web.CoreWebView2.Profile.ClearBrowsingDataAsync();
         }
-        catch (Exception error) when (error is System.Runtime.InteropServices.COMException or InvalidOperationException or IOException or CoreWebView2RuntimeNotFoundException or TimeoutException or OperationCanceledException)
+        catch (Exception error) when (error is System.Runtime.InteropServices.COMException or InvalidOperationException or IOException or TimeoutException or OperationCanceledException)
         { MessageText.Text = "浏览器实验无法打开；请检查 Microsoft Edge WebView2 Runtime 是否安装。未自动安装或下载组件。"; }
         finally
         {

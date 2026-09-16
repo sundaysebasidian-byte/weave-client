@@ -44,6 +44,7 @@ msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
     /p:RuntimeIdentifier=$runtime /p:SelfContained=true /p:PublishDir="$output\"
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
 Copy-Item (Join-Path $PSScriptRoot 'START-HERE.txt') $output
+Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY.md') $output
 Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $output 'LICENSE-Weave.txt')
 Copy-Item (Join-Path $PSScriptRoot '..\geodata-lock.properties') $output
 Invoke-WebRequest 'https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.30/LICENSE' -OutFile (Join-Path $output 'LICENSE-Mihomo.txt')

@@ -269,7 +269,7 @@ public sealed partial class MainWindow : Window
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, _lifetime.Token);
             ConnectButton.Content = "断开连接";
-            MessageText.Text = TunToggle.IsOn ? "TUN 与所选出口已就绪，可开始网络检测。" : "系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。";
+            MessageText.Text = RoutingSelector.SelectedIndex == 2 ? "直连已启用：流量不经过代理节点，公网地址不会被隐藏。" : TunToggle.IsOn ? "TUN 与所选出口已就绪，可开始网络检测。" : "系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。";
             UpdateStatus();
         });
     }
@@ -319,7 +319,7 @@ public sealed partial class MainWindow : Window
         StatusText.Text = _model.Status;
         ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
         HeroStatus.Text = _model.IsConnected ? "已连接" : "尚未连接";
-        HeroDetail.Text = _model.IsConnected ? _model.Status + " · 出口已核对" : "选择订阅后连接";
+        HeroDetail.Text = _model.IsConnected ? _model.Status + " · 配置已核对" : RoutingSelector.SelectedIndex == 2 ? "直连不隐藏公网地址" : "选择订阅后连接";
         if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
     }
 
@@ -500,6 +500,8 @@ public sealed partial class MainWindow : Window
         if (_model.ActiveBundle is not { } bundle || !_model.IsConnected ||
             SubscriptionComboBox.SelectedItem is not SubscriptionRecord record)
         { MessageText.Text = "请先连接，再测试当前订阅节点"; return; }
+        if (!bundle.ProviderNodeCounts.ContainsKey("provider-" + record.Id))
+        { MessageText.Text = "此订阅不在当前会话中。请先选择它并重新连接，再测试节点；直连模式不加载订阅。"; return; }
         await RunActionAsync(async () =>
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);

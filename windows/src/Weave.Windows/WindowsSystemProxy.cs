@@ -18,6 +18,8 @@ internal sealed class WindowsSystemProxy
         {
         Recover();
         using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true) ?? throw new IOException("无法读取本账户的系统代理设置");
+        if (!string.IsNullOrWhiteSpace(key.GetValue("AutoConfigURL") as string))
+            throw new InvalidOperationException("Windows 已设置自动代理脚本，可能覆盖系统代理。请先关闭该脚本，或使用 TUN；Weave 未修改该脚本。");
         var server = $"127.0.0.1:{port}";
         var old = new Backup(Convert.ToInt32(key.GetValue("ProxyEnable", 0)), key.GetValue("ProxyServer") as string, key.GetValue("ProxyOverride") as string, server);
         Directory.CreateDirectory(Path.GetDirectoryName(_backupPath)!);

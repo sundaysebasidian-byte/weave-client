@@ -46,7 +46,7 @@ public sealed record LanTransferLink(string Host, int Port, string Token, byte[]
     public static bool IsPrivateIpv4(string host)
     {
         var parts = host.Split('.');
-        if (parts.Length != 4 || parts.Any(part => !byte.TryParse(part, out _) || (part.Length > 1 && part[0] == '0'))) return false;
+        if (parts.Length != 4 || parts.Any(part => part.Length == 0 || part.Any(c => c is < '0' or > '9') || !byte.TryParse(part, out _) || (part.Length > 1 && part[0] == '0'))) return false;
         var a = byte.Parse(parts[0]); var b = byte.Parse(parts[1]);
         return a is 10 or 127 || (a == 172 && b is >= 16 and <= 31) || (a == 192 && b == 168) || (a == 169 && b == 254);
     }
@@ -209,7 +209,8 @@ public static class LanTransferClient
     public static async Task<IReadOnlyList<TransferSubscription>> FetchAsync(LanTransferLink link, CancellationToken token)
     {
         // Revalidate objects constructed by callers, not just pasted links.
-        _ = LanTransferLink.Parse(link.Encode());
+        var verified = LanTransferLink.Parse(link.Encode());
+        CryptographicOperations.ZeroMemory(verified.Key);
         using var handler = new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false };
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20), MaxResponseContentBufferSize = LanTransferCodec.MaxPacket };
         using var response = await client.GetAsync($"http://{link.Host}:{link.Port}/v1/{link.Token}", HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);

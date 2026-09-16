@@ -42,6 +42,8 @@ public sealed class TransferAndRoutingTests
     [InlineData("127.0.0.1.evil.example")]
     [InlineData("192.168.01.1")]
     [InlineData("0x7f000001")]
+    [InlineData("+192.168.1.2")]
+    [InlineData("192.168.1.2 ")]
     public void TransferNeverConnectsToPublicOrAmbiguousAddresses(string host)
     {
         Assert.False(LanTransferLink.IsPrivateIpv4(host));

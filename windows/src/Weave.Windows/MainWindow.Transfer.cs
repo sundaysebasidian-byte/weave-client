@@ -25,6 +25,7 @@ public sealed partial class MainWindow
             ShareLink.Text = _transferServer.Link.Encode();
             ShareCode.Text = "两端核对码  " + _transferServer.Link.ConfirmationCode();
             ShareQr.Source = await QrTransfer.RenderAsync(ShareLink.Text);
+            ShareQr.Visibility = Visibility.Visible;
             ShareStatus.Text = $"正在分享 {selected.Length} 份订阅 · 5 分钟有效 · 接收一次即关闭";
             NavigateTo("5");
             _ = ObserveTransferAsync(_transferServer);
@@ -37,14 +38,14 @@ public sealed partial class MainWindow
         {
             if (_closed || !ReferenceEquals(server, _transferServer)) return;
             ShareStatus.Text = "分享通道已关闭（已传送、超时或连接中断）。如接收未完成，请重新生成。";
-            ShareQr.Source = null; ShareLink.Text = ""; ShareCode.Text = "";
+            ShareQr.Source = null; ShareQr.Visibility = Visibility.Collapsed; ShareLink.Text = ""; ShareCode.Text = "";
         });
     }
     private async Task StopShareAsync()
     {
         var server = _transferServer; _transferServer = null;
         if (server is not null) await server.DisposeAsync();
-        ShareQr.Source = null; ShareLink.Text = ""; ShareCode.Text = "";
+        ShareQr.Source = null; ShareQr.Visibility = Visibility.Collapsed; ShareLink.Text = ""; ShareCode.Text = "";
         ShareStatus.Text = "分享已停止";
     }
     private async void StopShare_Click(object sender, RoutedEventArgs e)
