@@ -34,6 +34,8 @@ public sealed partial class MainWindow : Window
         RootGrid.Loaded += CapturePreviewIfRequested;
         var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
         AppWindow.Resize(new global::Windows.Graphics.SizeInt32(Math.Min(1340, area.Width - 40), Math.Min(900, area.Height - 60)));
+        if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_WIDE") == "1")
+            AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1400, 900));
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
@@ -373,7 +375,8 @@ public sealed partial class MainWindow : Window
     private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!_initialized) return;
-        var narrow = e.NewSize.Width < 1120;
+        var narrow = e.NewSize.Width < 940;
+        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 196 : 224);
         HeroColumn.Width = new GridLength(1.2, GridUnitType.Star);
         Grid.SetColumnSpan(ExitCard, narrow ? 2 : 1);
         Grid.SetColumnSpan(ConnectionNote, narrow ? 2 : 1);

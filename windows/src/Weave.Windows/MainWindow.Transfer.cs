@@ -27,6 +27,7 @@ public sealed partial class MainWindow
             ShareQr.Source = await QrTransfer.RenderAsync(ShareLink.Text);
             ShareQr.Visibility = Visibility.Visible;
             ShareStatus.Text = $"正在分享 {selected.Length} 份订阅 · 5 分钟有效 · 接收一次即关闭";
+            SendSection.IsExpanded = true; ReceiveSection.IsExpanded = false;
             NavigateTo("5");
             _ = ObserveTransferAsync(_transferServer);
         });
@@ -71,6 +72,7 @@ public sealed partial class MainWindow
         await RunActionAsync(async () =>
         {
             _pendingTransfer = Array.Empty<TransferSubscription>(); ReceivePreview.ItemsSource = null;
+            ReceiveConfirmArea.Visibility = Visibility.Collapsed;
             var link = LanTransferLink.Parse(ReceiveLink.Text);
             try
             {
@@ -78,6 +80,7 @@ public sealed partial class MainWindow
                 _pendingTransfer = await LanTransferClient.FetchAsync(link, _lifetime.Token);
                 ReceivePreview.ItemsSource = _pendingTransfer;
                 ReceivePreview.SelectAll();
+                ReceiveConfirmArea.Visibility = Visibility.Visible;
                 MessageText.Text = "已解密，尚未写入。请确认勾选要导入的订阅；同源订阅会更新，不删除其他订阅。";
             }
             finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(link.Key); ReceiveLink.Text = ""; ReceiveCode.Text = ""; }
@@ -91,6 +94,7 @@ public sealed partial class MainWindow
         {
             await _model.ImportTransferAsync(selected);
             _pendingTransfer = Array.Empty<TransferSubscription>(); ReceivePreview.ItemsSource = null;
+            ReceiveConfirmArea.Visibility = Visibility.Collapsed;
             MessageText.Text = $"已安全同步 {selected.Length} 份订阅；未选中的内容未导入。重新连接后应用新配置。";
         });
     }
@@ -111,6 +115,7 @@ public sealed partial class MainWindow
             var link = LanTransferLink.Parse(value);
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(link.Key);
             ReceiveLink.Text = value; NavigateTo("5");
+            ReceiveSection.IsExpanded = true; SendSection.IsExpanded = false;
             MessageText.Text = "已识别手机互传二维码，请核对发送端六位码再接收";
         }
         else if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == "https")

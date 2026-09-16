@@ -59,6 +59,12 @@ jobs:
             Stop-Process -Id $app.Id
           }
           $env:WEAVE_PREVIEW_THEME = '0'
+          $env:WEAVE_PREVIEW_WIDE = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-wide.png"
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Start-Sleep -Seconds 4
+          if ($app.HasExited) { throw 'Wide desktop layout failed to start' }
+          Stop-Process -Id $app.Id
           foreach ($page in @(1,2,3,4,5)) {
             $env:WEAVE_PREVIEW_PAGE = "$page"
             $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-page-$page.png"
