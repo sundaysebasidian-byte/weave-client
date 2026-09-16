@@ -7,7 +7,7 @@ public sealed record AppearancePalette(string Name, string Canvas, string Paper,
 {
     public static IReadOnlyList<AppearancePalette> All { get; } = new[]
     {
-        new AppearancePalette("浅色", "DFEAF0", "F8FCFF", "172D3D", "526773", "187A8B", "B9DDE3"),
+        new AppearancePalette("浅色", "EEF1F5", "FCFDFE", "19212C", "536070", "286E8D", "C7DCE8"),
         new AppearancePalette("白绿", "FFFFFF", "F9FAF8", "151813", "646960", "2C6E16", "EAF2E6"),
         new AppearancePalette("深色", "080F18", "15232E", "F3F8FC", "AABCCB", "9ADFE9", "29454F", true),
         new AppearancePalette("素纸", "FFFFFF", "FAFAFA", "171717", "606060", "252525", "ECECEC"),

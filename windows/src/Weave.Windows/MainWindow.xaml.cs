@@ -29,10 +29,10 @@ public sealed partial class MainWindow : Window
         foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, NetworkSettingsCard, PrivacySettingsCard, RoutesPanel, NodesPanel, DiagnosticsPanel, TransferPanel })
         {
             card.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
-            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 24 : 16);
+            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 14 : 8);
         }
         SidebarSurface.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
-        SidebarSurface.Translation = new System.Numerics.Vector3(0, 0, 16);
+        SidebarSurface.Translation = new System.Numerics.Vector3(0, 0, 8);
         ConnectButton.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
         ConnectButton.Translation = new System.Numerics.Vector3(0, 0, 10);
         _initialized = true;
@@ -50,6 +50,7 @@ public sealed partial class MainWindow : Window
         ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => L.T(palette.Name)).ToArray();
         LanguageSelector.SelectedIndex = L.Language == "en" ? 1 : 0;
         RootGrid.Language = L.Language;
+        Microsoft.UI.Xaml.Documents.TextElement.SetFontFamily(RootGrid, new Microsoft.UI.Xaml.Media.FontFamily(L.Language == "zh-CN" ? "Microsoft YaHei UI" : "Segoe UI"));
         RoutingSelector.ItemsSource = new[] { L.T("规则"), L.T("全局"), L.T("直连") };
         RoutingSelector.SelectedIndex = 0;
         DnsSelector.ItemsSource = new[] { L.T("加密 DNS"), L.T("广告过滤"), L.T("家庭过滤"), L.T("自订 DNS") };
@@ -295,7 +296,7 @@ public sealed partial class MainWindow : Window
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, _lifetime.Token);
             ConnectButton.Content = L.T("断开连接");
-            MessageText.Text = RoutingSelector.SelectedIndex == 2 ? L.T("直连已启用：流量不经过代理节点，公网地址不会被隐藏。") : TunToggle.IsOn ? L.T("TUN 与所选出口已就绪，可开始网络检测。") : L.T("系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。");
+            MessageText.Text = ConnectionHealth.Description(_model.Health);
             UpdateStatus();
         });
     }
@@ -344,8 +345,8 @@ public sealed partial class MainWindow : Window
     {
         StatusText.Text = _model.Status;
         ConnectButton.Content = _model.IsConnected ? L.T("断开连接") : L.T("连接");
-        HeroStatus.Text = _model.IsConnected ? L.T("已连接") : L.T("尚未连接");
-        HeroDetail.Text = _model.IsConnected ? _model.Status + L.T(" · 配置已核对") : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
+        HeroStatus.Text = !_model.IsConnected ? L.T("尚未连接") : _model.Health == ConnectionHealthState.Reachable ? L.T("已连接") : L.T("网络待确认");
+        HeroDetail.Text = _model.IsConnected ? _model.Status : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
         if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
     }
 
@@ -488,8 +489,8 @@ public sealed partial class MainWindow : Window
         var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];
         glass.GradientStops[0].Color = Color(palette.Paper);
         glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
-        var topGlass = glass.GradientStops[0].Color; topGlass.A = 145;
-        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 190;
+        var topGlass = glass.GradientStops[0].Color; topGlass.A = 235;
+        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 220;
         glass.GradientStops[0].Color = topGlass; glass.GradientStops[1].Color = bottomGlass;
         var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
         sidebar.TintColor = sidebar.FallbackColor = Color(palette.Paper);
@@ -507,16 +508,17 @@ public sealed partial class MainWindow : Window
         var paper = Color(palette.Paper); var tint = Color(palette.Tint); var accent = Color(palette.Accent);
         static global::Windows.UI.Color Alpha(global::Windows.UI.Color color, byte opacity) { color.A = opacity; return color; }
         var white = Color("FFFFFF");
-        Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .50), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .28));
-        Gradient("WeaveHeroBrush", Alpha(Mix(paper, accent, .04), 150), Alpha(Mix(paper, tint, .72), 185), Alpha(Mix(paper, accent, .15), 165));
+        Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .12), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .08));
+        AtmosphericRibbons.Opacity = index >= 4 ? .55 : .16;
+        Gradient("WeaveHeroBrush", Alpha(Mix(paper, accent, .02), 245), Alpha(Mix(paper, tint, .30), 230), Alpha(Mix(paper, accent, .05), 240));
         Gradient("WeaveIconBrush", Mix(paper, white, palette.Dark ? .10 : .9), Mix(paper, accent, palette.Dark ? .32 : .24));
         Gradient("WeaveLightEdgeBrush", Alpha(Mix(paper, white, palette.Dark ? .36 : 1), 245),
-            Alpha(Mix(paper, accent, .32), 115), Alpha(Mix(paper, white, palette.Dark ? .24 : .95), 225));
+            Alpha(Mix(paper, accent, .16), 95), Alpha(Mix(paper, white, palette.Dark ? .24 : .95), 225));
         Gradient("WeaveInnerEdgeBrush", Alpha(white, 12), Alpha(white, 4), Alpha(white, palette.Dark ? (byte)48 : (byte)170));
-        Gradient("WeaveSheenBrush", Alpha(white, palette.Dark ? (byte)20 : (byte)92), Alpha(white, 7), Alpha(white, 0), Alpha(white, 22));
+        Gradient("WeaveSheenBrush", Alpha(white, palette.Dark ? (byte)12 : (byte)42), Alpha(white, 7), Alpha(white, 0), Alpha(white, 22));
         Gradient("WeaveRibbonBrush", Alpha(tint, 0), Alpha(Mix(tint, accent, .24), 115), Alpha(tint, 38));
         Gradient("WeaveSelectionBrush", Alpha(Mix(paper, white, palette.Dark ? .1 : .8), 240),
-            Alpha(Mix(paper, accent, palette.Dark ? .25 : .19), 210), Alpha(Mix(paper, tint, .3), 235));
+            Alpha(Mix(paper, accent, palette.Dark ? .20 : .09), 240), Alpha(Mix(paper, tint, .3), 235));
         Gradient("WeaveActionBrush", Mix(accent, white, .18), Mix(accent, Color(palette.Dark ? "FFFFFF" : "102E3D"), .16));
         RootGrid.RequestedTheme = palette.Dark ? ElementTheme.Dark : ElementTheme.Light;
         UpdateNavigation();

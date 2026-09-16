@@ -331,5 +331,15 @@
   "按规则保护每个连接": "Route every connection with intent",
   "快速、安全地在设备间传递订阅": "Share subscriptions securely between your devices",
   "语言偏好未能保存": "Language preference could not be saved.",
-  "完成": "Done"
+  "完成": "Done",
+  "正在核验实际网络连接…": "Checking the actual network connection…",
+  "HTTPS 连通性已确认；不代表所有网站可达或无泄漏。": "HTTPS connectivity confirmed; this does not verify every site or rule out leaks.",
+  "W-N01：内核已运行，但未确认出口可达。请测试所选节点，并检查 DNS 或链式代理；未自动改走直连。": "W-N01: Core running, but exit connectivity is unconfirmed. Test the selected node and check DNS or the proxy chain. No direct fallback was used.",
+  "W-N02：代理端口可用，但 TUN／系统 DNS 路径未通过检测。浏览器可使用系统代理，请关闭其他客户端的 TUN 后重连。": "W-N02: The proxy port works, but the TUN/system DNS path did not pass. Browsers can use the system proxy. Turn off other clients’ TUN and reconnect.",
+  "W-P01：Windows 自动代理脚本可能覆盖浏览器出口。请先在 Windows 代理设置中关闭脚本后重连；Weave 未修改该脚本。": "W-P01: A Windows proxy script may override browser routing. Turn off the script in Windows proxy settings and reconnect. Weave did not modify it.",
+  "W-P02：Windows 未确认系统代理变更，请检查本账户的代理策略。": "W-P02: Windows did not acknowledge the system proxy change. Check this account’s proxy policy.",
+  "正在核验网络": "Checking connectivity",
+  "内核运行中 · 网络待确认": "Core running · Connectivity unconfirmed",
+  "已连接 · TUN + 系统代理": "Connected · TUN + System proxy",
+  "网络待确认": "Connectivity unconfirmed"
 }

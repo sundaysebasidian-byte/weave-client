@@ -15,6 +15,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private readonly WindowsSystemProxy _systemProxy;
     private MihomoProcess? _process;
     public RuntimeBundle? ActiveBundle { get; private set; }
+    public ConnectionHealthState Health { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
     public event EventHandler? StatusChanged;
     public WindowsNetworkOptions NetworkOptions { get; set; } = new();
@@ -231,13 +232,22 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         _process = process;
         await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
         if (!process.IsReady) throw new InvalidOperationException(L.T("核心在启动时退出，请检查权限及配置。"));
-        if (!options.EnableTun) _systemProxy.Enable(bundle.MixedPort);
+        // Browsers can keep obeying a stale loopback proxy even while TUN is up.
+        // Own the HTTP proxy for BOTH modes and restore it on stop/crash recovery.
+        _systemProxy.Enable(bundle.MixedPort);
         if (!process.IsReady) throw new InvalidOperationException(L.T("内核在应用系统设置时退出，已取消连接"));
-        Status = options.RoutingMode == RoutingMode.Direct ? "直连 · 不经过代理节点" : options.EnableTun ? "已连接 · TUN" : "已连接 · 系统代理";
+        Health = ConnectionHealthState.Checking;
+        Status = "正在核验网络";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        Health = await ConnectionHealth.CheckAsync(bundle, cancellationToken).ConfigureAwait(false);
+        if (!process.IsReady) throw new InvalidOperationException(L.T("核心在启动时退出，请检查权限及配置。"));
+        Status = Health != ConnectionHealthState.Reachable ? "内核运行中 · 网络待确认" :
+            options.RoutingMode == RoutingMode.Direct ? "直连 · 不经过代理节点" : options.EnableTun ? "已连接 · TUN + 系统代理" : "已连接 · 系统代理";
         StatusChanged?.Invoke(this, EventArgs.Empty);
         }
         catch
         {
+            Health = ConnectionHealthState.Unchecked;
             _process = null;
             try { _systemProxy.Recover(); } catch { /* Recovery record is retained for the next launch. */ }
             await process.DisposeAsync().ConfigureAwait(false);
@@ -265,6 +275,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
         finally { await CleanupRuntimeAsync().ConfigureAwait(false); }
 
+        Health = ConnectionHealthState.Unchecked;
         Status = "未连接";
         StatusChanged?.Invoke(this, EventArgs.Empty);
         if (recoveryError is not null) throw new IOException(L.T("内核已停止，但系统代理恢复失败；请检查 Windows 代理设置。恢复记录已保留。"), recoveryError);

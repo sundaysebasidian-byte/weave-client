@@ -1,15 +1,15 @@
 [Setup]
 AppId={{C6EC73B9-A01E-493F-A9E3-BC1747C219F1}
 AppName=Weave
-AppVersion=0.3.4
-AppVerName=Weave Windows 0.3.4 Preview
+AppVersion=0.3.5
+AppVerName=Weave Windows 0.3.5 Preview
 DefaultDirName={localappdata}\Programs\Weave
 DefaultGroupName=Weave
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 MinVersion=10.0.19041
 OutputDir=artifacts\installer
-OutputBaseFilename=Weave-Windows-0.3.4-preview-x64-Setup
+OutputBaseFilename=Weave-Windows-0.3.5-preview-x64-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

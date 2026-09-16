@@ -235,6 +235,7 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine("  enable: true");
             builder.AppendLine("  device: WeaveTun");
             builder.AppendLine("  stack: mixed");
+            builder.AppendLine("  mtu: 1500");
             builder.AppendLine("  auto-route: true");
             builder.AppendLine("  auto-detect-interface: true");
             builder.AppendLine("  strict-route: true");
@@ -248,7 +249,10 @@ public sealed class MihomoConfigBuilder
         builder.AppendLine($"  ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
         builder.AppendLine("  enhanced-mode: fake-ip");
         builder.AppendLine("  fake-ip-range: 198.18.0.1/16");
-        builder.AppendLine("  default-nameserver: [223.5.5.5, 1.1.1.1]");
+        // Bootstrap must not depend on the proxy it is trying to resolve, or on a
+        // content-filtering resolver that can block the node's own hostname.
+        builder.AppendLine("  default-nameserver: ['https://223.5.5.5/dns-query', 'https://1.1.1.1/dns-query']");
+        builder.AppendLine("  respect-rules: true");
         builder.AppendLine("  fake-ip-filter:");
         builder.AppendLine("    - '*.lan'");
         builder.AppendLine("    - '*.local'");
@@ -260,10 +264,8 @@ public sealed class MihomoConfigBuilder
         }
 
         builder.AppendLine("  proxy-server-nameserver:");
-        foreach (var endpoint in DnsEndpoints(options))
-        {
-            builder.AppendLine($"    - {YamlString(endpoint)}");
-        }
+        builder.AppendLine("    - 'https://223.5.5.5/dns-query'");
+        builder.AppendLine("    - 'https://1.1.1.1/dns-query'");
 
     }
 
