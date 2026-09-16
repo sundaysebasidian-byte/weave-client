@@ -395,7 +395,7 @@ public sealed partial class MainWindow : Window
     {
         if (!_initialized) return;
         // Reflow individual controls, not entire cards: keep network controls close to the exit.
-        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 248 : 264);
+        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 276 : 292);
         var narrow = e.NewSize.Width < 920;
         Grid.SetColumnSpan(SubscriptionComboBox, narrow ? 2 : 1);
         Grid.SetColumn(NodeSelection, narrow ? 0 : 1);
@@ -413,16 +413,21 @@ public sealed partial class MainWindow : Window
         var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
         if (string.IsNullOrEmpty(path)) return;
         await Task.Delay(700);
-        foreach (var button in new[] { Nav0, Nav1, Nav2, Nav3, Nav4, Nav5 })
+        double? previousNavigationTop = null;
+        foreach (var button in new[] { Nav0, Nav1, Nav2, Nav4, Nav5, Nav3 })
         {
             var caption = (StackPanel)button.Content;
-            if (button.ActualHeight < 52 || caption.DesiredSize.Width > button.ActualWidth - button.Padding.Left - button.Padding.Right + 1)
+            if (Math.Abs(button.ActualHeight - 56) > 1 || caption.DesiredSize.Width > button.ActualWidth - button.Padding.Left - button.Padding.Right + 1)
                 throw new InvalidOperationException("Navigation row is cramped or clips its label: " + button.Name);
+            var top = button.TransformToVisual(NavigationItems).TransformPoint(new global::Windows.Foundation.Point()).Y;
+            if (previousNavigationTop is { } previous && Math.Abs(top - previous - 66) > 1)
+                throw new InvalidOperationException("Navigation spacing is not uniform: " + button.Name);
+            previousNavigationTop = top;
         }
         var navigationBottom = SidebarNavigationScroll.TransformToVisual(RootGrid)
             .TransformPoint(new global::Windows.Foundation.Point()).Y + SidebarNavigationScroll.ActualHeight;
-        if (Nav3.TransformToVisual(RootGrid).TransformPoint(new global::Windows.Foundation.Point()).Y < navigationBottom - 1)
-            throw new InvalidOperationException("Navigation overlaps pinned settings");
+        if (SidebarFooter.TransformToVisual(RootGrid).TransformPoint(new global::Windows.Foundation.Point()).Y < navigationBottom - 1)
+            throw new InvalidOperationException("Navigation overlaps the traffic footer");
         if (_page == "0")
         {
             // Real XAML layout regression check; never run in regular user sessions.
