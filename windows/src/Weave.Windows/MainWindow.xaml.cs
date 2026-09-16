@@ -15,6 +15,8 @@ public sealed partial class MainWindow : Window
     private string _page = "0";
     private readonly Dictionary<string, double> _scrollOffsets = new();
     private bool _closed;
+    private bool _shuttingDown;
+    private bool _shutdownComplete;
     private CancellationTokenSource? _probeCancellation;
     private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private bool _trafficBusy;
@@ -62,6 +64,12 @@ public sealed partial class MainWindow : Window
             previewTheme >= 0 && previewTheme < AppearancePalette.All.Count) ThemeSelector.SelectedIndex = previewTheme;
 
         Closed += MainWindow_Closed;
+        AppWindow.Closing += async (_, args) =>
+        {
+            if (_shutdownComplete) return;
+            args.Cancel = true;
+            await ShutdownAsync(closeWindow: true);
+        };
         UpdateStatus();
         UpdateNavigation();
         if (int.TryParse(Environment.GetEnvironmentVariable("WEAVE_PREVIEW_PAGE"), out var previewPage) && previewPage is >= 0 and <= 5)
@@ -249,7 +257,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--elevated-restart") { UseShellExecute = true, Verb = "runas" });
-                Close();
+                await ShutdownAsync(closeWindow: true);
             }
             catch (System.ComponentModel.Win32Exception) { MessageText.Text = "管理员授权未完成，未改变系统网络。"; }
             return;
@@ -583,13 +591,24 @@ public sealed partial class MainWindow : Window
     }
 
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
+        => await ShutdownAsync(closeWindow: false);
+
+    private async Task ShutdownAsync(bool closeWindow)
     {
+        if (_shuttingDown || _shutdownComplete) return;
+        _shuttingDown = true;
         SavePreferences();
         _closed = true;
         _lifetime.Cancel();
         _trafficTimer.Stop();
-        try { await StopShareAsync(); await _model.DisposeAsync(); }
-        finally { _lifetime.Dispose(); }
+        try { await Task.WhenAll(StopShareAsync(), _model.DisposeAsync().AsTask()); }
+        catch (Exception) { /* Encrypted system-proxy recovery record remains for the next launch. */ }
+        finally
+        {
+            _lifetime.Dispose();
+            _shutdownComplete = true;
+            if (closeWindow) Close();
+        }
     }
 
     private void ChainSubscription_Changed(object sender, SelectionChangedEventArgs e)

@@ -21,7 +21,7 @@ public partial class App : Application
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave");
             Directory.CreateDirectory(directory);
             var restarting = Environment.GetCommandLineArgs().Contains("--elevated-restart");
-            for (var attempt = 0; attempt < (restarting ? 40 : 1); attempt++)
+            for (var attempt = 0; attempt < (restarting ? 100 : 1); attempt++)
             {
                 try { _instanceLock = new FileStream(Path.Combine(directory, "desktop-instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
                 catch (IOException) { if (restarting) await Task.Delay(150); }
