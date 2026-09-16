@@ -52,6 +52,18 @@ public sealed class MihomoConfigBuilder
         var configPath = Path.Combine(runtimeDirectory, "config.yaml");
         var yaml = BuildYaml(usable, byId, routes, selectedSubscription, selectedNodeId, options, mixedPort, controllerPort, secret);
         File.WriteAllText(configPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        var requiredSelections = new Dictionary<string, string>
+        {
+            ["DEFAULT"] = selectedNodeId is null ? AutomaticGroup(selectedSubscription) : FixedGroup(selectedSubscription, selectedNodeId),
+        };
+        var targets = routes.Select(route => route.Target).Where(target => target.Kind == RouteKind.FixedNode).ToList();
+        if (selectedNodeId is not null) targets.Add(RouteTarget.Fixed(selectedSubscription.Id, selectedNodeId));
+        foreach (var target in targets)
+        {
+            var subscription = byId[target.SubscriptionId!];
+            var node = subscription.Nodes.First(item => item.Id == target.NodeId);
+            requiredSelections[FixedGroup(subscription, node.Id)] = NodePrefix(subscription.Id) + node.RawName;
+        }
         return new RuntimeBundle
         {
             Directory = runtimeDirectory,
@@ -61,6 +73,7 @@ public sealed class MihomoConfigBuilder
             ControllerSecret = secret,
             RequiresTun = options.EnableTun,
             ProviderNodeCounts = usable.ToDictionary(ProviderName, subscription => subscription.Nodes.Count),
+            RequiredSelections = requiredSelections,
         };
     }
 

@@ -101,4 +101,5 @@ public sealed class RuntimeBundle
     public bool RequiresTun { get; init; }
     public string TunDevice { get; init; } = "WeaveTun";
     public IReadOnlyDictionary<string, int> ProviderNodeCounts { get; init; } = new Dictionary<string, int>();
+    public IReadOnlyDictionary<string, string> RequiredSelections { get; init; } = new Dictionary<string, string>();
 }

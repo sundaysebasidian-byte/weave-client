@@ -44,6 +44,20 @@ public sealed class MihomoController : IDisposable
                 !provider.TryGetProperty("proxies", out var nodes) || nodes.ValueKind != JsonValueKind.Array ||
                 nodes.GetArrayLength() != expected.Value) return false;
         }
+        if (bundle.RequiredSelections.Count > 0)
+        {
+            using var proxiesResponse = await _client.GetAsync("proxies", timeout.Token).ConfigureAwait(false);
+            if (!proxiesResponse.IsSuccessStatusCode) return false;
+            using var proxyJson = JsonDocument.Parse(await proxiesResponse.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+            if (proxyJson.RootElement.ValueKind != JsonValueKind.Object ||
+                !proxyJson.RootElement.TryGetProperty("proxies", out var proxies) || proxies.ValueKind != JsonValueKind.Object) return false;
+            foreach (var expected in bundle.RequiredSelections)
+            {
+                if (!proxies.TryGetProperty(expected.Key, out var group) || group.ValueKind != JsonValueKind.Object ||
+                    !group.TryGetProperty("now", out var selected) || selected.ValueKind != JsonValueKind.String ||
+                    selected.GetString() != expected.Value) return false;
+            }
+        }
         return true;
     }
 
