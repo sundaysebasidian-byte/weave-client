@@ -31,6 +31,8 @@ java '-Dfile.encoding=UTF-8' (Join-Path $PSScriptRoot 'tests\AndroidTransferInte
 if ($LASTEXITCODE -ne 0) { throw 'Android wire-format fixture failed' }
 dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration
 if ($LASTEXITCODE -ne 0) { throw "Core tests failed" }
+java '-Dfile.encoding=UTF-8' (Join-Path $PSScriptRoot 'tests\AndroidTransferInterop.java') ($env:WEAVE_INTEROP_FIXTURE + '.windows') verify
+if ($LASTEXITCODE -ne 0) { throw 'Windows-to-Android wire-format verification failed' }
 
 $core = Join-Path $PSScriptRoot "src\Weave.Windows\runtime\mihomo.exe"
 if (-not (Test-Path $core)) {

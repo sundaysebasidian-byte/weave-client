@@ -22,6 +22,17 @@ class AndroidTransferInterop {
         for (int i = 0; i < key.length; i++) key[i] = (byte)i;
         for (int i = 0; i < nonce.length; i++) nonce[i] = (byte)i;
         var cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        if (args.length > 1 && args[1].equals("verify")) {
+            byte[] received = Files.readAllBytes(Path.of(args[0]));
+            if (!java.util.Arrays.equals(java.util.Arrays.copyOfRange(received, 0, 8), "WVENC001".getBytes(StandardCharsets.US_ASCII)))
+                throw new IOException("Unexpected packet magic");
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, java.util.Arrays.copyOfRange(received, 8, 20)));
+            cipher.updateAAD("weave-lan-transfer-v1".getBytes(StandardCharsets.US_ASCII));
+            byte[] plain = cipher.doFinal(java.util.Arrays.copyOfRange(received, 20, received.length));
+            if (!java.util.Arrays.equals(plain, out.toByteArray())) throw new IOException("Windows-to-Android payload mismatch");
+            System.out.println("Windows-to-Android reference verification passed");
+            return;
+        }
         cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, nonce));
         cipher.updateAAD("weave-lan-transfer-v1".getBytes(StandardCharsets.US_ASCII));
         var packet = new ByteArrayOutputStream();

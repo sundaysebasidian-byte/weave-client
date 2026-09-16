@@ -14,6 +14,7 @@ internal sealed class CameraQrScanner : IAsyncDisposable
     private int _busy;
     private bool _stopping;
     private long _last;
+    private long _lastDecode;
     public event Action<byte[], int, int>? Preview;
     public event Action<string>? Found;
     public async Task StartAsync()
@@ -34,7 +35,7 @@ internal sealed class CameraQrScanner : IAsyncDisposable
     }
     private void FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
     {
-        if (_stopping || Stopwatch.GetElapsedTime(_last).TotalMilliseconds < 250 || Interlocked.Exchange(ref _busy, 1) != 0) return;
+        if (_stopping || Stopwatch.GetElapsedTime(_last).TotalMilliseconds < 66 || Interlocked.Exchange(ref _busy, 1) != 0) return;
         try
         {
             _last = Stopwatch.GetTimestamp();
@@ -45,6 +46,8 @@ internal sealed class CameraQrScanner : IAsyncDisposable
             var bytes = new byte[checked(converted.PixelWidth * converted.PixelHeight * 4)];
             converted.CopyToBuffer(bytes.AsBuffer());
             Preview?.Invoke(bytes, converted.PixelWidth, converted.PixelHeight);
+            if (Stopwatch.GetElapsedTime(_lastDecode).TotalMilliseconds < 250) return;
+            _lastDecode = Stopwatch.GetTimestamp();
             var text = QrTransfer.Decode(bytes, converted.PixelWidth, converted.PixelHeight);
             if (!_stopping && text is not null) { _stopping = true; Found?.Invoke(text); }
         }

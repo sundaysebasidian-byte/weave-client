@@ -26,6 +26,7 @@ public sealed class TransferAndRoutingTests
         var packet = File.ReadAllBytes(path);
         var key = Enumerable.Range(0, 32).Select(i => (byte)i).ToArray();
         Assert.Equal(Item, Assert.Single(LanTransferCodec.Decode(LanTransferCodec.Open(packet, key))));
+        File.WriteAllBytes(path + ".windows", LanTransferCodec.Seal(LanTransferCodec.Encode(new[] { Item }), key));
     }
     [Fact]
     public void LinkRoundTripAndCodeAreStable()

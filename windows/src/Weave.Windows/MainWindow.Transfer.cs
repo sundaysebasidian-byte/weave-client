@@ -20,8 +20,8 @@ public sealed partial class MainWindow
         {
             await StopShareAsync();
             var host = LanAddress.SelectedItem as string ?? throw new InvalidOperationException("请选择连接手机的 Wi-Fi、热点或 USB 网络地址");
-            _transferServer = new OneTimeLanTransferServer(host,
-                selected.Select(record => new TransferSubscription(record.Name, record.Source, record.ProviderYaml)).ToArray());
+            _transferServer = await Task.Run(() => new OneTimeLanTransferServer(host,
+                selected.Select(record => new TransferSubscription(record.Name, record.Source, record.ProviderYaml)).ToArray()));
             ShareLink.Text = _transferServer.Link.Encode();
             ShareCode.Text = "两端核对码  " + _transferServer.Link.ConfirmationCode();
             ShareQr.Source = await QrTransfer.RenderAsync(ShareLink.Text);
@@ -133,6 +133,7 @@ public sealed partial class MainWindow
         string? scanned = null;
         var renderPending = 0;
         var active = true;
+        Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap? previewBitmap = null;
         await using var scanner = new CameraQrScanner();
         scanner.Preview += (pixels, width, height) =>
         {
@@ -142,10 +143,11 @@ public sealed partial class MainWindow
                 try
                 {
                     if (!active) return;
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap(width, height);
-                    using var stream = bitmap.PixelBuffer.AsStream();
+                    if (previewBitmap is null || previewBitmap.PixelWidth != width || previewBitmap.PixelHeight != height)
+                        previewBitmap = new Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap(width, height);
+                    using var stream = previewBitmap.PixelBuffer.AsStream();
                     await stream.WriteAsync(pixels);
-                    bitmap.Invalidate(); preview.Source = bitmap;
+                    previewBitmap.Invalidate(); preview.Source = previewBitmap;
                 }
                 catch (Exception error) when (error is System.Runtime.InteropServices.COMException or ObjectDisposedException) { }
                 finally { Volatile.Write(ref renderPending, 0); }
