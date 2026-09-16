@@ -16,7 +16,7 @@ public sealed class CoreTests
             var result = await process.ValidateConfigAsync(bundle);
             Assert.True(result.IsValid, result.Diagnostics);
         }
-        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        finally { await NativeSessionCleanup.DeleteAsync(folder); }
     }
 
     [Fact]

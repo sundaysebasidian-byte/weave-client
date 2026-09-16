@@ -34,7 +34,7 @@ public sealed class WindowsV1Tests
             Assert.False(process.IsRunning);
             Assert.False(process.IsReady);
         }
-        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        finally { await NativeSessionCleanup.DeleteAsync(folder); }
     }
 
     [Fact]

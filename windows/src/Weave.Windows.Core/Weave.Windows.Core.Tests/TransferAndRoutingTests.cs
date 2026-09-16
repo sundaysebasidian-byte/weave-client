@@ -158,7 +158,9 @@ public sealed class TransferAndRoutingTests
             Assert.True(result.IsValid, result.Diagnostics);
             await process.StartAsync(bundle);
             Assert.True(process.IsReady);
+            await process.StopAsync();
+            Assert.False(process.IsRunning);
         }
-        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        finally { await NativeSessionCleanup.DeleteAsync(folder); }
     }
 }
