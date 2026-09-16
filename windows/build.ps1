@@ -7,6 +7,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Wrap the existing 256px Android-matching PNG in an ICO container without changing pixels.
+$png = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'src\Weave.Windows\Assets\Weave.png'))
+$iconPath = Join-Path $PSScriptRoot 'src\Weave.Windows\Assets\Weave.ico'
+$icon = [IO.BinaryWriter]::new([IO.File]::Create($iconPath))
+try {
+    $icon.Write([uint16]0); $icon.Write([uint16]1); $icon.Write([uint16]1)
+    $icon.Write([byte]0); $icon.Write([byte]0); $icon.Write([byte]0); $icon.Write([byte]0)
+    $icon.Write([uint16]1); $icon.Write([uint16]32)
+    $icon.Write([uint32]$png.Length); $icon.Write([uint32]22); $icon.Write($png)
+} finally { $icon.Dispose() }
+
 $solution = Join-Path $PSScriptRoot "Weave.Windows.sln"
 $runtime = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }
 

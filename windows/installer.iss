@@ -14,6 +14,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\Weave.Windows.exe
+SetupIconFile=src\Weave.Windows\Assets\Weave.ico
 CloseApplications=yes
 
 [Files]
