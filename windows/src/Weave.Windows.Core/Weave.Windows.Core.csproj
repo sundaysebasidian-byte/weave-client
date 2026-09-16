@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Strings.en.json" />
+    <EmbeddedResource Include="Strings.en.json" WithCulture="false" LogicalName="Weave.Windows.Core.Strings.en.json" />
     <Compile Remove="Weave.Windows.Core.Tests/**/*.cs" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>

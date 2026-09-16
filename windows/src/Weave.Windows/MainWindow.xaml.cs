@@ -382,7 +382,7 @@ public sealed partial class MainWindow : Window
     private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!_initialized) return;
-        var narrow = e.NewSize.Width < 940;
+        var narrow = e.NewSize.Width < 1180;
         SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 216 : 238);
         HeroColumn.Width = new GridLength(1.2, GridUnitType.Star);
         Grid.SetColumnSpan(ExitCard, narrow ? 2 : 1);
@@ -399,6 +399,20 @@ public sealed partial class MainWindow : Window
         var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
         if (string.IsNullOrEmpty(path)) return;
         await Task.Delay(700);
+        if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_SWITCH_LANGUAGE") == "1")
+        {
+            var mode = RoutingSelector.SelectedIndex;
+            var dns = DnsSelector.SelectedIndex;
+            var subscription = SubscriptionComboBox.SelectedItem;
+            var node = NodeComboBox.SelectedItem;
+            LanguageSelector.SelectedIndex = L.Language == "en" ? 0 : 1;
+            await Task.Delay(150);
+            var caption = ((StackPanel)Nav0.Content).Children.OfType<TextBlock>().Single().Text;
+            if (caption != L.T("连接") || PageTitle.Text != L.T(new[] { "连接", "订阅", "分流规则", "设置", "网络与隐私", "设备同步" }[int.Parse(_page)]) ||
+                mode != RoutingSelector.SelectedIndex || dns != DnsSelector.SelectedIndex ||
+                !ReferenceEquals(subscription, SubscriptionComboBox.SelectedItem) || !ReferenceEquals(node, NodeComboBox.SelectedItem))
+                throw new InvalidOperationException("Live language switch failed or changed network selection");
+        }
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
         await bitmap.RenderAsync(RootGrid, (int)(RootGrid.ActualWidth * 2), (int)(RootGrid.ActualHeight * 2));
         var buffer = await bitmap.GetPixelsAsync();
@@ -430,6 +444,9 @@ public sealed partial class MainWindow : Window
         var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];
         glass.GradientStops[0].Color = Color(palette.Paper);
         glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
+        var topGlass = glass.GradientStops[0].Color; topGlass.A = 242;
+        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 246;
+        glass.GradientStops[0].Color = topGlass; glass.GradientStops[1].Color = bottomGlass;
         var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
         sidebar.TintColor = sidebar.FallbackColor = Color(palette.Paper);
         void Gradient(string key, params global::Windows.UI.Color[] colors)
@@ -441,7 +458,7 @@ public sealed partial class MainWindow : Window
         Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .38), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .2));
         Gradient("WeaveHeroBrush", Mix(paper, accent, palette.Dark ? .12 : .025), Mix(paper, tint, .68), Mix(paper, tint, .30));
         Gradient("WeaveIconBrush", Mix(paper, accent, palette.Dark ? .23 : .03), Mix(paper, accent, palette.Dark ? .06 : .18));
-        Gradient("WeaveLightEdgeBrush", Mix(paper, Color(palette.Dark ? "FFFFFF" : "FFFFFF"), palette.Dark ? .25 : .9),
+        Gradient("WeaveLightEdgeBrush", Mix(paper, Color("FFFFFF"), palette.Dark ? .25 : .9),
             Mix(paper, Color(palette.Ink), palette.Dark ? .08 : .09), Mix(paper, Color("FFFFFF"), palette.Dark ? .13 : .8));
         RootGrid.RequestedTheme = palette.Dark ? ElementTheme.Dark : ElementTheme.Light;
         UpdateNavigation();

@@ -1,4 +1,4 @@
-# Weave Windows 0.2 Preview
+# Weave Windows 0.3 Preview
 
 独立 Windows 10/11 x64 测试版。沿用 Android 的八套外观、订阅→节点选择和图形化分流，
 使用桌面侧栏、紧凑连接概览、柔和玻璃层次和响应式双列。不是 Android 模拟器封装。
@@ -6,7 +6,7 @@
 ## 安装
 
 在独立分支 `codex/windows-v1-preview` 的 **Windows preview** Actions 下载
-`Weave-Windows-v2-Setup-x64`，解压后运行 Setup.exe。
+`Weave-Windows-v3-Setup-x64`，解压后运行 Setup.exe。
 便携包 `Weave-Windows-x64-test` 必须完整解压。目标 Windows 10 22H2 / Windows 11，Intel/AMD x64；ARM64 未交付。
 未签名预览包可能触发信誉提示，请核对来源与 SHA-256，**不要关闭系统安全保护**。
 不修改 Android main，不自动发布 Release。
@@ -17,6 +17,15 @@ TUN 需要当前 Windows 用户授权管理员重开，之后再次点击连接�
 运行时内核需要本机明文配置，断开后尽力清理；不能防护本机管理员或已入侵设备。
 
 ## 功能与边界
+
+0.3 新增简体中文 / English：设置 → 个性化 → 语言，立即切换，不重启内核。
+菜单、弹窗、校验错误、节点与网站测试结果、分享确认和内置隐私实验均提供双语。
+订阅和节点的原始名称不会被翻译；Windows 系统窗口与外部 DNS 测试网站使用各自的语言。
+初次启动跟随系统语言（非中文默认英文），之后记住选择。
+
+侧栏采用 Windows 原生应用内 Acrylic，系统不支持透明效果时使用实色回退；
+卡片使用静态透光渐变、细边缘与分层阴影，不运行连续背景动画或全页面动态模糊。
+六个页面沿用 Android 的配色，桌面工具栏允许换行，设置分为个性化、网络与隐私说明。
 
 | 项目 | 已实现 |
 | --- | --- |
@@ -63,7 +72,7 @@ TUN 就绪检查不是系统级 Kill Switch，核心退出后 Windows 可能恢�
 
 ## 仍待完成的 Android 对齐项
 
-多语言完整覆盖、系统托盘/开机启动、完整连接日志、持久配对自动同步和系统级 Kill Switch 尚未实现。
+系统托盘/开机启动、完整连接日志、持久配对自动同步和系统级 Kill Switch 尚未实现。
 Windows 10/11 真机 TUN、IPv6、睡眠恢复/网络切换、摄像头与 Android 双向互传需现场回归。
 当前是功能预览，不声称全部 Android 功能一比一交付或所有网络环境都稳定。
 

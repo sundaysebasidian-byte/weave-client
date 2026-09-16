@@ -45,13 +45,13 @@ public class LocalizationTests
     public void AllXamlLabelsHaveLiveTranslations()
     {
         var xaml = XDocument.Load(Path.Combine(Root, "windows/src/Weave.Windows/MainWindow.xaml"));
+        var keys = File.ReadAllText(Path.Combine(Root, "windows/src/Weave.Windows/UiText.Keys.cs"));
         foreach (var attr in xaml.Descendants().Attributes())
         {
-            if (attr.Value.StartsWith("{Binding [", StringComparison.Ordinal))
+            if (attr.Value.Contains("Source={StaticResource UiText}", StringComparison.Ordinal))
             {
-                var end = attr.Value.IndexOf(']');
-                var source = Encoding.UTF8.GetString(Convert.FromBase64String(attr.Value[10..end]));
-                Assert.True(L.Catalog.ContainsKey(source), source);
+                var key = attr.Value[9..attr.Value.IndexOf(',')];
+                Assert.Contains("public string " + key + " => L.T(", keys);
             }
             else if (new[] { "Text", "Content", "Header", "PlaceholderText", "OnContent", "OffContent" }.Contains(attr.Name.LocalName))
                 Assert.DoesNotMatch("[\u3400-\u9fff]", attr.Value);

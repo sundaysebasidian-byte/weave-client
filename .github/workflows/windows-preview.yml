@@ -84,6 +84,17 @@ jobs:
             if (-not (Test-Path $env:WEAVE_UI_CAPTURE)) { throw "English page $page did not render" }
             Stop-Process -Id $app.Id
           }
+          $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
+          $env:WEAVE_PREVIEW_PAGE = '3'
+          $env:WEAVE_PREVIEW_SWITCH_LANGUAGE = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-live-language.png"
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Start-Sleep -Seconds 4
+          if ($app.HasExited -or -not (Test-Path $env:WEAVE_UI_CAPTURE)) {
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            throw 'Live language switching failed'
+          }
+          Stop-Process -Id $app.Id
       - name: Package Windows installer
         shell: pwsh
         run: |
