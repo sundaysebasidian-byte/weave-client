@@ -5,15 +5,21 @@ using YamlDotNet.RepresentationModel;
 
 namespace Weave.Windows.Core.Tests;
 
+[CollectionDefinition("Native data path", DisableParallelization = true)]
+public sealed class NativeDataPathCollection { }
+
+[Collection("Native data path")]
 public sealed class DataPathTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ImportedHttpNodeActuallyForwardsTrafficWithAuthentication(bool automatic)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ImportedHttpNodeActuallyForwardsTrafficWithAuthentication(bool automatic, bool tun)
     {
         var core = Environment.GetEnvironmentVariable("WEAVE_TEST_CORE");
         if (string.IsNullOrEmpty(core)) return;
+        if (tun && !OperatingSystem.IsWindows()) return;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -28,18 +34,20 @@ public sealed class DataPathTests
         {
             var bundle = new MihomoConfigBuilder().Build([subscription], [], subscription.Id,
                 automatic ? null : subscription.Nodes[0].Id,
-                new WindowsNetworkOptions { EnableTun = false, RoutingMode = RoutingMode.Global }, folder);
+                new WindowsNetworkOptions { EnableTun = tun, Ipv6Enabled = false, RoutingMode = RoutingMode.Global }, folder);
             await using var process = new MihomoProcess(core);
             Assert.True((await process.ValidateConfigAsync(bundle, timeout.Token)).IsValid);
             await process.StartAsync(bundle, timeout.Token);
-            using var handler = new SocketsHttpHandler { UseProxy = true, Proxy = new WebProxy($"http://127.0.0.1:{bundle.MixedPort}") };
+            using var handler = new SocketsHttpHandler { UseProxy = !tun, Proxy = new WebProxy($"http://127.0.0.1:{bundle.MixedPort}") };
             using var client = new HttpClient(handler);
             // .invalid cannot resolve or succeed through a direct fallback. Only the
             // imported upstream test proxy can provide this unique body.
-            var body = await client.GetStringAsync("http://weave-data-path.invalid/check", timeout.Token);
+            // The TUN case deliberately has NO HTTP proxy and targets TEST-NET-2.
+            // Its response can only come through the TUN and our local upstream.
+            var body = await client.GetStringAsync(tun ? "http://198.51.100.42/check" : "http://weave-data-path.invalid/check", timeout.Token);
             Assert.Equal("weave-upstream-reached", body);
             var request = await received.Task.WaitAsync(timeout.Token);
-            Assert.Contains("weave-data-path.invalid:80", request);
+            Assert.Contains(tun ? "198.51.100.42:80" : "weave-data-path.invalid:80", request);
             Assert.Contains("Proxy-Authorization: Basic " + Convert.ToBase64String(Encoding.ASCII.GetBytes("test-user:test-pass")), request, StringComparison.OrdinalIgnoreCase);
         }
         finally
@@ -61,7 +69,7 @@ public sealed class DataPathTests
                 using var socket = await listener.AcceptTcpClientAsync(token);
                 await using var stream = socket.GetStream();
                 var header = await ReadHeaderAsync(stream, token);
-                if (!header.Contains("weave-data-path.invalid", StringComparison.Ordinal)) continue;
+                if (!header.Contains("weave-data-path.invalid", StringComparison.Ordinal) && !header.Contains("198.51.100.42", StringComparison.Ordinal)) continue;
                 received.TrySetResult(header);
                 if (header.StartsWith("CONNECT ", StringComparison.Ordinal))
                 {
