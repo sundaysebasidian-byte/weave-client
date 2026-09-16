@@ -1,4 +1,5 @@
 {
+  "管理订阅": "Manage subscriptions",
   "未找到可用摄像头，请改用二维码图片或链接": "No camera available. Use a QR image or link instead.",
   "摄像头启动失败，请检查 Windows 相机权限或改用图片": "Camera unavailable. Check Windows camera permissions or use an image.",
   "Clash 配置\u0000*.yaml;*.yml;*.json;*.txt\u0000\u0000": "Clash configuration\u0000*.yaml;*.yml;*.json;*.txt\u0000\u0000",

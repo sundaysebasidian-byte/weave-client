@@ -51,6 +51,16 @@ jobs:
             throw "App exited during startup: $($app.ExitCode)"
           }
           Stop-Process -Id $app.Id
+          $env:WEAVE_PREVIEW_COMPACT = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-compact.png"
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Start-Sleep -Seconds 4
+          if ($app.HasExited -or -not (Test-Path $env:WEAVE_UI_CAPTURE)) {
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            throw 'Compact desktop layout failed'
+          }
+          Stop-Process -Id $app.Id
+          Remove-Item Env:WEAVE_PREVIEW_COMPACT
           foreach ($theme in @(1,2,5)) {
             $env:WEAVE_PREVIEW_THEME = "$theme"
             $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-$theme.png"

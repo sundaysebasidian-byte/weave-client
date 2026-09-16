@@ -18,6 +18,7 @@ public sealed partial class UiText
     public string ReadyToConnect => L.T("尚未连接");
     public string ChooseASubscriptionToGetStarted => L.T("选择订阅后连接");
     public string ExitNode => L.T("出口节点");
+    public string ManageSubscriptions => L.T("管理订阅");
     public string SelectASubscription => L.T("请选择订阅");
     public string Node => L.T("节点");
     public string AutomaticLowestLatency => L.T("自动选择 · 最低延迟");

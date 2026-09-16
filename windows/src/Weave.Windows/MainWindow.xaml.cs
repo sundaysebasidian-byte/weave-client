@@ -38,6 +38,8 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new global::Windows.Graphics.SizeInt32(Math.Min((int)(1280 * scale), area.Width - 40), Math.Min((int)(860 * scale), area.Height - 60)));
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_WIDE") == "1")
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(1400 * scale), (int)(900 * scale)));
+        if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_COMPACT") == "1")
+            AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(900 * scale), (int)(760 * scale)));
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = L.T("本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"); }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
@@ -386,15 +388,17 @@ public sealed partial class MainWindow : Window
     private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!_initialized) return;
-        var narrow = e.NewSize.Width < 1180;
-        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 216 : 238);
-        HeroColumn.Width = new GridLength(1.2, GridUnitType.Star);
-        Grid.SetColumnSpan(ExitCard, narrow ? 2 : 1);
-        Grid.SetColumnSpan(ConnectionNote, narrow ? 2 : 1);
-        Grid.SetColumn(ConnectionNote, narrow ? 0 : 1);
-        Grid.SetRow(ConnectionNote, narrow ? 2 : 1);
-        while (ConnectionPanel.RowDefinitions.Count < 3) ConnectionPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        ConnectionHero.MinHeight = 192;
+        // Reflow individual controls, not entire cards: keep network controls close to the exit.
+        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 212 : 228);
+        var narrow = e.NewSize.Width < 980;
+        Grid.SetColumnSpan(SubscriptionComboBox, narrow ? 2 : 1);
+        Grid.SetColumn(NodeSelection, narrow ? 0 : 1);
+        Grid.SetRow(NodeSelection, narrow ? 1 : 0);
+        Grid.SetColumnSpan(NodeSelection, narrow ? 2 : 1);
+        Grid.SetColumnSpan(RoutingSelector, narrow ? 2 : 1);
+        Grid.SetColumn(TunToggle, narrow ? 0 : 1);
+        Grid.SetRow(TunToggle, narrow ? 1 : 0);
+        Grid.SetColumnSpan(TunToggle, narrow ? 2 : 1);
     }
 
     private async void CapturePreviewIfRequested(object sender, RoutedEventArgs e)
@@ -403,6 +407,20 @@ public sealed partial class MainWindow : Window
         var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
         if (string.IsNullOrEmpty(path)) return;
         await Task.Delay(700);
+        if (_page == "0")
+        {
+            // Real XAML layout regression check; never run in regular user sessions.
+            var stacked = RootGrid.ActualWidth < 980;
+            if (Grid.GetRow(NodeSelection) != (stacked ? 1 : 0) || Grid.GetRow(TunToggle) != (stacked ? 1 : 0))
+                throw new InvalidOperationException("Home controls did not reflow for the window width");
+            if (!stacked && RootGrid.ActualHeight >= 680)
+                foreach (var control in new FrameworkElement[] { ConnectButton, SubscriptionComboBox, NodeComboBox, RoutingSelector, TunToggle })
+                {
+                    var top = control.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y;
+                    if (control.ActualWidth < 40 || top < 0 || top + control.ActualHeight > ContentScroll.ActualHeight)
+                        throw new InvalidOperationException("Primary home control is outside the first viewport: " + control.Name);
+                }
+        }
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_SWITCH_LANGUAGE") == "1")
         {
             var mode = RoutingSelector.SelectedIndex;
@@ -667,7 +685,7 @@ public sealed partial class MainWindow : Window
     private void RoutingMode_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_initialized) return;
-        SubscriptionComboBox.IsEnabled = NodeComboBox.IsEnabled = ChainToggle.IsEnabled = RoutingSelector.SelectedIndex != 2;
+        SubscriptionComboBox.IsEnabled = NodeComboBox.IsEnabled = AutomaticNodeButton.IsEnabled = ChainToggle.IsEnabled = RoutingSelector.SelectedIndex != 2;
         ModeExplanation.Text = RoutingSelector.SelectedIndex switch
         {
             1 => L.T("全部走默认出口（或默认链），忽略应用、域名和国内直连规则。"),
@@ -682,7 +700,8 @@ public sealed partial class MainWindow : Window
     }
     private async void TrafficTick(object? sender, object e)
     {
-        if (_closed || _trafficBusy || _page != "0" || !_model.IsConnected || _model.ActiveBundle is not { } bundle ||
+        // The sidebar is visible on every page; keep its existing two-second, non-overlapping poll.
+        if (_closed || _trafficBusy || !_model.IsConnected || _model.ActiveBundle is not { } bundle ||
             (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)) return;
         _trafficBusy = true;
         try
