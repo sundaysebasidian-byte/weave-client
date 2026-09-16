@@ -72,7 +72,7 @@ Windows 10/11 真机 TUN、IPv6、睡眠恢复/网络切换、摄像头与 Andro
 官方 Mihomo **v1.19.30 amd64-v1**（不是 Android 定制 JNI 核心）：
 [对应源码](https://github.com/MetaCubeX/mihomo/tree/v1.19.30)。下载包 SHA-256：
 `8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278`。
-需要 VS 2022、.NET 8 和 Windows App SDK 构建支持；先将同版本内核放入 runtime 目录：
+需要 VS 2022、.NET 8、Java 17（协议测试）和 Windows App SDK 构建支持；先将同版本内核放入 runtime 目录：
 
 ```powershell
 .\windows\build.ps1 -Platform x64 -Configuration Release
