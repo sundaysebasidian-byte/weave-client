@@ -8,10 +8,14 @@ internal sealed class WindowsSystemProxy
 {
     private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
     private readonly string _backupPath;
+    private readonly object _gate = new();
+    private const string OwnedBypass = "<local>;localhost;127.*;10.*;192.168.*";
     private sealed record Backup(int Enabled, string? Server, string? Bypass, string OwnedServer);
     public WindowsSystemProxy(string directory) => _backupPath = Path.Combine(directory, "system-proxy-backup.bin");
     public void Enable(int port)
     {
+        lock (_gate)
+        {
         Recover();
         using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true) ?? throw new IOException("无法读取本账户的系统代理设置");
         var server = $"127.0.0.1:{port}";
@@ -22,13 +26,16 @@ internal sealed class WindowsSystemProxy
         finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(plain); }
         try
         {
-            key.SetValue("ProxyServer", server); key.SetValue("ProxyOverride", "<local>;localhost;127.*;10.*;192.168.*");
+            key.SetValue("ProxyServer", server); key.SetValue("ProxyOverride", OwnedBypass);
             key.SetValue("ProxyEnable", 1, RegistryValueKind.DWord); Notify();
         }
         catch { Recover(); throw; }
+        }
     }
     public void Recover()
     {
+        lock (_gate)
+        {
         if (!File.Exists(_backupPath)) return;
         var plain = new WindowsDpapiProtector().Unprotect(File.ReadAllBytes(_backupPath));
         Backup? backup;
@@ -39,11 +46,13 @@ internal sealed class WindowsSystemProxy
         // If another client/user changed it, leave their new configuration untouched.
         if ((key.GetValue("ProxyServer") as string) == backup.OwnedServer)
         {
-            key.SetValue("ProxyEnable", backup.Enabled, RegistryValueKind.DWord);
-            Restore(key, "ProxyServer", backup.Server); Restore(key, "ProxyOverride", backup.Bypass);
+            if (Convert.ToInt32(key.GetValue("ProxyEnable", 0)) == 1) key.SetValue("ProxyEnable", backup.Enabled, RegistryValueKind.DWord);
+            Restore(key, "ProxyServer", backup.Server);
+            if ((key.GetValue("ProxyOverride") as string) == OwnedBypass) Restore(key, "ProxyOverride", backup.Bypass);
             Notify();
         }
         File.Delete(_backupPath);
+        }
     }
     private static void Restore(RegistryKey key, string name, string? value)
     { if (value is null) key.DeleteValue(name, false); else key.SetValue(name, value); }

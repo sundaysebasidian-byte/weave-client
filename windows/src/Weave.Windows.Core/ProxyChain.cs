@@ -13,6 +13,10 @@ public static class ProxyChain
             throw new InvalidDataException("链式代理需要明确选择入口和出口两个节点，不能使用自动节点");
         if (entry.Id == exitSubscription.Id && options.ChainEntryNodeId == exitNodeId)
             throw new InvalidDataException("入口和出口不能是同一节点");
+        var firstType = entry.Nodes.FirstOrDefault(node => node.Id == options.ChainEntryNodeId)?.Protocol;
+        var lastType = exitSubscription.Nodes.FirstOrDefault(node => node.Id == exitNodeId)?.Protocol;
+        if (firstType == "http" && lastType is "hysteria" or "hysteria2" or "tuic" or "wireguard")
+            throw new InvalidDataException("所选出口需要 UDP，但 HTTP 入口无法承载；请更换支持 UDP 的入口");
         var first = Node(entry, options.ChainEntryNodeId, "WEAVE-CHAIN-ENTRY");
         var last = Node(exitSubscription, exitNodeId, "WEAVE-CHAIN-EXIT");
         last.Add(new YamlScalarNode("dialer-proxy"), new YamlScalarNode("WEAVE-CHAIN-ENTRY"));

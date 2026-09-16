@@ -27,7 +27,7 @@ if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 $env:WEAVE_TEST_CORE = Join-Path $PSScriptRoot 'src\Weave.Windows\runtime\mihomo.exe'
 $env:WEAVE_TEST_GEODATA = Join-Path $PSScriptRoot '..\app\src\main\assets\geodata'
 $env:WEAVE_INTEROP_FIXTURE = Join-Path ([IO.Path]::GetTempPath()) 'weave-android-reference.bin'
-java -Dfile.encoding=UTF-8 (Join-Path $PSScriptRoot 'tests\AndroidTransferInterop.java') $env:WEAVE_INTEROP_FIXTURE
+java '-Dfile.encoding=UTF-8' (Join-Path $PSScriptRoot 'tests\AndroidTransferInterop.java') $env:WEAVE_INTEROP_FIXTURE
 if ($LASTEXITCODE -ne 0) { throw 'Android wire-format fixture failed' }
 dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration
 if ($LASTEXITCODE -ne 0) { throw "Core tests failed" }

@@ -32,6 +32,7 @@
   <ItemGroup>
     <None Update="app.manifest" />
     <Content Include="Assets\Weave.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\privacy-lab.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\..\app\src\main\assets\geodata\GeoIP.dat" Link="geodata\GeoIP.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\..\app\src\main\assets\geodata\GeoSite.dat" Link="geodata\GeoSite.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="runtime\mihomo.exe" Condition="Exists('runtime\mihomo.exe')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

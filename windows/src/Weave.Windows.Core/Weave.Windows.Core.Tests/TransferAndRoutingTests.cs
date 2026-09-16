@@ -100,6 +100,40 @@ public sealed class TransferAndRoutingTests
         finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
     }
     [Fact]
+    public void DirectModeNeedsNoSubscriptionAndGlobalIgnoresStaleAppRules()
+    {
+        using var importer = new SubscriptionImporter();
+        var subscription = importer.ImportText(Item.Name, Item.Source, Item.Payload);
+        foreach (var mode in new[] { RoutingMode.Direct, RoutingMode.Global })
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "weave-isolated-mode-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var bundle = new MihomoConfigBuilder().Build(mode == RoutingMode.Direct ? Array.Empty<SubscriptionRecord>() : new[] { subscription },
+                    new[] { new WindowsAppRoute { ProcessName = "chrome.exe", DisplayName = "Chrome", Target = RouteTarget.Fixed("removed", "removed") } },
+                    mode == RoutingMode.Direct ? null : subscription.Id, null, new WindowsNetworkOptions { RoutingMode = mode, EnableTun = false }, folder);
+                var yaml = File.ReadAllText(bundle.ConfigPath);
+                Assert.DoesNotContain("chrome.exe", yaml);
+                Assert.Contains(mode == RoutingMode.Direct ? "MATCH,DIRECT" : "MATCH,DEFAULT", yaml);
+                if (mode == RoutingMode.Direct) Assert.Empty(bundle.ProviderNodeCounts);
+            }
+            finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        }
+    }
+
+    [Fact]
+    public void ChainRejectsLoopAndHttpEntryForUdpExit()
+    {
+        using var importer = new SubscriptionImporter();
+        var entry = importer.ImportText("entry", "inline://entry", Item.Payload);
+        var exit = importer.ImportText("exit", "inline://exit", "proxies: [{name: udp, type: hysteria2, server: example.com, port: 443, password: test}]");
+        var records = new[] { entry, exit }.ToDictionary(item => item.Id);
+        var options = new WindowsNetworkOptions { ChainEntrySubscriptionId = entry.Id, ChainEntryNodeId = entry.Nodes[0].Id };
+        Assert.Throws<InvalidDataException>(() => ProxyChain.Build(records, entry, entry.Nodes[0].Id, options));
+        Assert.Throws<InvalidDataException>(() => ProxyChain.Build(records, exit, exit.Nodes[0].Id, options));
+    }
+
+    [Fact]
     public async Task NativeCoreAcceptsChainAndPinnedChinaRules()
     {
         var executable = Environment.GetEnvironmentVariable("WEAVE_TEST_CORE");

@@ -54,6 +54,15 @@ jobs:
             if ($app.HasExited) { throw "Theme $theme failed to start" }
             Stop-Process -Id $app.Id
           }
+          $env:WEAVE_PREVIEW_THEME = '0'
+          foreach ($page in @(1,2,3,4,5)) {
+            $env:WEAVE_PREVIEW_PAGE = "$page"
+            $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-page-$page.png"
+            $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+            Start-Sleep -Seconds 4
+            if ($app.HasExited) { throw "Page $page failed to start" }
+            Stop-Process -Id $app.Id
+          }
       - name: Package Windows installer
         shell: pwsh
         run: |

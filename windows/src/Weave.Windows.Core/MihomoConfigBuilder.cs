@@ -15,7 +15,12 @@ public sealed class MihomoConfigBuilder
         WindowsNetworkOptions options,
         string runtimeDirectory)
     {
-        var usable = subscriptions.Where(item => item.Nodes.Count > 0).ToList();
+        if (options.RoutingMode == RoutingMode.Direct) return BuildDirect(options, runtimeDirectory);
+        var activeRoutes = options.RoutingMode == RoutingMode.Rule ? routes : Array.Empty<WindowsAppRoute>();
+        var requiredIds = activeRoutes.Select(route => route.Target.SubscriptionId).Where(id => id is not null).ToHashSet();
+        requiredIds.Add(selectedSubscriptionId);
+        if (ProxyChain.Enabled(options)) requiredIds.Add(options.ChainEntrySubscriptionId);
+        var usable = subscriptions.Where(item => item.Nodes.Count > 0 && requiredIds.Contains(item.Id)).ToList();
         if (usable.Count == 0)
         {
             throw new InvalidDataException("没有可用订阅，请先导入 Clash/Mihomo 节点");
@@ -63,13 +68,13 @@ public sealed class MihomoConfigBuilder
         }
 
         var configPath = Path.Combine(runtimeDirectory, "config.yaml");
-        var yaml = BuildYaml(usable, byId, routes, selectedSubscription, selectedNodeId, options, mixedPort, controllerPort, secret);
+        var yaml = BuildYaml(usable, byId, activeRoutes, selectedSubscription, selectedNodeId, options, mixedPort, controllerPort, secret);
         File.WriteAllText(configPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         var requiredSelections = new Dictionary<string, string>
         {
             ["DEFAULT"] = ProxyChain.Enabled(options) ? "WEAVE-CHAIN" : selectedNodeId is null ? AutomaticGroup(selectedSubscription) : FixedGroup(selectedSubscription, selectedNodeId),
         };
-        var targets = routes.Select(route => route.Target).Where(target => target.Kind == RouteKind.FixedNode).ToList();
+        var targets = activeRoutes.Select(route => route.Target).Where(target => target.Kind == RouteKind.FixedNode).ToList();
         if (selectedNodeId is not null) targets.Add(RouteTarget.Fixed(selectedSubscription.Id, selectedNodeId));
         foreach (var target in targets)
         {
@@ -103,58 +108,7 @@ public sealed class MihomoConfigBuilder
             ? AutomaticGroup(selectedSubscription)
             : FixedGroup(selectedSubscription, selectedNodeId);
         var builder = new StringBuilder();
-        builder.AppendLine($"mixed-port: {mixedPort}");
-        builder.AppendLine("bind-address: 127.0.0.1");
-        builder.AppendLine($"external-controller: 127.0.0.1:{controllerPort}");
-        builder.AppendLine($"secret: {YamlString(secret)}");
-        builder.AppendLine("allow-lan: false");
-        // Use explicit terminal rules so global mode cannot accidentally select built-in DIRECT.
-        builder.AppendLine("mode: rule");
-        builder.AppendLine("log-level: warning");
-        builder.AppendLine($"ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
-        builder.AppendLine("find-process-mode: strict");
-        builder.AppendLine("unified-delay: true");
-        builder.AppendLine("tcp-concurrent: true");
-        builder.AppendLine("geodata-mode: true");
-        builder.AppendLine("geo-auto-update: false");
-        builder.AppendLine("profile:");
-        builder.AppendLine("  store-selected: false");
-
-        if (options.EnableTun)
-        {
-            builder.AppendLine("tun:");
-            builder.AppendLine("  enable: true");
-            builder.AppendLine("  device: WeaveTun");
-            builder.AppendLine("  stack: mixed");
-            builder.AppendLine("  auto-route: true");
-            builder.AppendLine("  auto-detect-interface: true");
-            builder.AppendLine("  strict-route: true");
-            builder.AppendLine("  dns-hijack:");
-            builder.AppendLine("    - any:53");
-            builder.AppendLine("    - tcp://any:53");
-        }
-
-        builder.AppendLine("dns:");
-        builder.AppendLine("  enable: true");
-        builder.AppendLine($"  ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
-        builder.AppendLine("  enhanced-mode: fake-ip");
-        builder.AppendLine("  fake-ip-range: 198.18.0.1/16");
-        builder.AppendLine("  default-nameserver: [223.5.5.5, 1.1.1.1]");
-        builder.AppendLine("  fake-ip-filter:");
-        builder.AppendLine("    - '*.lan'");
-        builder.AppendLine("    - '*.local'");
-        builder.AppendLine("    - '*.home.arpa'");
-        builder.AppendLine("  nameserver:");
-        foreach (var endpoint in DnsEndpoints(options))
-        {
-            builder.AppendLine($"    - {YamlString(endpoint)}");
-        }
-
-        builder.AppendLine("  proxy-server-nameserver:");
-        foreach (var endpoint in DnsEndpoints(options))
-        {
-            builder.AppendLine($"    - {YamlString(endpoint)}");
-        }
+        AppendNetworkSettings(builder, options, mixedPort, controllerPort, secret);
 
         // DIRECT is built into Mihomo; redefining it is a duplicate-name error.
         if (ProxyChain.Enabled(options)) builder.AppendLine(ProxyChain.Build(byId, selectedSubscription, selectedNodeId, options));
@@ -254,6 +208,86 @@ public sealed class MihomoConfigBuilder
         }
         builder.AppendLine(options.RoutingMode == RoutingMode.Direct ? "  - MATCH,DIRECT" : "  - MATCH,DEFAULT");
         return builder.ToString();
+    }
+
+    private static void AppendNetworkSettings(StringBuilder builder, WindowsNetworkOptions options, int mixedPort, int controllerPort, string secret)
+    {
+        builder.AppendLine($"mixed-port: {mixedPort}");
+        builder.AppendLine("bind-address: 127.0.0.1");
+        builder.AppendLine($"external-controller: 127.0.0.1:{controllerPort}");
+        builder.AppendLine($"secret: {YamlString(secret)}");
+        builder.AppendLine("allow-lan: false");
+        // Use explicit terminal rules so global mode cannot accidentally select built-in DIRECT.
+        builder.AppendLine("mode: rule");
+        builder.AppendLine("log-level: warning");
+        builder.AppendLine($"ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
+        builder.AppendLine("find-process-mode: strict");
+        builder.AppendLine("unified-delay: true");
+        builder.AppendLine("tcp-concurrent: true");
+        builder.AppendLine("geodata-mode: true");
+        builder.AppendLine("geo-auto-update: false");
+        builder.AppendLine("profile:");
+        builder.AppendLine("  store-selected: false");
+
+        if (options.EnableTun)
+        {
+            builder.AppendLine("tun:");
+            builder.AppendLine("  enable: true");
+            builder.AppendLine("  device: WeaveTun");
+            builder.AppendLine("  stack: mixed");
+            builder.AppendLine("  auto-route: true");
+            builder.AppendLine("  auto-detect-interface: true");
+            builder.AppendLine("  strict-route: true");
+            builder.AppendLine("  dns-hijack:");
+            builder.AppendLine("    - any:53");
+            builder.AppendLine("    - tcp://any:53");
+        }
+
+        builder.AppendLine("dns:");
+        builder.AppendLine("  enable: true");
+        builder.AppendLine($"  ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
+        builder.AppendLine("  enhanced-mode: fake-ip");
+        builder.AppendLine("  fake-ip-range: 198.18.0.1/16");
+        builder.AppendLine("  default-nameserver: [223.5.5.5, 1.1.1.1]");
+        builder.AppendLine("  fake-ip-filter:");
+        builder.AppendLine("    - '*.lan'");
+        builder.AppendLine("    - '*.local'");
+        builder.AppendLine("    - '*.home.arpa'");
+        builder.AppendLine("  nameserver:");
+        foreach (var endpoint in DnsEndpoints(options))
+        {
+            builder.AppendLine($"    - {YamlString(endpoint)}");
+        }
+
+        builder.AppendLine("  proxy-server-nameserver:");
+        foreach (var endpoint in DnsEndpoints(options))
+        {
+            builder.AppendLine($"    - {YamlString(endpoint)}");
+        }
+
+    }
+
+    private static RuntimeBundle BuildDirect(WindowsNetworkOptions options, string directory)
+    {
+        if (Directory.Exists(directory)) throw new InvalidDataException("运行目录已存在");
+        var mixedPort = AvailablePort();
+        var controllerPort = AvailablePort();
+        while (controllerPort == mixedPort) controllerPort = AvailablePort();
+        var secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var builder = new StringBuilder();
+        AppendNetworkSettings(builder, options, mixedPort, controllerPort, secret);
+        builder.AppendLine("rules:");
+        if (options.BlockUdpStun)
+        {
+            builder.AppendLine("  - DST-PORT,3478-3479,REJECT");
+            builder.AppendLine("  - DST-PORT,19302-19309,REJECT");
+        }
+        builder.AppendLine("  - MATCH,DIRECT");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
+        return new RuntimeBundle { Directory = directory, ConfigPath = path, MixedPort = mixedPort,
+            ControllerPort = controllerPort, ControllerSecret = secret, RequiresTun = options.EnableTun };
     }
 
     private static IEnumerable<string> DnsEndpoints(WindowsNetworkOptions options)

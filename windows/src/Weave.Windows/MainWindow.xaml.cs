@@ -64,6 +64,8 @@ public sealed partial class MainWindow : Window
         Closed += MainWindow_Closed;
         UpdateStatus();
         UpdateNavigation();
+        if (int.TryParse(Environment.GetEnvironmentVariable("WEAVE_PREVIEW_PAGE"), out var previewPage) && previewPage is >= 0 and <= 5)
+            NavigateTo(previewPage.ToString());
         RefreshAddresses_Click(this, new RoutedEventArgs());
         _trafficTimer.Tick += TrafficTick;
         _trafficTimer.Start();
@@ -229,7 +231,8 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (SubscriptionComboBox.SelectedItem is not SubscriptionRecord subscription)
+        var subscription = SubscriptionComboBox.SelectedItem as SubscriptionRecord;
+        if (RoutingSelector.SelectedIndex != 2 && subscription is null)
         {
             MessageText.Text = "请先导入并选择订阅";
             return;
@@ -245,7 +248,7 @@ public sealed partial class MainWindow : Window
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" });
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--elevated-restart") { UseShellExecute = true, Verb = "runas" });
                 Close();
             }
             catch (System.ComponentModel.Win32Exception) { MessageText.Text = "管理员授权未完成，未改变系统网络。"; }
@@ -258,13 +261,13 @@ public sealed partial class MainWindow : Window
             _model.NetworkOptions = new WindowsNetworkOptions { Ipv6Enabled = Ipv6Toggle.IsOn,
                 EnableTun = TunToggle.IsOn, ChinaDirect = ChinaDirectToggle.IsOn,
                 GeoDataDirectory = Path.Combine(AppContext.BaseDirectory, "geodata"),
-                DomainRules = DomainRoute.Parse(DomainRulesBox.Text),
-                ChainEntrySubscriptionId = ChainToggle.IsOn ? (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id ?? throw new InvalidDataException("请选择入口订阅") : null,
-                ChainEntryNodeId = ChainToggle.IsOn ? (ChainNode.SelectedItem as ProxyNode)?.Id ?? throw new InvalidDataException("请选择入口节点") : null,
+                DomainRules = RoutingSelector.SelectedIndex == 0 ? DomainRoute.Parse(DomainRulesBox.Text) : Array.Empty<DomainRoute>(),
+                ChainEntrySubscriptionId = ChainToggle.IsOn && RoutingSelector.SelectedIndex != 2 ? (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id ?? throw new InvalidDataException("请选择入口订阅") : null,
+                ChainEntryNodeId = ChainToggle.IsOn && RoutingSelector.SelectedIndex != 2 ? (ChainNode.SelectedItem as ProxyNode)?.Id ?? throw new InvalidDataException("请选择入口节点") : null,
                 RoutingMode = (RoutingMode)Math.Max(0, RoutingSelector.SelectedIndex),
                 BlockUdpStun = StunToggle.IsOn, CustomDnsEndpoint = CustomDnsBox.Text.Trim(),
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
-            await _model.ConnectAsync(subscription.Id, node?.Id, _lifetime.Token);
+            await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, _lifetime.Token);
             ConnectButton.Content = "断开连接";
             MessageText.Text = TunToggle.IsOn ? "TUN 与所选出口已就绪，可开始网络检测。" : "系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。";
             UpdateStatus();
@@ -596,6 +599,7 @@ public sealed partial class MainWindow : Window
     private void RoutingMode_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_initialized) return;
+        SubscriptionComboBox.IsEnabled = NodeComboBox.IsEnabled = ChainToggle.IsEnabled = RoutingSelector.SelectedIndex != 2;
         ModeExplanation.Text = RoutingSelector.SelectedIndex switch
         {
             1 => "全部走默认出口（或默认链），忽略应用、域名和国内直连规则。",
@@ -620,7 +624,7 @@ public sealed partial class MainWindow : Window
             if (_closed || !_model.IsConnected || !ReferenceEquals(bundle, _model.ActiveBundle)) return;
             DownloadRate.Text = Rate(traffic.Down); UploadRate.Text = Rate(traffic.Up);
         }
-        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException) { }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException or KeyNotFoundException or FormatException or InvalidOperationException) { }
         finally { _trafficBusy = false; }
     }
     private static string Rate(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:F1} MB/s" : $"{Math.Max(0, bytes) / 1024.0:F1} KB/s";

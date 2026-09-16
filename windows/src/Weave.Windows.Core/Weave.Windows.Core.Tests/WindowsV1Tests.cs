@@ -20,7 +20,8 @@ public sealed class WindowsV1Tests
         var folder = Path.Combine(Path.GetTempPath(), "weave-live-core-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var bundle = new MihomoConfigBuilder().Build(new[] { one, two }, Array.Empty<WindowsAppRoute>(),
+            var bundle = new MihomoConfigBuilder().Build(new[] { one, two },
+                new[] { new WindowsAppRoute { ProcessName = "chrome.exe", DisplayName = "Chrome", Target = RouteTarget.Fixed(two.Id, two.Nodes[0].Id) } },
                 one.Id, one.Nodes[0].Id, new WindowsNetworkOptions { EnableTun = false }, folder);
             await using var process = new MihomoProcess(executable);
             var validation = await process.ValidateConfigAsync(bundle);

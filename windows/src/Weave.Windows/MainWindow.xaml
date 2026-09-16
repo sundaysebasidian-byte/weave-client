@@ -153,7 +153,8 @@
 <CheckBox x:Name="DiagnosticConsent" Content="允许本次访问 ipify 及下方网站进行检测"/>
 <StackPanel Orientation="Horizontal" Spacing="10"><Button Content="开始检测" Click="RunDiagnostics_Click"/><Button Content="停止" Click="StopDiagnostics_Click"/></StackPanel>
 <ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None" DisplayMemberPath="Summary"/>
-<TextBlock Text="DNS 泄漏 / WebRTC / 浏览器指纹：此版本尚未实测，不能据此判定安全。浏览器身份必须在实际使用的浏览器中检测。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+<StackPanel Orientation="Horizontal" Spacing="10"><Button Content="WebRTC / 浏览器标识" Click="BrowserPrivacy_Click"/><Button Content="DNS 解析出口实测" Click="DnsPrivacy_Click"/></StackPanel>
+<TextBlock Text="浏览器实验按需启动隔离的 WebView2；需额外允许访问测试服务。内置浏览器结果不代表 Chrome、其他应用或所有网络路径。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 </StackPanel></Border>
 
 <Border x:Name="TransferPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18">

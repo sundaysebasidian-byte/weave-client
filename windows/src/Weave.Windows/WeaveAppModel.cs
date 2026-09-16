@@ -231,13 +231,14 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
         if (!process.IsReady) throw new InvalidOperationException("核心在启动时退出，请检查权限及配置。");
         if (!options.EnableTun) _systemProxy.Enable(bundle.MixedPort);
-        Status = options.EnableTun ? "已连接 · TUN" : "已连接 · 系统代理";
+        if (!process.IsReady) throw new InvalidOperationException("内核在应用系统设置时退出，已取消连接");
+        Status = options.RoutingMode == RoutingMode.Direct ? "直连 · 不经过代理节点" : options.EnableTun ? "已连接 · TUN" : "已连接 · 系统代理";
         StatusChanged?.Invoke(this, EventArgs.Empty);
         }
         catch
         {
             _process = null;
-            _systemProxy.Recover();
+            try { _systemProxy.Recover(); } catch { /* Recovery record is retained for the next launch. */ }
             await process.DisposeAsync().ConfigureAwait(false);
             CleanupRuntime();
             Status = "启动失败";
@@ -255,15 +256,17 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
         var process = _process;
         _process = null;
-        _systemProxy.Recover();
-        if (process is not null)
+        Exception? recoveryError = null;
+        try { _systemProxy.Recover(); } catch (Exception error) { recoveryError = error; }
+        try
         {
-            await process.DisposeAsync().ConfigureAwait(false);
+            if (process is not null) await process.DisposeAsync().ConfigureAwait(false);
         }
-        CleanupRuntime();
+        finally { CleanupRuntime(); }
 
         Status = "未连接";
         StatusChanged?.Invoke(this, EventArgs.Empty);
+        if (recoveryError is not null) throw new IOException("内核已停止，但系统代理恢复失败；请检查 Windows 代理设置。恢复记录已保留。", recoveryError);
         }
         finally { _connectionGate.Release(); }
     }
