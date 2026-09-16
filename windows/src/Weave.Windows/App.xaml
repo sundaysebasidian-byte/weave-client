@@ -5,11 +5,17 @@
     xmlns:local="using:Weave.Windows">
     <Application.Resources>
         <ResourceDictionary>
+            <local:UiText x:Key="UiText" />
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
+                    <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#F5F8FC" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#F5F8FC"/>
+                    <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EAF0F8" Offset="0"/><GradientStop Color="#F3F6FA" Offset="0.55"/><GradientStop Color="#E7EFEE" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveLightEdgeBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#DFE6EF" Offset="0.5"/><GradientStop Color="#FFFFFF" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveHeroBrush" StartPoint="0,0" EndPoint="1,0.8"><GradientStop Color="#F8FBFF" Offset="0"/><GradientStop Color="#E4EDF9" Offset="0.6"/><GradientStop Color="#E8F3ED" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveIconBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#CBDDEE" Offset="1"/></LinearGradientBrush>
                     <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F4F6F8" />
                     <SolidColorBrush x:Key="WeaveCardBrush" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="WeaveInkBrush" Color="#1D252D" />
@@ -19,6 +25,11 @@
                     <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#EDF2F7" Offset="1"/></LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
+                    <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#151C29" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#151C29"/>
+                    <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#111B2B" Offset="0"/><GradientStop Color="#0B101A" Offset="0.55"/><GradientStop Color="#152329" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveLightEdgeBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#526174" Offset="0"/><GradientStop Color="#1C2735" Offset="0.5"/><GradientStop Color="#394555" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveHeroBrush" StartPoint="0,0" EndPoint="1,0.8"><GradientStop Color="#24364B" Offset="0"/><GradientStop Color="#1A2534" Offset="0.6"/><GradientStop Color="#273D3E" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveIconBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#385368" Offset="0"/><GradientStop Color="#182537" Offset="1"/></LinearGradientBrush>
                     <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#07100E" />
                     <SolidColorBrush x:Key="WeaveCardBrush" Color="#101C19" />
                     <SolidColorBrush x:Key="WeaveInkBrush" Color="#F2F7F5" />
@@ -30,12 +41,13 @@
             </ResourceDictionary.ThemeDictionaries>
             <Style x:Key="GlassCard" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource WeaveGlassBrush}"/>
-                <Setter Property="BorderBrush" Value="{ThemeResource WeaveRimBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="CornerRadius" Value="26"/>
-                <Setter Property="Padding" Value="24"/>
+                <Setter Property="CornerRadius" Value="24"/>
+                <Setter Property="Padding" Value="28"/>
             </Style>
-            <Style TargetType="Button"><Setter Property="CornerRadius" Value="14"/><Setter Property="Padding" Value="18,12"/></Style>
+            <Style x:Key="SectionTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="19"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
+            <Style TargetType="Button"><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="17,11"/><Setter Property="MinHeight" Value="42"/><Setter Property="FontSize" Value="13"/><Setter Property="BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/></Style>
             <Style TargetType="ComboBox"><Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="44"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
             <Style TargetType="TextBox"><Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="44"/></Style>
         </ResourceDictionary>

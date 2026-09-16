@@ -19,7 +19,7 @@ internal sealed class ChildProcessLifetime : IDisposable
         {
             var error = Marshal.GetLastWin32Error();
             _job.Dispose();
-            throw new Win32Exception(error, "无法保护内核进程生命周期");
+            throw new Win32Exception(error, L.T("无法保护内核进程生命周期"));
         }
     }
     public void Dispose() => _job.Dispose();

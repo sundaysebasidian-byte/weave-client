@@ -1,3 +1,4 @@
+using Weave.Windows.Core;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -7,9 +8,9 @@ namespace Weave.Windows;
 /// <summary>Classic desktop dialog also works when the TUN app is elevated.</summary>
 internal static class DesktopFilePicker
 {
-    internal static string? Open(IntPtr owner, string filter = "Clash 配置\0*.yaml;*.yml;*.json;*.txt\0\0") =>
-        Pick(owner, filter, false, "");
-    internal static string? SaveZip(IntPtr owner) => Pick(owner, "ZIP 配置包\0*.zip\0\0", true, "Weave-subscriptions.zip");
+    internal static string? Open(IntPtr owner, string? filter = null) =>
+        Pick(owner, filter ?? L.T("Clash 配置\0*.yaml;*.yml;*.json;*.txt\0\0"), false, "");
+    internal static string? SaveZip(IntPtr owner) => Pick(owner, L.T("ZIP 配置包\0*.zip\0\0"), true, "Weave-subscriptions.zip");
     private static string? Pick(IntPtr owner, string filter, bool save, string initialName)
     {
         var data = new OpenFileName
@@ -21,7 +22,7 @@ internal static class DesktopFilePicker
         };
         if (save ? GetSaveFileNameW(ref data) : GetOpenFileNameW(ref data)) return data.File.ToString();
         var error = CommDlgExtendedError();
-        if (error != 0) throw new Win32Exception((int)error, "无法打开文件选择窗口");
+        if (error != 0) throw new Win32Exception((int)error, L.T("无法打开文件选择窗口"));
         return null;
     }
 

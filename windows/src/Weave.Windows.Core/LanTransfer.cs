@@ -24,16 +24,16 @@ public sealed record LanTransferLink(string Host, int Port, string Token, byte[]
     {
         if (raw.Length > 2048 || !Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri) ||
             uri.Scheme != "weave" || uri.Host != "lan" || uri.UserInfo.Length != 0)
-            throw new InvalidDataException("不是有效的 Weave 局域网链接");
+            throw new InvalidDataException(L.T("不是有效的 Weave 局域网链接"));
         var match = Regex.Match(uri.AbsolutePath, "^/v1/([0-9a-f]{32})$");
-        if (!match.Success) throw new InvalidDataException("传输链接版本或令牌无效");
+        if (!match.Success) throw new InvalidDataException(L.T("传输链接版本或令牌无效"));
         var query = uri.Query.TrimStart('?').Split('&').Select(part => part.Split('=', 2)).ToArray();
         if (query.Length != 2 || query.Any(pair => pair.Length != 2) || query.Select(pair => pair[0]).Distinct().Count() != 2)
-            throw new InvalidDataException("传输地址参数无效");
+            throw new InvalidDataException(L.T("传输地址参数无效"));
         var fields = query.ToDictionary(pair => pair[0], pair => pair[1]);
         if (!fields.TryGetValue("host", out var host) || !IsPrivateIpv4(host) ||
             !fields.TryGetValue("port", out var portText) || !int.TryParse(portText, out var port) || port is < 1 or > 65535)
-            throw new InvalidDataException("只允许明确的局域网 IPv4 传输地址");
+            throw new InvalidDataException(L.T("只允许明确的局域网 IPv4 传输地址"));
         try
         {
             var text = uri.Fragment.TrimStart('#').Replace('-', '+').Replace('_', '/');
@@ -41,7 +41,7 @@ public sealed record LanTransferLink(string Host, int Port, string Token, byte[]
             if (key.Length != 32) throw new FormatException();
             return new LanTransferLink(host, port, match.Groups[1].Value, key);
         }
-        catch (FormatException) { throw new InvalidDataException("传输密钥无效"); }
+        catch (FormatException) { throw new InvalidDataException(L.T("传输密钥无效")); }
     }
     public static bool IsPrivateIpv4(string host)
     {
@@ -60,7 +60,7 @@ public static class LanTransferCodec
     private static readonly UTF8Encoding Utf8 = new(false, true);
     public static byte[] Encode(IReadOnlyList<TransferSubscription> items)
     {
-        if (items.Count is < 1 or > 64) throw new InvalidDataException("请选择 1–64 份订阅");
+        if (items.Count is < 1 or > 64) throw new InvalidDataException(L.T("请选择 1–64 份订阅"));
         using var stream = new MemoryStream();
         stream.Write("WVLAN001"u8); WriteInt(stream, items.Count);
         foreach (var item in items)
@@ -73,20 +73,20 @@ public static class LanTransferCodec
     public static IReadOnlyList<TransferSubscription> Decode(byte[] data)
     {
         if (data.Length > MaxPlaintext || data.Length < 12 || !data.AsSpan(0, 8).SequenceEqual("WVLAN001"u8))
-            throw new InvalidDataException("传输内容无效");
+            throw new InvalidDataException(L.T("传输内容无效"));
         var offset = 8;
         var count = ReadInt(data, ref offset);
-        if (count is < 1 or > 64) throw new InvalidDataException("订阅数量无效");
+        if (count is < 1 or > 64) throw new InvalidDataException(L.T("订阅数量无效"));
         var result = new List<TransferSubscription>();
         for (var i = 0; i < count; i++)
             result.Add(new TransferSubscription(ReadString(data, ref offset, 320),
                 ReadString(data, ref offset, 8192), ReadString(data, ref offset, 5 * 1024 * 1024)));
-        if (offset != data.Length) throw new InvalidDataException("传输内容有多余数据");
+        if (offset != data.Length) throw new InvalidDataException(L.T("传输内容有多余数据"));
         return result;
     }
     public static byte[] Seal(byte[] data, byte[] key)
     {
-        if (key.Length != 32 || data.Length > MaxPlaintext) throw new InvalidDataException("传输密钥或内容长度无效");
+        if (key.Length != 32 || data.Length > MaxPlaintext) throw new InvalidDataException(L.T("传输密钥或内容长度无效"));
         var packet = new byte[8 + 12 + data.Length + 16];
         "WVENC001"u8.CopyTo(packet);
         RandomNumberGenerator.Fill(packet.AsSpan(8, 12));
@@ -97,11 +97,11 @@ public static class LanTransferCodec
     public static byte[] Open(byte[] packet, byte[] key)
     {
         if (key.Length != 32 || packet.Length is < 36 or > MaxPacket || !packet.AsSpan(0, 8).SequenceEqual("WVENC001"u8))
-            throw new InvalidDataException("加密传输包无效");
+            throw new InvalidDataException(L.T("加密传输包无效"));
         var data = new byte[packet.Length - 36];
         using var aes = new AesGcm(key, 16);
         try { aes.Decrypt(packet.AsSpan(8, 12), packet.AsSpan(20, data.Length), packet.AsSpan(20 + data.Length, 16), data, "weave-lan-transfer-v1"u8); }
-        catch (CryptographicException) { CryptographicOperations.ZeroMemory(data); throw new InvalidDataException("密钥错误或传输包已被篡改"); }
+        catch (CryptographicException) { CryptographicOperations.ZeroMemory(data); throw new InvalidDataException(L.T("密钥错误或传输包已被篡改")); }
         return data;
     }
     private static void WriteInt(Stream stream, int value) { Span<byte> b = stackalloc byte[4]; BinaryPrimitives.WriteInt32BigEndian(b, value); stream.Write(b); }
@@ -110,22 +110,22 @@ public static class LanTransferCodec
         var bytes = Utf8.GetBytes(value);
         try
         {
-            if (bytes.Length > max || stream.Length + bytes.Length + 4 > MaxPlaintext) throw new InvalidDataException("传输内容超过限制");
+            if (bytes.Length > max || stream.Length + bytes.Length + 4 > MaxPlaintext) throw new InvalidDataException(L.T("传输内容超过限制"));
             WriteInt(stream, bytes.Length); stream.Write(bytes);
         }
         finally { CryptographicOperations.ZeroMemory(bytes); }
     }
     private static int ReadInt(byte[] data, ref int offset)
     {
-        if (data.Length - offset < 4) throw new InvalidDataException("传输内容截断");
+        if (data.Length - offset < 4) throw new InvalidDataException(L.T("传输内容截断"));
         var result = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4)); offset += 4; return result;
     }
     private static string ReadString(byte[] data, ref int offset, int max)
     {
         var length = ReadInt(data, ref offset);
-        if (length < 0 || length > max || length > data.Length - offset) throw new InvalidDataException("传输字段长度无效");
+        if (length < 0 || length > max || length > data.Length - offset) throw new InvalidDataException(L.T("传输字段长度无效"));
         try { var value = Utf8.GetString(data, offset, length); offset += length; return value; }
-        catch (DecoderFallbackException) { throw new InvalidDataException("传输文字编码无效"); }
+        catch (DecoderFallbackException) { throw new InvalidDataException(L.T("传输文字编码无效")); }
     }
 }
 
@@ -138,7 +138,7 @@ public sealed class OneTimeLanTransferServer : IAsyncDisposable
     public Task Completion => _task;
     public OneTimeLanTransferServer(string host, IReadOnlyList<TransferSubscription> items)
     {
-        if (!LanTransferLink.IsPrivateIpv4(host)) throw new InvalidDataException("请选择局域网地址");
+        if (!LanTransferLink.IsPrivateIpv4(host)) throw new InvalidDataException(L.T("请选择局域网地址"));
         var key = RandomNumberGenerator.GetBytes(32);
         var plain = LanTransferCodec.Encode(items);
         byte[] packet;
@@ -217,14 +217,14 @@ public static class LanTransferClient
         if (response.StatusCode != HttpStatusCode.OK ||
             response.Content.Headers.ContentType?.MediaType != "application/vnd.weave.transfer" ||
             response.Content.Headers.ContentLength is not > 0 or > LanTransferCodec.MaxPacket)
-            throw new InvalidDataException("传输已过期、已使用或响应格式不正确");
+            throw new InvalidDataException(L.T("传输已过期、已使用或响应格式不正确"));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var length = (int)response.Content.Headers.ContentLength.Value;
         var packet = new byte[length];
         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
         await stream.ReadExactlyAsync(packet, timeout.Token).ConfigureAwait(false);
-        if (await stream.ReadAsync(new byte[1], timeout.Token).ConfigureAwait(false) != 0) throw new InvalidDataException("传输长度不匹配");
+        if (await stream.ReadAsync(new byte[1], timeout.Token).ConfigureAwait(false) != 0) throw new InvalidDataException(L.T("传输长度不匹配"));
         var plain = LanTransferCodec.Open(packet, link.Key);
         try { return LanTransferCodec.Decode(plain); }
         finally { CryptographicOperations.ZeroMemory(plain); }

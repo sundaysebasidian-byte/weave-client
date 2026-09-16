@@ -1,3 +1,4 @@
+using Weave.Windows.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -12,13 +13,13 @@ public sealed partial class MainWindow
     private async Task OpenPrivacyAsync(bool dns)
     {
         if (_privacyOpen || _busy) return;
-        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = "请先连接代理"; return; }
+        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
         var consent = new ContentDialog
         {
-            Title = dns ? "打开 DNS 出口实测？" : "开始浏览器隐私实验？",
-            Content = dns ? "将在隔离的内置浏览器中访问 browserleaks.com/dns。该第三方会看到测试流量和出口地址；结果属于此浏览器，不代表其他应用。"
-                : "HTTPS 出口查询会访问 ipify；WebRTC 将向 Google / Cloudflare 的 STUN 服务发包，可能显露直连公网地址。指纹特征仅在本机计算，不上传。检测只代表内置浏览器，不替代你常用浏览器的实测。",
-            PrimaryButtonText = "允许本次检测", CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot,
+            Title = dns ? L.T("打开 DNS 出口实测？") : L.T("开始浏览器隐私实验？"),
+            Content = dns ? L.T("将在隔离的内置浏览器中访问 browserleaks.com/dns。该第三方会看到测试流量和出口地址；结果属于此浏览器，不代表其他应用。")
+                : L.T("HTTPS 出口查询会访问 ipify；WebRTC 将向 Google / Cloudflare 的 STUN 服务发包，可能显露直连公网地址。指纹特征仅在本机计算，不上传。检测只代表内置浏览器，不替代你常用浏览器的实测。"),
+            PrimaryButtonText = L.T("允许本次检测"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot,
         };
         if (await consent.ShowAsync() != ContentDialogResult.Primary) return;
         _privacyOpen = true;
@@ -26,8 +27,8 @@ public sealed partial class MainWindow
         var web = new WebView2 { Width = Math.Max(420, Math.Min(940, RootGrid.ActualWidth - 120)), Height = Math.Max(320, Math.Min(620, RootGrid.ActualHeight - 150)) };
         var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         web.Loaded += (_, _) => loaded.TrySetResult();
-        var dialog = new ContentDialog { Title = dns ? "DNS 出口 · 第三方实测" : "浏览器隐私 · 本机实验",
-            Content = web, CloseButtonText = "关闭并清理", XamlRoot = RootGrid.XamlRoot };
+        var dialog = new ContentDialog { Title = dns ? L.T("DNS 出口 · 第三方实测") : L.T("浏览器隐私 · 本机实验"),
+            Content = web, CloseButtonText = L.T("关闭并清理"), XamlRoot = RootGrid.XamlRoot };
         dialog.Resources["ContentDialogMaxWidth"] = 1100d;
         var display = dialog.ShowAsync().AsTask();
         try
@@ -54,12 +55,12 @@ public sealed partial class MainWindow
                 if (!allowed) args.Cancel = true;
             };
             if (dns) web.CoreWebView2.Navigate("https://browserleaks.com/dns");
-            else web.NavigateToString(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "privacy-lab.html")));
+            else web.NavigateToString(PrivacyLabText.Localize(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "privacy-lab.html")), L.Language));
             await display;
             await web.CoreWebView2.Profile.ClearBrowsingDataAsync();
         }
         catch (Exception error) when (error is System.Runtime.InteropServices.COMException or InvalidOperationException or IOException or TimeoutException or OperationCanceledException)
-        { MessageText.Text = "浏览器实验无法打开；请检查 Microsoft Edge WebView2 Runtime 是否安装。未自动安装或下载组件。"; }
+        { MessageText.Text = L.T("浏览器实验无法打开；请检查 Microsoft Edge WebView2 Runtime 是否安装。未自动安装或下载组件。"); }
         finally
         {
             dialog.Hide();

@@ -1,3 +1,4 @@
+using Weave.Windows.Core;
 using System.Diagnostics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics.Imaging;
@@ -26,12 +27,12 @@ internal sealed class CameraQrScanner : IAsyncDisposable
             SharingMode = MediaCaptureSharingMode.SharedReadOnly,
         });
         var source = _capture.FrameSources.Values.FirstOrDefault(item => item.Info.SourceKind == MediaFrameSourceKind.Color)
-            ?? throw new InvalidOperationException("未找到可用摄像头，请改用二维码图片或链接");
+            ?? throw new InvalidOperationException(L.T("未找到可用摄像头，请改用二维码图片或链接"));
         _reader = await _capture.CreateFrameReaderAsync(source, MediaEncodingSubtypes.Bgra8, new BitmapSize { Width = 640, Height = 480 });
         _reader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
         _reader.FrameArrived += FrameArrived;
         if (await _reader.StartAsync() != MediaFrameReaderStartStatus.Success)
-            throw new InvalidOperationException("摄像头启动失败，请检查 Windows 相机权限或改用图片");
+            throw new InvalidOperationException(L.T("摄像头启动失败，请检查 Windows 相机权限或改用图片"));
     }
     private void FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
     {

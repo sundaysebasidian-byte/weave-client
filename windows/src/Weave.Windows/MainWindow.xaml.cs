@@ -24,11 +24,12 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        LoadLanguage();
         InitializeComponent();
-        foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, RoutesPanel, NodesPanel, DiagnosticsPanel })
+        foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, NetworkSettingsCard, PrivacySettingsCard, RoutesPanel, NodesPanel, DiagnosticsPanel, TransferPanel })
         {
             card.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
-            card.Translation = new System.Numerics.Vector3(0, 0, 6);
+            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 18 : 10);
         }
         _initialized = true;
         RootGrid.Loaded += CapturePreviewIfRequested;
@@ -37,9 +38,14 @@ public sealed partial class MainWindow : Window
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_WIDE") == "1")
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1400, 900));
         try { _model.Load(); }
-        catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
+        catch (Exception) { MessageText.Text = L.T("本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"); }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
-        ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => palette.Name).ToArray();
+        ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => L.T(palette.Name)).ToArray();
+        LanguageSelector.SelectedIndex = L.Language == "en" ? 1 : 0;
+        RootGrid.Language = L.Language;
+        RoutingSelector.ItemsSource = new[] { L.T("规则"), L.T("全局"), L.T("直连") };
+        RoutingSelector.SelectedIndex = 0;
+        DnsSelector.ItemsSource = new[] { L.T("加密 DNS"), L.T("广告过滤"), L.T("家庭过滤"), L.T("自订 DNS") };
         DnsSelector.SelectedIndex = 0;
         try
         {
@@ -54,7 +60,7 @@ public sealed partial class MainWindow : Window
         RouteSubscriptionComboBox.ItemsSource = _model.Subscriptions;
         ChainSubscription.ItemsSource = _model.Subscriptions;
         RouteListView.ItemsSource = _model.AppRoutes;
-        RouteTargetModeComboBox.ItemsSource = new[] { "自动测速", "固定节点", "直连", "阻止" };
+        RouteTargetModeComboBox.ItemsSource = new[] { L.T("自动测速"), L.T("固定节点"), L.T("直连"), L.T("阻止") };
         RouteTargetModeComboBox.SelectedIndex = 0;
         if (_model.Subscriptions.Count > 0)
         {
@@ -129,7 +135,7 @@ public sealed partial class MainWindow : Window
                 1 when subscription is not null && RouteNodeComboBox.SelectedItem is ProxyNode node =>
                     RouteTarget.Fixed(subscription.Id, node.Id),
                 0 when subscription is not null => RouteTarget.Automatic(subscription.Id),
-                _ => throw new InvalidDataException("自动或固定节点分流需要先选择订阅；固定节点还需要选择节点"),
+                _ => throw new InvalidDataException(L.T("自动或固定节点分流需要先选择订阅；固定节点还需要选择节点")),
             };
             var processName = ProcessNameBox.Text.Trim();
             _model.AddOrReplaceRoute(new WindowsAppRoute
@@ -138,7 +144,7 @@ public sealed partial class MainWindow : Window
                 DisplayName = processName,
                 Target = target,
             });
-            MessageText.Text = $"已保存 {processName} 的分流规则；重新连接后生效";
+            MessageText.Text = L.F($"已保存 {processName} 的分流规则；重新连接后生效");
             return Task.CompletedTask;
         });
     }
@@ -149,7 +155,7 @@ public sealed partial class MainWindow : Window
         if (sender is Button { Tag: string processName })
         {
             _model.RemoveRoute(processName);
-            MessageText.Text = $"已删除 {processName} 的分流规则；重新连接后生效";
+            MessageText.Text = L.F($"已删除 {processName} 的分流规则；重新连接后生效");
         }
     }
 
@@ -162,7 +168,7 @@ public sealed partial class MainWindow : Window
                 "clipboard://manual",
                 SubscriptionTextBox.Text);
             SubscriptionComboBox.SelectedItem = record;
-            MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
+            MessageText.Text = L.F($"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点");
         });
     }
 
@@ -175,7 +181,7 @@ public sealed partial class MainWindow : Window
                 SubscriptionUrlBox.Text,
                 _lifetime.Token);
             SubscriptionComboBox.SelectedItem = record;
-            MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
+            MessageText.Text = L.F($"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点");
         });
     }
 
@@ -191,7 +197,7 @@ public sealed partial class MainWindow : Window
 
             var record = await _model.ImportFileAsync(SubscriptionNameBox.Text, path);
             SubscriptionComboBox.SelectedItem = record;
-            MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
+            MessageText.Text = L.F($"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点");
         });
     }
 
@@ -206,10 +212,10 @@ public sealed partial class MainWindow : Window
 
         var dialog = new ContentDialog
         {
-            Title = "删除订阅？",
-            Content = $"将从本机删除“{record.Name}”及其加密内容。",
-            PrimaryButtonText = "删除",
-            CloseButtonText = "取消",
+            Title = L.T("删除订阅？"),
+            Content = L.F($"将从本机删除“{record.Name}”及其加密内容。"),
+            PrimaryButtonText = L.T("删除"),
+            CloseButtonText = L.T("取消"),
             XamlRoot = RootGrid.XamlRoot,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
@@ -223,7 +229,7 @@ public sealed partial class MainWindow : Window
         {
             SubscriptionComboBox.SelectedIndex = _model.Subscriptions.Count > 0 ? 0 : -1;
         }
-        MessageText.Text = "订阅已删除";
+        MessageText.Text = L.T("订阅已删除");
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -234,8 +240,8 @@ public sealed partial class MainWindow : Window
             await RunActionAsync(async () =>
             {
                 await _model.DisconnectAsync();
-                ConnectButton.Content = "连接";
-                MessageText.Text = "已停止本地内核。请确认系统网络已恢复。";
+                ConnectButton.Content = L.T("连接");
+                MessageText.Text = L.T("已停止本地内核。请确认系统网络已恢复。");
                 UpdateStatus();
             });
             return;
@@ -244,7 +250,7 @@ public sealed partial class MainWindow : Window
         var subscription = SubscriptionComboBox.SelectedItem as SubscriptionRecord;
         if (RoutingSelector.SelectedIndex != 2 && subscription is null)
         {
-            MessageText.Text = "请先导入并选择订阅";
+            MessageText.Text = L.T("请先导入并选择订阅");
             return;
         }
 
@@ -252,16 +258,16 @@ public sealed partial class MainWindow : Window
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
         if (TunToggle.IsOn && !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
         {
-            var dialog = new ContentDialog { Title = "允许启动 Windows TUN？",
-                Content = "需要以当前 Windows 用户的管理员权限重新打开 Weave。订阅会保留；重开后点击连接。若你使用标准账户，请勿换成其他用户，否则无法读取本账户的加密订阅。",
-                PrimaryButtonText = "重新打开并申请权限", CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot };
+            var dialog = new ContentDialog { Title = L.T("允许启动 Windows TUN？"),
+                Content = L.T("需要以当前 Windows 用户的管理员权限重新打开 Weave。订阅会保留；重开后点击连接。若你使用标准账户，请勿换成其他用户，否则无法读取本账户的加密订阅。"),
+                PrimaryButtonText = L.T("重新打开并申请权限"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--elevated-restart") { UseShellExecute = true, Verb = "runas" });
                 await ShutdownAsync(closeWindow: true);
             }
-            catch (System.ComponentModel.Win32Exception) { MessageText.Text = "管理员授权未完成，未改变系统网络。"; }
+            catch (System.ComponentModel.Win32Exception) { MessageText.Text = L.T("管理员授权未完成，未改变系统网络。"); }
             return;
         }
 
@@ -272,14 +278,14 @@ public sealed partial class MainWindow : Window
                 EnableTun = TunToggle.IsOn, ChinaDirect = ChinaDirectToggle.IsOn,
                 GeoDataDirectory = Path.Combine(AppContext.BaseDirectory, "geodata"),
                 DomainRules = RoutingSelector.SelectedIndex == 0 ? DomainRoute.Parse(DomainRulesBox.Text) : Array.Empty<DomainRoute>(),
-                ChainEntrySubscriptionId = ChainToggle.IsOn && RoutingSelector.SelectedIndex != 2 ? (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id ?? throw new InvalidDataException("请选择入口订阅") : null,
-                ChainEntryNodeId = ChainToggle.IsOn && RoutingSelector.SelectedIndex != 2 ? (ChainNode.SelectedItem as ProxyNode)?.Id ?? throw new InvalidDataException("请选择入口节点") : null,
+                ChainEntrySubscriptionId = ChainToggle.IsOn && RoutingSelector.SelectedIndex != 2 ? (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id ?? throw new InvalidDataException(L.T("请选择入口订阅")) : null,
+                ChainEntryNodeId = ChainToggle.IsOn && RoutingSelector.SelectedIndex != 2 ? (ChainNode.SelectedItem as ProxyNode)?.Id ?? throw new InvalidDataException(L.T("请选择入口节点")) : null,
                 RoutingMode = (RoutingMode)Math.Max(0, RoutingSelector.SelectedIndex),
                 BlockUdpStun = StunToggle.IsOn, CustomDnsEndpoint = CustomDnsBox.Text.Trim(),
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, _lifetime.Token);
-            ConnectButton.Content = "断开连接";
-            MessageText.Text = RoutingSelector.SelectedIndex == 2 ? "直连已启用：流量不经过代理节点，公网地址不会被隐藏。" : TunToggle.IsOn ? "TUN 与所选出口已就绪，可开始网络检测。" : "系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。";
+            ConnectButton.Content = L.T("断开连接");
+            MessageText.Text = RoutingSelector.SelectedIndex == 2 ? L.T("直连已启用：流量不经过代理节点，公网地址不会被隐藏。") : TunToggle.IsOn ? L.T("TUN 与所选出口已就绪，可开始网络检测。") : L.T("系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。");
             UpdateStatus();
         });
     }
@@ -300,11 +306,11 @@ public sealed partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            MessageText.Text = "操作已取消或超时。连接超时请检查管理员权限及防火墙；订阅超时请检查当前网络。";
+            MessageText.Text = L.T("操作已取消或超时。连接超时请检查管理员权限及防火墙；订阅超时请检查当前网络。");
         }
         catch (HttpRequestException)
         {
-            MessageText.Text = "网络请求失败，请检查连接与订阅地址。未展示原始请求地址，以保护订阅凭据。";
+            MessageText.Text = L.T("网络请求失败，请检查连接与订阅地址。未展示原始请求地址，以保护订阅凭据。");
         }
         catch (Exception exception)
         {
@@ -327,9 +333,9 @@ public sealed partial class MainWindow : Window
     private void UpdateStatus()
     {
         StatusText.Text = _model.Status;
-        ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
-        HeroStatus.Text = _model.IsConnected ? "已连接" : "尚未连接";
-        HeroDetail.Text = _model.IsConnected ? _model.Status + " · 配置已核对" : RoutingSelector.SelectedIndex == 2 ? "直连不隐藏公网地址" : "选择订阅后连接";
+        ConnectButton.Content = _model.IsConnected ? L.T("断开连接") : L.T("连接");
+        HeroStatus.Text = _model.IsConnected ? L.T("已连接") : L.T("尚未连接");
+        HeroDetail.Text = _model.IsConnected ? _model.Status + L.T(" · 配置已核对") : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
         if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
     }
 
@@ -349,6 +355,7 @@ public sealed partial class MainWindow : Window
         ImportPanel.Visibility = SubscriptionsPanel.Visibility = NodesPanel.Visibility = page == "1" ? Visibility.Visible : Visibility.Collapsed;
         RoutesPanel.Visibility = page == "2" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "3" ? Visibility.Visible : Visibility.Collapsed;
+        NetworkSettingsCard.Visibility = PrivacySettingsCard.Visibility = SettingsPanel.Visibility;
         DiagnosticsPanel.Visibility = page == "4" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "5" ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigation();
@@ -358,7 +365,7 @@ public sealed partial class MainWindow : Window
     private void UpdateNavigation()
     {
         if (!_initialized) return;
-        var titles = new[] { "连接", "订阅", "分流规则", "设置", "网络与隐私", "设备同步" };
+        var titles = new[] { L.T("连接"), L.T("订阅"), L.T("分流规则"), L.T("设置"), L.T("网络与隐私"), L.T("设备同步") };
         var index = int.Parse(_page);
         PageTitle.Text = titles[index];
         PageSubtitle.Text = "";
@@ -376,14 +383,14 @@ public sealed partial class MainWindow : Window
     {
         if (!_initialized) return;
         var narrow = e.NewSize.Width < 940;
-        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 196 : 224);
+        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 216 : 238);
         HeroColumn.Width = new GridLength(1.2, GridUnitType.Star);
         Grid.SetColumnSpan(ExitCard, narrow ? 2 : 1);
         Grid.SetColumnSpan(ConnectionNote, narrow ? 2 : 1);
         Grid.SetColumn(ConnectionNote, narrow ? 0 : 1);
         Grid.SetRow(ConnectionNote, narrow ? 2 : 1);
         while (ConnectionPanel.RowDefinitions.Count < 3) ConnectionPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        ConnectionHero.MinHeight = 166;
+        ConnectionHero.MinHeight = 192;
     }
 
     private async void CapturePreviewIfRequested(object sender, RoutedEventArgs e)
@@ -423,11 +430,24 @@ public sealed partial class MainWindow : Window
         var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];
         glass.GradientStops[0].Color = Color(palette.Paper);
         glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
+        var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
+        sidebar.TintColor = sidebar.FallbackColor = Color(palette.Paper);
+        void Gradient(string key, params global::Windows.UI.Color[] colors)
+        {
+            var brush = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme[key];
+            for (var stop = 0; stop < colors.Length; stop++) brush.GradientStops[stop].Color = colors[stop];
+        }
+        var paper = Color(palette.Paper); var tint = Color(palette.Tint); var accent = Color(palette.Accent);
+        Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .38), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .2));
+        Gradient("WeaveHeroBrush", Mix(paper, accent, palette.Dark ? .12 : .025), Mix(paper, tint, .68), Mix(paper, tint, .30));
+        Gradient("WeaveIconBrush", Mix(paper, accent, palette.Dark ? .23 : .03), Mix(paper, accent, palette.Dark ? .06 : .18));
+        Gradient("WeaveLightEdgeBrush", Mix(paper, Color(palette.Dark ? "FFFFFF" : "FFFFFF"), palette.Dark ? .25 : .9),
+            Mix(paper, Color(palette.Ink), palette.Dark ? .08 : .09), Mix(paper, Color("FFFFFF"), palette.Dark ? .13 : .8));
         RootGrid.RequestedTheme = palette.Dark ? ElementTheme.Dark : ElementTheme.Light;
         UpdateNavigation();
         try { Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!); File.WriteAllText(_themePath, index.ToString()); }
-        catch (IOException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
-        catch (UnauthorizedAccessException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
+        catch (IOException) { MessageText.Text = L.T("外观已切换，但偏好未能保存。"); }
+        catch (UnauthorizedAccessException) { MessageText.Text = L.T("外观已切换，但偏好未能保存。"); }
     }
 
     private static global::Windows.UI.Color Color(string hex) => global::Windows.UI.Color.FromArgb(255,
@@ -439,7 +459,7 @@ public sealed partial class MainWindow : Window
     private async void RefreshSubscription_Click(object sender, RoutedEventArgs e)
     {
         var selected = SubscriptionListView.SelectedItems.Cast<SubscriptionRecord>().ToArray();
-        if (selected.Length == 0) { MessageText.Text = "请先勾选需要更新的订阅"; return; }
+        if (selected.Length == 0) { MessageText.Text = L.T("请先勾选需要更新的订阅"); return; }
         await RunActionAsync(async () =>
         {
             var count = 0;
@@ -449,34 +469,34 @@ public sealed partial class MainWindow : Window
                 await _model.EditAsync(record, record.Name, record.Source, _lifetime.Token);
                 count++;
             }
-            MessageText.Text = $"已更新 {count} 份远程订阅；本地文件需重新导入。分流引用的旧节点若已移除，需要重新选择。";
+            MessageText.Text = L.F($"已更新 {count} 份远程订阅；本地文件需重新导入。分流引用的旧节点若已移除，需要重新选择。");
         });
     }
 
     private async void EditSubscription_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
-        if (SubscriptionListView.SelectedItems.Count != 1) { MessageText.Text = "编辑时请只选择一份订阅"; return; }
+        if (SubscriptionListView.SelectedItems.Count != 1) { MessageText.Text = L.T("编辑时请只选择一份订阅"); return; }
         var record = (SubscriptionRecord)SubscriptionListView.SelectedItems[0];
-        var name = new TextBox { Header = "名称", Text = record.Name };
-        var url = new TextBox { Header = "订阅链接（保存后重新获取）", Text = record.Source,
+        var name = new TextBox { Header = L.T("名称"), Text = record.Name };
+        var url = new TextBox { Header = L.T("订阅链接（保存后重新获取）"), Text = record.Source,
             IsEnabled = record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) };
         var panel = new StackPanel { Spacing = 14 };
         panel.Children.Add(name); panel.Children.Add(url);
-        var dialog = new ContentDialog { Title = "编辑订阅", Content = panel, PrimaryButtonText = "保存",
-            CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot };
+        var dialog = new ContentDialog { Title = L.T("编辑订阅"), Content = panel, PrimaryButtonText = L.T("保存"),
+            CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            await RunActionAsync(async () => { await _model.EditAsync(record, name.Text, url.Text, _lifetime.Token); MessageText.Text = "订阅已保存"; });
+            await RunActionAsync(async () => { await _model.EditAsync(record, name.Text, url.Text, _lifetime.Token); MessageText.Text = L.T("订阅已保存"); });
     }
 
     private async void ExportSubscriptions_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
         var selected = SubscriptionListView.SelectedItems.Cast<SubscriptionRecord>().ToArray();
-        if (selected.Length == 0) { MessageText.Text = "请先勾选要分享的订阅；未勾选的不会导出"; return; }
-        var warning = new ContentDialog { Title = $"导出 {selected.Length} 份订阅？",
-            Content = "文件包含服务器和连接密码，不加密。请妥善保管，勿上传公开仓库。",
-            PrimaryButtonText = "继续导出", CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot };
+        if (selected.Length == 0) { MessageText.Text = L.T("请先勾选要分享的订阅；未勾选的不会导出"); return; }
+        var warning = new ContentDialog { Title = L.F($"导出 {selected.Length} 份订阅？"),
+            Content = L.T("文件包含服务器和连接密码，不加密。请妥善保管，勿上传公开仓库。"),
+            PrimaryButtonText = L.T("继续导出"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
         if (await warning.ShowAsync() != ContentDialogResult.Primary) return;
         await RunActionAsync(async () =>
         {
@@ -492,13 +512,15 @@ public sealed partial class MainWindow : Window
                     writer.Write(selected[i].ProviderYaml);
                 }
             });
-            MessageText.Text = $"已导出 {selected.Length} 份订阅。接收方解压后导入 YAML 即可。";
+            MessageText.Text = L.F($"已导出 {selected.Length} 份订阅。接收方解压后导入 YAML 即可。");
         });
     }
 
-    private sealed record NodeResult(ProxyNode Node, int? Delay)
+    private sealed record NodeResult(ProxyNode Node, int? Delay) : System.ComponentModel.INotifyPropertyChanged
     {
-        public string DisplayName => $"{Node.Name} · {(Delay is { } ms ? $"{ms} ms" : "超时 / 不可达")}";
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(DisplayName)));
+        public string DisplayName => $"{Node.Name} · {(Delay is { } ms ? $"{ms} ms" : L.T("超时 / 不可达"))}";
     }
     private void NodeList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -510,9 +532,9 @@ public sealed partial class MainWindow : Window
     {
         if (_model.ActiveBundle is not { } bundle || !_model.IsConnected ||
             SubscriptionComboBox.SelectedItem is not SubscriptionRecord record)
-        { MessageText.Text = "请先连接，再测试当前订阅节点"; return; }
+        { MessageText.Text = L.T("请先连接，再测试当前订阅节点"); return; }
         if (!bundle.ProviderNodeCounts.ContainsKey("provider-" + record.Id))
-        { MessageText.Text = "此订阅不在当前会话中。请先选择它并重新连接，再测试节点；直连模式不加载订阅。"; return; }
+        { MessageText.Text = L.T("此订阅不在当前会话中。请先选择它并重新连接，再测试节点；直连模式不加载订阅。"); return; }
         await RunActionAsync(async () =>
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -530,7 +552,7 @@ public sealed partial class MainWindow : Window
                     finally { gate.Release(); }
                 }));
                 SubscriptionNodesList.ItemsSource = results.OrderBy(result => result.Delay ?? int.MaxValue).ToArray();
-                NodeTestText.Text = $"已测 {results.Length} 个，响应 {results.Count(result => result.Delay.HasValue)} 个。点击节点可选为默认出口，重新连接后生效。";
+                NodeTestText.Text = L.F($"已测 {results.Length} 个，响应 {results.Count(result => result.Delay.HasValue)} 个。点击节点可选为默认出口，重新连接后生效。");
             }
             finally { _probeCancellation = null; }
         });
@@ -538,8 +560,8 @@ public sealed partial class MainWindow : Window
 
     private async void RunDiagnostics_Click(object sender, RoutedEventArgs e)
     {
-        if (DiagnosticConsent.IsChecked != true) { MessageText.Text = "请先允许本次检测访问测试网站"; return; }
-        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = "请先连接代理"; return; }
+        if (DiagnosticConsent.IsChecked != true) { MessageText.Text = L.T("请先允许本次检测访问测试网站"); return; }
+        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
         await RunActionAsync(async () =>
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -568,7 +590,7 @@ public sealed partial class MainWindow : Window
             finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(data); }
             File.Move(pending, PreferencesPath, overwrite: true);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { MessageText.Text = "偏好暂未保存"; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { MessageText.Text = L.T("偏好暂未保存"); }
     }
     private void LoadPreferences()
     {
@@ -626,14 +648,14 @@ public sealed partial class MainWindow : Window
         SubscriptionComboBox.IsEnabled = NodeComboBox.IsEnabled = ChainToggle.IsEnabled = RoutingSelector.SelectedIndex != 2;
         ModeExplanation.Text = RoutingSelector.SelectedIndex switch
         {
-            1 => "全部走默认出口（或默认链），忽略应用、域名和国内直连规则。",
-            2 => "全部直连，不经过任何代理节点。隐私端口拦截仍生效。",
-            _ => "应用规则 → 自订规则 → 局域网 / 国内直连 → 默认出口。",
+            1 => L.T("全部走默认出口（或默认链），忽略应用、域名和国内直连规则。"),
+            2 => L.T("全部直连，不经过任何代理节点。隐私端口拦截仍生效。"),
+            _ => L.T("应用规则 → 自订规则 → 局域网 / 国内直连 → 默认出口。"),
         };
     }
     private void ValidateRules_Click(object sender, RoutedEventArgs e)
     {
-        try { var rules = DomainRoute.Parse(DomainRulesBox.Text); SavePreferences(); MessageText.Text = $"已保存 {rules.Count} 条规则，重新连接后生效"; }
+        try { var rules = DomainRoute.Parse(DomainRulesBox.Text); SavePreferences(); MessageText.Text = L.F($"已保存 {rules.Count} 条规则，重新连接后生效"); }
         catch (InvalidDataException error) { MessageText.Text = error.Message; }
     }
     private async void TrafficTick(object? sender, object e)

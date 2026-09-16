@@ -34,8 +34,10 @@ public sealed class ProxyNode
     public override string ToString() => DisplayName;
 }
 
-public sealed class SubscriptionRecord
+public sealed class SubscriptionRecord : System.ComponentModel.INotifyPropertyChanged
 {
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(Summary)));
     public required string Id { get; init; }
     public required string Name { get; set; }
     public required string Source { get; init; }
@@ -45,7 +47,7 @@ public sealed class SubscriptionRecord
     public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
 
     [JsonIgnore]
-    public string Summary => $"{Nodes.Count} 个节点 · {UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}";
+    public string Summary => L.F($"{Nodes.Count} 个节点 · {UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}");
 
     public override string ToString() => Name;
 }
@@ -74,8 +76,16 @@ public sealed class RouteTarget
     };
 }
 
-public sealed class WindowsAppRoute
+public sealed class WindowsAppRoute : System.ComponentModel.INotifyPropertyChanged
 {
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(TargetLabel)));
+    [JsonIgnore]
+    public string TargetLabel => Target.Kind switch
+    {
+        RouteKind.Automatic => L.T("自动测速"), RouteKind.FixedNode => L.T("固定节点"),
+        RouteKind.Direct => L.T("直连"), _ => L.T("阻止"),
+    };
     public required string ProcessName { get; init; }
     public required string DisplayName { get; init; }
     public required RouteTarget Target { get; init; }
@@ -106,10 +116,10 @@ public sealed record DomainRoute(string Kind, string Value, string Target)
             var fields = line.Split(',').Select(field => field.Trim()).ToArray();
             if (fields.Length != 3 || fields[0] is not ("DOMAIN" or "DOMAIN-SUFFIX" or "IP-CIDR" or "IP-CIDR6") ||
                 fields[2] is not ("DIRECT" or "PROXY" or "REJECT") || fields[1].Any(char.IsControl))
-                throw new InvalidDataException("规则格式：DOMAIN-SUFFIX,example.com,DIRECT（也支持 PROXY / REJECT）");
+                throw new InvalidDataException(L.T("规则格式：DOMAIN-SUFFIX,example.com,DIRECT（也支持 PROXY / REJECT）"));
             if (fields[0].StartsWith("DOMAIN", StringComparison.Ordinal))
             {
-                if (Uri.CheckHostName(fields[1]) != UriHostNameType.Dns) throw new InvalidDataException("规则域名无效");
+                if (Uri.CheckHostName(fields[1]) != UriHostNameType.Dns) throw new InvalidDataException(L.T("规则域名无效"));
             }
             else
             {
@@ -117,10 +127,10 @@ public sealed record DomainRoute(string Kind, string Value, string Target)
                 if (cidr.Length != 2 || !System.Net.IPAddress.TryParse(cidr[0], out var ip) ||
                     !int.TryParse(cidr[1], out var bits) || bits < 0 || bits > (fields[0] == "IP-CIDR" ? 32 : 128) ||
                     (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) != (fields[0] == "IP-CIDR"))
-                    throw new InvalidDataException("规则 IP 网段无效");
+                    throw new InvalidDataException(L.T("规则 IP 网段无效"));
             }
             rules.Add(new(fields[0], fields[1], fields[2]));
-            if (rules.Count > 2000) throw new InvalidDataException("规则数量超过 2000 条");
+            if (rules.Count > 2000) throw new InvalidDataException(L.T("规则数量超过 2000 条"));
         }
         return rules;
     }

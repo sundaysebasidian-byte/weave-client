@@ -36,7 +36,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public bool IsConnected => _process?.IsReady == true;
 
-    public string Status { get; private set; } = "未连接";
+    private string _status = "未连接";
+    public string Status { get => L.T(_status); private set => _status = value; }
 
     public void Load()
     {
@@ -89,7 +90,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         var parsed = await Task.Run(() => items.Select(item => _importer.ImportText(item.Name, item.Source, item.Payload)).ToArray());
         var merged = parsed.Select(PreserveIdentity).ToArray();
         if (merged.Select(item => item.Id).Distinct().Count() != merged.Length)
-            throw new InvalidDataException("传输包包含重复订阅，请在发送端分别选择");
+            throw new InvalidDataException(L.T("传输包包含重复订阅，请在发送端分别选择"));
         await Task.Run(() => _vault.Merge(merged));
         foreach (var record in merged) ReplaceInCollection(record);
     }
@@ -97,7 +98,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public bool Remove(string id)
     {
         if (AppRoutes.Any(route => route.Target.SubscriptionId == id))
-            throw new InvalidOperationException("请先删除引用此订阅的应用分流，避免应用意外改走其他出口。");
+            throw new InvalidOperationException(L.T("请先删除引用此订阅的应用分流，避免应用意外改走其他出口。"));
         var removed = _vault.Remove(id);
         if (removed)
         {
@@ -133,7 +134,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(processName) || processName.Contains(',') ||
             !processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("请输入不含逗号的 Windows .exe 进程名，例如 chrome.exe");
+            throw new InvalidDataException(L.T("请输入不含逗号的 Windows .exe 进程名，例如 chrome.exe"));
         }
 
         var normalized = new WindowsAppRoute
@@ -185,12 +186,12 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
         if (NetworkOptions.EnableTun && !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
-            throw new InvalidOperationException("TUN 需要管理员权限。请退出 Weave，右键应用选择“以管理员身份运行”。");
+            throw new InvalidOperationException(L.T("TUN 需要管理员权限。请退出 Weave，右键应用选择“以管理员身份运行”。"));
 
         var executable = FindMihomo();
         if (executable is null)
         {
-            throw new FileNotFoundException("未找到 mihomo.exe。请将它放到 Windows 发行包的 runtime 目录，或设置 WEAVE_MIHOMO_PATH。");
+            throw new FileNotFoundException(L.T("未找到 mihomo.exe。请将它放到 Windows 发行包的 runtime 目录，或设置 WEAVE_MIHOMO_PATH。"));
         }
 
         var runtime = Path.Combine(_dataDirectory, "runtime", Guid.NewGuid().ToString("N"));
@@ -223,15 +224,15 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         if (!validation.IsValid)
         {
             await process.DisposeAsync().ConfigureAwait(false);
-            throw new InvalidDataException($"Mihomo 配置校验失败：{validation.Diagnostics}");
+            throw new InvalidDataException(L.F($"Mihomo 配置校验失败：{validation.Diagnostics}"));
         }
 
         Status = options.EnableTun ? "正在启动 TUN" : "正在启动系统代理";
         _process = process;
         await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
-        if (!process.IsReady) throw new InvalidOperationException("核心在启动时退出，请检查权限及配置。");
+        if (!process.IsReady) throw new InvalidOperationException(L.T("核心在启动时退出，请检查权限及配置。"));
         if (!options.EnableTun) _systemProxy.Enable(bundle.MixedPort);
-        if (!process.IsReady) throw new InvalidOperationException("内核在应用系统设置时退出，已取消连接");
+        if (!process.IsReady) throw new InvalidOperationException(L.T("内核在应用系统设置时退出，已取消连接"));
         Status = options.RoutingMode == RoutingMode.Direct ? "直连 · 不经过代理节点" : options.EnableTun ? "已连接 · TUN" : "已连接 · 系统代理";
         StatusChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -266,7 +267,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
         Status = "未连接";
         StatusChanged?.Invoke(this, EventArgs.Empty);
-        if (recoveryError is not null) throw new IOException("内核已停止，但系统代理恢复失败；请检查 Windows 代理设置。恢复记录已保留。", recoveryError);
+        if (recoveryError is not null) throw new IOException(L.T("内核已停止，但系统代理恢复失败；请检查 Windows 代理设置。恢复记录已保留。"), recoveryError);
         }
         finally { _connectionGate.Release(); }
     }

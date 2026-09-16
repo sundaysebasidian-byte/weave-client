@@ -7,7 +7,7 @@ public static class NodeName
         var original = rawName.Trim();
         if (original.Length == 0)
         {
-            return "未命名节点";
+            return L.T("未命名节点");
         }
 
         var value = original;

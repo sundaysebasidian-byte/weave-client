@@ -23,24 +23,24 @@ public sealed class MihomoConfigBuilder
         var usable = subscriptions.Where(item => item.Nodes.Count > 0 && requiredIds.Contains(item.Id)).ToList();
         if (usable.Count == 0)
         {
-            throw new InvalidDataException("没有可用订阅，请先导入 Clash/Mihomo 节点");
+            throw new InvalidDataException(L.T("没有可用订阅，请先导入 Clash/Mihomo 节点"));
         }
 
         var byId = usable.ToDictionary(item => item.Id, StringComparer.Ordinal);
         if (selectedSubscriptionId is null || !byId.TryGetValue(selectedSubscriptionId, out var selectedSubscription))
         {
-            throw new InvalidDataException("请先选择订阅");
+            throw new InvalidDataException(L.T("请先选择订阅"));
         }
 
         if (selectedNodeId is not null && selectedSubscription.Nodes.All(node => node.Id != selectedNodeId))
         {
-            throw new InvalidDataException("所选节点已不存在，请重新选择");
+            throw new InvalidDataException(L.T("所选节点已不存在，请重新选择"));
         }
 
         if (Directory.Exists(runtimeDirectory))
-            throw new InvalidDataException("运行目录已存在，请使用新的会话目录");
+            throw new InvalidDataException(L.T("运行目录已存在，请使用新的会话目录"));
         if (usable.Any(item => !System.Text.RegularExpressions.Regex.IsMatch(item.Id, "^[a-zA-Z0-9_-]{1,80}$")))
-            throw new InvalidDataException("订阅标识无效");
+            throw new InvalidDataException(L.T("订阅标识无效"));
         var mixedPort = AvailablePort();
         var controllerPort = AvailablePort();
         while (controllerPort == mixedPort) controllerPort = AvailablePort();
@@ -53,11 +53,11 @@ public sealed class MihomoConfigBuilder
             foreach (var file in new[] { "GeoIP.dat", "GeoSite.dat" })
             {
                 var source = Path.Combine(options.GeoDataDirectory ?? "", file);
-                if (!File.Exists(source)) throw new InvalidDataException("国内直连规则库缺失，请重新安装完整发行包");
+                if (!File.Exists(source)) throw new InvalidDataException(L.T("国内直连规则库缺失，请重新安装完整发行包"));
                 var expected = file == "GeoIP.dat" ? "1e49d985b16d13f3407d43582af64e0431c76e204a97460e5a8f859537687d13"
                     : "b2c9500f8e3403126a99f47bd9a5bced435c04316823b914bab6d5ee639e8cb7";
                 if (Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))).ToLowerInvariant() != expected)
-                    throw new InvalidDataException("国内直连规则库完整性校验失败，请重新安装完整发行包");
+                    throw new InvalidDataException(L.T("国内直连规则库完整性校验失败，请重新安装完整发行包"));
                 File.Copy(source, Path.Combine(runtimeDirectory, file));
             }
         }
@@ -165,10 +165,10 @@ public sealed class MihomoConfigBuilder
         {
             var targetSubscription = target.SubscriptionId is not null && byId.TryGetValue(target.SubscriptionId, out var candidate)
                 ? candidate
-                : throw new InvalidDataException("应用分流引用的订阅不存在");
-            var targetNodeId = target.NodeId ?? throw new InvalidDataException("应用分流没有指定节点");
+                : throw new InvalidDataException(L.T("应用分流引用的订阅不存在"));
+            var targetNodeId = target.NodeId ?? throw new InvalidDataException(L.T("应用分流没有指定节点"));
             var node = targetSubscription.Nodes.FirstOrDefault(item => item.Id == targetNodeId)
-                ?? throw new InvalidDataException("应用分流引用的节点不存在");
+                ?? throw new InvalidDataException(L.T("应用分流引用的节点不存在"));
             builder.AppendLine($"  - name: {YamlString(FixedGroup(targetSubscription, targetNodeId))}");
             builder.AppendLine("    type: select");
             builder.AppendLine("    use:");
@@ -269,7 +269,7 @@ public sealed class MihomoConfigBuilder
 
     private static RuntimeBundle BuildDirect(WindowsNetworkOptions options, string directory)
     {
-        if (Directory.Exists(directory)) throw new InvalidDataException("运行目录已存在");
+        if (Directory.Exists(directory)) throw new InvalidDataException(L.T("运行目录已存在"));
         var mixedPort = AvailablePort();
         var controllerPort = AvailablePort();
         while (controllerPort == mixedPort) controllerPort = AvailablePort();
@@ -296,7 +296,7 @@ public sealed class MihomoConfigBuilder
             (!Uri.TryCreate(options.CustomDnsEndpoint, UriKind.Absolute, out var endpoint) ||
              endpoint.Scheme is not ("https" or "tls") || string.IsNullOrEmpty(endpoint.Host) ||
              !string.IsNullOrEmpty(endpoint.UserInfo)))
-            throw new InvalidDataException("自订 DNS 必须是有效的 HTTPS 或 TLS 地址");
+            throw new InvalidDataException(L.T("自订 DNS 必须是有效的 HTTPS 或 TLS 地址"));
         return options.DnsProfile switch
         {
             DnsProfile.AdBlock => new[] { "https://dns.adguard-dns.com/dns-query" },

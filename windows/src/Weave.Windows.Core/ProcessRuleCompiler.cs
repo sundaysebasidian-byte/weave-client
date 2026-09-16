@@ -11,7 +11,7 @@ public static class ProcessRuleCompiler
         {
             if (string.IsNullOrWhiteSpace(route.ProcessName) || route.ProcessName.Contains(','))
             {
-                throw new InvalidDataException($"应用进程名无效：{route.ProcessName}");
+                throw new InvalidDataException(L.F($"应用进程名无效：{route.ProcessName}"));
             }
 
             var target = CompileTarget(route.Target, subscriptions, route.DisplayName);
@@ -32,7 +32,7 @@ public static class ProcessRuleCompiler
             RouteKind.Block => "REJECT",
             RouteKind.Automatic => AutomaticGroup(target, subscriptions, owner),
             RouteKind.FixedNode => FixedGroup(target, subscriptions, owner),
-            _ => throw new InvalidDataException($"{owner} 的分流目标无效"),
+            _ => throw new InvalidDataException(L.F($"{owner} 的分流目标无效")),
         };
     }
 
@@ -45,10 +45,10 @@ public static class ProcessRuleCompiler
     public static string FixedGroup(RouteTarget target, IReadOnlyDictionary<string, SubscriptionRecord> subscriptions, string owner)
     {
         var subscription = RequireSubscriptionRecord(target, subscriptions, owner);
-        var nodeId = target.NodeId ?? throw new InvalidDataException($"{owner} 没有指定节点");
+        var nodeId = target.NodeId ?? throw new InvalidDataException(L.F($"{owner} 没有指定节点"));
         if (subscription.Nodes.All(node => !node.Id.Equals(nodeId, StringComparison.Ordinal)))
         {
-            throw new InvalidDataException($"{owner} 指向的节点已经不存在");
+            throw new InvalidDataException(L.F($"{owner} 指向的节点已经不存在"));
         }
 
         return $"node-{subscription.Id}-{nodeId}";
@@ -62,10 +62,10 @@ public static class ProcessRuleCompiler
 
     private static SubscriptionRecord RequireSubscriptionRecord(RouteTarget target, IReadOnlyDictionary<string, SubscriptionRecord> subscriptions, string owner)
     {
-        var id = target.SubscriptionId ?? throw new InvalidDataException($"{owner} 没有指定订阅");
+        var id = target.SubscriptionId ?? throw new InvalidDataException(L.F($"{owner} 没有指定订阅"));
         if (!subscriptions.TryGetValue(id, out var subscription) || subscription.Nodes.Count == 0)
         {
-            throw new InvalidDataException($"{owner} 指向的订阅不可用");
+            throw new InvalidDataException(L.F($"{owner} 指向的订阅不可用"));
         }
 
         return subscription;

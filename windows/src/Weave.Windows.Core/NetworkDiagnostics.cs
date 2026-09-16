@@ -4,9 +4,19 @@ using System.Text.Json;
 
 namespace Weave.Windows.Core;
 
-public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null)
+public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null, int? HttpStatus = null) : System.ComponentModel.INotifyPropertyChanged
 {
-    public string Summary => Milliseconds is { } ms ? $"{Name} · {Result} · {ms} ms" : $"{Name} · {Result}";
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(Summary)));
+    public string Summary
+    {
+        get
+        {
+            var result = HttpStatus is { } status ? status is >= 200 and < 400 ? L.F($"可达 · HTTP {status}") :
+                L.F($"服务器已响应 HTTP {status}，不代表解锁") : L.T(Result);
+            return Milliseconds is { } ms ? $"{L.T(Name)} · {result} · {ms} ms" : $"{L.T(Name)} · {result}";
+        }
+    }
 }
 
 /// <summary>User initiated only. Every request uses this session's proxy. No direct fallback.</summary>
@@ -38,9 +48,7 @@ public static class NetworkDiagnostics
             {
                 using var response = await client.GetAsync(target.Url, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
-                var label = status is >= 200 and < 400 ? $"可达 · HTTP {status}" :
-                    $"服务器已响应 HTTP {status}，不代表解锁";
-                return new ProbeResult(target.Name, label, clock.ElapsedMilliseconds);
+                return new ProbeResult(target.Name, "", clock.ElapsedMilliseconds, status);
             }
             catch (Exception error) when (error is HttpRequestException or OperationCanceledException)
             {

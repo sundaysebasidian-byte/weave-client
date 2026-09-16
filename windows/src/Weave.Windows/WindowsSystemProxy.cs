@@ -1,3 +1,4 @@
+using Weave.Windows.Core;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -17,9 +18,9 @@ internal sealed class WindowsSystemProxy
         lock (_gate)
         {
         Recover();
-        using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true) ?? throw new IOException("无法读取本账户的系统代理设置");
+        using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true) ?? throw new IOException(L.T("无法读取本账户的系统代理设置"));
         if (!string.IsNullOrWhiteSpace(key.GetValue("AutoConfigURL") as string))
-            throw new InvalidOperationException("Windows 已设置自动代理脚本，可能覆盖系统代理。请先关闭该脚本，或使用 TUN；Weave 未修改该脚本。");
+            throw new InvalidOperationException(L.T("Windows 已设置自动代理脚本，可能覆盖系统代理。请先关闭该脚本，或使用 TUN；Weave 未修改该脚本。"));
         var server = $"127.0.0.1:{port}";
         var old = new Backup(Convert.ToInt32(key.GetValue("ProxyEnable", 0)), key.GetValue("ProxyServer") as string, key.GetValue("ProxyOverride") as string, server);
         Directory.CreateDirectory(Path.GetDirectoryName(_backupPath)!);
@@ -43,8 +44,8 @@ internal sealed class WindowsSystemProxy
         Backup? backup;
         try { backup = JsonSerializer.Deserialize<Backup>(plain); }
         finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(plain); }
-        if (backup is null) throw new InvalidDataException("系统代理恢复记录无效");
-        using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true) ?? throw new IOException("无法恢复系统代理");
+        if (backup is null) throw new InvalidDataException(L.T("系统代理恢复记录无效"));
+        using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true) ?? throw new IOException(L.T("无法恢复系统代理"));
         // If another client/user changed it, leave their new configuration untouched.
         if ((key.GetValue("ProxyServer") as string) == backup.OwnedServer)
         {
