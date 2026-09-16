@@ -9,6 +9,34 @@ public sealed class WindowsV1Tests
     private const string Proxy = "proxies:\n- {name: test, type: http, server: example.com, port: 443, tls: true}\n";
 
     [Fact]
+    public async Task BundledCoreLoadsDuplicateNamesAcrossSubscriptionsAndStopsCleanly()
+    {
+        var executable = Environment.GetEnvironmentVariable("WEAVE_TEST_CORE");
+        if (string.IsNullOrEmpty(executable)) return;
+        using var importer = new SubscriptionImporter();
+        var payload = Proxy.Replace("example.com", "127.0.0.1");
+        var one = importer.ImportText("one", "inline://one", payload);
+        var two = importer.ImportText("two", "inline://two", payload);
+        var folder = Path.Combine(Path.GetTempPath(), "weave-live-core-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bundle = new MihomoConfigBuilder().Build(new[] { one, two }, Array.Empty<WindowsAppRoute>(),
+                one.Id, one.Nodes[0].Id, new WindowsNetworkOptions { EnableTun = false }, folder);
+            await using var process = new MihomoProcess(executable);
+            var validation = await process.ValidateConfigAsync(bundle);
+            Assert.True(validation.IsValid, validation.Diagnostics);
+            await process.StartAsync(bundle);
+            Assert.True(process.IsReady);
+            using var controller = new MihomoController(bundle);
+            Assert.True(await controller.IsReadyAsync(bundle, CancellationToken.None));
+            await process.StopAsync();
+            Assert.False(process.IsRunning);
+            Assert.False(process.IsReady);
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    }
+
+    [Fact]
     public void UnindentedSequenceRetainsAll65Nodes()
     {
         var text = "proxies:\n" + string.Join("\n", Enumerable.Range(0, 65).Select(i =>

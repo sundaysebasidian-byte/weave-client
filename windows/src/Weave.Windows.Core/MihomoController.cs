@@ -27,11 +27,24 @@ public sealed class MihomoController : IDisposable
         if (response.StatusCode != HttpStatusCode.OK) return false;
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
         var root = json.RootElement;
-        return root.ValueKind == JsonValueKind.Object && root.TryGetProperty("mixed-port", out var port) &&
+        var configured = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("mixed-port", out var port) &&
             port.ValueKind == JsonValueKind.Number && port.TryGetInt32(out var portValue) && portValue == bundle.MixedPort &&
             (!bundle.RequiresTun || (root.TryGetProperty("tun", out var tun) &&
                 tun.ValueKind == JsonValueKind.Object &&
                 tun.TryGetProperty("enable", out var enabled) && enabled.ValueKind == JsonValueKind.True));
+        if (!configured || bundle.ProviderNodeCounts.Count == 0) return configured;
+        using var providersResponse = await _client.GetAsync("providers/proxies", timeout.Token).ConfigureAwait(false);
+        if (!providersResponse.IsSuccessStatusCode) return false;
+        using var providersJson = JsonDocument.Parse(await providersResponse.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+        if (providersJson.RootElement.ValueKind != JsonValueKind.Object ||
+            !providersJson.RootElement.TryGetProperty("providers", out var providers) || providers.ValueKind != JsonValueKind.Object) return false;
+        foreach (var expected in bundle.ProviderNodeCounts)
+        {
+            if (!providers.TryGetProperty(expected.Key, out var provider) || provider.ValueKind != JsonValueKind.Object ||
+                !provider.TryGetProperty("proxies", out var nodes) || nodes.ValueKind != JsonValueKind.Array ||
+                nodes.GetArrayLength() != expected.Value) return false;
+        }
+        return true;
     }
 
     public async Task DisableTunAsync(CancellationToken cancellationToken)

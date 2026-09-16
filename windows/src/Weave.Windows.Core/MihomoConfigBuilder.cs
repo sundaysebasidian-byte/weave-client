@@ -60,6 +60,7 @@ public sealed class MihomoConfigBuilder
             ControllerPort = controllerPort,
             ControllerSecret = secret,
             RequiresTun = options.EnableTun,
+            ProviderNodeCounts = usable.ToDictionary(ProviderName, subscription => subscription.Nodes.Count),
         };
     }
 
@@ -136,7 +137,7 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine("    override:");
             builder.AppendLine($"      additional-prefix: {YamlString(NodePrefix(subscription.Id))}");
             builder.AppendLine("    health-check:");
-            builder.AppendLine("      enable: true");
+            builder.AppendLine("      enable: false");
             builder.AppendLine("      lazy: true");
             builder.AppendLine("      url: https://www.gstatic.com/generate_204");
             builder.AppendLine("      interval: 300");
@@ -151,6 +152,8 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine($"      - {YamlString(ProviderName(subscription))}");
             builder.AppendLine("    url: https://www.gstatic.com/generate_204");
             builder.AppendLine("    interval: 180");
+            builder.AppendLine("    lazy: true");
+            builder.AppendLine("    tolerance: 50");
             builder.AppendLine("    timeout: 5000");
             builder.AppendLine("    max-failed-times: 2");
         }

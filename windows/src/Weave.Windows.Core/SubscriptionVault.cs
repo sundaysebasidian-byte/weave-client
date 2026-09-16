@@ -77,8 +77,8 @@ public sealed class SubscriptionVault
 
         var encrypted = File.ReadAllBytes(_path);
         var json = _protector.Unprotect(encrypted);
-        return JsonSerializer.Deserialize<List<SubscriptionRecord>>(json, JsonOptions)
-            ?? new List<SubscriptionRecord>();
+        try { return JsonSerializer.Deserialize<List<SubscriptionRecord>>(json, JsonOptions) ?? new List<SubscriptionRecord>(); }
+        finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(json); }
     }
 
     private void SaveUnsafe(List<SubscriptionRecord> records)
@@ -90,7 +90,9 @@ public sealed class SubscriptionVault
         }
 
         var json = JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions);
-        var encrypted = _protector.Protect(json);
+        byte[] encrypted;
+        try { encrypted = _protector.Protect(json); }
+        finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(json); }
         var pending = $"{_path}.{Guid.NewGuid():N}.pending";
         File.WriteAllBytes(pending, encrypted);
         File.Move(pending, _path, overwrite: true);

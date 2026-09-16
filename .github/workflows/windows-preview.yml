@@ -46,6 +46,14 @@ jobs:
             throw "App exited during startup: $($app.ExitCode)"
           }
           Stop-Process -Id $app.Id
+          foreach ($theme in @(1,2,5)) {
+            $env:WEAVE_PREVIEW_THEME = "$theme"
+            $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-$theme.png"
+            $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+            Start-Sleep -Seconds 4
+            if ($app.HasExited) { throw "Theme $theme failed to start" }
+            Stop-Process -Id $app.Id
+          }
       - name: Package Windows installer
         shell: pwsh
         run: |
@@ -63,7 +71,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Weave-Windows-UI-preview
-          path: ${{ runner.temp }}/weave-desktop.png
+          path: ${{ runner.temp }}/weave-desktop*.png
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:

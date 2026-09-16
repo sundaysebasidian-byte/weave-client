@@ -139,7 +139,7 @@
 <TextBlock Text="订阅由 Windows DPAPI 加密保存。加密 DNS 的首次解析使用明文引导 DNS；不宣称零泄漏。端口拦截不等于完整 WebRTC 防泄漏。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 </StackPanel></Border>
 <Border x:Name="NodesPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="14">
-<Grid><TextBlock Text="订阅节点" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><Button Content="测试当前订阅节点" HorizontalAlignment="Right" Click="TestNodes_Click"/></Grid>
+<Grid><TextBlock Text="订阅节点" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8"><Button Content="测试当前订阅节点" Click="TestNodes_Click"/><Button Content="停止" Click="StopDiagnostics_Click"/></StackPanel></Grid>
 <TextBlock Text="延迟测试需要先连接；只测试手动触发的订阅，不在后台循环测速。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <ListView x:Name="SubscriptionNodesList" Height="300" SelectionMode="Single" DisplayMemberPath="DisplayName" SelectionChanged="NodeList_SelectionChanged"/>
 <TextBlock x:Name="NodeTestText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>

@@ -21,6 +21,11 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, RoutesPanel, NodesPanel, DiagnosticsPanel })
+        {
+            card.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+            card.Translation = new System.Numerics.Vector3(0, 0, 6);
+        }
         _initialized = true;
         RootGrid.Loaded += CapturePreviewIfRequested;
         AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1160, 800));
@@ -48,6 +53,9 @@ public sealed partial class MainWindow : Window
             SubscriptionComboBox.SelectedIndex = 0;
             RouteSubscriptionComboBox.SelectedIndex = 0;
         }
+        LoadPreferences();
+        if (int.TryParse(Environment.GetEnvironmentVariable("WEAVE_PREVIEW_THEME"), out var previewTheme) &&
+            previewTheme >= 0 && previewTheme < AppearancePalette.All.Count) ThemeSelector.SelectedIndex = previewTheme;
 
         Closed += MainWindow_Closed;
         UpdateStatus();
@@ -156,19 +164,13 @@ public sealed partial class MainWindow : Window
     {
         await RunActionAsync(async () =>
         {
-            var picker = new FileOpenPicker();
-            picker.FileTypeFilter.Add(".yaml");
-            picker.FileTypeFilter.Add(".yml");
-            picker.FileTypeFilter.Add(".txt");
-            picker.FileTypeFilter.Add(".json");
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-            var file = await picker.PickSingleFileAsync();
-            if (file is null)
+            var path = DesktopFilePicker.Open(WindowNative.GetWindowHandle(this));
+            if (path is null)
             {
                 return;
             }
 
-            var record = await _model.ImportFileAsync(SubscriptionNameBox.Text, file.Path);
+            var record = await _model.ImportFileAsync(SubscriptionNameBox.Text, path);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
         });
@@ -226,6 +228,23 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        SavePreferences();
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (!new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+        {
+            var dialog = new ContentDialog { Title = "允许启动 Windows TUN？",
+                Content = "需要以当前 Windows 用户的管理员权限重新打开 Weave。订阅会保留；重开后点击连接。若你使用标准账户，请勿换成其他用户，否则无法读取本账户的加密订阅。",
+                PrimaryButtonText = "重新打开并申请权限", CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" });
+                Close();
+            }
+            catch (System.ComponentModel.Win32Exception) { MessageText.Text = "管理员授权未完成，未改变系统网络。"; }
+            return;
+        }
+
         await RunActionAsync(async () =>
         {
             var node = NodeComboBox.SelectedItem as ProxyNode;
@@ -256,7 +275,11 @@ public sealed partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            MessageText.Text = "操作已取消";
+            MessageText.Text = "操作已取消或超时。连接超时请检查管理员权限及防火墙；订阅超时请检查当前网络。";
+        }
+        catch (HttpRequestException)
+        {
+            MessageText.Text = "网络请求失败，请检查连接与订阅地址。未展示原始请求地址，以保护订阅凭据。";
         }
         catch (Exception exception)
         {
@@ -281,7 +304,7 @@ public sealed partial class MainWindow : Window
         StatusText.Text = _model.Status;
         ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
         HeroStatus.Text = _model.IsConnected ? "已连接" : "尚未连接";
-        HeroDetail.Text = _model.IsConnected ? "Mihomo TUN · 内核运行中" : "本地内核 · 等待连接";
+        HeroDetail.Text = _model.IsConnected ? "Mihomo TUN · 节点已完整载入" : "本地内核 · 等待连接";
     }
 
     private void AutomaticNode_Click(object sender, RoutedEventArgs e) => NodeComboBox.SelectedItem = null;
@@ -425,14 +448,11 @@ public sealed partial class MainWindow : Window
         if (await warning.ShowAsync() != ContentDialogResult.Primary) return;
         await RunActionAsync(async () =>
         {
-            var picker = new FileSavePicker { SuggestedFileName = "Weave-subscriptions" };
-            picker.FileTypeChoices.Add("订阅配置 ZIP", new List<string> { ".zip" });
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-            var file = await picker.PickSaveFileAsync();
-            if (file is null) return;
+            var path = DesktopFilePicker.SaveZip(WindowNative.GetWindowHandle(this));
+            if (path is null) return;
             await Task.Run(() =>
             {
-                using var output = File.Create(file.Path);
+                using var output = File.Create(path);
                 using var zip = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Create);
                 for (var i = 0; i < selected.Length; i++)
                 {
@@ -496,8 +516,46 @@ public sealed partial class MainWindow : Window
     }
     private void StopDiagnostics_Click(object sender, RoutedEventArgs e) => _probeCancellation?.Cancel();
 
+    private sealed record Preferences(string? SubscriptionId, string? NodeId, int Mode, int Dns, bool Ipv6, bool Stun, string CustomDns);
+    private string PreferencesPath => Path.Combine(Path.GetDirectoryName(_themePath)!, "preferences.bin");
+    private void SavePreferences()
+    {
+        try
+        {
+            var value = new Preferences((SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Id,
+                (NodeComboBox.SelectedItem as ProxyNode)?.Id, RoutingSelector.SelectedIndex, DnsSelector.SelectedIndex,
+                Ipv6Toggle.IsOn, StunToggle.IsOn, CustomDnsBox.Text.Trim());
+            Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath)!);
+            var pending = PreferencesPath + ".pending";
+            var data = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value);
+            try { File.WriteAllBytes(pending, new WindowsDpapiProtector().Protect(data)); }
+            finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(data); }
+            File.Move(pending, PreferencesPath, overwrite: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { MessageText.Text = "偏好暂未保存"; }
+    }
+    private void LoadPreferences()
+    {
+        try
+        {
+            if (!File.Exists(PreferencesPath)) return;
+            var data = new WindowsDpapiProtector().Unprotect(File.ReadAllBytes(PreferencesPath));
+            Preferences? value;
+            try { value = System.Text.Json.JsonSerializer.Deserialize<Preferences>(data); }
+            finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(data); }
+            if (value is null) return;
+            var record = _model.Subscriptions.FirstOrDefault(item => item.Id == value.SubscriptionId);
+            if (record is not null) { SubscriptionComboBox.SelectedItem = record; NodeComboBox.SelectedItem = record.Nodes.FirstOrDefault(node => node.Id == value.NodeId); }
+            RoutingSelector.SelectedIndex = Math.Clamp(value.Mode, 0, 2);
+            DnsSelector.SelectedIndex = Math.Clamp(value.Dns, 0, 3);
+            Ipv6Toggle.IsOn = value.Ipv6; StunToggle.IsOn = value.Stun; CustomDnsBox.Text = value.CustomDns;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.ComponentModel.Win32Exception) { }
+    }
+
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {
+        SavePreferences();
         _closed = true;
         _lifetime.Cancel();
         try { await _model.DisposeAsync(); }

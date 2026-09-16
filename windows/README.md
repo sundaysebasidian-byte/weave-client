@@ -1,59 +1,67 @@
-# Weave for Windows（私用预览）
+# Weave Windows 0.1 Preview
 
-这里是 Windows 10/11 的独立桌面版工程，目标是先提供 x64 私用版本，再补 ARM64。它不复用
-Android 的 `VpnService`，而是让 Mihomo 使用 Windows TUN/Wintun 接管流量；订阅、节点、DNS
-和进程分流模型保持与 Android 的产品语义一致。
+独立 Windows 10/11 x64 测试版。沿用 Android 的八套外观、订阅→节点选择和图形化应用分流，
+使用适合电脑的侧栏与双列卡片。不是将 Android APK 放进模拟器。
 
-## 当前状态
+## 下载安装
 
-当前为桌面预览工程，界面已按 Android 的设计语言调整，但尚未在 Windows 真机验收：
+在独立分支 `codex/windows-v1-preview` 的 **Windows preview** Actions 中下载
+`Weave-Windows-v1-Setup-x64`，解压后运行其中的 Setup.exe。
+也提供 `Weave-Windows-x64-test` 完整便携目录，必须全部解压，不能只复制主程序。
+未签名测试包可能触发信誉提示；请核对来源和 SHA-256，**不要关闭系统安全保护**。
 
-- 浅色默认、白绿与深色，沿用 Android 的配色，26 px 圆角、渐变玻璃卡片和细边缘；
-- 连接、订阅、分流、设置分开显示，不做页面过渡动画或持续背景模糊；
-- 订阅节点查看、恢复自动节点、DNS 过滤与 IPv6 开关接入实际配置；
-- 操作互斥、连接生命周期串行化、核心退出状态通知及启动失败释放；
+首次连接会申请管理员权限并重开应用；使用同一 Windows 账户，重新点击连接即可。
+配置保存在当前账户的 LocalAppData/Weave，不随卸载删除。订阅、应用规则及网络偏好由 DPAPI 加密保存。
+运行期间 Mihomo 需要本机配置文件；正常断开会清理会话目录，异常终止可能留下文件。
+这不是针对本机管理员或已入侵设备的防护。
 
-- `Weave.Windows.Core`：Clash/Mihomo YAML 与 Base64 导入、节点提取、5 MiB 限制、HTTPS/私网地址检查；
-- DPAPI 加密订阅保险库接口；
-- 订阅 provider 文件、自动测速组、固定节点组和 `PROCESS-NAME` 分流规则编译；
-- 应用分流编辑器：按 `.exe` 进程选择自动订阅、固定节点、直连或阻止，并用 DPAPI 保存；
-- Windows Mihomo 配置校验、启动、就绪探测、日志截断和崩溃清理；
-- WinUI 3 桌面壳：订阅导入、订阅删除、节点查看、先订阅后节点、连接/断开状态。
+目标系统：Windows 10 22H2 / Windows 11（Intel/AMD x64）；最低 API 为 build 19041。
+ARM64 尚未交付。本分支不会自动发布 Release 或修改 Android main。
 
-当前仍有两个发布前工作：将经过锁定哈希校验的 `mihomo.exe` 放入发行包，以及在 Windows 10/11
-真机上验证管理员权限、Wintun 安装、DNS 劫持和断开回滚。macOS 主机无法代替这一步，所以这里
-不会把未在 Windows 真机验证的 TUN 连接称为已完成。
+## 当前功能
 
-## Windows 构建
+| 内容 | Windows 0.1 |
+| --- | --- |
+| 八种主题 | 浅色、白绿、深色、素纸、印象日出、睡莲、罂粟花田、暮色花园 |
+| 订阅 | HTTPS、YAML、JSON、Base64；编辑、更新、删除、完整节点列表 |
+| 外部节点提供器 | HTTPS / inline；有循环、超限或不支持的覆盖项时拒绝整份导入，不静默丢节点 |
+| 选择节点 | 先订阅后节点；自动低延迟或手动；主动批量测速、排序和取消 |
+| 应用分流 | Windows .exe 名称 → 指定订阅/节点、直连或阻止；重新连接生效 |
+| 网络 | Mihomo TUN、IPv4/IPv6 开关；规则/全局/直连；自订加密 DNS、广告/家庭过滤 |
+| 检测入口 | 经本会话代理检测出口 IP、Google、YouTube、GPT、Claude、X、TikTok、Netflix、Facebook、Disney+ |
+| 迁移与分享 | 手动选择其他客户端导出的 Clash 文件；选择性导出 YAML ZIP |
+| 运行稳定性 | 串行连接、先验证配置、鉴权控制接口、核对全部 provider 节点数、TUN 就绪检查、进程退出状态、Job Object 生命周期管理 |
 
-目标验收平台是 Windows 10 22H2 与 Windows 11（x64 优先）；工程最低 API 基线为 Windows 10 2004 / build 19041。ARM64 构建入口保留，尚未验收。
+默认不自动测试网站、不轮询流量、不持续后台测速或实时背景模糊。
+自动组的必要健康检查由 Mihomo 管理；关闭重复 provider 周期检查，保留惰性自动组检测。
+页面切换无过渡动画，节点列表虚拟化，大配置解析和写盘不阻塞界面。
 
-需要 Visual Studio 2022（Desktop development with .NET、Windows App SDK）和 .NET 8 SDK：
+## 尚未与 Android 完全对齐
+
+- 实时摄像头扫码、二维码图片识别、自动发现其他客户端、Android 兼容的局域网二维码互传；
+- 多语言完整覆盖、国内域名/IP 地理直连规则库、完整浏览器 WebRTC/DNS 泄漏/指纹实验；
+- 实时流量图、完整连接日志、系统托盘与开机启动、自动睡眠恢复、真正的系统级 Kill Switch；
+- Windows 10/11 真机的 IPv6、DNS、睡眠/网络切换、长时间连接及异常退出回归。
+
+规则模式当前是**应用进程分流**，未指定进程的流量走所选出口，不宣称已有完整中国大陆自动直连策略。
+网站返回 403/429 表示服务器有响应但限制访问，不算“解锁成功”。
+出口检测只测代理请求的 IP，不证明浏览器、所有应用或 IPv6 无泄漏。
+DNS 的首次引导解析使用明文 DNS；常见 STUN 端口拦截不等于完整 WebRTC 防泄漏。
+TUN 未就绪时不显示“已连接”，但这不是系统断网保护：代理退出后系统可能恢复直连。
+
+## 内核与构建
+
+绑定官方 **Mihomo v1.19.30 Windows amd64-v1**，不是 Android 的定制 JNI 核心。
+上游源码：https://github.com/MetaCubeX/mihomo/tree/v1.19.30
+下载包 SHA-256：`8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278`。
+CI 固定版本并校验哈希；应用不自动下载或更新内核。
+
+Windows 需要 Visual Studio 2022、.NET 8 SDK 与 Windows App SDK 构建支持：
 
 ```powershell
-.\build.ps1 -Platform x64 -Configuration Release
+.\windows\build.ps1 -Platform x64 -Configuration Release
 ```
 
-也提供 `.github/workflows/windows-preview.yml`，仅手动触发，不自动发布。推送后可在 Actions 中选择
-Windows preview → Run workflow，下载 `Weave-Windows-x64-preview-without-core`。
-该产物没有捆绑核心时不能连接；需要按下文补齐审核过的对应架构核心，不应当作完整发行包。
-
-本轮在 macOS 上只完成了 XML 格式与差异检查，未运行 WinUI 编译、核心单元测试或 Windows 真机 TUN 测试。
-发布前需要在 Windows 执行上述脚本，并验证：普通权限提示、管理员启动、固定节点与自动选择、进程分流、
-IPv4/IPv6 出口、DNS、睡眠唤醒、网络切换和退出恢复。界面相似不意味着 Android 功能已全部迁移。
-
-把同一 Mihomo 固定 commit 构建出的 `mihomo.exe` 放到：
-
-```text
-windows\src\Weave.Windows\runtime\mihomo.exe
-```
-
-也可以用 `WEAVE_MIHOMO_PATH` 指向核心。第一阶段默认不自动下载核心，避免把未审计的二进制
-静默带进应用。
-
-## 重要边界
-
-- TUN 连接可能需要 Windows 防火墙/网络适配器权限；应用会在核心未就绪时保持“未连接”，不伪造成功。
-- 进程分流使用 Mihomo 的 `PROCESS-NAME`；普通桌面 `.exe` 最可靠，UWP/系统服务的进程归属可能受系统限制。
-- 远程订阅只接受 HTTPS，并拒绝解析到本机、私网、链路本地和 CGNAT 地址。
-- 这是朋友私用预览，不是当前公开商店发行包；正式分发前还需要代码签名、核心 SBOM、安装器和 Windows 真机回归。
+CI 执行核心测试、原生内核配置与会话测试（不启用 TUN）、WinUI 启动检查和多主题截图，
+再用 Inno Setup 生成安装包。这些检查不能替代 Windows 真机代理联通性验收。
+手动构建需先将同版本官方内核放入 `windows/src/Weave.Windows/runtime/mihomo.exe`。
