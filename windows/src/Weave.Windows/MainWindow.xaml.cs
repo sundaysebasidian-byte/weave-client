@@ -34,9 +34,10 @@ public sealed partial class MainWindow : Window
         _initialized = true;
         RootGrid.Loaded += CapturePreviewIfRequested;
         var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
-        AppWindow.Resize(new global::Windows.Graphics.SizeInt32(Math.Min(1340, area.Width - 40), Math.Min(900, area.Height - 60)));
+        var scale = Math.Max(1, GetDpiForWindow(WindowNative.GetWindowHandle(this)) / 96.0);
+        AppWindow.Resize(new global::Windows.Graphics.SizeInt32(Math.Min((int)(1280 * scale), area.Width - 40), Math.Min((int)(860 * scale), area.Height - 60)));
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_WIDE") == "1")
-            AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1400, 900));
+            AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(1400 * scale), (int)(900 * scale)));
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = L.T("本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"); }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
@@ -93,6 +94,9 @@ public sealed partial class MainWindow : Window
         NodeComboBox.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
         NodeComboBox.SelectedItem = null;
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     private void SubscriptionListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -439,6 +443,7 @@ public sealed partial class MainWindow : Window
         Set("WeaveCardBrush", palette.Paper);
         Set("WeaveInkBrush", palette.Ink);
         Set("WeaveMutedBrush", palette.Muted);
+        if (index >= 4) ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme["WeaveMutedBrush"]).Color = Mix(Color(palette.Muted), Color(palette.Ink), .20);
         Set("WeaveAccentBrush", palette.Accent);
         ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme["WeaveRimBrush"]).Color = Mix(Color(palette.Paper), Color(palette.Ink), palette.Dark ? .16 : .08);
         var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];

@@ -10,6 +10,7 @@
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#FFFFFF"/>
                     <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#F5F8FC" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#F5F8FC"/>
                     <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EAF0F8" Offset="0"/><GradientStop Color="#F3F6FA" Offset="0.55"/><GradientStop Color="#E7EFEE" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveLightEdgeBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#DFE6EF" Offset="0.5"/><GradientStop Color="#FFFFFF" Offset="1"/></LinearGradientBrush>
@@ -24,6 +25,7 @@
                     <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#EDF2F7" Offset="1"/></LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#0B0E13"/>
                     <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#151C29" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#151C29"/>
                     <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#111B2B" Offset="0"/><GradientStop Color="#0B101A" Offset="0.55"/><GradientStop Color="#152329" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveLightEdgeBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#526174" Offset="0"/><GradientStop Color="#1C2735" Offset="0.5"/><GradientStop Color="#394555" Offset="1"/></LinearGradientBrush>
