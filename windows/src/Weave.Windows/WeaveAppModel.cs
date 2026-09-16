@@ -13,6 +13,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private readonly SubscriptionImporter _importer = new();
     private readonly MihomoConfigBuilder _configBuilder = new();
     private MihomoProcess? _process;
+    public RuntimeBundle? ActiveBundle { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
     public event EventHandler? StatusChanged;
     public WindowsNetworkOptions NetworkOptions { get; set; } = new();
@@ -31,13 +32,14 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public ObservableCollection<WindowsAppRoute> AppRoutes { get; } = new();
 
-    public bool IsConnected => _process?.IsRunning == true;
+    public bool IsConnected => _process?.IsReady == true;
 
     public string Status { get; private set; } = "未连接";
 
     public void Load()
     {
         Subscriptions.Clear();
+        AppRoutes.Clear();
         foreach (var subscription in _vault.List())
         {
             Subscriptions.Add(subscription);
@@ -51,10 +53,11 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         Status = Subscriptions.Count == 0 ? "请先导入订阅" : "未连接";
     }
 
-    public SubscriptionRecord ImportText(string name, string source, string payload)
+    public async Task<SubscriptionRecord> ImportTextAsync(string name, string source, string payload)
     {
-        var record = _importer.ImportText(name, source, payload);
-        _vault.Upsert(record);
+        var record = await Task.Run(() => _importer.ImportText(name, source, payload));
+        record = PreserveIdentity(record);
+        await Task.Run(() => _vault.Upsert(record));
         ReplaceInCollection(record);
         return record;
     }
@@ -62,21 +65,25 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public async Task<SubscriptionRecord> ImportUrlAsync(string name, string source, CancellationToken cancellationToken)
     {
         var record = await _importer.ImportUrlAsync(name, source, cancellationToken);
-        _vault.Upsert(record);
+        record = PreserveIdentity(record);
+        await Task.Run(() => _vault.Upsert(record), cancellationToken);
         ReplaceInCollection(record);
         return record;
     }
 
-    public SubscriptionRecord ImportFile(string name, string path)
+    public async Task<SubscriptionRecord> ImportFileAsync(string name, string path)
     {
-        var record = _importer.ImportFile(name, path);
-        _vault.Upsert(record);
+        var record = await Task.Run(() => _importer.ImportFile(name, path));
+        record = PreserveIdentity(record);
+        await Task.Run(() => _vault.Upsert(record));
         ReplaceInCollection(record);
         return record;
     }
 
     public bool Remove(string id)
     {
+        if (AppRoutes.Any(route => route.Target.SubscriptionId == id))
+            throw new InvalidOperationException("请先删除引用此订阅的应用分流，避免应用意外改走其他出口。");
         var removed = _vault.Remove(id);
         if (removed)
         {
@@ -88,6 +95,22 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         return removed;
+    }
+
+    public async Task EditAsync(SubscriptionRecord existing, string name, string source, CancellationToken token)
+    {
+        var parsed = source.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? await _importer.ImportUrlAsync(name, source, token)
+            : await Task.Run(() => _importer.ImportText(name, existing.Source, existing.ProviderYaml), token);
+        var nodes = parsed.Nodes.Select(node => new ProxyNode
+        {
+            Id = existing.Nodes.FirstOrDefault(old => old.RawName == node.RawName && old.Protocol == node.Protocol)?.Id ?? node.Id,
+            Name = node.Name, RawName = node.RawName, Protocol = node.Protocol, Index = node.Index,
+        }).ToList();
+        var updated = new SubscriptionRecord { Id = existing.Id, Name = parsed.Name, Source = parsed.Source,
+            Payload = parsed.Payload, ProviderYaml = parsed.ProviderYaml, Nodes = nodes };
+        await Task.Run(() => _vault.Upsert(updated), token);
+        ReplaceInCollection(updated);
     }
 
     public void AddOrReplaceRoute(WindowsAppRoute route)
@@ -140,9 +163,10 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
         if (_process is not null)
         {
-            if (_process.IsRunning) return;
+            if (_process.IsReady) return;
             await _process.DisposeAsync();
             _process = null;
+            CleanupRuntime();
         }
 
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
@@ -156,13 +180,19 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         var runtime = Path.Combine(_dataDirectory, "runtime", Guid.NewGuid().ToString("N"));
-        var bundle = _configBuilder.Build(
-            Subscriptions,
-            AppRoutes,
+        var subscriptions = Subscriptions.ToArray();
+        var routes = AppRoutes.ToArray();
+        var options = NetworkOptions;
+        RuntimeBundle bundle;
+        try { bundle = await Task.Run(() => _configBuilder.Build(
+            subscriptions,
+            routes,
             subscriptionId,
             nodeId,
-            NetworkOptions,
-            runtime);
+            options,
+            runtime), cancellationToken); }
+        catch { RemoveSessionDirectory(runtime); throw; }
+        ActiveBundle = bundle;
         var process = new MihomoProcess(executable);
         process.Exited += (_, _) =>
         {
@@ -184,7 +214,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         Status = "正在启动 TUN";
         _process = process;
         await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
-        if (!process.IsRunning) throw new InvalidOperationException("核心在启动时退出，请检查权限及配置。");
+        if (!process.IsReady) throw new InvalidOperationException("核心在启动时退出，请检查权限及配置。");
         Status = "已连接 · Mihomo TUN";
         StatusChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -192,6 +222,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
             _process = null;
             await process.DisposeAsync().ConfigureAwait(false);
+            CleanupRuntime();
             Status = "启动失败";
             StatusChanged?.Invoke(this, EventArgs.Empty);
             throw;
@@ -211,6 +242,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
             await process.DisposeAsync().ConfigureAwait(false);
         }
+        CleanupRuntime();
 
         Status = "未连接";
         StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -218,7 +250,43 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         finally { _connectionGate.Release(); }
     }
 
-    public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
+    public async ValueTask DisposeAsync()
+    {
+        await DisconnectAsync().ConfigureAwait(false);
+        _importer.Dispose();
+    }
+
+    private void CleanupRuntime()
+    {
+        var bundle = ActiveBundle;
+        ActiveBundle = null;
+        if (bundle is not null) RemoveSessionDirectory(bundle.Directory);
+    }
+
+    private void RemoveSessionDirectory(string path)
+    {
+        var root = Path.GetFullPath(Path.Combine(_dataDirectory, "runtime"));
+        // Only our own single GUID session, never a subscription-controlled path.
+        if (Path.GetDirectoryName(Path.GetFullPath(path)) != root ||
+            !Guid.TryParseExact(Path.GetFileName(path), "N", out _)) return;
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private SubscriptionRecord PreserveIdentity(SubscriptionRecord record)
+    {
+        var old = Subscriptions.FirstOrDefault(item => item.Id == record.Id || item.Source == record.Source);
+        if (old is null) return record;
+        var nodes = record.Nodes.Select(node =>
+        {
+            var previous = old.Nodes.FirstOrDefault(item => item.RawName == node.RawName && item.Protocol == node.Protocol);
+            return new ProxyNode { Id = previous?.Id ?? node.Id, Name = node.Name, RawName = node.RawName,
+                Protocol = node.Protocol, Index = node.Index };
+        }).ToList();
+        return new SubscriptionRecord { Id = old.Id, Name = record.Name, Source = record.Source, Payload = record.Payload,
+            ProviderYaml = record.ProviderYaml, Nodes = nodes, UpdatedAt = record.UpdatedAt };
+    }
 
     private static string? FindMihomo()
     {

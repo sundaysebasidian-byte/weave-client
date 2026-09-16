@@ -18,6 +18,8 @@ public enum DnsProfile
     Custom,
 }
 
+public enum RoutingMode { Rule, Global, Direct }
+
 public sealed class ProxyNode
 {
     public required string Id { get; init; }
@@ -81,6 +83,7 @@ public sealed class WindowsAppRoute
 
 public sealed class WindowsNetworkOptions
 {
+    public RoutingMode RoutingMode { get; init; } = RoutingMode.Rule;
     public bool EnableTun { get; init; } = true;
     public bool Ipv6Enabled { get; init; } = true;
     public bool BlockUdpStun { get; init; }
@@ -93,4 +96,8 @@ public sealed class RuntimeBundle
     public required string Directory { get; init; }
     public required string ConfigPath { get; init; }
     public required int MixedPort { get; init; }
+    public int ControllerPort { get; init; }
+    public string ControllerSecret { get; init; } = "";
+    public bool RequiresTun { get; init; }
+    public string TunDevice { get; init; } = "WeaveTun";
 }

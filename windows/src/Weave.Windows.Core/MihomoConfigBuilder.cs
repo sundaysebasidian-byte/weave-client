@@ -1,4 +1,7 @@
 using System.Text;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 
 namespace Weave.Windows.Core;
 
@@ -30,9 +33,13 @@ public sealed class MihomoConfigBuilder
         }
 
         if (Directory.Exists(runtimeDirectory))
-        {
-            Directory.Delete(runtimeDirectory, recursive: true);
-        }
+            throw new InvalidDataException("运行目录已存在，请使用新的会话目录");
+        if (usable.Any(item => !System.Text.RegularExpressions.Regex.IsMatch(item.Id, "^[a-zA-Z0-9_-]{1,80}$")))
+            throw new InvalidDataException("订阅标识无效");
+        var mixedPort = AvailablePort();
+        var controllerPort = AvailablePort();
+        while (controllerPort == mixedPort) controllerPort = AvailablePort();
+        var secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
         var providersDirectory = Path.Combine(runtimeDirectory, "providers");
         Directory.CreateDirectory(providersDirectory);
@@ -43,13 +50,16 @@ public sealed class MihomoConfigBuilder
         }
 
         var configPath = Path.Combine(runtimeDirectory, "config.yaml");
-        var yaml = BuildYaml(usable, byId, routes, selectedSubscription, selectedNodeId, options);
+        var yaml = BuildYaml(usable, byId, routes, selectedSubscription, selectedNodeId, options, mixedPort, controllerPort, secret);
         File.WriteAllText(configPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return new RuntimeBundle
         {
             Directory = runtimeDirectory,
             ConfigPath = configPath,
-            MixedPort = 7890,
+            MixedPort = mixedPort,
+            ControllerPort = controllerPort,
+            ControllerSecret = secret,
+            RequiresTun = options.EnableTun,
         };
     }
 
@@ -59,14 +69,18 @@ public sealed class MihomoConfigBuilder
         IReadOnlyCollection<WindowsAppRoute> routes,
         SubscriptionRecord selectedSubscription,
         string? selectedNodeId,
-        WindowsNetworkOptions options)
+        WindowsNetworkOptions options, int mixedPort, int controllerPort, string secret)
     {
         var selectedGroup = selectedNodeId is null
             ? AutomaticGroup(selectedSubscription)
             : FixedGroup(selectedSubscription, selectedNodeId);
         var builder = new StringBuilder();
-        builder.AppendLine("mixed-port: 7890");
+        builder.AppendLine($"mixed-port: {mixedPort}");
+        builder.AppendLine("bind-address: 127.0.0.1");
+        builder.AppendLine($"external-controller: 127.0.0.1:{controllerPort}");
+        builder.AppendLine($"secret: {YamlString(secret)}");
         builder.AppendLine("allow-lan: false");
+        // Use explicit terminal rules so global mode cannot accidentally select built-in DIRECT.
         builder.AppendLine("mode: rule");
         builder.AppendLine("log-level: warning");
         builder.AppendLine($"ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
@@ -80,6 +94,7 @@ public sealed class MihomoConfigBuilder
         {
             builder.AppendLine("tun:");
             builder.AppendLine("  enable: true");
+            builder.AppendLine("  device: WeaveTun");
             builder.AppendLine("  stack: mixed");
             builder.AppendLine("  auto-route: true");
             builder.AppendLine("  auto-detect-interface: true");
@@ -94,6 +109,7 @@ public sealed class MihomoConfigBuilder
         builder.AppendLine($"  ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
         builder.AppendLine("  enhanced-mode: fake-ip");
         builder.AppendLine("  fake-ip-range: 198.18.0.1/16");
+        builder.AppendLine("  default-nameserver: [223.5.5.5, 1.1.1.1]");
         builder.AppendLine("  fake-ip-filter:");
         builder.AppendLine("    - '*.lan'");
         builder.AppendLine("    - '*.local'");
@@ -117,8 +133,11 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine($"  {YamlString(ProviderName(subscription))}:");
             builder.AppendLine("    type: file");
             builder.AppendLine($"    path: {YamlString($"providers/{ProviderFileName(subscription)}")}");
+            builder.AppendLine("    override:");
+            builder.AppendLine($"      additional-prefix: {YamlString(NodePrefix(subscription.Id))}");
             builder.AppendLine("    health-check:");
             builder.AppendLine("      enable: true");
+            builder.AppendLine("      lazy: true");
             builder.AppendLine("      url: https://www.gstatic.com/generate_204");
             builder.AppendLine("      interval: 300");
         }
@@ -161,7 +180,7 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine("    type: select");
             builder.AppendLine("    use:");
             builder.AppendLine($"      - {YamlString(ProviderName(targetSubscription))}");
-            builder.AppendLine($"    filter: {YamlString($"^{RegexEscape(node.RawName)}$")}");
+            builder.AppendLine($"    filter: {YamlString($"^{RegexEscape(NodePrefix(targetSubscription.Id) + node.RawName)}$")}");
         }
 
         builder.AppendLine("  - name: DEFAULT");
@@ -172,26 +191,27 @@ public sealed class MihomoConfigBuilder
         {
             builder.AppendLine($"      - {YamlString(AutomaticGroup(subscription))}");
         }
-        builder.AppendLine("      - DIRECT");
 
         builder.AppendLine("rules:");
-        foreach (var rule in ProcessRuleCompiler.Compile(routes, byId))
-        {
-            builder.AppendLine($"  - {YamlString(rule)}");
-        }
-
         if (options.BlockUdpStun)
         {
             builder.AppendLine("  - DST-PORT,3478-3479,REJECT");
             builder.AppendLine("  - DST-PORT,19302-19309,REJECT");
         }
-
-        builder.AppendLine("  - MATCH,DEFAULT");
+        if (options.RoutingMode == RoutingMode.Rule)
+            foreach (var rule in ProcessRuleCompiler.Compile(routes, byId))
+                builder.AppendLine($"  - {YamlString(rule)}");
+        builder.AppendLine(options.RoutingMode == RoutingMode.Direct ? "  - MATCH,DIRECT" : "  - MATCH,DEFAULT");
         return builder.ToString();
     }
 
     private static IEnumerable<string> DnsEndpoints(WindowsNetworkOptions options)
     {
+        if (options.DnsProfile == DnsProfile.Custom &&
+            (!Uri.TryCreate(options.CustomDnsEndpoint, UriKind.Absolute, out var endpoint) ||
+             endpoint.Scheme is not ("https" or "tls") || string.IsNullOrEmpty(endpoint.Host) ||
+             !string.IsNullOrEmpty(endpoint.UserInfo)))
+            throw new InvalidDataException("自订 DNS 必须是有效的 HTTPS 或 TLS 地址");
         return options.DnsProfile switch
         {
             DnsProfile.AdBlock => new[] { "https://dns.adguard-dns.com/dns-query" },
@@ -202,7 +222,15 @@ public sealed class MihomoConfigBuilder
         };
     }
 
+    private static int AvailablePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
     private static string ProviderName(SubscriptionRecord subscription) => $"provider-{subscription.Id}";
+    public static string NodePrefix(string subscriptionId) => $"weave-{subscriptionId}::";
 
     private static string ProviderFileName(SubscriptionRecord subscription) => $"{ProviderName(subscription)}.yaml";
 

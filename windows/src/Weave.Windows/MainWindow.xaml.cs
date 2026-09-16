@@ -15,6 +15,7 @@ public sealed partial class MainWindow : Window
     private string _page = "0";
     private readonly Dictionary<string, double> _scrollOffsets = new();
     private bool _closed;
+    private CancellationTokenSource? _probeCancellation;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
     public MainWindow()
@@ -26,10 +27,11 @@ public sealed partial class MainWindow : Window
         try { _model.Load(); }
         catch (Exception) { MessageText.Text = "本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"; }
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
+        ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => palette.Name).ToArray();
         DnsSelector.SelectedIndex = 0;
         try
         {
-            if (File.Exists(_themePath) && int.TryParse(File.ReadAllText(_themePath), out var theme) && theme is >= 0 and <= 2)
+            if (File.Exists(_themePath) && int.TryParse(File.ReadAllText(_themePath), out var theme) && theme >= 0 && theme < AppearancePalette.All.Count)
                 ThemeSelector.SelectedIndex = theme;
         }
         catch (IOException) { }
@@ -62,7 +64,7 @@ public sealed partial class MainWindow : Window
     private void SubscriptionListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_initialized) return;
-        if (SubscriptionListView.SelectedItem is SubscriptionRecord selected)
+        if (e.AddedItems.FirstOrDefault() is SubscriptionRecord selected)
         {
             SubscriptionComboBox.SelectedItem = selected;
             SubscriptionNodesList.ItemsSource = selected.Nodes;
@@ -126,15 +128,14 @@ public sealed partial class MainWindow : Window
 
     private async void ImportTextButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunActionAsync(() =>
+        await RunActionAsync(async () =>
         {
-            var record = _model.ImportText(
+            var record = await _model.ImportTextAsync(
                 SubscriptionNameBox.Text,
                 "clipboard://manual",
                 SubscriptionTextBox.Text);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
-            return Task.CompletedTask;
         });
     }
 
@@ -159,6 +160,7 @@ public sealed partial class MainWindow : Window
             picker.FileTypeFilter.Add(".yaml");
             picker.FileTypeFilter.Add(".yml");
             picker.FileTypeFilter.Add(".txt");
+            picker.FileTypeFilter.Add(".json");
             InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
             var file = await picker.PickSingleFileAsync();
             if (file is null)
@@ -166,7 +168,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            var record = _model.ImportFile(SubscriptionNameBox.Text, file.Path);
+            var record = await _model.ImportFileAsync(SubscriptionNameBox.Text, file.Path);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
         });
@@ -194,7 +196,8 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        _model.Remove(id);
+        try { _model.Remove(id); }
+        catch (Exception error) { MessageText.Text = error.Message; return; }
         if (SubscriptionComboBox.SelectedItem is SubscriptionRecord selected && selected.Id == id)
         {
             SubscriptionComboBox.SelectedIndex = _model.Subscriptions.Count > 0 ? 0 : -1;
@@ -226,10 +229,13 @@ public sealed partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             var node = NodeComboBox.SelectedItem as ProxyNode;
-            _model.NetworkOptions = new WindowsNetworkOptions { Ipv6Enabled = Ipv6Toggle.IsOn, DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
+            _model.NetworkOptions = new WindowsNetworkOptions { Ipv6Enabled = Ipv6Toggle.IsOn,
+                RoutingMode = (RoutingMode)Math.Max(0, RoutingSelector.SelectedIndex),
+                BlockUdpStun = StunToggle.IsOn, CustomDnsEndpoint = CustomDnsBox.Text.Trim(),
+                DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription.Id, node?.Id, _lifetime.Token);
             ConnectButton.Content = "断开连接";
-            MessageText.Text = "Mihomo 已启动。Windows TUN 需要系统允许网络适配器与路由变更。";
+            MessageText.Text = "内核与 TUN 已就绪。可在“网络与隐私”检查实际网站连通性。";
             UpdateStatus();
         });
     }
@@ -287,9 +293,10 @@ public sealed partial class MainWindow : Window
         _scrollOffsets[_page] = ContentScroll.VerticalOffset;
         _page = page;
         ConnectionPanel.Visibility = page == "0" ? Visibility.Visible : Visibility.Collapsed;
-        ImportPanel.Visibility = SubscriptionsPanel.Visibility = SubscriptionNodesList.Visibility = page == "1" ? Visibility.Visible : Visibility.Collapsed;
+        ImportPanel.Visibility = SubscriptionsPanel.Visibility = NodesPanel.Visibility = page == "1" ? Visibility.Visible : Visibility.Collapsed;
         RoutesPanel.Visibility = page == "2" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "3" ? Visibility.Visible : Visibility.Collapsed;
+        DiagnosticsPanel.Visibility = page == "4" ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigation();
         DispatcherQueue.TryEnqueue(() => ContentScroll.ChangeView(null, _scrollOffsets.GetValueOrDefault(_page), null, true));
     }
@@ -297,12 +304,12 @@ public sealed partial class MainWindow : Window
     private void UpdateNavigation()
     {
         if (!_initialized) return;
-        var titles = new[] { "连接", "订阅", "应用分流", "设置" };
-        var subtitles = new[] { "你的网络，从容掌握。", "整理订阅，找到适合你的出口。", "不同应用，各有去向。", "让外观和网络，符合你的习惯。" };
+        var titles = new[] { "连接", "订阅", "应用分流", "设置", "网络与隐私" };
+        var subtitles = new[] { "你的网络，从容掌握。", "整理订阅，找到适合你的出口。", "不同应用，各有去向。", "让外观和网络，符合你的习惯。", "以真实响应为依据，不以检测分数替代事实。" };
         var index = int.Parse(_page);
         PageTitle.Text = titles[index];
         PageSubtitle.Text = subtitles[index];
-        var buttons = new[] { Nav0, Nav1, Nav2, Nav3 };
+        var buttons = new[] { Nav0, Nav1, Nav2, Nav3, Nav4 };
         var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[RootGrid.RequestedTheme == ElementTheme.Dark ? "Dark" : "Light"];
         for (var i = 0; i < buttons.Length; i++)
         {
@@ -348,20 +355,146 @@ public sealed partial class MainWindow : Window
     {
         if (!_initialized) return;
         var index = ThemeSelector.SelectedIndex;
-        RootGrid.RequestedTheme = index == 2 ? ElementTheme.Dark : ElementTheme.Light;
-        // An element-local accent keeps the white-green palette separate from the base theme.
-        if (index == 1)
-            RootGrid.Resources["WeaveAccentBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 22, 167, 108));
-        else
-            RootGrid.Resources.Remove("WeaveAccentBrush");
-        // ThemeResource resolution is refreshed when the theme changes, including light -> white-green.
-        RootGrid.RequestedTheme = index == 2 ? ElementTheme.Light : ElementTheme.Dark;
-        RootGrid.RequestedTheme = index == 2 ? ElementTheme.Dark : ElementTheme.Light;
+        if (index < 0 || index >= AppearancePalette.All.Count) return;
+        var palette = AppearancePalette.All[index];
+        var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[palette.Dark ? "Dark" : "Light"];
+        void Set(string key, string hex) => ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme[key]).Color = Color(hex);
+        Set("WeaveCanvasBrush", palette.Canvas);
+        Set("WeaveCardBrush", palette.Paper);
+        Set("WeaveInkBrush", palette.Ink);
+        Set("WeaveMutedBrush", palette.Muted);
+        Set("WeaveAccentBrush", palette.Accent);
+        ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme["WeaveRimBrush"]).Color = Mix(Color(palette.Paper), Color(palette.Ink), palette.Dark ? .16 : .08);
+        var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];
+        glass.GradientStops[0].Color = Color(palette.Paper);
+        glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
+        RootGrid.RequestedTheme = palette.Dark ? ElementTheme.Dark : ElementTheme.Light;
         UpdateNavigation();
         try { Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!); File.WriteAllText(_themePath, index.ToString()); }
         catch (IOException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
         catch (UnauthorizedAccessException) { MessageText.Text = "外观已切换，但偏好未能保存。"; }
     }
+
+    private static global::Windows.UI.Color Color(string hex) => global::Windows.UI.Color.FromArgb(255,
+        Convert.ToByte(hex[..2], 16), Convert.ToByte(hex.Substring(2, 2), 16), Convert.ToByte(hex.Substring(4, 2), 16));
+    private static global::Windows.UI.Color Mix(global::Windows.UI.Color a, global::Windows.UI.Color b, double amount) =>
+        global::Windows.UI.Color.FromArgb(255, (byte)(a.R + (b.R - a.R) * amount),
+            (byte)(a.G + (b.G - a.G) * amount), (byte)(a.B + (b.B - a.B) * amount));
+
+    private async void RefreshSubscription_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = SubscriptionListView.SelectedItems.Cast<SubscriptionRecord>().ToArray();
+        if (selected.Length == 0) { MessageText.Text = "请先勾选需要更新的订阅"; return; }
+        await RunActionAsync(async () =>
+        {
+            var count = 0;
+            foreach (var record in selected)
+            {
+                if (!record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) continue;
+                await _model.EditAsync(record, record.Name, record.Source, _lifetime.Token);
+                count++;
+            }
+            MessageText.Text = $"已更新 {count} 份远程订阅；本地文件需重新导入。分流引用的旧节点若已移除，需要重新选择。";
+        });
+    }
+
+    private async void EditSubscription_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        if (SubscriptionListView.SelectedItems.Count != 1) { MessageText.Text = "编辑时请只选择一份订阅"; return; }
+        var record = (SubscriptionRecord)SubscriptionListView.SelectedItems[0];
+        var name = new TextBox { Header = "名称", Text = record.Name };
+        var url = new TextBox { Header = "订阅链接（保存后重新获取）", Text = record.Source,
+            IsEnabled = record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) };
+        var panel = new StackPanel { Spacing = 14 };
+        panel.Children.Add(name); panel.Children.Add(url);
+        var dialog = new ContentDialog { Title = "编辑订阅", Content = panel, PrimaryButtonText = "保存",
+            CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            await RunActionAsync(async () => { await _model.EditAsync(record, name.Text, url.Text, _lifetime.Token); MessageText.Text = "订阅已保存"; });
+    }
+
+    private async void ExportSubscriptions_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        var selected = SubscriptionListView.SelectedItems.Cast<SubscriptionRecord>().ToArray();
+        if (selected.Length == 0) { MessageText.Text = "请先勾选要分享的订阅；未勾选的不会导出"; return; }
+        var warning = new ContentDialog { Title = $"导出 {selected.Length} 份订阅？",
+            Content = "文件包含服务器和连接密码，不加密。请妥善保管，勿上传公开仓库。",
+            PrimaryButtonText = "继续导出", CloseButtonText = "取消", XamlRoot = RootGrid.XamlRoot };
+        if (await warning.ShowAsync() != ContentDialogResult.Primary) return;
+        await RunActionAsync(async () =>
+        {
+            var picker = new FileSavePicker { SuggestedFileName = "Weave-subscriptions" };
+            picker.FileTypeChoices.Add("订阅配置 ZIP", new List<string> { ".zip" });
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file is null) return;
+            await Task.Run(() =>
+            {
+                using var output = File.Create(file.Path);
+                using var zip = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Create);
+                for (var i = 0; i < selected.Length; i++)
+                {
+                    using var writer = new StreamWriter(zip.CreateEntry($"subscription-{i + 1}.yaml").Open());
+                    writer.Write(selected[i].ProviderYaml);
+                }
+            });
+            MessageText.Text = $"已导出 {selected.Length} 份订阅。接收方解压后导入 YAML 即可。";
+        });
+    }
+
+    private sealed record NodeResult(ProxyNode Node, int? Delay)
+    {
+        public string DisplayName => $"{Node.Name} · {(Delay is { } ms ? $"{ms} ms" : "超时 / 不可达")}";
+    }
+    private void NodeList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var node = SubscriptionNodesList.SelectedItem switch { ProxyNode p => p, NodeResult r => r.Node, _ => null };
+        if (node is not null) NodeComboBox.SelectedItem = node;
+    }
+
+    private async void TestNodes_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model.ActiveBundle is not { } bundle || !_model.IsConnected ||
+            SubscriptionComboBox.SelectedItem is not SubscriptionRecord record)
+        { MessageText.Text = "请先连接，再测试当前订阅节点"; return; }
+        await RunActionAsync(async () =>
+        {
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            _probeCancellation = cancellation;
+            try
+            {
+                using var controller = new MihomoController(bundle);
+                using var gate = new SemaphoreSlim(3);
+                var results = await Task.WhenAll(record.Nodes.Select(async node =>
+                {
+                    await gate.WaitAsync(cancellation.Token);
+                    try { return new NodeResult(node, await controller.ProbeNodeAsync(MihomoConfigBuilder.NodePrefix(record.Id) + node.RawName, cancellation.Token)); }
+                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
+                    { cancellation.Token.ThrowIfCancellationRequested(); return new NodeResult(node, null); }
+                    finally { gate.Release(); }
+                }));
+                SubscriptionNodesList.ItemsSource = results.OrderBy(result => result.Delay ?? int.MaxValue).ToArray();
+                NodeTestText.Text = $"已测 {results.Length} 个，响应 {results.Count(result => result.Delay.HasValue)} 个。点击节点可选为默认出口，重新连接后生效。";
+            }
+            finally { _probeCancellation = null; }
+        });
+    }
+
+    private async void RunDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        if (DiagnosticConsent.IsChecked != true) { MessageText.Text = "请先允许本次检测访问测试网站"; return; }
+        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = "请先连接代理"; return; }
+        await RunActionAsync(async () =>
+        {
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            _probeCancellation = cancellation;
+            try { DiagnosticResults.ItemsSource = await NetworkDiagnostics.RunAsync(bundle, cancellation.Token); }
+            finally { _probeCancellation = null; DiagnosticConsent.IsChecked = false; }
+        });
+    }
+    private void StopDiagnostics_Click(object sender, RoutedEventArgs e) => _probeCancellation?.Cancel();
 
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {

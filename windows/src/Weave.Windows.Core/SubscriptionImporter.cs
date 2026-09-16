@@ -1,331 +1,263 @@
 using System.Net;
-using YamlDotNet.Core;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
 namespace Weave.Windows.Core;
 
-public sealed class SubscriptionImporter
+public sealed class SubscriptionImporter : IDisposable
 {
-    private const int MaxPayloadBytes = 5 * 1024 * 1024;
-    private readonly HttpClient _httpClient;
-
+    internal const int MaxBytes = 5 * 1024 * 1024;
+    private readonly HttpClient _http;
+    private readonly bool _ownsClient;
     public SubscriptionImporter(HttpClient? httpClient = null)
     {
-        _httpClient = httpClient ?? new HttpClient(
-            new HttpClientHandler { AllowAutoRedirect = false })
+        _ownsClient = httpClient is null;
+        _http = httpClient ?? new HttpClient(new SocketsHttpHandler
         {
-            Timeout = TimeSpan.FromSeconds(20),
-        };
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Weave-Windows/0.1");
+            UseProxy = false, AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            ConnectTimeout = TimeSpan.FromSeconds(15),
+            ConnectCallback = ConnectPublicAsync,
+        }) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
     public SubscriptionRecord ImportText(string name, string source, string payload)
     {
-        var normalized = NormalizePayload(payload);
-        var parsed = ClashPayloadParser.Parse(normalized);
-        var id = CreateId(source, parsed.Nodes);
-        return new SubscriptionRecord
-        {
-            Id = id,
-            Name = string.IsNullOrWhiteSpace(name) ? "未命名订阅" : name.Trim(),
-            Source = source.Trim(),
-            Payload = normalized,
-            ProviderYaml = parsed.ProviderYaml,
-            Nodes = parsed.Nodes,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
+        var root = ClashPayloadParser.Read(Normalize(payload));
+        if (ClashPayloadParser.Find(root, "proxy-providers") is YamlMappingNode { Children.Count: > 0 })
+            throw new InvalidDataException("配置含外部节点提供器。请导入 HTTPS 订阅链接，或从原客户端导出包含全部节点的配置。");
+        return MakeRecord(name, source, root);
     }
 
-    public async Task<SubscriptionRecord> ImportUrlAsync(
-        string name,
-        string source,
-        CancellationToken cancellationToken = default)
+    public async Task<SubscriptionRecord> ImportUrlAsync(string name, string source, CancellationToken cancellationToken = default)
     {
-        if (!Uri.TryCreate(source.Trim(), UriKind.Absolute, out var uri) ||
-            !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException("Windows 版远程订阅只接受 HTTPS 地址");
-        }
-
-        await RejectPrivateHostAsync(uri, cancellationToken).ConfigureAwait(false);
-        using var response = await _httpClient.GetAsync(
-            uri,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
-        if ((int)response.StatusCode is >= 300 and < 400)
-        {
-            var location = response.Headers.Location;
-            if (location is null || !location.IsAbsoluteUri ||
-                !location.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException("订阅重定向必须继续使用 HTTPS");
-            }
-
-            await RejectPrivateHostAsync(location, cancellationToken).ConfigureAwait(false);
-            using var redirected = await _httpClient.GetAsync(
-                location,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
-            redirected.EnsureSuccessStatusCode();
-            return await ReadRemoteAsync(name, location, redirected, cancellationToken).ConfigureAwait(false);
-        }
-        response.EnsureSuccessStatusCode();
-        return await ReadRemoteAsync(name, uri, response, cancellationToken).ConfigureAwait(false);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        var uri = ValidateUri(source.Trim());
+        var budget = new DownloadBudget();
+        var sequence = await ResolveAsync(uri, new HashSet<string>(StringComparer.Ordinal), budget, 0, timeout.Token).ConfigureAwait(false);
+        return MakeRecord(string.IsNullOrWhiteSpace(name) ? uri.Host : name, uri.AbsoluteUri,
+            new YamlMappingNode(new YamlScalarNode("proxies"), sequence));
     }
 
-    private async Task<SubscriptionRecord> ReadRemoteAsync(
-        string name,
-        Uri source,
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
+    private async Task<YamlSequenceNode> ResolveAsync(Uri uri, HashSet<string> visited, DownloadBudget budget, int depth, CancellationToken token)
     {
-        if (response.Content.Headers.ContentLength is > MaxPayloadBytes)
+        if (depth > 3 || !visited.Add(uri.AbsoluteUri) || visited.Count > 16)
+            throw new InvalidDataException("节点提供器存在循环或超过安全上限");
+        var text = await DownloadAsync(uri, budget, token).ConfigureAwait(false);
+        var root = ClashPayloadParser.Read(Normalize(text));
+        var result = new YamlSequenceNode();
+        if (ClashPayloadParser.Find(root, "proxies") is YamlSequenceNode inline)
+            foreach (var node in inline.Children) result.Add(node);
+        if (ClashPayloadParser.Find(root, "proxy-providers") is YamlMappingNode providers)
         {
-            throw new InvalidDataException("订阅文件超过 5 MiB 限制");
+            foreach (var entry in providers.Children.Values)
+            {
+                if (entry is not YamlMappingNode provider)
+                    throw new InvalidDataException("节点提供器格式无效");
+                // Never silently discard filtering/overrides, which could change routing semantics.
+                if (new[] { "filter", "exclude-filter", "exclude-type", "override", "header" }
+                    .Any(key => ClashPayloadParser.Find(provider, key) is not null))
+                    throw new InvalidDataException("此提供器包含过滤、覆盖或自订请求头，请导出完整节点配置后导入");
+                var type = ClashPayloadParser.Scalar(provider, "type");
+                YamlSequenceNode nodes;
+                if (type == "inline" && ClashPayloadParser.Find(provider, "payload") is YamlSequenceNode embedded)
+                    nodes = embedded;
+                else if (type == "http" && ClashPayloadParser.Scalar(provider, "url") is { } url)
+                    nodes = await ResolveAsync(ValidateUri(url), new HashSet<string>(visited), budget, depth + 1, token).ConfigureAwait(false);
+                else throw new InvalidDataException("仅支持 HTTPS 或内嵌节点提供器；不会读取提供器指定的本地文件");
+                foreach (var node in nodes.Children) result.Add(node);
+            }
         }
+        return result;
+    }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var memory = new MemoryStream();
-        var buffer = new byte[16 * 1024];
-        var total = 0;
-        while (true)
+    private async Task<string> DownloadAsync(Uri uri, DownloadBudget budget, CancellationToken token)
+    {
+        for (var redirect = 0; redirect <= 5; redirect++)
         {
-            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (read == 0)
+            if (++budget.Requests > 24) throw new InvalidDataException("订阅请求数量超过上限");
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.UserAgent.ParseAdd("clash.meta/1.19.30 Weave-Windows/0.1");
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+            if ((int)response.StatusCode is >= 300 and < 400)
             {
-                break;
+                var location = response.Headers.Location ?? throw new InvalidDataException("订阅重定向缺少地址");
+                uri = ValidateUri(new Uri(uri, location).AbsoluteUri);
+                continue;
             }
-
-            total += read;
-            if (total > MaxPayloadBytes)
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidDataException($"订阅服务器返回 HTTP {(int)response.StatusCode}，请检查链接权限或稍后重试");
+            if (response.Content.Headers.ContentLength > MaxBytes) throw new InvalidDataException("订阅超过 5 MiB");
+            using var memory = new MemoryStream();
+            await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+            var buffer = new byte[16384];
+            int count;
+            while ((count = await stream.ReadAsync(buffer, token).ConfigureAwait(false)) > 0)
             {
-                throw new InvalidDataException("订阅文件超过 5 MiB 限制");
+                budget.Bytes += count;
+                if (budget.Bytes > MaxBytes) throw new InvalidDataException("订阅及提供器总内容超过 5 MiB");
+                memory.Write(buffer, 0, count);
             }
-
-            memory.Write(buffer, 0, read);
+            return new UTF8Encoding(false, true).GetString(memory.ToArray());
         }
-
-        var content = Encoding.UTF8.GetString(memory.ToArray());
-        return ImportText(
-            string.IsNullOrWhiteSpace(name) ? source.Host : name,
-            source.ToString(),
-            content);
+        throw new InvalidDataException("订阅重定向过多");
     }
 
     public SubscriptionRecord ImportFile(string name, string path)
     {
         var info = new FileInfo(path);
-        if (!info.Exists)
-        {
-            throw new FileNotFoundException("找不到订阅文件", path);
-        }
-
-        if (info.Length > MaxPayloadBytes)
-        {
-            throw new InvalidDataException("订阅文件超过 5 MiB 限制");
-        }
-
-        return ImportText(
-            string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
-            path,
-            File.ReadAllText(path, Encoding.UTF8));
+        if (!info.Exists || info.Length > MaxBytes) throw new InvalidDataException("文件不存在或超过 5 MiB");
+        return ImportText(string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
+            path, File.ReadAllText(path, new UTF8Encoding(false, true)));
     }
 
-    private static string NormalizePayload(string payload)
+    private static SubscriptionRecord MakeRecord(string name, string source, YamlMappingNode root)
     {
-        if (string.IsNullOrWhiteSpace(payload))
+        var parsed = ClashPayloadParser.Parse(root);
+        // Source identity is stable when a remote subscription adds/removes/reorders nodes.
+        var identity = source.StartsWith("clipboard:", StringComparison.Ordinal) ? source + name : source;
+        return new SubscriptionRecord
         {
-            throw new InvalidDataException("订阅内容为空");
-        }
+            Id = Hash(identity)[..16], Name = string.IsNullOrWhiteSpace(name) ? "未命名订阅" : name.Trim(),
+            Source = source, Payload = parsed.ProviderYaml, ProviderYaml = parsed.ProviderYaml, Nodes = parsed.Nodes,
+        };
+    }
 
-        var normalized = payload.Trim().TrimStart('\uFEFF');
-        if (normalized.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
-        {
-            return normalized;
-        }
-
-        var base64 = normalized.Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
+    private static string Normalize(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload) || Encoding.UTF8.GetByteCount(payload) > MaxBytes)
+            throw new InvalidDataException("订阅为空或超过 5 MiB");
+        var value = payload.Trim().TrimStart('\uFEFF');
+        if (value.StartsWith('{') || value.Contains("proxies", StringComparison.Ordinal) ||
+            value.Contains("proxy-providers", StringComparison.Ordinal)) return value;
         try
         {
-            var padded = base64.Replace('-', '+').Replace('_', '/');
-            padded = padded.PadRight(padded.Length + ((4 - padded.Length % 4) % 4), '=');
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(padded)).TrimStart('\uFEFF');
-            if (decoded.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
-            {
-                return decoded;
-            }
+            var encoded = value.Replace("\r", "").Replace("\n", "").Replace('-', '+').Replace('_', '/');
+            return new UTF8Encoding(false, true).GetString(Convert.FromBase64String(encoded.PadRight(encoded.Length + (4 - encoded.Length % 4) % 4, '=')));
         }
-        catch (FormatException)
-        {
-            // The parser below reports the actionable format error.
-        }
-
-        throw new InvalidDataException("未找到有效的 Clash/Mihomo proxies 节点列表；请导入 YAML 或其 Base64 内容");
+        catch (Exception error) when (error is FormatException or DecoderFallbackException)
+        { throw new InvalidDataException("请导入 Clash/Mihomo YAML、JSON 或其 Base64 内容"); }
     }
 
-    private static string CreateId(string source, IReadOnlyList<ProxyNode> nodes)
+    private static Uri ValidateUri(string source)
     {
-        var input = Encoding.UTF8.GetBytes($"{source}\n{string.Join('\n', nodes.Select(node => node.Name))}");
-        return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant()[..16];
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri) || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo))
+            throw new InvalidDataException("远程订阅只接受无用户信息的 HTTPS 地址");
+        return uri;
     }
 
-    private static async Task RejectPrivateHostAsync(Uri uri, CancellationToken cancellationToken)
+    private static async ValueTask<Stream> ConnectPublicAsync(SocketsHttpConnectionContext context, CancellationToken token)
     {
-        if (IPAddress.TryParse(uri.Host, out var literal))
+        var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, token).ConfigureAwait(false);
+        if (addresses.Length == 0 || addresses.Any(IsPrivate)) throw new HttpRequestException("订阅地址解析到本机、内网或保留地址，已阻止");
+        // Connect to the addresses just checked: no second DNS resolution/rebinding window.
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+        try
         {
-            if (IsPrivate(literal))
-            {
-                throw new InvalidDataException("为避免 SSRF，远程订阅不能指向本机或私有地址");
-            }
-
-            return;
+            await socket.ConnectAsync(addresses, context.DnsEndPoint.Port, token).ConfigureAwait(false);
+            return new NetworkStream(socket, ownsSocket: true);
         }
-
-        var addresses = await Dns.GetHostAddressesAsync(uri.Host, cancellationToken).ConfigureAwait(false);
-        if (addresses.Any(IsPrivate))
-        {
-            throw new InvalidDataException("为避免 SSRF，远程订阅主机解析到了本机或私有地址");
-        }
+        catch { socket.Dispose(); throw; }
     }
 
     private static bool IsPrivate(IPAddress address)
     {
-        if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any))
-        {
-            return true;
-        }
-
-        var bytes = address.GetAddressBytes();
-        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            return bytes[0] == 10 ||
-                   (bytes[0] == 172 && bytes[1] is >= 16 and <= 31) ||
-                   (bytes[0] == 192 && bytes[1] == 168) ||
-                   (bytes[0] == 169 && bytes[1] == 254) ||
-                   bytes[0] == 100 && bytes[1] is >= 64 and <= 127;
-        }
-
-        return (bytes[0] & 0xFE) == 0xFC || (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80);
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (IPAddress.IsLoopback(address)) return true;
+        var b = address.GetAddressBytes();
+        if (b.Length == 4) return b[0] is 0 or 10 or 127 or >= 224 ||
+            (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) ||
+            (b[0] == 169 && b[1] == 254) || (b[0] == 100 && b[1] is >= 64 and <= 127);
+        return address.Equals(IPAddress.IPv6Any) || b[0] == 0xff || (b[0] & 0xfe) == 0xfc ||
+            (b[0] == 0xfe && (b[1] & 0xc0) == 0x80);
     }
+    internal static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+    public void Dispose() { if (_ownsClient) _http.Dispose(); }
+    private sealed class DownloadBudget { public int Bytes; public int Requests; }
 }
 
 internal sealed record ParsedClashPayload(string ProviderYaml, List<ProxyNode> Nodes);
-
 internal static class ClashPayloadParser
 {
-    public static ParsedClashPayload Parse(string payload)
+    internal static YamlMappingNode Read(string text)
     {
         try
         {
             var stream = new YamlStream();
-            using var reader = new StringReader(payload);
-            stream.Load(reader);
-            if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode root)
-            {
-                throw new InvalidDataException("Clash YAML 根节点不是对象");
-            }
+            stream.Load(new StringReader(text));
+            if (stream.Documents.Count != 1 || stream.Documents[0].RootNode is not YamlMappingNode root)
+                throw new InvalidDataException("Clash 配置必须只有一个对象文档");
+            var budget = 100_000;
+            return (YamlMappingNode)Clone(root, new HashSet<YamlNode>(ReferenceEqualityComparer.Instance), 0, ref budget);
+        }
+        catch (YamlException) { throw new InvalidDataException("Clash 配置格式无效，请检查缩进、引号及重复字段"); }
+    }
 
-            var proxyNode = Find(root, "proxies");
-            if (proxyNode is not YamlSequenceNode proxySequence)
-            {
-                throw new InvalidDataException("Clash YAML 缺少 proxies 节点列表");
-            }
+    internal static ParsedClashPayload Parse(YamlMappingNode root)
+    {
+        if (Find(root, "proxies") is not YamlSequenceNode sequence || sequence.Children.Count == 0)
+            throw new InvalidDataException("订阅中没有节点；请使用包含完整节点的 Clash 配置");
+        var nodes = new List<ProxyNode>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in sequence.Children)
+        {
+            if (item is not YamlMappingNode proxy || Scalar(proxy, "name") is not { Length: > 0 } name ||
+                Scalar(proxy, "type") is not { Length: > 0 } protocol)
+                throw new InvalidDataException("存在缺少名称或协议的节点，已取消导入，不会丢弃部分节点");
+            if (!names.Add(name)) throw new InvalidDataException("存在同名节点，请在原配置中改为不同名称再导入");
+            nodes.Add(new ProxyNode { Id = SubscriptionImporter.Hash(name + "\n" + protocol)[..12],
+                Name = NodeName.Core(name), RawName = name, Protocol = protocol.ToLowerInvariant(), Index = nodes.Count });
+        }
+        var clean = new YamlMappingNode(new YamlScalarNode("proxies"), sequence);
+        using var writer = new StringWriter();
+        new YamlStream(new YamlDocument(clean)).Save(writer, assignAnchors: false);
+        return new ParsedClashPayload(writer.ToString(), nodes);
+    }
 
-            var nodes = new List<ProxyNode>();
-            foreach (var item in proxySequence.Children.OfType<YamlMappingNode>())
+    // Expand aliases and YAML merge keys with a depth/size/cycle budget. Save only actual
+    // proxy data, never the subscription's controller, TUN, rules or filesystem paths.
+    private static YamlNode Clone(YamlNode node, HashSet<YamlNode> path, int depth, ref int budget)
+    {
+        if (depth > 40 || --budget < 0 || !path.Add(node)) throw new InvalidDataException("配置过于复杂或存在循环引用");
+        try
+        {
+            if (node is YamlScalarNode scalar) return new YamlScalarNode(scalar.Value) { Style = scalar.Style };
+            if (node is YamlSequenceNode sequence)
             {
-                var rawName = Scalar(item, "name")?.Trim() ?? string.Empty;
-                if (rawName.Length == 0)
+                var copy = new YamlSequenceNode();
+                foreach (var child in sequence.Children) copy.Add(Clone(child, path, depth + 1, ref budget));
+                return copy;
+            }
+            if (node is YamlMappingNode mapping)
+            {
+                var copy = new YamlMappingNode();
+                var merge = Find(mapping, "<<");
+                if (merge is not null)
                 {
-                    continue;
+                    var expanded = Clone(merge, path, depth + 1, ref budget);
+                    IEnumerable<YamlNode> maps = expanded is YamlSequenceNode list ? list.Children : new[] { expanded };
+                    foreach (var entry in maps)
+                    {
+                        if (entry is not YamlMappingNode inherited) throw new InvalidDataException("YAML 合并对象无效");
+                        foreach (var pair in inherited.Children) if (!copy.Children.ContainsKey(pair.Key)) copy.Add(pair.Key, pair.Value);
+                    }
                 }
-
-                var protocol = Scalar(item, "type") ?? "unknown";
-                var index = nodes.Count;
-                var digest = SHA256.HashData(Encoding.UTF8.GetBytes($"{index}\n{rawName}\n{protocol}"));
-                nodes.Add(new ProxyNode
+                foreach (var pair in mapping.Children)
                 {
-                    Id = Convert.ToHexString(digest).ToLowerInvariant()[..12],
-                    Name = NodeName.Core(rawName),
-                    RawName = rawName,
-                    Protocol = protocol.Trim().ToLowerInvariant(),
-                    Index = index,
-                });
+                    if (pair.Key is YamlScalarNode { Value: "<<" }) continue;
+                    copy.Children[Clone(pair.Key, path, depth + 1, ref budget)] = Clone(pair.Value, path, depth + 1, ref budget);
+                }
+                return copy;
             }
-
-            if (nodes.Count == 0)
-            {
-                throw new InvalidDataException("订阅中没有可用节点");
-            }
-
-            return new ParsedClashPayload(SanitizeProvider(payload), nodes);
+            throw new InvalidDataException("不支持的 YAML 节点");
         }
-        catch (YamlException exception)
-        {
-            throw new InvalidDataException($"Clash YAML 解析失败：{exception.Message}", exception);
-        }
+        finally { path.Remove(node); }
     }
-
-    private static YamlNode? Find(YamlMappingNode mapping, string key)
-    {
-        foreach (var pair in mapping.Children)
-        {
-            if (pair.Key is YamlScalarNode scalar &&
-                string.Equals(scalar.Value, key, StringComparison.OrdinalIgnoreCase))
-            {
-                return pair.Value;
-            }
-        }
-
-        return null;
-    }
-
-    private static string? Scalar(YamlMappingNode mapping, string key)
-    {
-        return Find(mapping, key) is YamlScalarNode scalar ? scalar.Value : null;
-    }
-
-    private static string SanitizeProvider(string payload)
-    {
-        var referencedAnchors = System.Text.RegularExpressions.Regex.Matches(payload, @"\*([A-Za-z0-9_.-]+)")
-            .Select(match => match.Groups[1].Value)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var anchorRoots = System.Text.RegularExpressions.Regex.Matches(
-                payload,
-                @"(?m)^([A-Za-z0-9_.-]+)\s*:\s*&([A-Za-z0-9_.-]+)")
-            .Where(match => referencedAnchors.Contains(match.Groups[2].Value))
-            .Select(match => match.Groups[1].Value)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        anchorRoots.Add("proxies");
-
-        var retained = new List<string>();
-        var keepRoot = false;
-        foreach (var line in payload.Trim().Split('\n'))
-        {
-            var withoutCr = line.TrimEnd('\r');
-            var trimmed = withoutCr.Trim();
-            var indent = withoutCr.TakeWhile(char.IsWhiteSpace).Count();
-            if (indent == 0 && trimmed.Length > 0 && !trimmed.StartsWith('#'))
-            {
-                var colon = trimmed.IndexOf(':');
-                var key = colon > 0 ? trimmed[..colon].Trim() : string.Empty;
-                keepRoot = anchorRoots.Contains(key);
-            }
-
-            if (keepRoot)
-            {
-                retained.Add(withoutCr);
-            }
-        }
-
-        var result = string.Join(Environment.NewLine, retained).Trim();
-        if (result.Length == 0 || !result.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException("Clash 订阅缺少 proxies 节点列表");
-        }
-
-        return result + Environment.NewLine;
-    }
+    internal static YamlNode? Find(YamlMappingNode mapping, string key) =>
+        mapping.Children.TryGetValue(new YamlScalarNode(key), out var value) ? value : null;
+    internal static string? Scalar(YamlMappingNode mapping, string key) => (Find(mapping, key) as YamlScalarNode)?.Value;
 }

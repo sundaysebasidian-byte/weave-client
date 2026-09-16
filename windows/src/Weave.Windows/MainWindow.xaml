@@ -11,7 +11,8 @@
 <Button x:Name="Nav2" Tag="2" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" AutomationProperties.Name="应用分流">
 <StackPanel Orientation="Horizontal" Spacing="14"><FontIcon Glyph="&#xE8AB;" FontSize="19"/><TextBlock Text="应用分流" FontSize="14"/></StackPanel></Button>
 <Button x:Name="Nav3" Tag="3" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14" AutomationProperties.Name="设置">
-<StackPanel Orientation="Horizontal" Spacing="14"><FontIcon Glyph="&#xE713;" FontSize="19"/><TextBlock Text="设置" FontSize="14"/></StackPanel></Button></StackPanel>
+<StackPanel Orientation="Horizontal" Spacing="14"><FontIcon Glyph="&#xE713;" FontSize="19"/><TextBlock Text="设置" FontSize="14"/></StackPanel></Button>
+<Button x:Name="Nav4" Tag="4" Click="Navigate_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Padding="16,14"><StackPanel Orientation="Horizontal" Spacing="14"><FontIcon Glyph="&#xE774;" FontSize="19"/><TextBlock Text="网络与隐私" FontSize="14"/></StackPanel></Button></StackPanel>
 <StackPanel Grid.Row="2" Spacing="10" Margin="12,0"><TextBlock Text="本地优先" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><TextBlock Text="配置仅保存在此设备" FontSize="11" Foreground="{ThemeResource WeaveMutedBrush}"/><TextBlock Text="Windows · 测试版" FontSize="10" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel>
 </Grid></Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -28,13 +29,14 @@
 <Border Width="52" Height="52" HorizontalAlignment="Left" CornerRadius="18" Background="{ThemeResource WeaveCardBrush}"><FontIcon Glyph="&#xE83D;" FontSize="25" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
 <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="12" Margin="0,28">
 <TextBlock x:Name="HeroStatus" Text="尚未连接" FontSize="32" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/>
-<TextBlock Text="选择出口，连接你的世界。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="14"/>
+<TextBlock Text="保持私密，从容连接。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="14"/>
 </StackPanel>
 <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><Ellipse x:Name="ConnectionDot" Width="7" Height="7" Fill="{ThemeResource WeaveMutedBrush}"/><TextBlock x:Name="HeroDetail" Text="本地内核 · 准备就绪后连接" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel>
 </Grid></Border>
 <Border x:Name="ExitCard" Grid.Column="1" Style="{StaticResource GlassCard}" Padding="28">
 <StackPanel Spacing="18">
 <TextBlock Text="选择出口" FontSize="19" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/>
+<ComboBox x:Name="RoutingSelector" Header="运行模式" SelectedIndex="0"><x:String>规则 · 按应用分流</x:String><x:String>全局 · 全部走所选出口</x:String><x:String>直连 · 不通过代理节点</x:String></ComboBox>
 <ComboBox x:Name="SubscriptionComboBox" Header="订阅" PlaceholderText="请选择订阅" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged"/>
 <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
 <ComboBox x:Name="NodeComboBox" Header="节点" PlaceholderText="自动选择 · 最低延迟" DisplayMemberPath="DisplayName"/>
@@ -93,7 +95,7 @@
                         <TextBox x:Name="SubscriptionUrlBox" Header="HTTPS 链接" PlaceholderText="https://example.com/sub" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button Content="导入链接" Click="ImportUrlButton_Click" />
-                            <Button Content="选择 YAML 文件" Click="ImportFileButton_Click" />
+                            <Button Content="文件 / 其他客户端导出" Click="ImportFileButton_Click" />
                         </StackPanel>
                         <Expander Header="粘贴配置内容" HorizontalAlignment="Stretch"><StackPanel Spacing="12"><TextBox x:Name="SubscriptionTextBox" Header="或粘贴 Clash/Mihomo YAML / Base64" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
                         <Button Content="导入粘贴内容" Click="ImportTextButton_Click" HorizontalAlignment="Left" /></StackPanel></Expander>
@@ -103,7 +105,9 @@
                 <Border x:Name="SubscriptionsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                     <StackPanel Spacing="10">
                         <TextBlock Text="已导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <ListView x:Name="SubscriptionListView" SelectionChanged="SubscriptionListView_SelectionChanged" MaxHeight="260">
+                        <TextBlock Text="选择订阅查看节点；可多选导出。导出的配置含连接凭据，请只分享给可信任的人。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="10"><Button Content="更新所选" Click="RefreshSubscription_Click"/><Button Content="编辑链接 / 名称" Click="EditSubscription_Click"/><Button Content="导出所选" Click="ExportSubscriptions_Click"/></StackPanel>
+                        <ListView x:Name="SubscriptionListView" SelectionMode="Multiple" SelectionChanged="SubscriptionListView_SelectionChanged" MaxHeight="260">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Padding="2,8">
@@ -126,13 +130,28 @@
                 <Border x:Name="SettingsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}">
 <StackPanel Spacing="18">
 <TextBlock Text="设置" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/>
-<ComboBox x:Name="ThemeSelector" Header="外观" SelectionChanged="ThemeSelector_SelectionChanged"><x:String>浅色</x:String><x:String>白绿</x:String><x:String>深色</x:String></ComboBox>
+<ComboBox x:Name="ThemeSelector" Header="外观 · 与 Android 相同的八套配色" SelectionChanged="ThemeSelector_SelectionChanged"/>
 <ToggleSwitch x:Name="Ipv6Toggle" Header="IPv6 双栈" IsOn="True"/>
-<ComboBox x:Name="DnsSelector" Header="DNS"><x:String>加密 DNS</x:String><x:String>广告过滤</x:String><x:String>家庭过滤</x:String></ComboBox>
+<ComboBox x:Name="DnsSelector" Header="DNS"><x:String>加密 DNS</x:String><x:String>广告过滤</x:String><x:String>家庭过滤</x:String><x:String>自订 DNS</x:String></ComboBox>
+<TextBox x:Name="CustomDnsBox" Header="自订加密 DNS" PlaceholderText="https://example.com/dns-query"/>
+<ToggleSwitch x:Name="StunToggle" Header="阻止常见 STUN 端口" OffContent="关闭" OnContent="开启（可能影响通话）"/>
 <TextBlock Text="网络设置在下次连接时生效。过滤依赖 DNS 服务，并非拦截所有广告。TUN 需要管理员权限。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
-<TextBlock Text="订阅由 Windows DPAPI 加密保存。内核运行并不代表网站可达或泄漏检测通过。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+<TextBlock Text="订阅由 Windows DPAPI 加密保存。加密 DNS 的首次解析使用明文引导 DNS；不宣称零泄漏。端口拦截不等于完整 WebRTC 防泄漏。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 </StackPanel></Border>
-<ListView x:Name="SubscriptionNodesList" Visibility="Collapsed" MaxHeight="300" SelectionMode="None" DisplayMemberPath="DisplayName"/>
+<Border x:Name="NodesPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="14">
+<Grid><TextBlock Text="订阅节点" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/><Button Content="测试当前订阅节点" HorizontalAlignment="Right" Click="TestNodes_Click"/></Grid>
+<TextBlock Text="延迟测试需要先连接；只测试手动触发的订阅，不在后台循环测速。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+<ListView x:Name="SubscriptionNodesList" Height="300" SelectionMode="Single" DisplayMemberPath="DisplayName" SelectionChanged="NodeList_SelectionChanged"/>
+<TextBlock x:Name="NodeTestText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+</StackPanel></Border>
+<Border x:Name="DiagnosticsPanel" Visibility="Collapsed" Style="{StaticResource GlassCard}"><StackPanel Spacing="18">
+<TextBlock Text="网络与隐私" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}"/>
+<TextBlock Text="一处检查出口 IP 与常用网站连通性。请求只经当前代理发送，失败不回落直连；结果不代表账号可登录或流媒体已解锁。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+<CheckBox x:Name="DiagnosticConsent" Content="允许本次访问 ipify 及下方网站进行检测"/>
+<StackPanel Orientation="Horizontal" Spacing="10"><Button Content="开始检测" Click="RunDiagnostics_Click"/><Button Content="停止" Click="StopDiagnostics_Click"/></StackPanel>
+<ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None" DisplayMemberPath="Summary"/>
+<TextBlock Text="DNS 泄漏 / WebRTC / 浏览器指纹：此版本尚未实测，不能据此判定安全。浏览器身份必须在实际使用的浏览器中检测。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
+</StackPanel></Border>
 
 </StackPanel>
 </ScrollViewer>

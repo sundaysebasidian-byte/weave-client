@@ -1,7 +1,7 @@
 name: Windows preview
 on:
   push:
-    branches: ['codex/windows-test-package']
+    branches: ['codex/windows-test-package', 'codex/windows-v1-preview']
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,6 +46,20 @@ jobs:
             throw "App exited during startup: $($app.ExitCode)"
           }
           Stop-Process -Id $app.Id
+      - name: Package Windows installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { choco install innosetup --no-progress -y }
+          if (-not (Test-Path $compiler)) { throw 'Inno Setup unavailable' }
+          & $compiler windows/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+          Get-FileHash windows/artifacts/installer/*.exe -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-v1-Setup-x64
+          path: windows/artifacts/installer/*.exe
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: Weave-Windows-UI-preview
