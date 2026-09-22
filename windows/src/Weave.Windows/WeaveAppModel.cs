@@ -283,6 +283,33 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         finally { _connectionGate.Release(); }
     }
 
+    public void InvalidateNetworkEvidence()
+    {
+        if (!IsConnected) return;
+        Health = ConnectionHealthState.Unchecked;
+        Status = "网络已变化，等待重新确认";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task RecheckAsync(CancellationToken token)
+    {
+        await _connectionGate.WaitAsync(token);
+        try
+        {
+            if (!IsConnected || ActiveBundle is not { } bundle) return;
+            Health = ConnectionHealthState.Checking;
+            Status = "正在核验网络";
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+            var result = await ConnectionHealth.CheckAsync(bundle, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (!IsConnected || !ReferenceEquals(bundle, ActiveBundle)) return;
+            Health = result;
+            Status = result == ConnectionHealthState.Reachable ? "网络连通性已确认" : "内核运行中 · 网络待确认";
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        finally { _connectionGate.Release(); }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync().ConfigureAwait(false);

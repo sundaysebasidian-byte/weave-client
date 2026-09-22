@@ -19,6 +19,11 @@ public sealed partial class MainWindow : Window
     private bool _shutdownComplete;
     private CancellationTokenSource? _probeCancellation;
     private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private CancellationTokenSource? _connectCancellation;
+    private CancellationTokenSource? _networkCancellation;
+    private TrayIcon? _tray;
+    private bool _hiddenToTray;
+    private int _idleTrafficSamples;
     private bool _trafficBusy;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
@@ -79,10 +84,16 @@ public sealed partial class MainWindow : Window
             previewTheme >= 0 && previewTheme < AppearancePalette.All.Count) ThemeSelector.SelectedIndex = previewTheme;
 
         Closed += MainWindow_Closed;
+        _tray = new TrayIcon(WindowNative.GetWindowHandle(this),
+            () => DispatcherQueue.TryEnqueue(() => { _hiddenToTray = false; AppWindow.Show(); Activate(); }),
+            () => DispatcherQueue.TryEnqueue(async () => await ShutdownAsync(closeWindow: true)),
+            () => DispatcherQueue.TryEnqueue(ScheduleNetworkCheck));
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += NetworkAddressChanged;
         AppWindow.Closing += async (_, args) =>
         {
             if (_shutdownComplete) return;
             args.Cancel = true;
+            if (_tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; AppWindow.Hide(); return; }
             await ShutdownAsync(closeWindow: true);
         };
         UpdateStatus();
@@ -244,6 +255,7 @@ public sealed partial class MainWindow : Window
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_connectCancellation is not null) { _connectCancellation.Cancel(); return; }
         if (_busy) return;
         if (_model.IsConnected)
         {
@@ -283,6 +295,13 @@ public sealed partial class MainWindow : Window
 
         await RunActionAsync(async () =>
         {
+            using var connection = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            connection.CancelAfter(TimeSpan.FromSeconds(60));
+            _connectCancellation = connection;
+            ConnectButton.IsEnabled = true;
+            ConnectButton.Content = L.T("取消连接");
+            try
+            {
             var node = NodeComboBox.SelectedItem as ProxyNode;
             _model.NetworkOptions = new WindowsNetworkOptions { Ipv6Enabled = Ipv6Toggle.IsOn,
                 EnableTun = TunToggle.IsOn, ChinaDirect = ChinaDirectToggle.IsOn,
@@ -293,10 +312,12 @@ public sealed partial class MainWindow : Window
                 RoutingMode = (RoutingMode)Math.Max(0, RoutingSelector.SelectedIndex),
                 BlockUdpStun = StunToggle.IsOn, CustomDnsEndpoint = CustomDnsBox.Text.Trim(),
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
-            await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, _lifetime.Token);
+            await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, connection.Token);
             ConnectButton.Content = L.T("断开连接");
             MessageText.Text = ConnectionHealth.Description(_model.Health);
             UpdateStatus();
+            }
+            finally { _connectCancellation = null; }
         });
     }
 
@@ -343,7 +364,7 @@ public sealed partial class MainWindow : Window
     private void UpdateStatus()
     {
         StatusText.Text = _model.Status;
-        ConnectButton.Content = _model.IsConnected ? L.T("断开连接") : L.T("连接");
+        ConnectButton.Content = _connectCancellation is not null ? L.T("取消连接") : _model.IsConnected ? L.T("断开连接") : L.T("连接");
         HeroStatus.Text = !_model.IsConnected ? L.T("尚未连接") : _model.Health == ConnectionHealthState.Reachable ? L.T("已连接") : L.T("网络待确认");
         HeroDetail.Text = _model.IsConnected ? _model.Status : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
         if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
@@ -700,6 +721,9 @@ public sealed partial class MainWindow : Window
         _shuttingDown = true;
         SavePreferences();
         _closed = true;
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= NetworkAddressChanged;
+        _networkCancellation?.Cancel();
+        _tray?.Dispose();
         _lifetime.Cancel();
         _trafficTimer.Stop();
         try { await Task.WhenAll(StopShareAsync(), _model.DisposeAsync().AsTask()); }
@@ -736,8 +760,8 @@ public sealed partial class MainWindow : Window
     }
     private async void TrafficTick(object? sender, object e)
     {
-        // The sidebar is visible on every page; keep its existing two-second, non-overlapping poll.
-        if (_closed || _trafficBusy || !_model.IsConnected || _model.ActiveBundle is not { } bundle ||
+        // No polling while hidden/minimized; back off after three idle samples.
+        if (_closed || _hiddenToTray || _trafficBusy || !_model.IsConnected || _model.ActiveBundle is not { } bundle ||
             (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)) return;
         _trafficBusy = true;
         try
@@ -746,9 +770,46 @@ public sealed partial class MainWindow : Window
             var traffic = await controller.ReadTrafficAsync(_lifetime.Token);
             if (_closed || !_model.IsConnected || !ReferenceEquals(bundle, _model.ActiveBundle)) return;
             DownloadRate.Text = Rate(traffic.Down); UploadRate.Text = Rate(traffic.Up);
+            _idleTrafficSamples = traffic.Down == 0 && traffic.Up == 0 ? Math.Min(3, _idleTrafficSamples + 1) : 0;
+            _trafficTimer.Interval = TimeSpan.FromSeconds(_idleTrafficSamples >= 3 ? 10 : 2);
         }
         catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException or KeyNotFoundException or FormatException or InvalidOperationException) { }
         finally { _trafficBusy = false; }
     }
     private static string Rate(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:F1} MB/s" : $"{Math.Max(0, bytes) / 1024.0:F1} KB/s";
+
+    private void NetworkAddressChanged(object? sender, EventArgs e)
+        => DispatcherQueue.TryEnqueue(ScheduleNetworkCheck);
+
+    private async void ScheduleNetworkCheck()
+    {
+        if (_closed || !_model.IsConnected) return;
+        _networkCancellation?.Cancel();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _networkCancellation = cancellation;
+        _model.InvalidateNetworkEvidence();
+        try
+        {
+            await Task.Delay(2500, cancellation.Token);
+            if (!_busy) await _model.RecheckAsync(cancellation.Token);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { if (!_closed) MessageText.Text = L.T("网络核验失败，可手动重新连接；未改走直连。"); }
+        finally
+        {
+            if (ReferenceEquals(_networkCancellation, cancellation)) _networkCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private async void RecheckNetwork_Click(object sender, RoutedEventArgs e)
+        => await RunActionAsync(() => _model.RecheckAsync(_lifetime.Token));
+
+    private async void ReconnectNetwork_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        var stopped = false;
+        await RunActionAsync(async () => { await _model.DisconnectAsync(); stopped = true; });
+        if (stopped && !_closed) ConnectButton_Click(sender, e);
+    }
 }

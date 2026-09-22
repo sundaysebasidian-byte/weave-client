@@ -5,6 +5,9 @@ namespace Weave.Windows;
 // Named properties keep XAML bindings explicit and compiler-friendly. Values live in Strings.en.json.
 public sealed partial class UiText
 {
+    public string RecheckNetwork => L.T("重新检测网络");
+    public string ReconnectNetwork => L.T("重新连接并应用");
+    public string TrayCloseNotice => L.T("关闭窗口后继续在系统托盘运行；右键托盘图标可断开并退出。");
     public string Appearance => L.T("外观");
     public string Connect => L.T("连接");
     public string Subscriptions => L.T("订阅");

@@ -53,8 +53,11 @@ internal sealed class WindowsSystemProxy
             if (Convert.ToInt32(key.GetValue("ProxyEnable", 0)) == 1) key.SetValue("ProxyEnable", backup.Enabled, RegistryValueKind.DWord);
             Restore(key, "ProxyServer", backup.Server);
             if ((key.GetValue("ProxyOverride") as string) == OwnedBypass) Restore(key, "ProxyOverride", backup.Bypass);
-            Notify();
         }
+        // Keep the encrypted recovery record until Windows confirms the refresh. If a
+        // previous attempt restored the values but notification failed, retry notification
+        // without overwriting a later owner's settings.
+        if (!Notify()) throw new IOException(L.T("系统代理恢复通知失败，恢复记录已保留"));
         File.Delete(_backupPath);
         }
     }

@@ -4,8 +4,8 @@ namespace Weave.Windows.Core;
 
 public enum ConnectionHealthState { Unchecked, Checking, Reachable, ProxyUnconfirmed, TunUnconfirmed }
 
-/// <summary>One bounded check after an explicit Connect. No cookies, identifiers,
-/// direct fallback for the proxy check, background polling, or TLS bypass.</summary>
+/// <summary>Bounded checks after explicit connection/recheck or a debounced network/resume event.
+/// No cookies, identifiers, direct fallback for the proxy check, periodic polling, or TLS bypass.</summary>
 public static class ConnectionHealth
 {
     private static readonly string[] Targets = ["https://www.google.com/generate_204", "https://www.youtube.com/generate_204"];
