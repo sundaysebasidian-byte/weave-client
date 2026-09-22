@@ -18,6 +18,7 @@ internal static class WindowActivation
             var title = new StringBuilder(64);
             GetWindowText(window, title, title.Capacity);
             if (title.ToString() != "Weave") return true;
+            AllowSetForegroundWindow(owner);
             found = PostMessage(window, Message, IntPtr.Zero, IntPtr.Zero);
             return !found;
         }, IntPtr.Zero);
@@ -30,4 +31,5 @@ internal static class WindowActivation
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int capacity);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint processId);
 }

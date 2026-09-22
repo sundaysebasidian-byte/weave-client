@@ -115,7 +115,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         return removed;
     }
 
-    public async Task EditAsync(SubscriptionRecord existing, string name, string source, CancellationToken token)
+    public async Task<bool> EditAsync(SubscriptionRecord existing, string name, string source, CancellationToken token,
+        Func<SubscriptionRecord, SubscriptionRecord, Task<bool>> confirm)
     {
         var parsed = source.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
             ? await _importer.ImportUrlAsync(name, source, token)
@@ -127,8 +128,11 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }).ToList();
         var updated = new SubscriptionRecord { Id = existing.Id, Name = parsed.Name, Source = parsed.Source,
             Payload = parsed.Payload, ProviderYaml = parsed.ProviderYaml, Nodes = nodes };
-        await Task.Run(() => _vault.Upsert(updated), token);
+        if (!await confirm(existing, updated)) return false;
+        token.ThrowIfCancellationRequested();
+        await Task.Run(() => _vault.ReplaceReviewed(existing, updated), token);
         ReplaceInCollection(updated);
+        return true;
     }
 
     public void AddOrReplaceRoute(WindowsAppRoute route)

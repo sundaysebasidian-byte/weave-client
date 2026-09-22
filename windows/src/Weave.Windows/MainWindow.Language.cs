@@ -39,7 +39,8 @@ public sealed partial class MainWindow
                 foreach (var node in nodes) node.RefreshLanguage();
             UpdateStatus(); UpdateNavigation(); RoutingMode_Changed(this, e);
             // Test rows and selections remain intact; transient notices are not stale-language history.
-            MessageText.Text = ""; NodeTestText.Text = "";
+            MessageText.Text = ""; NodeTestText.Text = ""; DiagnosticProgress.Text = "";
+            NodeComboBox.PlaceholderText = L.T(_missingFixedNodeId is null ? "自动选择 · 最低延迟" : "原固定节点已移除，请重新选择；不会自动切换出口");
             RefreshShareLanguage();
             Directory.CreateDirectory(Path.GetDirectoryName(LanguagePath)!);
             File.WriteAllText(LanguagePath, next);

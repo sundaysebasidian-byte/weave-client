@@ -39,12 +39,23 @@ jobs:
         shell: pwsh
         run: |
           $env:WEAVE_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP/weave-startup.txt"
+          function Wait-WeaveFrame($process) {
+            $deadline = (Get-Date).AddSeconds(20)
+            do {
+              $process.Refresh()
+              if ($process.HasExited) { break }
+              if (Test-Path ($env:WEAVE_UI_CAPTURE + '.ready')) { return }
+              Start-Sleep -Milliseconds 200
+            } while ((Get-Date) -lt $deadline)
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            throw "Window did not render a frame within 20 seconds: $env:WEAVE_UI_CAPTURE"
+          }
           $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
           $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop.png"
           Get-ChildItem windows/src/Weave.Windows/bin -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
           Get-ChildItem windows/artifacts/x64 -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-          Start-Sleep -Seconds 8
+          Wait-WeaveFrame $app
           if ($app.HasExited) {
             if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
             Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-2)} -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty Message
@@ -54,7 +65,7 @@ jobs:
           $env:WEAVE_PREVIEW_COMPACT = '1'
           $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-compact.png"
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-          Start-Sleep -Seconds 4
+          Wait-WeaveFrame $app
           if ($app.HasExited -or -not (Test-Path $env:WEAVE_UI_CAPTURE)) {
             if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
             throw 'Compact desktop layout failed'
@@ -65,7 +76,7 @@ jobs:
             $env:WEAVE_PREVIEW_THEME = "$theme"
             $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-$theme.png"
             $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-            Start-Sleep -Seconds 4
+            Wait-WeaveFrame $app
             if ($app.HasExited) { throw "Theme $theme failed to start" }
             Stop-Process -Id $app.Id
           }
@@ -73,14 +84,14 @@ jobs:
           $env:WEAVE_PREVIEW_WIDE = '1'
           $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-wide.png"
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-          Start-Sleep -Seconds 4
+          Wait-WeaveFrame $app
           if ($app.HasExited) { throw 'Wide desktop layout failed to start' }
           Stop-Process -Id $app.Id
           foreach ($page in @(1,2,3,4,5)) {
             $env:WEAVE_PREVIEW_PAGE = "$page"
             $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-page-$page.png"
             $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-            Start-Sleep -Seconds 4
+            Wait-WeaveFrame $app
             if ($app.HasExited) { throw "Page $page failed to start" }
             Stop-Process -Id $app.Id
           }
@@ -89,7 +100,7 @@ jobs:
             $env:WEAVE_PREVIEW_PAGE = "$page"
             $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-en-$page.png"
             $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-            Start-Sleep -Seconds 4
+            Wait-WeaveFrame $app
             if ($app.HasExited) { throw "English page $page failed to start" }
             if (-not (Test-Path $env:WEAVE_UI_CAPTURE)) { throw "English page $page did not render" }
             Stop-Process -Id $app.Id
@@ -99,7 +110,7 @@ jobs:
           $env:WEAVE_PREVIEW_SWITCH_LANGUAGE = '1'
           $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-live-language.png"
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
-          Start-Sleep -Seconds 4
+          Wait-WeaveFrame $app
           if ($app.HasExited -or -not (Test-Path $env:WEAVE_UI_CAPTURE)) {
             if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
             throw 'Live language switching failed'

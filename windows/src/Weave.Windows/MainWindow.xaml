@@ -44,7 +44,7 @@
 <Grid x:Name="ExitSelectors" Padding="20,16,20,18" ColumnSpacing="14" RowSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.3*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <ComboBox x:Name="SubscriptionComboBox" Header="{Binding Subscriptions, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged"/>
 <Grid x:Name="NodeSelection" Grid.Column="1" ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-<ComboBox x:Name="NodeComboBox" Header="{Binding Node, Source={StaticResource UiText}}" PlaceholderText="{Binding AutomaticLowestLatency, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName"/>
+                  <ComboBox x:Name="NodeComboBox" Header="{Binding Node, Source={StaticResource UiText}}" PlaceholderText="{Binding AutomaticLowestLatency, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName" SelectionChanged="DefaultNode_Changed"/>
 <Button x:Name="AutomaticNodeButton" Grid.Column="1" Padding="12,5" MinHeight="32" Content="{Binding Auto, Source={StaticResource UiText}}" Click="AutomaticNode_Click" VerticalAlignment="Bottom"/>
 </Grid></Grid>
 </StackPanel></ContentControl>

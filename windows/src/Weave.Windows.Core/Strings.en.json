@@ -361,5 +361,13 @@
   "正在核验网络": "Checking connectivity",
   "内核运行中 · 网络待确认": "Core running · Connectivity unconfirmed",
   "已连接 · TUN + 系统代理": "Connected · TUN + System proxy",
-  "网络待确认": "Connectivity unconfirmed"
+  "网络待确认": "Connectivity unconfirmed",
+  "订阅在预览期间已变化，请重新读取": "The subscription changed during review. Load it again.",
+  "新增节点": "Added nodes",
+  "移除节点": "Removed nodes",
+  "受影响的应用规则": "Affected app rules",
+  "仅列出前 40 个变化名称。确认后保存，当前连接仍使用旧配置，重新连接后生效。": "Up to 40 names per change category are listed. Confirm to save. The current connection keeps its old configuration until you reconnect.",
+  "原固定节点已移除，请重新选择；不会自动切换出口": "Your fixed node was removed. Select another node; the exit will not change automatically.",
+  "订阅更新预览": "Review subscription update",
+  "确认替换": "Confirm replacement"
 }

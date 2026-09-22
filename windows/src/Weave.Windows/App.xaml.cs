@@ -33,8 +33,13 @@ public partial class App : Application
                 {
                     using (process)
                     {
-                        if (process.Id == current.Id || process.SessionId != current.SessionId) continue;
-                        if (WindowActivation.TryShow(process.Id)) break;
+                        try
+                        {
+                            if (process.Id == current.Id || process.SessionId != current.SessionId) continue;
+                            if (WindowActivation.TryShow(process.Id)) break;
+                        }
+                        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+                        { /* Another instance may exit while its window is being found. */ }
                     }
                 }
                 Exit();

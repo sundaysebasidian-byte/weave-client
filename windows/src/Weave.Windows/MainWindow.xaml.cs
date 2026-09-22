@@ -115,6 +115,9 @@ public sealed partial class MainWindow : Window
         if (!_initialized) return;
         NodeComboBox.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
         NodeComboBox.SelectedItem = null;
+        _missingFixedNodeId = null;
+        if (SubscriptionComboBox.SelectedItem is not null) _missingSubscriptionId = null;
+        NodeComboBox.PlaceholderText = L.T("自动选择 · 最低延迟");
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -275,6 +278,11 @@ public sealed partial class MainWindow : Window
         }
 
         var subscription = SubscriptionComboBox.SelectedItem as SubscriptionRecord;
+        if (RoutingSelector.SelectedIndex != 2 && _missingFixedNodeId is not null)
+        {
+            MessageText.Text = L.T("原固定节点已移除，请重新选择；不会自动切换出口");
+            return;
+        }
         if (RoutingSelector.SelectedIndex != 2 && subscription is null)
         {
             MessageText.Text = L.T("请先导入并选择订阅");
@@ -393,7 +401,12 @@ public sealed partial class MainWindow : Window
         if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
     }
 
-    private void AutomaticNode_Click(object sender, RoutedEventArgs e) => NodeComboBox.SelectedItem = null;
+    private void AutomaticNode_Click(object sender, RoutedEventArgs e)
+    {
+        _missingFixedNodeId = null;
+        NodeComboBox.SelectedItem = null;
+        NodeComboBox.PlaceholderText = L.T("自动选择 · 最低延迟");
+    }
 
     private void Navigate_Click(object sender, RoutedEventArgs e)
     {
@@ -512,6 +525,7 @@ public sealed partial class MainWindow : Window
         var encoder = await global::Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(global::Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
         encoder.SetPixelData(global::Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, global::Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
         await encoder.FlushAsync();
+        File.WriteAllText(path + ".ready", "rendered");
     }
 
     private void ThemeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -586,8 +600,7 @@ public sealed partial class MainWindow : Window
             foreach (var record in selected)
             {
                 if (!record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) continue;
-                await _model.EditAsync(record, record.Name, record.Source, _lifetime.Token);
-                count++;
+                if (await UpdateSubscriptionWithReviewAsync(record, record.Name, record.Source)) count++;
             }
             MessageText.Text = L.F($"已更新 {count} 份远程订阅；本地文件需重新导入。分流引用的旧节点若已移除，需要重新选择。");
         });
@@ -606,7 +619,7 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog { Title = L.T("编辑订阅"), Content = panel, PrimaryButtonText = L.T("保存"),
             CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            await RunActionAsync(async () => { await _model.EditAsync(record, name.Text, url.Text, _lifetime.Token); MessageText.Text = L.T("订阅已保存"); });
+            await RunActionAsync(async () => { if (await UpdateSubscriptionWithReviewAsync(record, name.Text, url.Text)) MessageText.Text = L.T("订阅已保存"); });
     }
 
     private async void ExportSubscriptions_Click(object sender, RoutedEventArgs e)
@@ -731,8 +744,8 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var value = new Preferences((SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Id,
-                (NodeComboBox.SelectedItem as ProxyNode)?.Id, RoutingSelector.SelectedIndex, DnsSelector.SelectedIndex,
+            var value = new Preferences((SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Id ?? _missingSubscriptionId,
+                (NodeComboBox.SelectedItem as ProxyNode)?.Id ?? _missingFixedNodeId, RoutingSelector.SelectedIndex, DnsSelector.SelectedIndex,
                 Ipv6Toggle.IsOn, StunToggle.IsOn, CustomDnsBox.Text.Trim(), TunToggle.IsOn, ChinaDirectToggle.IsOn, ChainToggle.IsOn,
                 (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id, (ChainNode.SelectedItem as ProxyNode)?.Id, DomainRulesBox.Text);
             Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath)!);
@@ -754,6 +767,9 @@ public sealed partial class MainWindow : Window
             if (value is null) return;
             var record = _model.Subscriptions.FirstOrDefault(item => item.Id == value.SubscriptionId);
             if (record is not null) { SubscriptionComboBox.SelectedItem = record; NodeComboBox.SelectedItem = record.Nodes.FirstOrDefault(node => node.Id == value.NodeId); }
+            else if (value.SubscriptionId is not null) { SubscriptionComboBox.SelectedIndex = -1; _missingSubscriptionId = value.SubscriptionId; }
+            _missingFixedNodeId = value.NodeId is not null && NodeComboBox.SelectedItem is null ? value.NodeId : null;
+            NodeComboBox.PlaceholderText = L.T(_missingFixedNodeId is null ? "自动选择 · 最低延迟" : "原固定节点已移除，请重新选择；不会自动切换出口");
             RoutingSelector.SelectedIndex = Math.Clamp(value.Mode, 0, 2);
             DnsSelector.SelectedIndex = Math.Clamp(value.Dns, 0, 3);
             Ipv6Toggle.IsOn = value.Ipv6; StunToggle.IsOn = value.Stun; CustomDnsBox.Text = value.CustomDns;

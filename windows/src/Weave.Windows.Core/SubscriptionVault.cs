@@ -82,6 +82,24 @@ public sealed class SubscriptionVault
         }
     }
 
+    public void ReplaceReviewed(SubscriptionRecord expected, SubscriptionRecord replacement)
+    {
+        lock (_gate)
+        {
+            var records = ListUnsafe();
+            var index = records.FindIndex(record => record.Id == expected.Id);
+            if (replacement.Id != expected.Id || index < 0 ||
+                records[index].UpdatedAt != expected.UpdatedAt || records[index].Name != expected.Name ||
+                records[index].Source != expected.Source || records[index].Payload != expected.Payload ||
+                records[index].ProviderYaml != expected.ProviderYaml ||
+                !records[index].Nodes.Select(node => (node.Id, node.RawName, node.Protocol)).SequenceEqual(
+                    expected.Nodes.Select(node => (node.Id, node.RawName, node.Protocol))))
+                throw new InvalidOperationException(L.T("订阅在预览期间已变化，请重新读取"));
+            records[index] = replacement;
+            SaveUnsafe(records);
+        }
+    }
+
     private List<SubscriptionRecord> ListUnsafe()
     {
         if (!File.Exists(_path))
