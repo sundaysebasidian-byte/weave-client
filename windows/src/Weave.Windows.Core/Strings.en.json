@@ -369,5 +369,17 @@
   "仅列出前 40 个变化名称。确认后保存，当前连接仍使用旧配置，重新连接后生效。": "Up to 40 names per change category are listed. Confirm to save. The current connection keeps its old configuration until you reconnect.",
   "原固定节点已移除，请重新选择；不会自动切换出口": "Your fixed node was removed. Select another node; the exit will not change automatically.",
   "订阅更新预览": "Review subscription update",
-  "确认替换": "Confirm replacement"
+  "确认替换": "Confirm replacement",
+  "脱敏检测摘要": "Redacted diagnostic summary",
+  "预览脱敏摘要": "Preview redacted summary",
+  "已复制脱敏摘要": "Redacted summary copied",
+  "无法写入剪贴板，请重试": "Could not copy. Please try again.",
+  "仅包含检测状态与耗时，不含 IP、订阅或节点信息。复制后，其他应用可能读取剪贴板。": "Contains only test status and timing, without IP addresses, subscriptions or nodes. Other apps may read the clipboard after copying.",
+  "复制": "Copy",
+  "已确认": "Verified",
+  "需复核": "Review needed",
+  "连接超时": "Connection timed out",
+  "域名解析失败": "DNS resolution failed",
+  "TLS 握手失败": "TLS handshake failed",
+  "连接失败": "Connection failed"
 }

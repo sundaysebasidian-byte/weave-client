@@ -165,10 +165,20 @@
 <TextBlock Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}"/>
 <TextBlock Text="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <CheckBox x:Name="DiagnosticConsent" Content="{Binding AllowThisTestToContactIpifyAnd, Source={StaticResource UiText}}"/>
-<local:FlowPanel><Button Content="{Binding RunTests, Source={StaticResource UiText}}" Click="RunDiagnostics_Click"/><Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/></local:FlowPanel>
+<local:FlowPanel><Button Content="{Binding RunTests, Source={StaticResource UiText}}" Click="RunDiagnostics_Click"/><Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/><Button Content="{Binding PreviewSafeSummary, Source={StaticResource UiText}}" Click="PreviewDiagnostics_Click"/></local:FlowPanel>
 <TextBlock x:Name="DiagnosticEvidenceText" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <TextBlock x:Name="DiagnosticProgress" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}"/>
-<ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None" DisplayMemberPath="Summary"/>
+<ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None">
+  <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,10"/><Setter Property="IsTabStop" Value="False"/></Style></ListView.ItemContainerStyle>
+  <ListView.ItemTemplate><DataTemplate>
+    <Border Background="{ThemeResource WeaveGlassBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14">
+      <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel Spacing="6"><TextBlock Text="{Binding DisplayTitle}" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="{Binding Details}" TextWrapping="Wrap" FontSize="13" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel>
+        <Border Grid.Column="1" VerticalAlignment="Top" Background="{ThemeResource WeaveSelectionBrush}" CornerRadius="8" Padding="9,5"><TextBlock Text="{Binding EvidenceLabel}" FontSize="12"/></Border>
+      </Grid>
+    </Border>
+  </DataTemplate></ListView.ItemTemplate>
+</ListView>
 <local:FlowPanel><Button Content="{Binding WebRTCFingerprint, Source={StaticResource UiText}}" Click="BrowserPrivacy_Click"/><Button Content="{Binding DNSResolverTest, Source={StaticResource UiText}}" Click="DnsPrivacy_Click"/></local:FlowPanel>
 <TextBlock Text="{Binding TheBrowserLabOpensAnIsolatedWebView2, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 </StackPanel></ContentControl>

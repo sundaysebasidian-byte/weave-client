@@ -4,20 +4,31 @@ using System.Text.Json;
 
 namespace Weave.Windows.Core;
 
-public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null, int? HttpStatus = null) : System.ComponentModel.INotifyPropertyChanged
+public enum ProbeFailure { Timeout, Dns, Tls, Connection, InvalidResponse, Unknown }
+
+public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null, int? HttpStatus = null, ProbeFailure? Failure = null) : System.ComponentModel.INotifyPropertyChanged
 {
     public DateTimeOffset MeasuredAt { get; } = DateTimeOffset.Now;
     public bool EndpointVerified => HttpStatus is >= 200 and < 300;
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
-    public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(Summary)));
-    public string Summary
+    public bool ExitVerified => Name == "代理出口 IPv4" ? NetworkDiagnostics.IsExpectedExitAddress(Result, false) :
+        Name == "代理出口 IPv6" && NetworkDiagnostics.IsExpectedExitAddress(Result, true);
+    public string DisplayTitle => L.T(Name);
+    public string EvidenceLabel => L.T(EndpointVerified || ExitVerified ? "已确认" : "需复核");
+    public void RefreshLanguage()
+    {
+        foreach (var property in new[] { nameof(Summary), nameof(Details), nameof(DisplayTitle), nameof(EvidenceLabel) })
+            PropertyChanged?.Invoke(this, new(property));
+    }
+    public string Summary => $"{DisplayTitle} · {Details}";
+    public string Details
     {
         get
         {
             var result = HttpStatus is { } status ? EndpointVerified ? L.F($"可达 · HTTP {status}") :
                 status is >= 300 and < 400 ? L.T("发生重定向，最终服务尚未验证") :
                 L.F($"服务器已响应 HTTP {status}，不代表解锁") : L.T(Result);
-            return Milliseconds is { } ms ? $"{L.T(Name)} · {result} · {ms} ms" : $"{L.T(Name)} · {result}";
+            return Milliseconds is { } ms ? $"{result} · {ms} ms" : result;
         }
     }
 }
@@ -63,7 +74,8 @@ public static class NetworkDiagnostics
             catch (Exception error) when (error is HttpRequestException or OperationCanceledException)
             {
                 token.ThrowIfCancellationRequested();
-                return new ProbeResult(target.Name, "超时或连接失败");
+                var failure = ClassifyFailure(error);
+                return new ProbeResult(target.Name, FailureText(failure), Failure: failure);
             }
             finally { gate.Release(); }
         }
@@ -76,12 +88,14 @@ public static class NetworkDiagnostics
                 var text = await client.GetStringAsync(ipv6 ? "https://api6.ipify.org?format=json" : "https://api4.ipify.org?format=json", token).ConfigureAwait(false);
                 using var json = JsonDocument.Parse(text);
                 var value = json.RootElement.GetProperty("ip").GetString();
-                return new ProbeResult(name, IsExpectedExitAddress(value, ipv6) ? IPAddress.Parse(value!).ToString() : "响应无效");
+                return IsExpectedExitAddress(value, ipv6) ? new ProbeResult(name, IPAddress.Parse(value!).ToString()) :
+                    new ProbeResult(name, "响应无效", Failure: ProbeFailure.InvalidResponse);
             }
             catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
             {
                 token.ThrowIfCancellationRequested();
-                return new ProbeResult(name, "无法确认");
+                var failure = ClassifyFailure(error);
+                return new ProbeResult(name, FailureText(failure), Failure: failure);
             }
             finally { gate.Release(); }
         }
@@ -98,6 +112,26 @@ public static class NetworkDiagnostics
             .Concat(Targets.Select(target => PublishAsync(WebsiteAsync(target)))).ToArray();
         return await Task.WhenAll(jobs).ConfigureAwait(false);
     }
+
+    public static ProbeFailure ClassifyFailure(Exception error) => error switch
+    {
+        OperationCanceledException => ProbeFailure.Timeout,
+        HttpRequestException { HttpRequestError: HttpRequestError.NameResolutionError } => ProbeFailure.Dns,
+        HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } => ProbeFailure.Tls,
+        HttpRequestException { HttpRequestError: HttpRequestError.ConnectionError } => ProbeFailure.Connection,
+        JsonException or KeyNotFoundException or InvalidOperationException => ProbeFailure.InvalidResponse,
+        _ => ProbeFailure.Unknown,
+    };
+
+    private static string FailureText(ProbeFailure failure) => failure switch
+    {
+        ProbeFailure.Timeout => "连接超时",
+        ProbeFailure.Dns => "域名解析失败",
+        ProbeFailure.Tls => "TLS 握手失败",
+        ProbeFailure.Connection => "连接失败",
+        ProbeFailure.InvalidResponse => "响应无效",
+        _ => "无法确认",
+    };
 
     public static bool IsExpectedExitAddress(string? value, bool ipv6)
     {

@@ -469,6 +469,17 @@ public sealed partial class MainWindow : Window
         // Explicit CI-only render capture, never enabled during normal use.
         var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
         if (string.IsNullOrEmpty(path)) return;
+        if (_page == "4" && Environment.GetEnvironmentVariable("WEAVE_PREVIEW_DIAGNOSTICS") == "1")
+        {
+            // Synthetic evidence exclusively for CI layout review; no requests or user data.
+            DiagnosticResults.ItemsSource = new[] {
+                new ProbeResult("代理出口 IPv4", "8.8.8.8"),
+                new ProbeResult("Google", "", 28, 204),
+                new ProbeResult("ChatGPT", "", 145, 403),
+                new ProbeResult("X", "域名解析失败", Failure: ProbeFailure.Dns),
+            };
+            DiagnosticProgress.Text = "CI · synthetic layout fixture";
+        }
         await Task.Delay(700);
         double? previousNavigationTop = null;
         foreach (var button in new[] { Nav0, Nav1, Nav2, Nav4, Nav5, Nav3 })

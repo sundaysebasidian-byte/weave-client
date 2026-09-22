@@ -13,7 +13,7 @@ public sealed partial class MainWindow
     private async void DnsPrivacy_Click(object sender, RoutedEventArgs e) => await OpenPrivacyAsync(true);
     private async Task OpenPrivacyAsync(bool dns)
     {
-        if (_privacyOpen || _busy) return;
+        if (_privacyOpen || _summaryOpen || _busy) return;
         if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
         _privacyOpen = true;
         try { await RunPrivacySessionAsync(dns, bundle, _model.NetworkRevision); }

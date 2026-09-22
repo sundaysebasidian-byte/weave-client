@@ -51,6 +51,7 @@ jobs:
             throw "Window did not render a frame within 20 seconds: $env:WEAVE_UI_CAPTURE"
           }
           $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
+          $env:WEAVE_PREVIEW_DIAGNOSTICS = '1'
           $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop.png"
           Get-ChildItem windows/src/Weave.Windows/bin -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
           Get-ChildItem windows/artifacts/x64 -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
