@@ -7,7 +7,7 @@ public static class DiagnosticSafeSummary
 {
     public static string Build(IEnumerable<ProbeResult> evidence, bool historical)
     {
-        var rows = evidence.Take(64).ToArray();
+        var rows = evidence.Take(64).Where(row => !row.Pending).ToArray();
         var text = new StringBuilder("Weave Windows · diagnostic summary v1\n")
             .Append("historical=").Append(historical).AppendLine();
         foreach (var (name, ipv6) in new[] { ("代理出口 IPv4", false), ("代理出口 IPv6", true) })

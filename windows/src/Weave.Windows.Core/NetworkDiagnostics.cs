@@ -6,15 +6,15 @@ namespace Weave.Windows.Core;
 
 public enum ProbeFailure { Timeout, Dns, Tls, Connection, InvalidResponse, Unknown }
 
-public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null, int? HttpStatus = null, ProbeFailure? Failure = null) : System.ComponentModel.INotifyPropertyChanged
+public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null, int? HttpStatus = null, ProbeFailure? Failure = null, bool Pending = false) : System.ComponentModel.INotifyPropertyChanged
 {
     public DateTimeOffset MeasuredAt { get; } = DateTimeOffset.Now;
-    public bool EndpointVerified => HttpStatus is >= 200 and < 300;
+    public bool EndpointVerified => !Pending && HttpStatus is >= 200 and < 300;
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
-    public bool ExitVerified => Name == "代理出口 IPv4" ? NetworkDiagnostics.IsExpectedExitAddress(Result, false) :
-        Name == "代理出口 IPv6" && NetworkDiagnostics.IsExpectedExitAddress(Result, true);
+    public bool ExitVerified => !Pending && (Name == "代理出口 IPv4" ? NetworkDiagnostics.IsExpectedExitAddress(Result, false) :
+        Name == "代理出口 IPv6" && NetworkDiagnostics.IsExpectedExitAddress(Result, true));
     public string DisplayTitle => L.T(Name);
-    public string EvidenceLabel => L.T(EndpointVerified || ExitVerified ? "已确认" : "需复核");
+    public string EvidenceLabel => L.T(Pending ? "尚未检测" : EndpointVerified || ExitVerified ? "已确认" : "需复核");
     public void RefreshLanguage()
     {
         foreach (var property in new[] { nameof(Summary), nameof(Details), nameof(DisplayTitle), nameof(EvidenceLabel) })
@@ -25,8 +25,9 @@ public sealed record ProbeResult(string Name, string Result, long? Milliseconds 
     {
         get
         {
+            if (Pending) return "—";
             var result = HttpStatus is { } status ? EndpointVerified ? L.F($"可达 · HTTP {status}") :
-                status is >= 300 and < 400 ? L.T("发生重定向，最终服务尚未验证") :
+                status is >= 300 and < 400 ? $"HTTP {status} · {L.T("发生重定向，最终服务尚未验证")}" :
                 L.F($"服务器已响应 HTTP {status}，不代表解锁") : L.T(Result);
             return Milliseconds is { } ms ? $"{result} · {ms} ms" : result;
         }

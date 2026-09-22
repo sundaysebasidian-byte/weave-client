@@ -171,7 +171,7 @@
 <ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None">
   <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,10"/><Setter Property="IsTabStop" Value="False"/></Style></ListView.ItemContainerStyle>
   <ListView.ItemTemplate><DataTemplate>
-    <Border Background="{ThemeResource WeaveGlassBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14">
+    <Border Background="{ThemeResource WeaveGlassBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14" MinHeight="90">
       <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel Spacing="6"><TextBlock Text="{Binding DisplayTitle}" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="{Binding Details}" TextWrapping="Wrap" FontSize="13" Foreground="{ThemeResource WeaveMutedBrush}"/></StackPanel>
         <Border Grid.Column="1" VerticalAlignment="Top" Background="{ThemeResource WeaveSelectionBrush}" CornerRadius="8" Padding="9,5"><TextBlock Text="{Binding EvidenceLabel}" FontSize="12"/></Border>

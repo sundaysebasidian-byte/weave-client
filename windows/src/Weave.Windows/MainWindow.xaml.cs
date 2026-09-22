@@ -715,14 +715,17 @@ public sealed partial class MainWindow : Window
             cancellation.CancelAfter(TimeSpan.FromSeconds(45));
             _probeCancellation = cancellation;
             var revision = _model.NetworkRevision;
-            var rows = new System.Collections.ObjectModel.ObservableCollection<ProbeResult>();
+            var rows = new DiagnosticResultList();
+            DiagnosticResults.ItemsSource = rows;
+            _diagnosticsStale = true;
+            _diagnosticsMeasuredAt = null;
+            DiagnosticEvidenceText.Text = "";
             var acceptingProgress = true;
             var progress = new Progress<ProbeResult>(result =>
             {
                 if (!acceptingProgress || cancellation.IsCancellationRequested || !EvidenceStillCurrent(bundle, revision)) return;
-                if (rows.Count == 0) DiagnosticResults.ItemsSource = rows;
-                rows.Add(result);
-                DiagnosticProgress.Text = $"{rows.Count} / {NetworkDiagnostics.Targets.Count + 2}";
+                rows.Record(result);
+                DiagnosticProgress.Text = $"{rows.CompletedCount} / {rows.Count}";
             });
             DiagnosticProgress.Text = $"0 / {NetworkDiagnostics.Targets.Count + 2}";
             try
@@ -730,7 +733,7 @@ public sealed partial class MainWindow : Window
                 var results = await NetworkDiagnostics.RunAsync(bundle, cancellation.Token, progress);
                 cancellation.Token.ThrowIfCancellationRequested();
                 if (!EvidenceStillCurrent(bundle, revision)) return;
-                DiagnosticResults.ItemsSource = results;
+                foreach (var result in results) rows.Record(result);
                 _diagnosticsStale = false;
                 _diagnosticsMeasuredAt = DateTimeOffset.Now;
                 DiagnosticProgress.Text = L.T("本次检测已完成；可达不代表解锁或无泄漏");
@@ -739,7 +742,7 @@ public sealed partial class MainWindow : Window
             {
                 _diagnosticsStale = true;
                 DiagnosticProgress.Text = L.T("检测已停止，未完成项不作结论");
-                throw;
+                MessageText.Text = L.T("检测已停止，未完成项不作结论");
             }
             finally { acceptingProgress = false; _probeCancellation = null; DiagnosticConsent.IsChecked = false; }
         });

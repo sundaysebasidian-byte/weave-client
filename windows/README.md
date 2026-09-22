@@ -1,4 +1,6 @@
-# Weave Windows 0.4.2 RC3
+# Weave Windows 0.4.3 RC4
+
+RC4 keeps diagnostic cards in fixed slots during testing, distinguishes pending checks from measured evidence, preserves redirect status codes, and handles an intentional stop without showing unrelated connection/administrator errors. Partial or cancelled checks are not exported as completed measurements.
 
 RC3：网络与隐私检测改为分层证据卡片，单独标记确认状态、HTTP 状态和耗时；DNS、TLS、连接错误与超时分项提示。新增脱敏检测摘要预览/复制，只输出白名单状态字段，不包含出口 IP、订阅、节点、浏览器指纹或原始异常，复制时请求禁止剪贴板历史与跨设备漫游。检测依然由用户主动触发，不新增后台轮询。
 

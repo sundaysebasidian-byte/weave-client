@@ -1,4 +1,5 @@
 {
+  "尚未检测": "Not tested yet",
   "发生重定向，最终服务尚未验证": "Redirect received; final service not verified",
   "代理出口 IPv4": "Proxy exit IPv4",
   "代理出口 IPv6": "Proxy exit IPv6",
