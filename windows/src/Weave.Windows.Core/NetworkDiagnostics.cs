@@ -6,13 +6,16 @@ namespace Weave.Windows.Core;
 
 public sealed record ProbeResult(string Name, string Result, long? Milliseconds = null, int? HttpStatus = null) : System.ComponentModel.INotifyPropertyChanged
 {
+    public DateTimeOffset MeasuredAt { get; } = DateTimeOffset.Now;
+    public bool EndpointVerified => HttpStatus is >= 200 and < 300;
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(Summary)));
     public string Summary
     {
         get
         {
-            var result = HttpStatus is { } status ? status is >= 200 and < 400 ? L.F($"可达 · HTTP {status}") :
+            var result = HttpStatus is { } status ? EndpointVerified ? L.F($"可达 · HTTP {status}") :
+                status is >= 300 and < 400 ? L.T("发生重定向，最终服务尚未验证") :
                 L.F($"服务器已响应 HTTP {status}，不代表解锁") : L.T(Result);
             return Milliseconds is { } ms ? $"{L.T(Name)} · {result} · {ms} ms" : $"{L.T(Name)} · {result}";
         }
@@ -31,16 +34,23 @@ public static class NetworkDiagnostics
         ("Disney+", "https://www.disneyplus.com"),
     };
 
-    public static async Task<IReadOnlyList<ProbeResult>> RunAsync(RuntimeBundle bundle, CancellationToken token)
+    public static async Task<IReadOnlyList<ProbeResult>> RunAsync(RuntimeBundle bundle, CancellationToken token,
+        IProgress<ProbeResult>? progress = null)
     {
         using var handler = new SocketsHttpHandler
         {
             Proxy = new WebProxy($"http://127.0.0.1:{bundle.MixedPort}"), UseProxy = true,
-            AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(5),
+            AllowAutoRedirect = false, UseCookies = false, ConnectTimeout = TimeSpan.FromSeconds(5),
         };
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8), MaxResponseContentBufferSize = 32 * 1024 };
+        return await RunUsingClientAsync(client, token, progress).ConfigureAwait(false);
+    }
+
+    public static async Task<IReadOnlyList<ProbeResult>> RunUsingClientAsync(HttpClient client, CancellationToken token,
+        IProgress<ProbeResult>? progress = null)
+    {
         using var gate = new SemaphoreSlim(3);
-        var tasks = Targets.Select(async target =>
+        async Task<ProbeResult> WebsiteAsync((string Name, string Url) target)
         {
             await gate.WaitAsync(token).ConfigureAwait(false);
             var clock = Stopwatch.StartNew();
@@ -56,20 +66,52 @@ public static class NetworkDiagnostics
                 return new ProbeResult(target.Name, "超时或连接失败");
             }
             finally { gate.Release(); }
-        });
-        var results = (await Task.WhenAll(tasks).ConfigureAwait(false)).ToList();
-        try
-        {
-            var text = await client.GetStringAsync("https://api.ipify.org?format=json", token).ConfigureAwait(false);
-            using var json = JsonDocument.Parse(text);
-            var value = json.RootElement.GetProperty("ip").GetString();
-            results.Insert(0, new ProbeResult("代理出口 IP", IPAddress.TryParse(value, out var ip) ? ip.ToString() : "响应无效"));
         }
-        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException or KeyNotFoundException)
+        async Task<ProbeResult> IpAsync(bool ipv6)
         {
+            var name = ipv6 ? "代理出口 IPv6" : "代理出口 IPv4";
+            await gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                var text = await client.GetStringAsync(ipv6 ? "https://api6.ipify.org?format=json" : "https://api4.ipify.org?format=json", token).ConfigureAwait(false);
+                using var json = JsonDocument.Parse(text);
+                var value = json.RootElement.GetProperty("ip").GetString();
+                return new ProbeResult(name, IsExpectedExitAddress(value, ipv6) ? IPAddress.Parse(value!).ToString() : "响应无效");
+            }
+            catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                token.ThrowIfCancellationRequested();
+                return new ProbeResult(name, "无法确认");
+            }
+            finally { gate.Release(); }
+        }
+
+        async Task<ProbeResult> PublishAsync(Task<ProbeResult> task)
+        {
+            var result = await task.ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            results.Insert(0, new ProbeResult("代理出口 IP", "无法确认"));
+            progress?.Report(result);
+            return result;
         }
-        return results;
+        // IP and website evidence settle independently; a broken IPv6 path cannot hide IPv4.
+        var jobs = new[] { PublishAsync(IpAsync(false)), PublishAsync(IpAsync(true)) }
+            .Concat(Targets.Select(target => PublishAsync(WebsiteAsync(target)))).ToArray();
+        return await Task.WhenAll(jobs).ConfigureAwait(false);
+    }
+
+    public static bool IsExpectedExitAddress(string? value, bool ipv6)
+    {
+        if (!IPAddress.TryParse(value, out var address) || IPAddress.IsLoopback(address)) return false;
+        var bytes = address.GetAddressBytes();
+        if (ipv6)
+            return bytes.Length == 16 && (bytes[0] & 0xe0) == 0x20 &&
+                !(bytes[0] == 0x20 && bytes[1] == 1 && bytes[2] == 0x0d && bytes[3] == 0xb8);
+        if (bytes.Length != 4) return false;
+        return !(bytes[0] is 0 or 10 or 127 || bytes[0] >= 224 ||
+            bytes[0] == 100 && bytes[1] is >= 64 and <= 127 ||
+            bytes[0] == 169 && bytes[1] == 254 || bytes[0] == 172 && bytes[1] is >= 16 and <= 31 ||
+            bytes[0] == 192 && (bytes[1] == 168 || bytes[1] == 0 && bytes[2] is 0 or 2) ||
+            bytes[0] == 198 && (bytes[1] is 18 or 19 || bytes[1] == 51 && bytes[2] == 100) ||
+            bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113);
     }
 }

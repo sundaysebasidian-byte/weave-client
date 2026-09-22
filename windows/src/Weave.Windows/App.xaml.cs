@@ -33,8 +33,8 @@ public partial class App : Application
                 {
                     using (process)
                     {
-                        if (process.Id == current.Id || process.MainWindowHandle == IntPtr.Zero) continue;
-                        ShowWindow(process.MainWindowHandle, 9); SetForegroundWindow(process.MainWindowHandle); break;
+                        if (process.Id == current.Id || process.SessionId != current.SessionId) continue;
+                        if (WindowActivation.TryShow(process.Id)) break;
                     }
                 }
                 Exit();
@@ -46,11 +46,6 @@ public partial class App : Application
         }
         catch (Exception error) { RecordStartupFailure(error); throw; }
     }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr window, int command);
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr window);
 
     private static void RecordStartupFailure(Exception error)
     {

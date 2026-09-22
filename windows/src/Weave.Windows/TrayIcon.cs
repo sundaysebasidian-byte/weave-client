@@ -20,6 +20,8 @@ internal sealed class TrayIcon : IDisposable
         _window = window; _show = show; _exit = exit; _resume = resume;
         _procedure = HandleMessage;
         _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+        // Allow only the harmless show-window message across normal/elevated launches.
+        ChangeWindowMessageFilterEx(window, WindowActivation.Message, 1, IntPtr.Zero);
         ExtractIconEx(Environment.ProcessPath!, 0, out _icon, IntPtr.Zero, 1);
         if (!SetWindowSubclass(window, _procedure, new UIntPtr(90), IntPtr.Zero)) return;
         Add();
@@ -36,6 +38,7 @@ internal sealed class TrayIcon : IDisposable
         {
           if (!_disposed)
           {
+            if (message == WindowActivation.Message) { _show(); return IntPtr.Zero; }
             if (message == _taskbarCreated) Add();
             if (message == 0x218 && (wParam.ToInt64() == 7 || wParam.ToInt64() == 18)) _resume();
             if (message == CallbackMessage)
@@ -104,4 +107,5 @@ internal sealed class TrayIcon : IDisposable
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool ChangeWindowMessageFilterEx(IntPtr hwnd, uint message, uint action, IntPtr changeFilter);
 }

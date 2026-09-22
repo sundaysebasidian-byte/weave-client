@@ -25,6 +25,11 @@ public sealed partial class MainWindow : Window
     private bool _hiddenToTray;
     private int _idleTrafficSamples;
     private bool _trafficBusy;
+    private RuntimeBundle? _observedBundle;
+    private long _observedRevision;
+    private bool _observedConnected;
+    private bool _diagnosticsStale;
+    private DateTimeOffset? _diagnosticsMeasuredAt;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
 
     public MainWindow()
@@ -34,7 +39,7 @@ public sealed partial class MainWindow : Window
         foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, NetworkSettingsCard, PrivacySettingsCard, RoutesPanel, NodesPanel, DiagnosticsPanel, TransferPanel })
         {
             card.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
-            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 14 : 8);
+            card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 12 : 6);
         }
         SidebarSurface.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
         SidebarSurface.Translation = new System.Numerics.Vector3(0, 0, 8);
@@ -364,6 +369,23 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStatus()
     {
+        if (!ReferenceEquals(_observedBundle, _model.ActiveBundle) || _observedRevision != _model.NetworkRevision ||
+            _observedConnected != _model.IsConnected)
+        {
+            _probeCancellation?.Cancel();
+            _activePrivacyDialog?.Hide();
+            if (DiagnosticResults.ItemsSource is not null) _diagnosticsStale = true;
+            if (SubscriptionNodesList.ItemsSource is IEnumerable<NodeResult>)
+            {
+                SubscriptionNodesList.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
+                NodeTestText.Text = L.T("网络已变化，请重新测速");
+            }
+            _observedBundle = _model.ActiveBundle;
+            _observedRevision = _model.NetworkRevision;
+            _observedConnected = _model.IsConnected;
+        }
+        DiagnosticEvidenceText.Text = _diagnosticsStale ? L.T("历史结果：网络或节点已变化，请重新检测") :
+            _diagnosticsMeasuredAt is { } measured ? L.T("检测时间") + " · " + measured.ToString("g", L.Language == "en" ? System.Globalization.CultureInfo.GetCultureInfo("en-US") : System.Globalization.CultureInfo.GetCultureInfo("zh-CN")) : "";
         StatusText.Text = _model.Status;
         ConnectButton.Content = _connectCancellation is not null ? L.T("取消连接") : _model.IsConnected ? L.T("断开连接") : L.T("连接");
         HeroStatus.Text = !_model.IsConnected ? L.T("尚未连接") : _model.Health == ConnectionHealthState.Reachable ? L.T("已连接") : L.T("网络待确认");
@@ -511,7 +533,7 @@ public sealed partial class MainWindow : Window
         glass.GradientStops[0].Color = Color(palette.Paper);
         glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
         var topGlass = glass.GradientStops[0].Color; topGlass.A = 235;
-        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 220;
+        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 244;
         glass.GradientStops[0].Color = topGlass; glass.GradientStops[1].Color = bottomGlass;
         var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
         sidebar.TintColor = sidebar.FallbackColor = Color(palette.Paper);
@@ -533,10 +555,10 @@ public sealed partial class MainWindow : Window
         AtmosphericRibbons.Opacity = index >= 4 ? .55 : .16;
         Gradient("WeaveHeroBrush", Alpha(Mix(paper, accent, .02), 245), Alpha(Mix(paper, tint, .30), 230), Alpha(Mix(paper, accent, .05), 240));
         Gradient("WeaveIconBrush", Mix(paper, white, palette.Dark ? .10 : .9), Mix(paper, accent, palette.Dark ? .32 : .24));
-        Gradient("WeaveLightEdgeBrush", Alpha(Mix(paper, white, palette.Dark ? .36 : 1), 245),
+        Gradient("WeaveLightEdgeBrush", Alpha(Mix(paper, white, palette.Dark ? .22 : 1), 230),
             Alpha(Mix(paper, accent, .16), 95), Alpha(Mix(paper, white, palette.Dark ? .24 : .95), 225));
         Gradient("WeaveInnerEdgeBrush", Alpha(white, 12), Alpha(white, 4), Alpha(white, palette.Dark ? (byte)48 : (byte)170));
-        Gradient("WeaveSheenBrush", Alpha(white, palette.Dark ? (byte)12 : (byte)42), Alpha(white, 7), Alpha(white, 0), Alpha(white, 22));
+        Gradient("WeaveSheenBrush", Alpha(white, palette.Dark ? (byte)10 : (byte)54), Alpha(white, 5), Alpha(white, 0), Alpha(white, 16));
         Gradient("WeaveRibbonBrush", Alpha(tint, 0), Alpha(Mix(tint, accent, .24), 115), Alpha(tint, 38));
         Gradient("WeaveSelectionBrush", Alpha(Mix(paper, white, palette.Dark ? .1 : .8), 240),
             Alpha(Mix(paper, accent, palette.Dark ? .20 : .09), 240), Alpha(Mix(paper, tint, .3), 235));
@@ -637,6 +659,7 @@ public sealed partial class MainWindow : Window
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             _probeCancellation = cancellation;
+            var revision = _model.NetworkRevision;
             try
             {
                 using var controller = new MihomoController(bundle);
@@ -649,6 +672,8 @@ public sealed partial class MainWindow : Window
                     { cancellation.Token.ThrowIfCancellationRequested(); return new NodeResult(node, null); }
                     finally { gate.Release(); }
                 }));
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (!EvidenceStillCurrent(bundle, revision)) return;
                 SubscriptionNodesList.ItemsSource = results.OrderBy(result => result.Delay ?? int.MaxValue).ToArray();
                 NodeTestText.Text = L.F($"已测 {results.Length} 个，响应 {results.Count(result => result.Delay.HasValue)} 个。点击节点可选为默认出口，重新连接后生效。");
             }
@@ -663,11 +688,40 @@ public sealed partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            cancellation.CancelAfter(TimeSpan.FromSeconds(45));
             _probeCancellation = cancellation;
-            try { DiagnosticResults.ItemsSource = await NetworkDiagnostics.RunAsync(bundle, cancellation.Token); }
-            finally { _probeCancellation = null; DiagnosticConsent.IsChecked = false; }
+            var revision = _model.NetworkRevision;
+            var rows = new System.Collections.ObjectModel.ObservableCollection<ProbeResult>();
+            var acceptingProgress = true;
+            var progress = new Progress<ProbeResult>(result =>
+            {
+                if (!acceptingProgress || cancellation.IsCancellationRequested || !EvidenceStillCurrent(bundle, revision)) return;
+                if (rows.Count == 0) DiagnosticResults.ItemsSource = rows;
+                rows.Add(result);
+                DiagnosticProgress.Text = $"{rows.Count} / {NetworkDiagnostics.Targets.Count + 2}";
+            });
+            DiagnosticProgress.Text = $"0 / {NetworkDiagnostics.Targets.Count + 2}";
+            try
+            {
+                var results = await NetworkDiagnostics.RunAsync(bundle, cancellation.Token, progress);
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (!EvidenceStillCurrent(bundle, revision)) return;
+                DiagnosticResults.ItemsSource = results;
+                _diagnosticsStale = false;
+                _diagnosticsMeasuredAt = DateTimeOffset.Now;
+                DiagnosticProgress.Text = L.T("本次检测已完成；可达不代表解锁或无泄漏");
+            }
+            catch (OperationCanceledException)
+            {
+                _diagnosticsStale = true;
+                DiagnosticProgress.Text = L.T("检测已停止，未完成项不作结论");
+                throw;
+            }
+            finally { acceptingProgress = false; _probeCancellation = null; DiagnosticConsent.IsChecked = false; }
         });
     }
+    private bool EvidenceStillCurrent(RuntimeBundle bundle, long revision) => !_closed && _model.IsConnected &&
+        ReferenceEquals(bundle, _model.ActiveBundle) && revision == _model.NetworkRevision;
     private void StopDiagnostics_Click(object sender, RoutedEventArgs e) => _probeCancellation?.Cancel();
 
     private sealed record Preferences(string? SubscriptionId, string? NodeId, int Mode, int Dns, bool Ipv6, bool Stun, string CustomDns,
@@ -682,11 +736,9 @@ public sealed partial class MainWindow : Window
                 Ipv6Toggle.IsOn, StunToggle.IsOn, CustomDnsBox.Text.Trim(), TunToggle.IsOn, ChinaDirectToggle.IsOn, ChainToggle.IsOn,
                 (ChainSubscription.SelectedItem as SubscriptionRecord)?.Id, (ChainNode.SelectedItem as ProxyNode)?.Id, DomainRulesBox.Text);
             Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath)!);
-            var pending = PreferencesPath + ".pending";
             var data = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value);
-            try { File.WriteAllBytes(pending, new WindowsDpapiProtector().Protect(data)); }
+            try { AtomicFile.WriteAllBytes(PreferencesPath, new WindowsDpapiProtector().Protect(data)); }
             finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(data); }
-            File.Move(pending, PreferencesPath, overwrite: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { MessageText.Text = L.T("偏好暂未保存"); }
     }

@@ -107,8 +107,6 @@ public sealed class SubscriptionVault
         byte[] encrypted;
         try { encrypted = _protector.Protect(json); }
         finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(json); }
-        var pending = $"{_path}.{Guid.NewGuid():N}.pending";
-        File.WriteAllBytes(pending, encrypted);
-        File.Move(pending, _path, overwrite: true);
+        AtomicFile.WriteAllBytes(_path, encrypted);
     }
 }

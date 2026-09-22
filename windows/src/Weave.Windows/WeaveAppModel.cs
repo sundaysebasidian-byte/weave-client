@@ -18,6 +18,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public ConnectionHealthState Health { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
     private long _networkRevision;
+    public long NetworkRevision => Interlocked.Read(ref _networkRevision);
     public event EventHandler? StatusChanged;
     public WindowsNetworkOptions NetworkOptions { get; set; } = new();
 
@@ -270,6 +271,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         {
         var process = _process;
         _process = null;
+        Interlocked.Increment(ref _networkRevision);
         Exception? recoveryError = null;
         try { _systemProxy.Recover(); } catch (Exception error) { recoveryError = error; }
         try

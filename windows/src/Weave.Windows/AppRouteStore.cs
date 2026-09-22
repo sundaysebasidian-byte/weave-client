@@ -36,9 +36,7 @@ internal sealed class AppRouteStore
         }
 
         var json = JsonSerializer.SerializeToUtf8Bytes(routes.ToList(), Options);
-        var encrypted = _protector.Protect(json);
-        var pending = $"{_path}.{Guid.NewGuid():N}.pending";
-        File.WriteAllBytes(pending, encrypted);
-        File.Move(pending, _path, overwrite: true);
+        try { AtomicFile.WriteAllBytes(_path, _protector.Protect(json)); }
+        finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(json); }
     }
 }

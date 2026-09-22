@@ -166,6 +166,8 @@
 <TextBlock Text="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <CheckBox x:Name="DiagnosticConsent" Content="{Binding AllowThisTestToContactIpifyAnd, Source={StaticResource UiText}}"/>
 <local:FlowPanel><Button Content="{Binding RunTests, Source={StaticResource UiText}}" Click="RunDiagnostics_Click"/><Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/></local:FlowPanel>
+<TextBlock x:Name="DiagnosticEvidenceText" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}"/>
+<TextBlock x:Name="DiagnosticProgress" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}"/>
 <ListView x:Name="DiagnosticResults" MaxHeight="460" SelectionMode="None" DisplayMemberPath="Summary"/>
 <local:FlowPanel><Button Content="{Binding WebRTCFingerprint, Source={StaticResource UiText}}" Click="BrowserPrivacy_Click"/><Button Content="{Binding DNSResolverTest, Source={StaticResource UiText}}" Click="DnsPrivacy_Click"/></local:FlowPanel>
 <TextBlock Text="{Binding TheBrowserLabOpensAnIsolatedWebView2, Source={StaticResource UiText}}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}"/>

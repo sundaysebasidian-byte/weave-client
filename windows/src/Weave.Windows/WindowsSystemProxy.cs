@@ -25,7 +25,7 @@ internal sealed class WindowsSystemProxy
         var old = new Backup(Convert.ToInt32(key.GetValue("ProxyEnable", 0)), key.GetValue("ProxyServer") as string, key.GetValue("ProxyOverride") as string, server);
         Directory.CreateDirectory(Path.GetDirectoryName(_backupPath)!);
         var plain = JsonSerializer.SerializeToUtf8Bytes(old);
-        try { File.WriteAllBytes(_backupPath, new WindowsDpapiProtector().Protect(plain)); }
+        try { AtomicFile.WriteAllBytes(_backupPath, new WindowsDpapiProtector().Protect(plain)); }
         finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(plain); }
         try
         {
