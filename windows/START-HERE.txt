@@ -19,7 +19,7 @@ No subscription is included. Import your own trusted configuration.
 Connected means the authenticated core, configured providers and TUN adapter are ready; it is not proof of internet reachability,
 DNS protection or successful IPv6 routing. Windows 10/11 real-device testing is pending.
 Disconnect before quitting. No automatic update or public release is performed.
-Installer version: Windows 0.4.1 RC2. Uninstalling preserves encrypted user subscriptions.
+Installer version: Windows 0.4.2 RC3. Uninstalling preserves encrypted user subscriptions.
 Closing the window keeps Weave in the tray. Right-click the tray icon to disconnect and quit.
 Network changes and resume trigger a bounded connectivity check, not a silent switch to DIRECT.
 Language: Settings > Personalization > Language. Chinese and English switch immediately without restarting the proxy.
