@@ -18,7 +18,9 @@ internal class UnderlyingNetworkMonitor(
     private val connectivityManager: ConnectivityManager,
     private val onNetworkChanged: (List<Network>) -> Unit,
     private val onUnavailable: (List<Network>) -> Unit,
+    private val onPathChanged: (Network) -> Unit = {},
 ) {
+    private val paths = NetworkPathChanges<Network, List<String>>()
     private val tracker = NetworkAvailabilityTracker<Network>()
     private val capabilityLock = Any()
     private val capabilities = mutableMapOf<Network, NetworkCapabilities>()
@@ -65,7 +67,7 @@ internal class UnderlyingNetworkMonitor(
             // last-resort fallback, but prefer a newly available Wi-Fi/cellular network so new
             // protected sockets do not continue opening on a route that is about to disappear.
             synchronized(capabilityLock) {
-                losingUntil[network] = System.currentTimeMillis() + maxMsToLive
+                losingUntil[network] = android.os.SystemClock.elapsedRealtime() + maxMsToLive
             }
             publishCurrent(force = true)
         }
@@ -78,7 +80,18 @@ internal class UnderlyingNetworkMonitor(
             // DHCP, IPv6 prefix and carrier DNS changes do not necessarily change capabilities.
             // They still invalidate a long-lived protected socket path, so feed the same debounced
             // recovery path used for a Wi-Fi/cellular handover.
-            publishCurrent(force = true)
+            val snapshot = listOf(
+                linkProperties.interfaceName.orEmpty(),
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    linkProperties.mtu.toString()
+                } else "",
+                linkProperties.linkAddresses.map { it.toString() }.sorted().joinToString(),
+                linkProperties.routes.map { it.toString() }.sorted().joinToString(),
+                linkProperties.dnsServers.joinToString { it.hostAddress.orEmpty() },
+            )
+            val changed = paths.changed(network, snapshot)
+            publishCurrent(force = changed)
+            if (changed && orderedNetworks().firstOrNull() == network) onPathChanged(network)
         }
 
         override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
@@ -121,6 +134,7 @@ internal class UnderlyingNetworkMonitor(
         registered = false
         runCatching { connectivityManager.unregisterNetworkCallback(callback) }
         tracker.clear()
+        paths.clear()
         synchronized(capabilityLock) {
             capabilities.clear()
             blockedNetworks.clear()
@@ -205,6 +219,7 @@ internal class UnderlyingNetworkMonitor(
         synchronized(capabilityLock) { network in blockedNetworks }
 
     private fun forgetNetwork(network: Network) {
+        paths.remove(network)
         synchronized(capabilityLock) {
             capabilities -= network
             blockedNetworks -= network
@@ -213,7 +228,7 @@ internal class UnderlyingNetworkMonitor(
     }
 
     private fun isLosing(network: Network): Boolean = synchronized(capabilityLock) {
-        losingUntil[network]?.let { it > System.currentTimeMillis() } == true
+        losingUntil[network]?.let { it > android.os.SystemClock.elapsedRealtime() } == true
     }
 
     private fun networkPreference(capabilities: NetworkCapabilities?): Int = when {

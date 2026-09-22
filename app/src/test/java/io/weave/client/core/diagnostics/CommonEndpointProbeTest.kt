@@ -3,6 +3,8 @@ package io.weave.client.core.diagnostics
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,10 +62,11 @@ class CommonEndpointProbeTest {
         runBlocking { CommonEndpointProbe(transport = transport).run() }
 
         assertTrue("expected concurrent site probes", maximum.get() >= 2)
+        assertTrue("probe concurrency must remain bounded", maximum.get() <= 3)
     }
 
     @Test
-    fun `unlock redirects stay conservative while ordinary redirects prove reachability`() {
+    fun `redirects never prove final destination reachability`() {
         val transport = CommonEndpointHttpTransport { url, _ ->
             CommonEndpointHttpResponse(
                 statusCode = if (url.contains("netflix")) 302 else 302,
@@ -80,8 +83,36 @@ class CommonEndpointProbeTest {
             report.results.first { it.endpoint.id == "netflix" }.state,
         )
         assertEquals(
-            CommonEndpointState.VERIFIED,
+            CommonEndpointState.ATTENTION,
             report.results.first { it.endpoint.id == "x" }.state,
         )
+    }
+
+    @Test fun `each completed endpoint is published without duplicate results`() {
+        val seen = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val report = runBlocking {
+            CommonEndpointProbe(CommonEndpointHttpTransport { _, _ -> CommonEndpointHttpResponse(204, 3) })
+                .run(onResult = { seen.add(it.endpoint.id) })
+        }
+        assertEquals(report.results.map { it.endpoint.id }.toSet(), seen.toSet())
+        assertEquals(9, seen.size)
+    }
+
+    @Test fun `cancellation is not translated into a connection failure`() {
+        val seen = AtomicInteger()
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                CommonEndpointProbe(CommonEndpointHttpTransport { _, _ -> throw CancellationException("cancelled") })
+                    .run(onResult = { seen.incrementAndGet() })
+            }
+        }
+        assertEquals(0, seen.get())
+    }
+
+    @Test fun `dns error category excludes raw request details`() {
+        val report = runBlocking {
+            CommonEndpointProbe(CommonEndpointHttpTransport { _, _ -> throw java.net.UnknownHostException("private-secret.example") }).run()
+        }
+        assertTrue(report.results.all { it.failure == EndpointFailure.DNS && !it.detail.contains("private-secret") })
     }
 }

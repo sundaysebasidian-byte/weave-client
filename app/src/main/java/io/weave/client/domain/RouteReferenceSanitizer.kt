@@ -1,12 +1,12 @@
 package io.weave.client.domain
 
 /**
- * Removes stale references before they reach the running Mihomo profile.
+ * Prevents stale references from silently choosing a different exit.
  *
  * Subscription deletion normally reconciles these references immediately. This second, startup
  * boundary also covers interrupted deletes, old app versions, and a node disappearing during a
- * subscription refresh. Invalid app rules are removed (so the app falls back to the default
- * route); a fixed rule whose subscription still exists is safely downgraded to automatic.
+ * subscription refresh. Invalid app exits are blocked instead of silently changing egress.
+ * Invalid default targets are retained for strict configuration validation.
  */
 object RouteReferenceSanitizer {
     fun routes(
@@ -15,22 +15,22 @@ object RouteReferenceSanitizer {
         nodes: List<ProxyNode>,
     ): List<AppRoute> {
         val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
-        return routes.mapNotNull { route ->
+        return routes.map { route ->
             val target = route.target
             when (target.kind) {
                 RouteKind.DIRECT -> route.copy(target = target.copy(label = "直连"))
-                RouteKind.BLOCK -> route.copy(target = target.copy(label = "阻止联网"))
+                RouteKind.BLOCK -> route.copy(target = target.copy(label =
+                    if (target.nodeId != null || target.subscriptionId != null) "出口已失效，请重新选择" else "阻止联网"))
                 RouteKind.AUTO -> {
                     if (target.subscriptionId in subscriptionIds) {
                         route.copy(target = target.copy(label = "自动选择"))
                     } else {
-                        null
+                        route.copy(target = target.copy(kind = RouteKind.BLOCK, label = "出口已失效，请重新选择"))
                     }
                 }
                 RouteKind.FIXED -> {
                     val subscriptionId = target.subscriptionId
-                    val subscriptionExists = subscriptionId in subscriptionIds
-                    val nodeExists = nodes.any {
+                    val nodeExists = subscriptionId in subscriptionIds && nodes.any {
                         it.subscriptionId == subscriptionId && it.id == target.nodeId
                     }
                     when {
@@ -44,14 +44,8 @@ object RouteReferenceSanitizer {
                                 ),
                             ),
                         )
-                        subscriptionExists -> route.copy(
-                            target = RouteTarget(
-                                kind = RouteKind.AUTO,
-                                label = "自动选择",
-                                subscriptionId = subscriptionId,
-                            ),
-                        )
-                        else -> null
+                        else -> route.copy(target = target.copy(kind = RouteKind.BLOCK,
+                            label = "出口已失效，请重新选择"))
                     }
                 }
             }
@@ -66,14 +60,13 @@ object RouteReferenceSanitizer {
         target ?: return null
         return when (target.kind) {
             RouteKind.DIRECT -> target.copy(label = "直连")
-            RouteKind.BLOCK -> null
+            RouteKind.BLOCK -> target
             RouteKind.AUTO -> if (subscriptions.any { it.id == target.subscriptionId }) {
                 target.copy(label = "自动选择")
             } else {
                 // A deleted proxy target is not user consent to expose the physical address.
-                // Null lets the runtime select another usable subscription and fail closed when
-                // none exists; DIRECT is preserved only when it was explicitly selected above.
-                null
+                // Preserve the invalid reference so strict validation requires a new choice.
+                target.copy(label = "出口已失效，请重新选择")
             }
             RouteKind.FIXED -> {
                 val node = nodes.firstOrNull {
@@ -81,12 +74,7 @@ object RouteReferenceSanitizer {
                 }
                 when {
                     node != null -> target.copy(label = NodeDisplayName.core(node.name))
-                    subscriptions.any { it.id == target.subscriptionId } -> RouteTarget(
-                        kind = RouteKind.AUTO,
-                        label = "自动选择",
-                        subscriptionId = target.subscriptionId,
-                    )
-                    else -> null
+                    else -> target.copy(label = "出口已失效，请重新选择")
                 }
             }
         }

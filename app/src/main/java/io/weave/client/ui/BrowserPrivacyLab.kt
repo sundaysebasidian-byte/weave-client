@@ -67,6 +67,7 @@ internal data class BrowserPrivacyResult(
     val webrtcSupported: Boolean,
     val candidates: List<BrowserIceCandidate>,
     val error: String?,
+    val generatedAtEpochMillis: Long = System.currentTimeMillis(),
 )
 
 @Composable
@@ -335,6 +336,7 @@ internal fun PrivacyProbeWebView(
                 settings.setSupportMultipleWindows(false)
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 settings.safeBrowsingEnabled = true
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
                 val client = PrivacyProbeClient(
                     onResult = onResult,
                     onError = onError,
@@ -377,12 +379,12 @@ internal fun releasePrivacyProbeWebView(view: WebView?) {
     runCatching { view.destroy() }
 }
 
-private class PrivacyProbeHostWebView(context: Context) : WebView(context) {
+internal class PrivacyProbeHostWebView(context: Context) : WebView(context) {
     val released = AtomicBoolean(false)
     var probeClient: PrivacyProbeClient? = null
 }
 
-private class PrivacyProbeClient(
+internal class PrivacyProbeClient(
     private val onResult: (BrowserPrivacyResult) -> Unit,
     private val onError: (String) -> Unit,
 ) : WebViewClient() {
@@ -407,6 +409,14 @@ private class PrivacyProbeClient(
         if (pollingStarted || !isActive(view)) return
         pollingStarted = true
         pollReport(view, attempt = 0)
+    }
+
+    override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+        // Handle both a renderer crash and a low-memory kill without crashing the VPN process.
+        pendingPoll?.let { view.removeCallbacks(it) }
+        deliverError(view, "浏览器检测已中断，请重新检测")
+        releasePrivacyProbeWebView(view)
+        return true
     }
 
     private fun isActive(view: WebView): Boolean =

@@ -1,6 +1,9 @@
 package io.weave.client.ui
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,12 +54,29 @@ import io.weave.client.core.diagnostics.ObservatoryState
 import io.weave.client.core.diagnostics.CommonEndpointResult
 import io.weave.client.core.diagnostics.CommonEndpointState
 import io.weave.client.core.diagnostics.CommonEndpointKind
+import io.weave.client.core.diagnostics.DiagnosticSafeSummary
+import io.weave.client.BuildConfig
 import io.weave.client.core.diagnostics.PrivacyObservation
 import io.weave.client.core.diagnostics.PrivacyObservationReport
 import io.weave.client.core.ipquality.IpQualityCheck
 import io.weave.client.core.ipquality.IpQualityLatency
 import io.weave.client.core.ipquality.IpQualityReport
 import io.weave.client.core.ipquality.IpQualityState
+
+@Composable
+private fun DiagnosticMeasurementTime(epochMillis: Long) {
+    val language = LocalWeaveLanguage.current
+    val time = remember(epochMillis, language) {
+        java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.SHORT, java.text.DateFormat.MEDIUM,
+            java.util.Locale.forLanguageTag(language.localeTag),
+        ).format(java.util.Date(epochMillis))
+    }
+    Text(
+        localizeWeaveText("检测时间", language) + " · " + time,
+        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
 
 /**
  * The single diagnostics surface exposed by the app. It intentionally keeps local evidence,
@@ -77,11 +98,15 @@ internal fun NetworkPrivacyCenterDialog(
     onOpenVpnSettings: () -> Unit,
     downloadState: DownloadProbeState,
     onDownloadProbe: () -> Unit,
+    onCancel: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val language = LocalWeaveLanguage.current
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var summaryPreview by remember { mutableStateOf<String?>(null) }
+    var summaryCopied by remember(report, ipQualityState.report, endpointState.report, browserResult,
+        ipQualityState.stale, endpointState.stale) { mutableStateOf(false) }
     val browserRunning = browserProbeRunId > 0 && browserResult == null && browserError == null
     val running = ipQualityState.running || endpointState.running || browserRunning || downloadState.running
 
@@ -95,6 +120,30 @@ internal fun NetworkPrivacyCenterDialog(
         onDispose {
             releasePrivacyProbeWebView(ownedWebView)
         }
+    }
+
+    summaryPreview?.let { snapshot ->
+        AlertDialog(
+            onDismissRequest = { summaryPreview = null },
+            title = { Text(l("脱敏检测摘要")) },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item { Text(l("仅包含检测状态与耗时，不含 IP、订阅或节点信息。复制后，其他应用可能读取剪贴板。")) }
+                    item { Text(snapshot, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp) }
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                try {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Weave diagnostics", snapshot))
+                    summaryCopied = true
+                    summaryPreview = null
+                } catch (error: Exception) {
+                    android.widget.Toast.makeText(context, l("无法写入剪贴板，请重试"), android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }) { Text(l("复制")) } },
+            dismissButton = { TextButton(onClick = { summaryPreview = null }) { Text(l("取消")) } },
+        )
     }
 
     AlertDialog(
@@ -131,7 +180,7 @@ internal fun NetworkPrivacyCenterDialog(
                     }
                 }
             LazyColumn(
-                modifier = Modifier.heightIn(max = 650.dp),
+                modifier = Modifier.heightIn(max = 650.dp).testTag("network-privacy-list"),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -145,6 +194,13 @@ internal fun NetworkPrivacyCenterDialog(
                 item {
                     TextButton(onClick = onOpenVpnSettings, modifier = Modifier.fillMaxWidth()) {
                         Text(l("系统 VPN 设置"))
+                    }
+                    TextButton(onClick = {
+                        summaryPreview = DiagnosticSafeSummary.build(BuildConfig.VERSION_NAME, report,
+                            ipQualityState.report, endpointState.report, ipQualityState.stale || endpointState.stale,
+                            browserResult != null, browserResult?.candidates?.size ?: 0)
+                    }, enabled = !running, modifier = Modifier.fillMaxWidth()) {
+                        Text(l(if (summaryCopied) "已复制脱敏摘要" else "预览脱敏摘要"))
                     }
                 }
                 item {
@@ -177,6 +233,13 @@ internal fun NetworkPrivacyCenterDialog(
                             Text(l("仅重新检测浏览器表面"))
                         }
                     }
+                }
+                if (running) {
+                    item { TextButton(onClick = onCancel) { Text(l("取消检测")) } }
+                }
+                if (ipQualityState.stale || endpointState.stale) {
+                    item { Text(l("历史结果：节点、网络或配置已变化，请重新检测。"),
+                        color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                 }
                 item {
                     TextButton(onClick = onDownloadProbe, enabled = !running, modifier = Modifier.fillMaxWidth()) {
@@ -227,6 +290,10 @@ internal fun NetworkPrivacyCenterDialog(
                 }
 
                 item { DiagnosticsSectionTitle(l("IP 出口质量"), Icons.Rounded.Language) }
+                item {
+                    Text(l("结果仅代表检测当时的出口；切换节点或网络后请重测。刷新期间保留上次结果，不代表本次成功。"),
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (ipQualityState.running && ipQualityState.report == null) {
                     item {
                         DiagnosticProgress(
@@ -239,6 +306,7 @@ internal fun NetworkPrivacyCenterDialog(
                 }
                 if (ipQualityState.report != null) {
                     val ipReport = requireNotNull(ipQualityState.report)
+                    item { DiagnosticMeasurementTime(ipReport.generatedAtEpochMillis) }
                     item { NetworkIpIdentityCard(ipReport) }
                     item { NetworkLatencySummary(ipReport) }
                     items(
@@ -273,19 +341,24 @@ internal fun NetworkPrivacyCenterDialog(
                         lineHeight = 17.sp,
                     )
                 }
-                if (endpointState.running && endpointState.report == null) {
-                    item { DiagnosticProgress(label = l("正在测试常用站点…")) }
+                if (endpointState.running) {
+                    item { DiagnosticProgress(label = l("正在测试常用站点…") + " ${endpointState.progress.size} / ${io.weave.client.core.diagnostics.CommonEndpointProbe.COMMON_ENDPOINTS.size}") }
                 }
                 endpointState.error?.let { error ->
                     item { Text(l(error), color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                 }
-                if (endpointState.report != null) {
+                if (endpointState.running || endpointState.report != null) {
+                    val visibleResults = if (endpointState.running) endpointState.progress else endpointState.report!!.results
+                    val byId = visibleResults.associateBy { it.endpoint.id }
+                    // Fixed keyed slots prevent faster requests from moving cards under the finger.
+                    items(io.weave.client.core.diagnostics.CommonEndpointProbe.COMMON_ENDPOINTS,
+                        key = { "endpoint:${it.id}" }, contentType = { "common-endpoint" }) { endpoint ->
+                        CommonEndpointRow(byId[endpoint.id], endpoint)
+                    }
+                }
+                if (endpointState.report != null && !endpointState.running) {
                     val endpointReport = requireNotNull(endpointState.report)
-                    items(
-                        items = endpointReport.results,
-                        key = { it.endpoint.id },
-                        contentType = { "common-endpoint" },
-                    ) { result -> CommonEndpointRow(result) }
+                    item { DiagnosticMeasurementTime(endpointReport.generatedAtEpochMillis) }
                     item {
                         Text(
                             l("可达 ${endpointReport.availableCount}/${endpointReport.results.size} 项 · ${endpointReport.elapsedMillis} ms"),
@@ -315,6 +388,11 @@ internal fun NetworkPrivacyCenterDialog(
 
                 browserResult?.let { browser ->
                     item { DiagnosticsSectionTitle(l("浏览器隐私表面"), Icons.Rounded.Visibility) }
+                    item {
+                        DiagnosticMeasurementTime(browser.generatedAtEpochMillis)
+                        Text(l("仅检测应用内 WebView，不代表 Chrome 或其他应用的隐私状态。"),
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     item { BrowserIdentitySummary(browser, language) }
                     item { WebRtcExitCrossCheck(browser, ipQualityState, language) }
                     item { BrowserCandidatesSummary(browser, language) }
@@ -416,6 +494,8 @@ private fun DiagnosticsSummary(
                     label = localizeWeaveText("IP 出口", language),
                     value = ipLabel,
                 )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DiagnosticMetric(
                     modifier = Modifier.weight(1f),
                     label = localizeWeaveText("浏览器", language),
@@ -456,11 +536,11 @@ private fun DiagnosticMetric(modifier: Modifier, label: String, value: String) {
         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-            Text(value, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text(value, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1)
         }
     }
 }
@@ -606,46 +686,65 @@ private fun NetworkIpCheckRow(check: IpQualityCheck) {
 }
 
 @Composable
-private fun CommonEndpointRow(result: CommonEndpointResult) {
+private fun CommonEndpointRow(result: CommonEndpointResult?, endpoint: io.weave.client.core.diagnostics.CommonEndpoint) {
     val language = LocalWeaveLanguage.current
-    val (icon, color, label) = when (result.state) {
-        CommonEndpointState.VERIFIED -> Triple(
+    val (icon, color, label) = when {
+        result == null -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "尚未检测")
+        result.failure != null -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "未响应")
+        result.statusCode?.let { it in 300..399 } == true -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "需复核")
+        result.state == CommonEndpointState.VERIFIED -> Triple(
             Icons.Rounded.CheckCircle,
             MaterialTheme.colorScheme.secondary,
-            if (result.endpoint.kind == CommonEndpointKind.UNLOCK_ENTRY) "入口可用" else "可达",
+            if (endpoint.kind == CommonEndpointKind.UNLOCK_ENTRY) "入口可用" else "可达",
         )
-        CommonEndpointState.ATTENTION -> Triple(
+        result.state == CommonEndpointState.ATTENTION -> Triple(
             Icons.Rounded.Warning,
             MaterialTheme.colorScheme.error,
-            if (result.endpoint.kind == CommonEndpointKind.UNLOCK_ENTRY) "可能受限" else "受限",
+            if (endpoint.kind == CommonEndpointKind.UNLOCK_ENTRY) "可能受限" else "受限",
         )
-        CommonEndpointState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
+        else -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
     }
+    LiquidGlassPanel(modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), elevation = 0.dp) {
+    Column(modifier = Modifier.heightIn(min = 92.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = localizeWeaveText(label, language), tint = color, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(result.endpoint.label, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            Text(result.endpoint.host, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            Text(endpoint.label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(endpoint.host, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(localizeWeaveText(label, language), color = color, fontSize = 10.sp)
+            Surface(color = color.copy(alpha = 0.08f), shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)) {
+                Text(localizeWeaveText(label, language), color = color, fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+            }
             Text(
                 buildString {
-                    result.latencyMs?.let { append(it).append(" ms") }
-                    result.statusCode?.let {
+                    result?.latencyMs?.let { append(it).append(" ms") }
+                    result?.statusCode?.let {
                         if (isNotEmpty()) append(" · ")
                         append("HTTP ").append(it)
                     }
-                    if (isEmpty()) append(localizeWeaveText("未响应", language))
+                    if (isEmpty()) append(if (result == null) "—" else localizeWeaveText("未响应", language))
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 10.sp,
             )
         }
+    }
+    if (result != null && result.state != CommonEndpointState.VERIFIED && result.statusCode == null) {
+        Text(localizeWeaveText(result.detail, language), color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp, lineHeight = 16.sp)
+    }
+    if (result?.statusCode?.let { it in 300..399 } == true) {
+        Text(localizeWeaveText("重定向不代表最终站点可达", language), color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp, lineHeight = 16.sp)
+    }
+    }
     }
 }
 

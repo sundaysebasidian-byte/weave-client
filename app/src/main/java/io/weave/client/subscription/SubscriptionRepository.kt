@@ -26,6 +26,60 @@ class SubscriptionRepository(
     )
     private val preparation = SubscriptionPreparation(providerResolver, parser)
     private val contentResolver = context.applicationContext.contentResolver
+    private data class PendingUpdate(val preview: SubscriptionUpdatePreview, val revision: String,
+        val name: String, val source: String, val prepared: PreparedSubscription, val diff: SubscriptionDiff,
+        val expiresAtNanos: Long)
+    @Volatile private var pendingUpdate: PendingUpdate? = null
+
+    suspend fun previewRemote(id: String, name: String, rawUrl: String): SubscriptionUpdatePreview = withContext(Dispatchers.IO) {
+        pendingUpdate = null
+        val fetched = safeFetcher.fetch(rawUrl)
+        prepareReview(id, name, SubscriptionRequestCompatibility.adapt(java.net.URI(rawUrl.trim())).toString(),
+            fetched.body, fetched.finalUri.toString())
+    }
+
+    suspend fun previewFile(id: String, name: String, uri: Uri): SubscriptionUpdatePreview = withContext(Dispatchers.IO) {
+        pendingUpdate = null
+        val body = contentResolver.openInputStream(uri)?.use(localReader::read)
+            ?: throw SubscriptionImportException("无法读取所选订阅文件")
+        prepareReview(id, name, LOCAL_IMPORT_SOURCE, body, LOCAL_IMPORT_SOURCE)
+    }
+
+    private fun prepareReview(id: String, name: String, source: String, payload: String, resolutionSource: String): SubscriptionUpdatePreview {
+        val previous = requireNotNull(store.get(id)) { "订阅不存在" }
+        val oldSource = store.readUrl(id)
+        val revision = subscriptionRevision(previous, store.readPayload(id), oldSource)
+        val prepared = prepareRuntimePayload(payload, resolutionSource)
+        require(prepared.second.nodeCount > 0) { "订阅中没有可用节点" }
+        val oldKeys = previous.nodes.map { it.name to it.protocol }
+        val newKeys = prepared.second.nodes.map { it.name to it.protocol }
+        val removed = unmatchedOccurrences(previous.nodes, newKeys) { it.name to it.protocol }
+        val audit = SubscriptionGuard.audit(previous, prepared.second, oldSource, source)
+        val preview = SubscriptionUpdatePreview(java.util.UUID.randomUUID().toString(), id,
+            previous.nodeCount, prepared.second.nodeCount,
+            unmatchedOccurrences(prepared.second.nodes, oldKeys) { it.name to it.protocol }.map { it.name },
+            removed.map { it.name }, removed.mapTo(linkedSetOf()) { it.id }, audit)
+        pendingUpdate = PendingUpdate(preview, revision, name, source, prepared,
+            SubscriptionDiffer.compare(previous.nodes, prepared.second.nodes), System.nanoTime() + 300_000_000_000L)
+        return preview
+    }
+
+    fun discardReview() { pendingUpdate = null }
+
+    suspend fun applyReview(token: String, acceptCountChange: Boolean): SubscriptionUpdate = withContext(Dispatchers.IO) {
+        val pending = pendingUpdate
+        require(pending != null && pending.preview.token == token && System.nanoTime() < pending.expiresAtNanos) {
+            "预览已失效，请重新获取"
+        }
+        val blockers = pending.preview.audit.findings.filter { it.severity == SubscriptionAuditSeverity.BLOCKED }
+        require(blockers.isEmpty() || (acceptCountChange && blockers.all { it.code in setOf("node_drop", "large_removal", "node_spike") })) {
+            "请先核对异常节点数量变化"
+        }
+        val saved = store.saveReviewed(pending.preview.subscriptionId, pending.revision, pending.name,
+            pending.source, pending.prepared.first, pending.prepared.second, pending.prepared.counts)
+        pendingUpdate = null
+        SubscriptionUpdate(toDomain(saved), pending.diff, pending.preview.audit)
+    }
 
     fun loadMetadata(): List<Subscription> = store.list().map(::toDomain)
 
@@ -347,6 +401,7 @@ class SubscriptionRepository(
             throw SubscriptionImportException("订阅中没有可用节点")
         }
         val diff = SubscriptionDiffer.compare(previous.nodes, parsed.nodes)
+        require(diff.added == 0 && diff.removed == 0) { "订阅节点有变化，请在详情中预览后更新" }
         val audit = SubscriptionGuard.audit(
             previous = previous,
             candidate = parsed,

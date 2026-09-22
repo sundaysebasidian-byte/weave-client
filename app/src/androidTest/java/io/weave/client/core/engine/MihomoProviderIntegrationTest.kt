@@ -72,6 +72,10 @@ class MihomoProviderIntegrationTest {
                 // No dependence on a second cleartext provider file, including after cache cleanup.
                 File(isolated.cacheDir, "mihomo-runtime/providers").deleteRecursively()
                 NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
+                // Exercise the bundled native HTTP/1.0 Unix controller, not a JSON mock.
+                val socketPath = io.weave.client.core.diagnostics.PrivateCoreConnections.socketPath(isolated)
+                assertEquals(448, android.system.Os.stat(File(socketPath).parent).st_mode and 511)
+                io.weave.client.core.diagnostics.PrivateCoreConnections.read(isolated)
                 compiled.requiredNodeGroups.forEach { name ->
                     val group = JSONObject(requireNotNull(NativeBridge.queryGroup(name)))
                     val members = group.getJSONArray("proxies")

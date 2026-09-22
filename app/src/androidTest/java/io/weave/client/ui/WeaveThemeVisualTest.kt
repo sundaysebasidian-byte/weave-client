@@ -37,7 +37,7 @@ class WeaveThemeVisualTest {
     @Test
     fun minimalThemesRenderWithReadableBranding() {
         renderPalettes(listOf(WeavePalette.MINIMAL_LIGHT, WeavePalette.MINIMAL_DARK,
-            WeavePalette.MINIMAL_WHITE_GREEN), checkContrast = true)
+            WeavePalette.MINIMAL_WHITE_GREEN, WeavePalette.MINIMAL_PAPER), checkContrast = true)
     }
 
     @Test

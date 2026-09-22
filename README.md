@@ -8,7 +8,7 @@
 <p align="center">A beautiful, local-first Android proxy client.</p>
 
 <p align="center">
-  <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.3.0-alpha77">下载 Android</a> ·
+  <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.3.0-alpha83">下载 Android</a> ·
   <a href="docs/BUILD_ANDROID.md">构建指南</a> ·
   <a href="PRIVACY.md">隐私说明</a> ·
   <a href="https://github.com/sundaysebasidian-byte/weave-client/issues">反馈问题</a>
@@ -37,13 +37,13 @@
 
 ## 开始使用
 
-1. 从 [Release](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.3.0-alpha77) 下载 APK。现代 Android 手机通常选择 **ARM64**。
+1. 从 [Release](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.3.0-alpha83) 下载 APK。本轮提供 **ARM64** 安装包。
 2. 导入你已有的订阅，选择订阅与节点。
 3. 按需设置应用分流，确认系统 VPN 授权后连接。
 
 Weave 不提供、销售或推荐节点。支持 Clash/Mihomo YAML、JSON、URI/Base64，以及兼容的 sing-box / 基础 V2Ray 配置；不代表支持所有客户端的专有备份或全部配置扩展，也不会读取其他应用的私有数据。
 
-当前版本为 **0.3.0-alpha77 预发布版**，适用于 Android 8.0 及以上。请保留可用配置，覆盖安装前查看 Release 中的签名与升级说明。
+当前版本为 **0.3.0-alpha83 预发布版**，本轮安装包适用于 Android 8.0 及以上的 ARM64 设备。请保留可用配置，覆盖安装前查看 Release 中的签名与升级说明。
 
 ## 隐私，说清楚
 

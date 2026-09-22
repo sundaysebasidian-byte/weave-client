@@ -11,6 +11,18 @@ import org.junit.Test
 
 class PrivacyObservatoryTest {
     @Test
+    fun `filter settings do not claim active protection during disconnect or recovery`() {
+        for (state in listOf(ConnectionState.DISCONNECTED, ConnectionState.CONNECTING, ConnectionState.ERROR)) {
+            val report = PrivacyObservatory.inspect(state, RoutingMode.RULE,
+                NetworkPreferences(dnsProfile = DnsProfile.FAMILY,
+                    ipv6Mode = Ipv6Mode.IPV4_ONLY, blockUdpStun = true))
+            for (id in listOf("dns-leak-guard", "dns-filter", "ipv6", "webrtc")) {
+                assertEquals(ObservatoryState.NOT_TESTED, report.observations.first { it.id == id }.state)
+            }
+        }
+    }
+
+    @Test
     fun `lockdown requires system confirmation`() {
         for (enabled in listOf(true, false, null)) {
             val report = PrivacyObservatory.inspect(ConnectionState.CONNECTED, RoutingMode.RULE,

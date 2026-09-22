@@ -3,7 +3,6 @@ package io.weave.client.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.runtime.Immutable
@@ -71,6 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -147,14 +147,21 @@ data class IpQualityProbeState(
     val running: Boolean = false,
     val report: IpQualityReport? = null,
     val error: String? = null,
-)
+    val stale: Boolean = false,
+) {
+    fun stopped() = copy(running = false, stale = stale || (running && report != null))
+}
 
 @Immutable
 data class CommonEndpointProbeState(
     val running: Boolean = false,
     val report: CommonEndpointReport? = null,
     val error: String? = null,
-)
+    val stale: Boolean = false,
+    val progress: List<io.weave.client.core.diagnostics.CommonEndpointResult> = emptyList(),
+) {
+    fun stopped() = copy(running = false, progress = emptyList(), stale = stale || (running && report != null))
+}
 
 @Immutable
 data class DnsProbeState(
@@ -229,6 +236,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val mutableEditorState = MutableStateFlow(SubscriptionEditorState())
     val editorState = mutableEditorState.asStateFlow()
+    private val mutableUpdatePreview = MutableStateFlow<io.weave.client.subscription.SubscriptionUpdatePreview?>(null)
+    val updatePreview = mutableUpdatePreview.asStateFlow()
+
+    fun discardUpdatePreview() {
+        mutableUpdatePreview.value = null
+        subscriptionRepository.discardReview()
+    }
+
+    fun confirmUpdatePreview(acceptCountChange: Boolean) {
+        val preview = mutableUpdatePreview.value ?: return
+        mutableUpdatePreview.value = null
+        runSubscriptionMutation(preview.subscriptionId, { "订阅已安全更新" }) {
+            subscriptionRepository.applyReview(preview.token, acceptCountChange)
+        }
+    }
+
+    private fun prepareUpdatePreview(id: String, prepare: suspend () -> io.weave.client.subscription.SubscriptionUpdatePreview) {
+        if (mutableEditorState.value.running) return
+        mutableEditorState.update { it.copy(running = true, error = null) }
+        viewModelScope.launch {
+            probeSafely { prepare() }.onSuccess { preview ->
+                if (mutableEditorState.value.subscriptionId == id) {
+                    mutableUpdatePreview.value = preview
+                    launch {
+                        delay(300_000)
+                        if (mutableUpdatePreview.value?.token == preview.token) discardUpdatePreview()
+                    }
+                } else subscriptionRepository.discardReview()
+            }.onFailure { error -> mutableEditorState.update { it.copy(error = error.message) } }
+            mutableEditorState.update { it.copy(running = false) }
+        }
+    }
 
     private val mutableLanTransferState = MutableStateFlow(LanTransferState())
     val lanTransferState = mutableLanTransferState.asStateFlow()
@@ -264,7 +303,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // disabled prevents a connected service from being polled during ViewModel construction.
     private val mutableDashboardVisible = MutableStateFlow(false)
     private val mutableDashboardScrolling = MutableStateFlow(false)
-    private var connectedAtElapsedRealtime: Long? = null
     private var installedAppsLoaded = false
     private var installedAppsReleaseJob: Job? = null
     private var privacyProbeJob: Job? = null
@@ -315,26 +353,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             rules.onSuccess { mutableLocalRouteRuleState.value = LocalRouteRuleState(rules = it) }
         }
         viewModelScope.launch {
+            var previousRevision = VpnRuntimeState.snapshot.value.revision
             VpnRuntimeState.snapshot.collect { runtime ->
-                if (runtime.state != ConnectionState.CONNECTED) {
+                if (runtime.state != ConnectionState.CONNECTED || runtime.revision != previousRevision) {
+                    subscriptionHealthJob?.cancel()
+                    subscriptionHealthJob = null
+                    activeHealthSubscriptionId = null
+                    healthCache.clear()
+                    mutableSubscriptionHealth.update { previous ->
+                        SubscriptionHealthState(subscriptionId = previous.subscriptionId,
+                            error = if (previous.checkedAtMillis != null || previous.running) "网络已变化，请重新测速" else previous.error)
+                    }
                     clearIpQualityState()
-                    mutableIpQualityState.value = IpQualityProbeState()
-                    mutableCommonEndpointState.value = CommonEndpointProbeState()
+                    mutableIpQualityState.update { it.copy(stale = it.report != null) }
+                    mutableCommonEndpointState.update { it.copy(stale = it.report != null) }
                     mutableDownloadState.value = DownloadProbeState()
                 }
-                if (
-                    runtime.state == ConnectionState.CONNECTED &&
-                    connectedAtElapsedRealtime == null
-                ) {
-                    connectedAtElapsedRealtime = SystemClock.elapsedRealtime()
-                } else if (runtime.state != ConnectionState.CONNECTED) {
-                    connectedAtElapsedRealtime = null
-                }
+                previousRevision = runtime.revision
                 mutableDashboard.update {
                     it.copy(
                         connectionState = runtime.state,
+                        networkPathStatus = runtime.pathStatus,
                         statusMessage = runtime.message ?: it.statusMessage,
-                        sessionDurationSeconds = connectionDurationSeconds(),
                     )
                 }
                 mutableRecoveryState.value = recoveryVault.snapshot()
@@ -360,7 +400,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 mutableDashboardScrolling,
             ) { runtime, visible, scrolling ->
                 runtime.state to (visible && !scrolling)
-            }.collectLatest { (connectionState, visible) ->
+            }.distinctUntilChanged().collectLatest { (connectionState, visible) ->
                 if (connectionState != ConnectionState.CONNECTED) {
                     mutableDashboard.update {
                         it.copy(
@@ -368,50 +408,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             uploadBytesPerSecond = 0,
                             downloadBytesPerSecond = 0,
                             attributedAppConnections = 0,
-                            sessionDurationSeconds = 0,
                         )
                     }
                     return@collectLatest
                 }
                 if (!visible) return@collectLatest
-
+                // A fling can briefly report idle between gestures. collectLatest cancels
+                // this settling window if scrolling/covering/backgrounding resumes.
+                delay(DashboardRefreshPolicy.RESUME_SETTLE_MS)
+                val refreshPolicy = DashboardRefreshPolicy()
                 while (isActive) {
                     val runtime = withContext(Dispatchers.IO) {
                         engineProbe.queryRuntime()
                     }
                     if (runtime != null) {
-                        val current = mutableDashboard.value
-                        val currentNode = current.activeNode
-                        val durationSeconds = connectionDurationSeconds()
-                        val unchanged = currentNode != null &&
-                            currentNode.name == runtime.nodeName &&
-                            currentNode.protocol == runtime.protocol &&
-                            currentNode.latencyMs == runtime.latencyMs &&
-                            current.uploadBytesPerSecond == runtime.uploadBytesPerSecond &&
-                            current.downloadBytesPerSecond == runtime.downloadBytesPerSecond &&
-                            current.attributedAppConnections == runtime.attributedAppConnections &&
-                            current.sessionDurationSeconds == durationSeconds
-                        if (!unchanged) {
-                            mutableDashboard.update {
-                                it.copy(
-                                    activeNode = ProxyNode(
-                                        id = "runtime",
-                                        name = runtime.nodeName,
-                                        region = "",
-                                        subscriptionId = "",
-                                        protocol = runtime.protocol,
-                                        latencyMs = runtime.latencyMs,
-                                        selected = true,
-                                    ),
-                                    uploadBytesPerSecond = runtime.uploadBytesPerSecond,
-                                    downloadBytesPerSecond = runtime.downloadBytesPerSecond,
-                                    attributedAppConnections = runtime.attributedAppConnections,
-                                    sessionDurationSeconds = durationSeconds,
-                                )
-                            }
-                        }
+                        mutableDashboard.update { it.withRuntime(runtime) }
                     }
-                    delay(RUNTIME_POLL_INTERVAL_MS)
+                    delay(refreshPolicy.nextDelayMillis(runtime))
                 }
             }
         }
@@ -460,11 +473,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun connectionDurationSeconds(): Long =
-        connectedAtElapsedRealtime
-            ?.let { started -> (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L) / 1_000L }
-            ?: 0L
-
     fun connect() {
         if (startupJob.isActive) {
             mutableDashboard.update { it.copy(statusMessage = "正在载入本地订阅") }
@@ -495,7 +503,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun privacyReport(): PrivacyObservationReport {
         val preferences = mutableNetworkPreferences.value
         return PrivacyObservatory.inspect(
-            connectionState = mutableDashboard.value.connectionState,
+            connectionState = if (VpnRuntimeState.snapshot.value.pathStatus == io.weave.client.domain.NetworkPathStatus.WAITING_NETWORK)
+                ConnectionState.ERROR else mutableDashboard.value.connectionState,
             routingMode = mutableDashboard.value.routingMode,
             preferences = preferences,
             routes = mutableRoutes.value,
@@ -767,6 +776,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeSubscriptionEditor() {
+        discardUpdatePreview()
         if (!mutableEditorState.value.running) {
             // Explicitly discard the decrypted source URL when the editor closes.
             mutableEditorState.value = SubscriptionEditorState()
@@ -776,7 +786,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkSubscriptionHealth(subscriptionId: String) {
         if (subscriptionHealthJob?.isActive == true) return
-        if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) {
+        val revision = VpnRuntimeState.snapshot.value.revision
+        if (!VpnRuntimeState.acceptsEvidence(revision)) {
             mutableSubscriptionHealth.value = SubscriptionHealthState(
                 subscriptionId = subscriptionId,
                 error = "连接 VPN 后才能通过当前出口测试节点",
@@ -795,6 +806,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) {
                 engineProbe.healthCheckSubscription(subscriptionId)
             }.onSuccess { nodes ->
+                if (!VpnRuntimeState.acceptsEvidence(revision)) return@onSuccess
                 val result = SubscriptionHealthState(
                     subscriptionId = subscriptionId,
                     nodes = nodes,
@@ -805,6 +817,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     mutableSubscriptionHealth.value = result
                 }
             }.onFailure { error ->
+                if (error is CancellationException) throw error
+                if (!VpnRuntimeState.acceptsEvidence(revision)) return@onFailure
                 // Keep the last successful measurements visible when a later manual run
                 // fails (for example during a transient captive portal or weak signal).
                 val needsProbeLoad = error.message?.contains("未被当前运行配置加载") == true
@@ -832,7 +846,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableSubscriptionHealth.value = it
             return
         }
-        if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) {
+        val revision = VpnRuntimeState.snapshot.value.revision
+        if (!VpnRuntimeState.acceptsEvidence(revision)) {
             mutableSubscriptionHealth.value = SubscriptionHealthState(
                 subscriptionId = subscriptionId,
             )
@@ -842,7 +857,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val nodes = withContext(Dispatchers.IO) {
                 engineProbe.querySubscriptionHealth(subscriptionId)
             }
-            if (mutableEditorState.value.subscriptionId != subscriptionId) return@launch
+            if (mutableEditorState.value.subscriptionId != subscriptionId || !VpnRuntimeState.acceptsEvidence(revision)) return@launch
             mutableSubscriptionHealth.value = if (nodes == null) {
                 SubscriptionHealthState(
                     subscriptionId = subscriptionId,
@@ -875,26 +890,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun replaceSubscriptionRemote(subscriptionId: String, name: String, url: String) {
-        runSubscriptionMutation(
-            subscriptionId = subscriptionId,
-            successMessage = { update ->
-                "远程订阅已安全更新 · ${update.diff.summary()}"
-                    .plus(" · ${update.audit.summary}")
-            },
-        ) {
-            subscriptionRepository.replaceRemote(subscriptionId, name, url)
+        prepareUpdatePreview(subscriptionId) {
+            subscriptionRepository.previewRemote(subscriptionId, name, url)
         }
     }
 
     fun replaceSubscriptionFile(subscriptionId: String, name: String, uri: Uri) {
-        runSubscriptionMutation(
-            subscriptionId = subscriptionId,
-            successMessage = { update ->
-                "订阅文件已安全替换 · ${update.diff.summary()}"
-                    .plus(" · ${update.audit.summary}")
-            },
-        ) {
-            subscriptionRepository.replaceFile(subscriptionId, name, uri)
+        prepareUpdatePreview(subscriptionId) {
+            subscriptionRepository.previewFile(subscriptionId, name, uri)
         }
     }
 
@@ -1065,23 +1068,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (mutablePolicyPackState.value.running) return
         mutablePolicyPackState.value = mutablePolicyPackState.value.copy(running = true, error = null)
         viewModelScope.launch {
-            runCatching {
-                val raw = getApplication<Application>().contentResolver.openInputStream(uri)?.use {
-                    readBounded(it, MAX_POLICY_PACK_BYTES)
-                } ?: error("无法读取策略包")
-                PolicyPackCodec.decode(raw.toString(Charsets.UTF_8), uri.toString())
-            }.onSuccess { pack ->
-                policyPackStore.save(pack)
+            val result = withContext(Dispatchers.IO) {
+                probeSafely {
+                    val raw = getApplication<Application>().contentResolver.openInputStream(uri)?.use {
+                        readBounded(it, MAX_POLICY_PACK_BYTES)
+                    } ?: error("无法读取策略包")
+                    val pack = PolicyPackCodec.decode(raw.toString(Charsets.UTF_8), uri.toString())
+                    policyPackStore.save(pack)
+                    pack to policyPackStore.list()
+                }
+            }
+            result.onSuccess { (pack, packs) ->
                 mutablePolicyPackState.value = PolicyPackState(
-                    packs = policyPackStore.list(),
+                    packs = packs,
                     message = "已导入策略包「${pack.name}」",
                 )
                 reloadIfConnected("策略包已导入，正在安全更新运行配置")
             }.onFailure { error ->
-                mutablePolicyPackState.value = PolicyPackState(
-                    packs = policyPackStore.list(),
-                    error = error.message ?: "策略包导入失败",
-                )
+                mutablePolicyPackState.update { it.copy(running = false, error = "策略包导入失败") }
             }
         }
     }
@@ -1101,31 +1105,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setPolicyPackActive(id: String, active: Boolean) {
-        runCatching { policyPackStore.setActive(id, active) }
-            .onSuccess {
-                mutablePolicyPackState.value = PolicyPackState(
-                    packs = policyPackStore.list(),
-                    message = if (active) "策略包已启用" else "策略包已停用",
-                )
-                reloadIfConnected("策略包状态已变更，正在安全更新运行配置")
-            }
-            .onFailure { error ->
-                mutablePolicyPackState.update { it.copy(error = error.message ?: "策略包状态更新失败") }
-            }
+        mutatePolicyPack(if (active) "策略包已启用" else "策略包已停用", "策略包状态更新失败",
+            "策略包状态已变更，正在安全更新运行配置") { policyPackStore.setActive(id, active) }
     }
 
     fun deletePolicyPack(id: String) {
-        runCatching { policyPackStore.delete(id) }
-            .onSuccess {
-                mutablePolicyPackState.value = PolicyPackState(
-                    packs = policyPackStore.list(),
-                    message = "策略包已删除",
-                )
-                reloadIfConnected("策略包已删除，正在安全更新运行配置")
-            }
-            .onFailure { error ->
-                mutablePolicyPackState.update { it.copy(error = error.message ?: "策略包删除失败") }
-            }
+        mutatePolicyPack("策略包已删除", "策略包删除失败", "策略包已删除，正在安全更新运行配置") {
+            policyPackStore.delete(id)
+        }
+    }
+
+    private fun mutatePolicyPack(message: String, failure: String, reloadMessage: String, mutation: () -> Unit) {
+        if (mutablePolicyPackState.value.running) return
+        mutablePolicyPackState.update { it.copy(running = true, error = null, message = null) }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { probeSafely { mutation(); policyPackStore.list() } }
+                .onSuccess { packs ->
+                    mutablePolicyPackState.value = PolicyPackState(packs = packs, message = message)
+                    reloadIfConnected(reloadMessage)
+                }.onFailure {
+                    mutablePolicyPackState.update { it.copy(running = false, error = failure) }
+                }
+        }
     }
 
     fun addLocalRouteRule(type: LocalRuleType, value: String, action: LocalRuleAction): Boolean {
@@ -1223,21 +1224,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var privacyGeneration = 0L
+
     fun runIpQualityProbe() {
         if (privacyProbeJob?.isActive == true || downloadProbeJob?.isActive == true ||
             mutableIpQualityState.value.running ||
             mutableCommonEndpointState.value.running
         ) return
-        if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) {
-            mutableIpQualityState.value = IpQualityProbeState(error = "连接 VPN 后才能检测代理出口")
-            mutableCommonEndpointState.value = CommonEndpointProbeState(error = "连接 VPN 后才能测试常用站点")
+        if (!VpnRuntimeState.acceptsEvidence(VpnRuntimeState.snapshot.value.revision)) {
+            mutableIpQualityState.value = IpQualityProbeState(error = "网络尚未就绪，请连接并等待恢复后重试")
+            mutableCommonEndpointState.value = CommonEndpointProbeState(error = "网络尚未就绪，请连接并等待恢复后重试")
             return
         }
         // Keep the last completed report visible while a refresh runs. Replacing it with an
         // empty loading state made the evidence card flash between “—” and a spinner and gave no
         // useful information during a slow IPv6 or captive-portal probe.
         mutableIpQualityState.update { it.copy(running = true, error = null) }
-        mutableCommonEndpointState.update { it.copy(running = true, error = null) }
+        mutableCommonEndpointState.update { it.copy(running = true, error = null, progress = emptyList()) }
+        val generation = ++privacyGeneration
+        val pathRevision = VpnRuntimeState.snapshot.value.revision
+        fun stillCurrent() = generation == privacyGeneration && VpnRuntimeState.acceptsEvidence(pathRevision)
         privacyProbeJob = viewModelScope.launch {
             val preferences = mutableNetworkPreferences.value
             coroutineScope {
@@ -1245,16 +1251,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     probeSafely { ipQualityProbe.run(ipv6Mode = preferences.ipv6Mode) }
                 }
                 val endpointDeferred = async(Dispatchers.IO) {
-                    probeSafely { commonEndpointProbe.run() }
+                    probeSafely {
+                        commonEndpointProbe.run(onResult = { result ->
+                            withContext(Dispatchers.Main) {
+                                if (stillCurrent()) mutableCommonEndpointState.update { state ->
+                                    state.copy(progress = (state.progress + result).sortedBy { item ->
+                                        io.weave.client.core.diagnostics.CommonEndpointProbe.COMMON_ENDPOINTS.indexOf(item.endpoint)
+                                    })
+                                }
+                            }
+                        })
+                    }
                 }
                 // Publish each independent result as soon as it settles. A broken IPv6 endpoint
                 // must not hide already-completed site reachability evidence (and vice versa).
                 launch {
                     ipDeferred.await().onSuccess { report ->
+                        if (!stillCurrent()) return@onSuccess
                         mutableIpQualityState.update {
-                            it.copy(running = false, report = report, error = null)
+                            it.copy(running = false, report = report, error = null, stale = false)
                         }
                     }.onFailure { error ->
+                        if (!stillCurrent()) return@onFailure
                         mutableIpQualityState.update {
                             it.copy(
                                 running = false,
@@ -1265,10 +1283,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 launch {
                     endpointDeferred.await().onSuccess { report ->
+                        if (!stillCurrent()) return@onSuccess
+                        if (report.availableCount > 0) VpnRuntimeState.confirmReachable(pathRevision)
                         mutableCommonEndpointState.update {
-                            it.copy(running = false, report = report, error = null)
+                            it.copy(running = false, report = report, error = null, stale = false, progress = emptyList())
                         }
                     }.onFailure { error ->
+                        if (!stillCurrent()) return@onFailure
                         mutableCommonEndpointState.update {
                             it.copy(
                                 running = false,
@@ -1286,26 +1307,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearIpQualityState() {
+        privacyGeneration++
         downloadProbeJob?.cancel()
         downloadProbeJob = null
         mutableDownloadState.update { it.copy(running = false) }
         privacyProbeJob?.cancel()
         privacyProbeJob = null
-        mutableIpQualityState.update { it.copy(running = false) }
-        mutableCommonEndpointState.update { it.copy(running = false) }
+        mutableIpQualityState.update { it.stopped() }
+        mutableCommonEndpointState.update { it.stopped() }
     }
 
     fun runDownloadProbe() {
         if (downloadProbeJob?.isActive == true || privacyProbeJob?.isActive == true) return
-        if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) {
-            mutableDownloadState.value = DownloadProbeState(error = "连接 VPN 后才能检测代理出口")
+        if (!VpnRuntimeState.acceptsEvidence(VpnRuntimeState.snapshot.value.revision)) {
+            mutableDownloadState.value = DownloadProbeState(error = "网络尚未就绪，请连接并等待恢复后重试")
             return
         }
         mutableDownloadState.update { it.copy(running = true, error = null) }
+        val revision = VpnRuntimeState.snapshot.value.revision
+        val generation = privacyGeneration
         downloadProbeJob = viewModelScope.launch {
             probeSafely { io.weave.client.core.diagnostics.DownloadProbe().run() }
-                .onSuccess { mutableDownloadState.value = DownloadProbeState(measurement = it) }
-                .onFailure { mutableDownloadState.value = DownloadProbeState(error = "下载测速失败") }
+                .onSuccess {
+                    if (generation == privacyGeneration && VpnRuntimeState.acceptsEvidence(revision))
+                        mutableDownloadState.value = DownloadProbeState(measurement = it)
+                }
+                .onFailure {
+                    if (generation == privacyGeneration && VpnRuntimeState.acceptsEvidence(revision))
+                        mutableDownloadState.value = DownloadProbeState(error = "下载测速失败")
+                }
         }
     }
 
@@ -1313,7 +1343,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         Result.success(block())
     } catch (cancelled: CancellationException) {
         throw cancelled
-    } catch (error: Throwable) {
+    } catch (error: Exception) {
         Result.failure(error)
     }
 
@@ -1457,9 +1487,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private companion object {
-        // Runtime counters are informative rather than control-plane state. A three-second
-        // cadence keeps the connected dashboard responsive while avoiding needless wakeups.
-        const val RUNTIME_POLL_INTERVAL_MS = 3_000L
         const val INSTALLED_APP_CACHE_IDLE_MS = 120_000L
         const val MAX_POLICY_PACK_BYTES = 512 * 1024
     }

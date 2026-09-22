@@ -186,6 +186,16 @@ object PrivacyObservatory {
                 ),
             )
         }
-        return PrivacyObservationReport(now, observations)
+        // Settings are not proof that runtime filtering is active while stopped or recovering.
+        val runtimeEvidence = setOf("dns-leak-guard", "dns-filter", "ipv6", "webrtc")
+        val scoped = observations.map { observation ->
+            if (connectionState != ConnectionState.CONNECTED && observation.id in runtimeEvidence) {
+                observation.copy(
+                    state = ObservatoryState.NOT_TESTED,
+                    detail = "未连接：仅保留配置，尚未验证运行效果",
+                )
+            } else observation
+        }
+        return PrivacyObservationReport(now, scoped)
     }
 }

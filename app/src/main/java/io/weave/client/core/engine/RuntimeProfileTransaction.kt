@@ -46,8 +46,20 @@ class RuntimeProfileTransaction(cacheDirectory: File) {
         require(File(source, CONFIG_FILE).isFile) {
             "事务快照不完整"
         }
-        activeDirectory.deleteRecursively()
-        copyDirectory(source, activeDirectory)
+        // Finish the potentially failing disk copy before touching the working profile.
+        val staged = File(transactionDirectory, "restore-staged")
+        val previous = File(transactionDirectory, "restore-previous")
+        check(staged.deleteRecursively() && previous.deleteRecursively()) {
+            "无法清理配置恢复暂存目录"
+        }
+        copyDirectory(source, staged)
+        val hadActive = activeDirectory.exists()
+        check(!hadActive || activeDirectory.renameTo(previous)) { "无法暂存当前配置" }
+        if (!staged.renameTo(activeDirectory)) {
+            check(!hadActive || previous.renameTo(activeDirectory)) { "配置恢复中断，原配置仍保留在恢复目录" }
+            error("无法恢复运行配置")
+        }
+        previous.deleteRecursively()
     }
 
     private fun copyDirectory(source: File, destination: File) {

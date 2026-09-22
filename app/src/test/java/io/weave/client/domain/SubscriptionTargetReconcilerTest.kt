@@ -57,7 +57,7 @@ class SubscriptionTargetReconcilerTest {
     }
 
     @Test
-    fun `removed fixed node falls back to subscription auto target`() {
+    fun `removed fixed app node blocks rather than switching exit`() {
         val refreshed = SubscriptionTargetReconciler.refresh(
             target = RouteTarget(
                 kind = RouteKind.FIXED,
@@ -70,9 +70,16 @@ class SubscriptionTargetReconcilerTest {
             allowBlock = true,
         )
 
-        assertEquals(RouteKind.AUTO, refreshed.kind)
+        assertEquals(RouteKind.BLOCK, refreshed.kind)
         assertEquals(subscription.id, refreshed.subscriptionId)
-        assertEquals(null, refreshed.nodeId)
-        assertEquals("自动选择", refreshed.label)
+        assertEquals("removed-node", refreshed.nodeId)
+        assertEquals("出口已失效，请重新选择", refreshed.label)
+    }
+
+    @Test fun `missing default remains fixed and requires explicit reselection`() {
+        val target = RouteTarget(RouteKind.FIXED, "old", subscription.id, "gone")
+        val next = SubscriptionTargetReconciler.refresh(target, subscription, listOf(node), false)
+        assertEquals(RouteKind.FIXED, next.kind)
+        assertEquals("gone", next.nodeId)
     }
 }

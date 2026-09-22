@@ -195,7 +195,7 @@ internal fun LiquidGlassPanel(
                         androidx.compose.ui.graphics.lerp(surface, Color.White, 0.30f),
                         androidx.compose.ui.graphics.lerp(surface, primaryContainer, 0.15f),
                         androidx.compose.ui.graphics.lerp(surface, secondaryContainer, 0.16f),
-                        androidx.compose.ui.graphics.lerp(surface, tertiary, 0.07f),
+                        androidx.compose.ui.graphics.lerp(surface, tertiary, 0.035f),
                         surface,
                     )
                 },
@@ -247,17 +247,23 @@ internal fun LiquidGlassPanel(
                 val stroke = androidx.compose.ui.graphics.drawscope.Stroke(0.75.dp.toPx())
                 val rim = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = if (dark) 0.28f else 0.92f),
+                        Color.White.copy(alpha = if (dark) 0.20f else 0.78f),
                         Color.White.copy(alpha = 0.025f),
                         edge.copy(alpha = if (dark) 0.15f else 0.30f),
                     ),
                     start = Offset.Zero,
                     end = Offset(size.width, size.height),
                 )
+                val topLight = Brush.verticalGradient(
+                    colors = listOf(Color.White.copy(alpha = if (dark) 0.035f else if (minimal) 0.05f else 0.10f), Color.Transparent),
+                    endY = minOf(size.height, 104.dp.toPx()).coerceAtLeast(1f),
+                )
                 onDrawBehind {
+                    // A cached stationary light wash: no backdrop capture, new layer, or animation.
+                    if (showEdge) drawRect(topLight)
                     // Match the real panel silhouette; short rows no longer get an unrelated
                     // second corner radius or a flat highlight across their rounded corners.
-                    translate(inset, inset) {
+                    if (showEdge) translate(inset, inset) {
                         drawOutline(outline, rim, style = stroke)
                     }
                 }

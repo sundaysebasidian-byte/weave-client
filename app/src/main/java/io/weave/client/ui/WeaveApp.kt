@@ -411,15 +411,18 @@ fun WeaveApp(
         }
     }
 
-    // Dashboard counters are useful while the page is visible, but keeping a 2–3 second native
-    // query loop alive while the app is backgrounded costs battery for no user-visible benefit.
+    // No native dashboard queries underneath dialogs, during scrolling or outside RESUMED.
+    val dashboardObscured = showImportDialog || showProxyMigration || showLanTransferDialog ||
+        showAppPicker || editingRoute != null || showDefaultRoutePicker || managedSubscriptionId != null ||
+        showVpnDisclosure || showRouteLens || showNetworkPrivacyCenter || showRecoveryCenter ||
+        showPolicyPacks || showLocalRouteRules
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, destination, showNetworkPrivacyCenter, showDefaultRoutePicker) {
+    DisposableEffect(lifecycleOwner, destination, dashboardObscured) {
         fun updateVisibility() {
             if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeRevision++
             viewModel.setDashboardVisible(
                 destination == Destination.HOME &&
-                    !showNetworkPrivacyCenter && !showDefaultRoutePicker &&
+                    !dashboardObscured &&
                     lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
             )
         }
@@ -593,15 +596,28 @@ fun WeaveApp(
     }
 
     if (showNetworkPrivacyCenter) {
+        val probeRuntime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
+        val expectedRevision = probeRuntime.revision
+        val expectedBrowserRun = browserProbeRunId
+        var browserRevision by remember { mutableStateOf(expectedRevision) }
+        LaunchedEffect(expectedRevision) {
+            if (browserRevision != expectedRevision) {
+                browserPrivacyResult = null
+                browserPrivacyError = null
+                browserProbeRunId = 0
+                browserRevision = expectedRevision
+            }
+        }
         val ipQualityState by viewModel.ipQualityState.collectAsStateWithLifecycle()
         val commonEndpointState by viewModel.commonEndpointState.collectAsStateWithLifecycle()
         val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
         val diagnosticDashboard by viewModel.dashboard.collectAsStateWithLifecycle()
         val diagnosticRoutes by viewModel.routes.collectAsStateWithLifecycle()
-        val privacyReport = remember(diagnosticDashboard.connectionState,
+        val privacyReport = remember(diagnosticDashboard.connectionState, diagnosticDashboard.networkPathStatus,
             diagnosticDashboard.routingMode, diagnosticDashboard.defaultRouteTarget,
             diagnosticRoutes, networkPreferences, resumeRevision) { viewModel.privacyReport() }
         NetworkPrivacyCenterDialog(
+            onCancel = { viewModel.clearIpQualityState(); browserProbeRunId = 0 },
             downloadState = downloadState,
             onDownloadProbe = viewModel::runDownloadProbe,
             onOpenVpnSettings = onOpenVpnSettings,
@@ -623,12 +639,18 @@ fun WeaveApp(
                 browserProbeRunId++
             },
             onBrowserResult = {
-                browserPrivacyError = null
-                browserPrivacyResult = it
+                if (io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision == expectedRevision &&
+                    browserProbeRunId == expectedBrowserRun) {
+                    browserPrivacyError = null
+                    browserPrivacyResult = it
+                }
             },
             onBrowserError = {
-                browserPrivacyResult = null
-                browserPrivacyError = it
+                if (io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision == expectedRevision &&
+                    browserProbeRunId == expectedBrowserRun) {
+                    browserPrivacyResult = null
+                    browserPrivacyError = it
+                }
             },
             onDismiss = {
                 showNetworkPrivacyCenter = false
@@ -636,6 +658,42 @@ fun WeaveApp(
                 viewModel.clearIpQualityState()
             },
         )
+    }
+
+    val updatePreview by viewModel.updatePreview.collectAsStateWithLifecycle()
+    updatePreview?.let { preview ->
+        val currentRoutes by viewModel.routes.collectAsStateWithLifecycle()
+        val currentDashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        var accepted by remember(preview.token) { mutableStateOf(false) }
+        val affected = currentRoutes.filter { it.target.subscriptionId == preview.subscriptionId &&
+            it.target.nodeId in preview.removedNodeIds }.map { it.appName }
+        val defaultAffected = currentDashboard.defaultRouteTarget?.let {
+            it.subscriptionId == preview.subscriptionId && it.nodeId in preview.removedNodeIds } == true
+        AlertDialog(onDismissRequest = viewModel::discardUpdatePreview,
+            title = { Text("订阅更新预览") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 450.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item { Text("${preview.before} → ${preview.after}", translate = false) }
+                    item { Text("确认前不会覆盖现有订阅；改名无法可靠确认时按新增和移除展示。") }
+                    item { Text("新增节点") }
+                    items(preview.addedNames.take(100)) { Text(it, translate = false) }
+                    item { Text("移除节点") }
+                    items(preview.removedNames.take(100)) { Text(it, translate = false) }
+                    item { Text("受影响的应用规则") }
+                    items(affected) { Text(it, translate = false) }
+                    if (defaultAffected) item { Text("默认出口将失效，需要重新选择。", color = MaterialTheme.colorScheme.error) }
+                    if (preview.audit.blocked) item {
+                        Text(preview.audit.summary, color = MaterialTheme.colorScheme.error)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accepted, onCheckedChange = { accepted = it })
+                            Text("我已核对异常数量变化，允许本次更新")
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(enabled = !preview.audit.blocked || accepted,
+                onClick = { viewModel.confirmUpdatePreview(accepted) }) { Text("确认更新") } },
+            dismissButton = { TextButton(onClick = viewModel::discardUpdatePreview) { Text("取消") } })
     }
 
     if (showRecoveryCenter) {
@@ -1455,7 +1513,7 @@ internal fun SubscriptionManagerDialog(
         mutableStateOf(editor?.sourceUrl.orEmpty())
     }
     var revealSourceUrl by remember(subscription.id) { mutableStateOf(false) }
-    var nodeQuery by remember(subscription.id) { mutableStateOf("") }
+    var nodeQuery by rememberSaveable(subscription.id) { mutableStateOf("") }
     var confirmingDelete by remember(subscription.id) { mutableStateOf(false) }
     val filteredNodes = remember(nodes, nodeQuery) {
         val term = nodeQuery.trim()
@@ -1469,14 +1527,14 @@ internal fun SubscriptionManagerDialog(
         }
     }
     val healthByName = remember(health.nodes) {
-        health.nodes.associateBy { NodeDisplayName.core(it.name) }
+        NodeHealthIndex(health.nodes)
     }
     val orderedNodes = remember(filteredNodes, health.nodes, health.checkedAtMillis) {
         filteredNodes.sortedWith(
             compareBy<ProxyNode> {
-                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs == null
+                healthByName[it.name]?.qualityScoreMs == null
             }.thenBy {
-                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs ?: Int.MAX_VALUE
+                healthByName[it.name]?.qualityScoreMs ?: Int.MAX_VALUE
             }.thenBy { it.name },
         )
     }
@@ -1822,7 +1880,7 @@ internal fun SubscriptionManagerDialog(
                         ) { node ->
                             SubscriptionNodeRow(
                                 node = node,
-                                health = healthByName[NodeDisplayName.core(node.name)],
+                                health = healthByName[node.name],
                                 checked = health.checkedAtMillis != null,
                             )
                         }
@@ -2175,9 +2233,9 @@ private fun ConditionalTargetDialog(
     onSelect: (RouteTarget) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
-    var selectedSubscriptionId by remember(title) { mutableStateOf(selectedTarget?.subscriptionId) }
-    var nodeSearch by remember { mutableStateOf("") }
-    var favoritesOnly by remember { mutableStateOf(false) }
+    var selectedSubscriptionId by rememberSaveable(title) { mutableStateOf(selectedTarget?.subscriptionId) }
+    var nodeSearch by rememberSaveable(selectedSubscriptionId) { mutableStateOf("") }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(selectedSubscriptionId) {
         selectedSubscriptionId?.let(onSubscriptionSelected)
     }
@@ -2191,7 +2249,7 @@ private fun ConditionalTargetDialog(
         it.subscriptionId == selectedSubscriptionId
     }
     val healthByName = remember(selectedHealth?.nodes) {
-        selectedHealth?.nodes.orEmpty().associateBy { NodeDisplayName.core(it.name) }
+        NodeHealthIndex(selectedHealth?.nodes.orEmpty())
     }
     val orderedNodes = remember(subscriptionNodes, selectedHealth?.nodes, favorites, favoritesOnly, nodeSearch) {
         subscriptionNodes.filter {
@@ -2199,9 +2257,9 @@ private fun ConditionalTargetDialog(
                 (nodeSearch.isBlank() || it.name.contains(nodeSearch, ignoreCase = true))
         }.sortedWith(
             compareBy<ProxyNode> { "${it.subscriptionId}/${it.id}" !in favorites }.thenBy {
-                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs == null
+                healthByName[it.name]?.qualityScoreMs == null
             }.thenBy {
-                healthByName[NodeDisplayName.core(it.name)]?.qualityScoreMs ?: Int.MAX_VALUE
+                healthByName[it.name]?.qualityScoreMs ?: Int.MAX_VALUE
             }.thenBy { it.name },
         )
     }
@@ -2360,7 +2418,7 @@ private fun ConditionalTargetDialog(
                             favorite = "${node.subscriptionId}/${node.id}" in favorites,
                             onFavorite = { onFavorite(node) },
                             node = node,
-                            health = healthByName[NodeDisplayName.core(node.name)],
+                            health = healthByName[node.name],
                             checked = selectedHealth?.checkedAtMillis != null,
                             selected = selectedTarget?.kind == RouteKind.FIXED &&
                                 selectedTarget.subscriptionId == selectedSubscription.id &&
@@ -2602,6 +2660,22 @@ private fun HomeScreen(
     contentPadding: PaddingValues,
 ) {
     val scrollState = rememberSmoothLazyListState()
+    // Traffic counters should not invalidate unchanged hero/route glass surfaces.
+    val heroState = remember(state.connectionState, state.coreAvailable, state.networkPathStatus) {
+        DashboardState(connectionState = state.connectionState, coreAvailable = state.coreAvailable,
+            networkPathStatus = state.networkPathStatus)
+    }
+    val hasAppConnections = state.attributedAppConnections > 0
+    val routeCardState = remember(
+        state.connectionState, state.activeNode, state.defaultRouteTarget, hasAppConnections,
+    ) {
+        DashboardState(
+            connectionState = state.connectionState,
+            activeNode = state.activeNode,
+            defaultRouteTarget = state.defaultRouteTarget,
+            attributedAppConnections = if (hasAppConnections) 1 else 0,
+        )
+    }
     LaunchedEffect(scrollState) {
         androidx.compose.runtime.snapshotFlow { scrollState.isScrollInProgress }
             .collect { onScrolling(it) }
@@ -2634,7 +2708,7 @@ private fun HomeScreen(
         }
 
         item {
-            ConnectionHero(state = state, onConnect = onConnect)
+            ConnectionHero(state = heroState, onConnect = onConnect)
         }
 
         item {
@@ -2691,7 +2765,7 @@ private fun HomeScreen(
         }
 
         item {
-            CurrentRouteCard(state, onClick = onDefaultRouteClick)
+            CurrentRouteCard(routeCardState, onClick = onDefaultRouteClick)
         }
 
         item {
@@ -2822,7 +2896,7 @@ private fun ConnectionHero(
                         Spacer(Modifier.width(7.dp))
                         Text(
                             text = when (state.connectionState) {
-                                ConnectionState.CONNECTED -> "已保护"
+                                ConnectionState.CONNECTED -> state.networkPathStatus.label
                                 ConnectionState.CONNECTING -> "正在连接"
                                 ConnectionState.ERROR -> "需要处理"
                                 ConnectionState.DISCONNECTED -> "未连接"
@@ -2842,11 +2916,13 @@ private fun ConnectionHero(
 
             Spacer(Modifier.height(30.dp))
             Text(
-                text = if (state.connectionState == ConnectionState.CONNECTED) "连接安全" else "保持私密",
+                text = if (state.connectionState == ConnectionState.CONNECTED) state.networkPathStatus.label else "保持私密",
                 style = MaterialTheme.typography.headlineMedium,
             )
             Text(
-                text = if (state.coreAvailable) {
+                text = if (state.connectionState == ConnectionState.CONNECTED) {
+                    "隧道状态不等于出口可达；可在网络与隐私检测中验证。"
+                } else if (state.coreAvailable) {
                     "本机规则已就绪，连接时按需加载原生内核"
                 } else {
                     "原生内核加载失败，已禁止建立 VPN"
@@ -4301,7 +4377,11 @@ private fun RouteLensDialog(
                 modifier = Modifier.heightIn(max = 560.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                item { ConnectionTracePanel(routes) }
+                item { ConnectionTracePanel(routes, mode, defaultTarget) { route ->
+                    packageName = route.packageName
+                    appName = route.appName
+                    result = null
+                } }
                 item {
                     OutlinedTextField(
                         value = ip,
@@ -4571,11 +4651,16 @@ private fun RecoveryCenterDialog(
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var copyStatus by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("恢复中心", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
                 Text(
                     if (state.safeMode) "安全模式已启用" else "运行状态可恢复",
                     color = if (state.safeMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
@@ -4604,6 +4689,18 @@ private fun RecoveryCenterDialog(
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                 )
+                TextButton(onClick = {
+                    copyStatus = if (runCatching {
+                        val summary = io.weave.client.data.SupportDiagnostics.build(
+                            BuildConfig.VERSION_NAME, Build.VERSION.SDK_INT, state,
+                        )
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Weave diagnostics", summary))
+                    }.isSuccess) "诊断摘要已复制" else "无法访问剪贴板"
+                }) { Text("复制诊断摘要") }
+                Text("仅包含版本、系统 API、恢复状态和错误代码；不包含原始日志、地址或订阅数据。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                copyStatus?.let { Text(it, fontSize = 12.sp) }
             }
         },
         confirmButton = {

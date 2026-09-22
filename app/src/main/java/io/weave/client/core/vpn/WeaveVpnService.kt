@@ -30,6 +30,7 @@ import java.net.InetSocketAddress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -58,6 +59,14 @@ class WeaveVpnService : VpnService() {
             connectivityManager = connectivityManager,
             onNetworkChanged = ::onUnderlyingNetworksChanged,
             onUnavailable = ::onUnderlyingNetworksChanged,
+            onPathChanged = { network ->
+                serviceScope.launch {
+                    if (!shutdownRequested && preferredUnderlyingNetwork == network) {
+                        VpnRuntimeState.pathChanged(io.weave.client.domain.NetworkPathStatus.RECOVERING)
+                        scheduleNetworkRecovery()
+                    }
+                }
+            },
         )
     }
     private val uidAttributionCache = SocketUidAttributionCache()
@@ -171,6 +180,7 @@ class WeaveVpnService : VpnService() {
     }
 
     private fun scheduleNetworkRecovery() {
+        if (shutdownRequested) return
         Log.i(LOG_TAG, "Underlying network changed; runtime=${VpnRuntimeState.snapshot.value.state}")
         val runtimeState = VpnRuntimeState.snapshot.value.state
         if (runtimeState != ConnectionState.CONNECTED && runtimeState != ConnectionState.ERROR) return
@@ -228,6 +238,10 @@ class WeaveVpnService : VpnService() {
             return
         }
         preferredUnderlyingNetwork = preferred
+        if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+            VpnRuntimeState.pathChanged(if (preferred == null) io.weave.client.domain.NetworkPathStatus.WAITING_NETWORK
+                else io.weave.client.domain.NetworkPathStatus.TUN_READY)
+        }
         if (preferred == null) {
             markUnderlyingNetworkUnavailable()
             return
@@ -333,6 +347,9 @@ class WeaveVpnService : VpnService() {
                     launchPreparedRuntime(runtime)
                 }
                 startInProgress = false
+                // runCatching also catches coroutine cancellation; never turn a user
+                // disconnect/service shutdown into another recovery attempt.
+                if (!kotlin.coroutines.coroutineContext.isActive || shutdownRequested) return@launch
 
                 if (result.isSuccess) {
                     publishConnected(runtime, "网络已恢复，代理已重新连接")
@@ -559,6 +576,8 @@ class WeaveVpnService : VpnService() {
             },
         )
         VpnRuntimeState.update(ConnectionState.CONNECTED, message)
+        VpnRuntimeState.pathChanged(if (preferredUnderlyingNetwork == null)
+            io.weave.client.domain.NetworkPathStatus.WAITING_NETWORK else io.weave.client.domain.NetworkPathStatus.TUN_READY)
     }
 
     private fun notifyStatus(status: String) {

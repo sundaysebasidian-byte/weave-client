@@ -23,7 +23,7 @@ class RouteReferenceSanitizerTest {
     )
 
     @Test
-    fun `removes deleted subscription routes and downgrades stale nodes`() {
+    fun `missing exits block rather than deleting rules or switching nodes`() {
         val result = RouteReferenceSanitizer.routes(
             routes = listOf(
                 route("deleted.app", RouteTarget(RouteKind.AUTO, "旧", "deleted")),
@@ -34,20 +34,21 @@ class RouteReferenceSanitizerTest {
             nodes = listOf(node),
         )
 
-        assertEquals(listOf("stale-node.app", "valid.app"), result.map { it.packageName })
-        assertEquals(RouteKind.AUTO, result.first().target.kind)
-        assertEquals("kept", result.first().target.subscriptionId)
+        assertEquals(listOf("deleted.app", "stale-node.app", "valid.app"), result.map { it.packageName })
+        assertEquals(RouteKind.BLOCK, result.first().target.kind)
+        assertEquals(RouteKind.BLOCK, result[1].target.kind)
+        assertEquals("kept", result[1].target.subscriptionId)
         assertEquals("JP 01", result.last().target.label)
     }
 
     @Test
     fun `invalid default fails closed instead of silently selecting direct`() {
-        assertNull(
+        assertEquals("deleted",
             RouteReferenceSanitizer.defaultTarget(
                 RouteTarget(RouteKind.AUTO, "旧", "deleted"),
                 subscriptions = listOf(subscription),
                 nodes = listOf(node),
-            ),
+            )?.subscriptionId,
         )
         assertNull(
             RouteReferenceSanitizer.defaultTarget(

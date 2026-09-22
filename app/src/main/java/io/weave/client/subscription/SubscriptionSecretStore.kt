@@ -113,6 +113,15 @@ class SubscriptionSecretStore(
         }
     }
 
+    fun saveReviewed(id: String, expectedRevision: String, name: String, source: String,
+        payload: String, parsed: ParsedSubscription, counts: SubscriptionImportCounts): StoredSubscription = synchronized(STORE_LOCK) {
+        val current = requireNotNull(get(id)) { "订阅不存在" }
+        check(subscriptionRevision(current, readPayload(id), readUrl(id)) == expectedRevision) {
+            "订阅已变化，请重新预览"
+        }
+        save(name, source, payload, parsed, id, counts)
+    }
+
     fun importCounts(id: String): SubscriptionImportCounts? = synchronized(STORE_LOCK) {
         val values = preferences.getString(key(id, "import_counts"), null)?.split(',')
             ?.map { it.toIntOrNull() ?: return@synchronized null } ?: return@synchronized null

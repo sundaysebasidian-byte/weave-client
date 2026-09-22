@@ -36,6 +36,7 @@ class MihomoConfigAssembler(
     private val routeCompiler: RouteConfigCompiler = RouteConfigCompiler(),
 ) {
     private val payloadParser = SubscriptionPayloadParser()
+    private val appContext = context.applicationContext
     private val providerDirectory = File(context.cacheDir, "mihomo-runtime/providers")
     private val policyPackStore = PolicyPackStore(context)
     private val localRuleStore = LocalRouteRuleStore(context)
@@ -115,6 +116,7 @@ class MihomoConfigAssembler(
             // failures to allowlisted categories without retaining endpoint text.
             appendLine("log-level: error")
             appendLine("allow-lan: false")
+            appendLine("external-controller-unix: '${io.weave.client.core.diagnostics.PrivateCoreConnections.socketPath(appContext)}'")
             appendLine("ipv6: $ipv6Enabled")
             // The APK ships the CMFA/Mihomo .dat datasets. Keep the data mode stable even when
             // the user toggles CN direct routing; tying the file format to a routing switch can

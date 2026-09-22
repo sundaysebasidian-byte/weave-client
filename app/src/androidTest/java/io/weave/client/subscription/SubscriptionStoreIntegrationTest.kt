@@ -43,6 +43,25 @@ class SubscriptionStoreIntegrationTest {
         }
     }
 
+    @Test fun reviewedUpdateCannotOverwriteANewerSavedPayload() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val parser = SubscriptionPayloadParser()
+        val original = "proxies: [{name: Local, type: socks5, server: 127.0.0.1, port: 1080}]"
+        val newer = original.replace("1080", "1081")
+        val candidate = original.replace("1080", "1082")
+        val record = store.save("test", "inline://test", original, parser.parse(original))
+        val staleRevision = subscriptionRevision(record, original, "inline://test")
+        store.save("test", "inline://test", newer, parser.parse(newer), record.id)
+        val counts = SubscriptionImportCounts(1, 0, 0, 1)
+        assertThrows(IllegalStateException::class.java) {
+            store.saveReviewed(record.id, staleRevision, "test", "inline://test", candidate, parser.parse(candidate), counts)
+        }
+        assertEquals(newer, store.readPayload(record.id))
+        val freshRevision = subscriptionRevision(store.get(record.id)!!, newer, "inline://test")
+        store.saveReviewed(record.id, freshRevision, "test", "inline://test", candidate, parser.parse(candidate), counts)
+        assertEquals(candidate, store.readPayload(record.id))
+    }
+
     @Test fun constructingASecondStoreCannotDeleteAnUncommittedPayload() = isolated { context ->
         val writingMetadata = CountDownLatch(1)
         val finishWrite = CountDownLatch(1)

@@ -7,6 +7,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 enum class CommonEndpointState {
     VERIFIED,
@@ -18,6 +23,8 @@ enum class CommonEndpointKind {
     REACHABILITY,
     UNLOCK_ENTRY,
 }
+
+enum class EndpointFailure { TIMEOUT, DNS, CONNECTION, TLS, UNKNOWN }
 
 data class CommonEndpoint(
     val id: String,
@@ -33,6 +40,7 @@ data class CommonEndpointResult(
     val latencyMs: Int?,
     val statusCode: Int?,
     val detail: String,
+    val failure: EndpointFailure? = null,
 )
 
 data class CommonEndpointReport(
@@ -73,12 +81,22 @@ class CommonEndpointProbe(
 ) {
     suspend fun run(
         now: Long = System.currentTimeMillis(),
+        onResult: suspend (CommonEndpointResult) -> Unit = {},
     ): CommonEndpointReport = coroutineScope {
         // A monotonic clock keeps the reported duration correct when the wall clock is adjusted
         // by NTP or the user while a probe is in flight.
         val startedAtNanos = System.nanoTime()
+        val gate = Semaphore(3)
         val results = COMMON_ENDPOINTS.map { endpoint ->
-            async(Dispatchers.IO) { probe(endpoint) }
+            async(Dispatchers.IO) {
+                gate.withPermit {
+                    currentCoroutineContext().ensureActive()
+                    val result = probe(endpoint)
+                    currentCoroutineContext().ensureActive()
+                    onResult(result)
+                    result
+                }
+            }
         }.awaitAll()
         CommonEndpointReport(
             generatedAtEpochMillis = now,
@@ -88,18 +106,16 @@ class CommonEndpointProbe(
         )
     }
 
-    private fun probe(endpoint: CommonEndpoint): CommonEndpointResult = runCatching {
+    private fun probe(endpoint: CommonEndpoint): CommonEndpointResult = try {
         val response = transport.get(endpoint.url, timeoutMillis)
         val status = response.statusCode
         val state = when {
-            // A 2xx/3xx response proves that the selected route reached the service. A 401/403/
+            // A 2xx response proves that this request reached the service. A 401/403/
             // 429 is still useful evidence, but is shown as restricted because login, region and
             // rate-limit policy can prevent the actual page from being usable.
             status in 200..299 -> CommonEndpointState.VERIFIED
             // A redirect proves the host answered, but for a region-sensitive entry point it
             // does not prove that the service/content is available in the current region.
-            status in 300..399 && endpoint.kind == CommonEndpointKind.REACHABILITY ->
-                CommonEndpointState.VERIFIED
             status in 300..399 -> CommonEndpointState.ATTENTION
             status in 400..499 -> CommonEndpointState.ATTENTION
             status in 500..599 -> CommonEndpointState.ATTENTION
@@ -120,13 +136,22 @@ class CommonEndpointProbe(
                 else -> "HTTP $status · 状态未知"
             },
         )
-    }.getOrElse { error ->
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
         CommonEndpointResult(
             endpoint = endpoint,
             state = CommonEndpointState.ATTENTION,
             latencyMs = null,
             statusCode = null,
             detail = error.safeEndpointMessage(),
+            failure = when (error) {
+                is java.net.SocketTimeoutException -> EndpointFailure.TIMEOUT
+                is java.net.UnknownHostException -> EndpointFailure.DNS
+                is java.net.ConnectException -> EndpointFailure.CONNECTION
+                is javax.net.ssl.SSLException -> EndpointFailure.TLS
+                else -> EndpointFailure.UNKNOWN
+            },
         )
     }
 
@@ -140,7 +165,7 @@ class CommonEndpointProbe(
 
     companion object {
         // Keep a blocked region from holding the complete diagnostics surface for several
-        // seconds. All nine requests run concurrently and the UI retains any previous report.
+        // seconds. At most three requests run together, with results published individually.
         const val DEFAULT_TIMEOUT_MILLIS = 2_500
         const val MAX_LATENCY_MILLIS = 10_000
 

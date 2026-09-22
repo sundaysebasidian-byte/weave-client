@@ -221,6 +221,12 @@ data class AppRoute(
 )
 
 @Immutable
+enum class NetworkPathStatus(val label: String) {
+    INACTIVE("未连接"), STARTING("正在连接"), TUN_READY("隧道已建立"),
+    WAITING_NETWORK("等待网络"), RECOVERING("正在恢复"), VERIFIED("出口已验证"),
+}
+
+@Immutable
 data class DashboardState(
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val routingMode: RoutingMode = RoutingMode.RULE,
@@ -229,7 +235,7 @@ data class DashboardState(
     val uploadBytesPerSecond: Long = 0,
     val downloadBytesPerSecond: Long = 0,
     val attributedAppConnections: Long = 0,
-    val sessionDurationSeconds: Long = 0,
     val coreAvailable: Boolean = false,
     val statusMessage: String? = null,
+    val networkPathStatus: NetworkPathStatus = NetworkPathStatus.INACTIVE,
 )

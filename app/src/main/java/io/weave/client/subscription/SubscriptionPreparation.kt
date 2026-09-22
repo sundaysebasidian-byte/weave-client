@@ -16,6 +16,10 @@ internal class SubscriptionPreparation(private val resolver: ClashProviderResolv
         val parsed = parser.parse(resolved.payload)
         val normalized = parser.normalizeForMihomo(resolved.payload, parsed)
         val stored = parser.parse(normalized)
+        check(resolved.rootNodes == null ||
+            resolved.rootNodes + resolved.providerNodes == stored.nodeCount) {
+            "订阅规范化前后节点不一致，已停止保存"
+        }
         check(parsed.nodeCount == stored.nodeCount &&
             (parsed.format != SubscriptionFormat.CLASH_YAML || parsed.nodes == stored.nodes)) {
             "订阅规范化前后节点不一致，已停止保存"

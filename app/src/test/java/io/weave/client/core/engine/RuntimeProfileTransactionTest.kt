@@ -18,6 +18,30 @@ class RuntimeProfileTransactionTest {
     }
 
     @Test
+    fun `incomplete snapshot cannot destroy current profile`() {
+        writeProfile("old", "old-provider")
+        transaction.begin()
+        File(cacheDirectory, "mihomo-transaction/rollback/config.yaml").delete()
+        org.junit.Assert.assertTrue(runCatching { transaction.restoreRollback() }.isFailure)
+        assertEquals("old", transaction.readActiveConfig())
+        assertEquals("old-provider", File(activeDirectory, "providers/provider.yaml").readText())
+    }
+
+    @Test
+    fun `repeated restores preserve independent complete snapshots`() {
+        writeProfile("old", "old-provider")
+        transaction.begin()
+        writeProfile("new", "new-provider")
+        transaction.captureCandidate()
+        repeat(3) {
+            transaction.restoreRollback()
+            assertEquals("old", transaction.readActiveConfig())
+            transaction.restoreCandidate()
+            assertEquals("new", transaction.readActiveConfig())
+        }
+    }
+
+    @Test
     fun `rollback restores exact previous config and providers`() {
         writeProfile("old", "old-provider")
         transaction.begin()
