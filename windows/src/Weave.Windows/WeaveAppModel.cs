@@ -17,6 +17,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public RuntimeBundle? ActiveBundle { get; private set; }
     public ConnectionHealthState Health { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
+    private long _networkRevision;
     public event EventHandler? StatusChanged;
     public WindowsNetworkOptions NetworkOptions { get; set; } = new();
 
@@ -239,7 +240,9 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         Health = ConnectionHealthState.Checking;
         Status = "正在核验网络";
         StatusChanged?.Invoke(this, EventArgs.Empty);
-        Health = await ConnectionHealth.CheckAsync(bundle, cancellationToken).ConfigureAwait(false);
+        var checkedRevision = Interlocked.Read(ref _networkRevision);
+        var checkedHealth = await ConnectionHealth.CheckAsync(bundle, cancellationToken).ConfigureAwait(false);
+        Health = checkedRevision == Interlocked.Read(ref _networkRevision) ? checkedHealth : ConnectionHealthState.Unchecked;
         if (!process.IsReady) throw new InvalidOperationException(L.T("核心在启动时退出，请检查权限及配置。"));
         Status = Health != ConnectionHealthState.Reachable ? "内核运行中 · 网络待确认" :
             options.RoutingMode == RoutingMode.Direct ? "直连 · 不经过代理节点" : options.EnableTun ? "已连接 · TUN + 系统代理" : "已连接 · 系统代理";
@@ -285,6 +288,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public void InvalidateNetworkEvidence()
     {
+        Interlocked.Increment(ref _networkRevision);
         if (!IsConnected) return;
         Health = ConnectionHealthState.Unchecked;
         Status = "网络已变化，等待重新确认";
@@ -300,9 +304,10 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             Health = ConnectionHealthState.Checking;
             Status = "正在核验网络";
             StatusChanged?.Invoke(this, EventArgs.Empty);
+            var revision = Interlocked.Read(ref _networkRevision);
             var result = await ConnectionHealth.CheckAsync(bundle, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            if (!IsConnected || !ReferenceEquals(bundle, ActiveBundle)) return;
+            if (!IsConnected || !ReferenceEquals(bundle, ActiveBundle) || revision != Interlocked.Read(ref _networkRevision)) return;
             Health = result;
             Status = result == ConnectionHealthState.Reachable ? "网络连通性已确认" : "内核运行中 · 网络待确认";
             StatusChanged?.Invoke(this, EventArgs.Empty);

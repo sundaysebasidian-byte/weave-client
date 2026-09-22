@@ -85,7 +85,7 @@ public sealed partial class MainWindow : Window
 
         Closed += MainWindow_Closed;
         _tray = new TrayIcon(WindowNative.GetWindowHandle(this),
-            () => DispatcherQueue.TryEnqueue(() => { _hiddenToTray = false; AppWindow.Show(); Activate(); }),
+            () => DispatcherQueue.TryEnqueue(() => { _hiddenToTray = false; _trafficTimer.Start(); AppWindow.Show(); Activate(); }),
             () => DispatcherQueue.TryEnqueue(async () => await ShutdownAsync(closeWindow: true)),
             () => DispatcherQueue.TryEnqueue(ScheduleNetworkCheck));
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += NetworkAddressChanged;
@@ -93,7 +93,7 @@ public sealed partial class MainWindow : Window
         {
             if (_shutdownComplete) return;
             args.Cancel = true;
-            if (_tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; AppWindow.Hide(); return; }
+            if (_tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; _trafficTimer.Stop(); AppWindow.Hide(); return; }
             await ShutdownAsync(closeWindow: true);
         };
         UpdateStatus();
@@ -356,6 +356,7 @@ public sealed partial class MainWindow : Window
             ImportPanel.IsHitTestVisible = true;
             RoutesPanel.IsHitTestVisible = true;
             SubscriptionsPanel.IsHitTestVisible = true;
+            if (!_closed) UpdateStatus();
         }
 
         UpdateStatus();
@@ -791,7 +792,9 @@ public sealed partial class MainWindow : Window
         try
         {
             await Task.Delay(2500, cancellation.Token);
-            if (!_busy) await _model.RecheckAsync(cancellation.Token);
+            // Wait for an in-flight import/connect instead of abandoning the recheck.
+            while (_busy) await Task.Delay(500, cancellation.Token);
+            await _model.RecheckAsync(cancellation.Token);
         }
         catch (OperationCanceledException) { }
         catch (Exception) { if (!_closed) MessageText.Text = L.T("网络核验失败，可手动重新连接；未改走直连。"); }
