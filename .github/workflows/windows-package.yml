@@ -1,6 +1,11 @@
 name: Windows package
 
 on:
+  push:
+    branches: ['claude/festive-fermi-xriz1f']
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-package.yml'
   workflow_dispatch:
 
 permissions:
