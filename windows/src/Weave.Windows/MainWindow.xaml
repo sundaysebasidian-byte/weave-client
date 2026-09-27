@@ -4,163 +4,937 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:local="using:Weave.Windows"
+    xmlns:core="using:Weave.Windows.Core"
     mc:Ignorable="d"
     Title="Weave">
-    <Grid x:Name="RootGrid" Background="{ThemeResource WeaveCanvasBrush}">
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="RootGrid">
+        <Grid.Resources>
+            <DataTemplate x:Key="SubscriptionOptionTemplate" x:DataType="core:SubscriptionRecord">
+                <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+            <DataTemplate x:Key="NodeOptionTemplate" x:DataType="core:ProxyNode">
+                <TextBlock Text="{x:Bind DisplayName}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+            <Style x:Key="ChipStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="8,2,8,3" />
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Padding="34,26,34,18">
+        <Border x:Name="CaptureBackdrop" Grid.RowSpan="2" Visibility="Collapsed"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+
+        <!-- Custom title bar; the whole strip is a drag region. -->
+        <Grid x:Name="AppTitleBar" Height="48" Padding="16,0,0,0" ColumnSpacing="10">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="CaptionInsetColumn" Width="140" />
             </Grid.ColumnDefinitions>
-            <StackPanel Spacing="4">
-                <TextBlock Text="WEAVE" FontSize="28" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                <TextBlock Text="PRIVATE NETWORK · WINDOWS PREVIEW" FontSize="11" CharacterSpacing="170" Foreground="{ThemeResource WeaveMutedBrush}" />
-            </StackPanel>
-            <Border Grid.Column="1" Background="{ThemeResource WeaveCardBrush}" CornerRadius="18" Padding="16,8">
-                <TextBlock x:Name="StatusText" Text="未连接" Foreground="{ThemeResource WeaveMutedBrush}" />
+            <Border Width="20" Height="20" CornerRadius="6" Background="{ThemeResource WeaveMarkBrush}" VerticalAlignment="Center">
+                <TextBlock Text="W" FontSize="11" FontWeight="Bold" Foreground="{ThemeResource WeaveMarkForegroundBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Grid.Column="1" Text="Weave" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Border Grid.Column="2" Style="{StaticResource ChipStyle}" VerticalAlignment="Center">
+                <TextBlock Text="Windows 预览" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Border>
+            <Border Grid.Column="4" x:Name="StatusPill" CornerRadius="12" Padding="10,4,12,5" VerticalAlignment="Center"
+                    Background="{ThemeResource SubtleFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Grid Width="8" Height="8" VerticalAlignment="Center">
+                        <Ellipse x:Name="StatusDotIdle" Fill="{ThemeResource TextFillColorTertiaryBrush}" />
+                        <Ellipse x:Name="StatusDotBusy" Fill="{ThemeResource SystemFillColorCautionBrush}" Visibility="Collapsed" />
+                        <Ellipse x:Name="StatusDotOn" Fill="{ThemeResource SystemFillColorSuccessBrush}" Visibility="Collapsed" />
+                    </Grid>
+                    <TextBlock x:Name="StatusText" Text="未连接" FontSize="12" VerticalAlignment="Center" />
+                </StackPanel>
             </Border>
         </Grid>
 
-        <ScrollViewer Grid.Row="1" Padding="34,8,34,34">
-            <StackPanel MaxWidth="840" Spacing="18">
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
-                    <StackPanel Spacing="14">
-                        <TextBlock Text="连接" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <TextBlock Text="先选订阅，再选节点。自动策略会在该订阅内测速并切换。" Foreground="{ThemeResource WeaveMutedBrush}" />
-                        <ComboBox x:Name="SubscriptionComboBox" Header="订阅" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged" />
-                        <ComboBox x:Name="NodeComboBox" Header="节点（留空为自动测速）" DisplayMemberPath="DisplayName" SelectionChanged="NodeComboBox_SelectionChanged" />
-                        <Button x:Name="ConnectButton" Content="连接" Click="ConnectButton_Click" HorizontalAlignment="Left" Padding="26,11" Background="{ThemeResource WeaveAccentBrush}" />
-                        <TextBlock x:Name="TrafficText" Text="未连接时不显示流量" Foreground="{ThemeResource WeaveMutedBrush}" />
-                        <Button x:Name="HealthCheckButton" Content="测试所选节点（3 轮）" Click="HealthCheckButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
-                        <TextBlock x:Name="HealthResultText" Text="连接后选择节点可进行健康检查" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
-                        <TextBlock Text="连接后更改节点选择只影响下次连接；健康检查不会切换当前出口。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
-                    </StackPanel>
-                </Border>
+        <NavigationView
+            x:Name="NavView"
+            Grid.Row="1"
+            PaneDisplayMode="Left"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="False"
+            IsTitleBarAutoPaddingEnabled="False"
+            OpenPaneLength="212"
+            ExpandedModeThresholdWidth="1080"
+            SelectionChanged="NavView_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="概览" Tag="overview" ToolTipService.ToolTip="概览 (Ctrl+1)">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="节点" Tag="nodes" ToolTipService.ToolTip="节点 (Ctrl+2)">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="NodesBadge" Visibility="Collapsed" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem Content="订阅" Tag="subscriptions" ToolTipService.ToolTip="订阅 (Ctrl+3)">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE753;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="应用分流" Tag="routes" ToolTipService.ToolTip="应用分流 (Ctrl+4)">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE71D;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="网络与设置" Tag="network" ToolTipService.ToolTip="网络与设置 (Ctrl+5)">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
 
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="订阅节点质量" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <TextBlock Text="对当前订阅的每个节点进行三轮健康检查，按稳定度排序；分数仅用于比较节点。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button x:Name="SubscriptionHealthButton" Content="检查整份订阅" Click="SubscriptionHealthButton_Click" IsEnabled="False" />
-                            <Button x:Name="CancelHealthButton" Content="取消检查" Click="CancelHealthButton_Click" IsEnabled="False" />
-                        </StackPanel>
-                        <TextBlock x:Name="QualityResultText" Text="连接后可检查已加载的订阅" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
-                        <ListView x:Name="QualityListView" MaxHeight="380" Visibility="Collapsed">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Padding="2,7" Spacing="3">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                                        <TextBlock Text="{Binding ScoreText}" Foreground="{ThemeResource WeaveAccentBrush}" />
-                                        <TextBlock Text="{Binding MeasurementsText}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
+            <Grid x:Name="ContentHost" AllowDrop="True" DragOver="ContentHost_DragOver" Drop="ContentHost_Drop">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <InfoBar
+                    x:Name="PendingBar"
+                    Margin="28,16,28,0"
+                    Severity="Informational"
+                    Title="有待应用的更改"
+                    IsOpen="False"
+                    Closed="PendingBar_Closed">
+                    <InfoBar.ActionButton>
+                        <Button x:Name="ReconnectButton" Content="立即重新连接" Click="ReconnectButton_Click" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+
+                <!-- ===================== 概览 ===================== -->
+                <ScrollViewer x:Name="OverviewPage" Grid.Row="1">
+                    <StackPanel Padding="28,20,28,28" Spacing="12" MaxWidth="1240">
+                        <TextBlock Text="概览" Style="{StaticResource WeavePageTitleStyle}" />
+
+                        <InfoBar x:Name="CoreMissingBar" Severity="Warning" IsClosable="False" IsOpen="False"
+                                 Title="未找到 Mihomo 核心"
+                                 Message="将固定版本构建的 mihomo.exe 放到应用目录的 runtime 文件夹，或设置环境变量 WEAVE_MIHOMO_PATH。" />
+
+                        <!-- Hero -->
+                        <Grid CornerRadius="{StaticResource OverlayCornerRadius}" BorderThickness="1"
+                              BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                              Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                            <Border x:Name="HeroGlow" Opacity="0" IsHitTestVisible="False">
+                                <Border.OpacityTransition>
+                                    <ScalarTransition Duration="0:0:0.35" />
+                                </Border.OpacityTransition>
+                            </Border>
+                            <Grid Padding="20,18,20,18" ColumnSpacing="18">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid Width="60" Height="60" VerticalAlignment="Center">
+                                    <Ellipse x:Name="HeroHalo" Fill="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                             Stroke="{ThemeResource CardStrokeColorDefaultBrush}" StrokeThickness="1" />
+                                    <FontIcon x:Name="HeroGlyphIdle" Glyph="&#xEA18;" FontSize="24"
+                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <FontIcon x:Name="HeroGlyphOn" Glyph="&#xEA18;" FontSize="24" Visibility="Collapsed"
+                                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <ProgressRing x:Name="HeroRing" Width="60" Height="60" IsActive="False" IsIndeterminate="True" />
+                                </Grid>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock x:Name="HeroStateText" Text="未连接" Style="{StaticResource TitleTextBlockStyle}" FontSize="26" />
+                                    <TextBlock x:Name="HeroRouteText" Text="选择订阅后即可连接" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                                        <Border Style="{StaticResource ChipStyle}">
+                                            <TextBlock Text="TUN" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Border>
+                                        <Border Style="{StaticResource ChipStyle}">
+                                            <TextBlock x:Name="ChipDnsText" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Border>
+                                        <Border Style="{StaticResource ChipStyle}">
+                                            <TextBlock x:Name="ChipIpv6Text" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Border>
+                                        <Border x:Name="ChipStun" Style="{StaticResource ChipStyle}">
+                                            <TextBlock Text="STUN 阻断" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Border>
+                                        <Border Style="{StaticResource ChipStyle}">
+                                            <TextBlock x:Name="ChipRoutesText" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Border>
                                     </StackPanel>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </StackPanel>
-                </Border>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="6">
+                                    <Button x:Name="ConnectButton" Style="{StaticResource AccentButtonStyle}" MinWidth="156" Height="40"
+                                            HorizontalAlignment="Right" Click="ConnectButton_Click"
+                                            ToolTipService.ToolTip="连接 / 断开 (Ctrl+Enter)">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE7E8;" FontSize="14" />
+                                            <TextBlock x:Name="ConnectButtonText" Text="连接" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <TextBlock x:Name="HeroDetailText" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
 
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="网络设置" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <TextBlock Text="更改后重新连接生效。DNS 服务由第三方提供；STUN 阻断可能影响语音或视频通话。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
-                        <ComboBox x:Name="DnsProfileComboBox" Header="DNS" SelectedIndex="0" SelectionChanged="DnsProfileComboBox_SelectionChanged">
-                            <ComboBoxItem Content="默认加密 DNS" />
-                            <ComboBoxItem Content="广告过滤 DNS" />
-                            <ComboBoxItem Content="家庭过滤 DNS" />
-                            <ComboBoxItem Content="自定义 DoH / DoT" />
-                        </ComboBox>
-                        <TextBox x:Name="CustomDnsEndpointBox" Header="自定义 DNS 地址" PlaceholderText="https://example.com/dns-query 或 tls://example.com" IsEnabled="False" />
-                        <CheckBox x:Name="Ipv6CheckBox" Content="启用 IPv6" IsChecked="True" />
-                        <CheckBox x:Name="BlockStunCheckBox" Content="阻断常见 WebRTC STUN 端口" />
-                        <Button Content="保存网络设置" Click="SaveNetworkOptionsButton_Click" HorizontalAlignment="Left" />
-                    </StackPanel>
-                </Border>
-
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
-                    <StackPanel Spacing="14">
-                        <TextBlock Text="应用分流" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <TextBlock Text="按 Windows 进程名分流。添加或修改规则后，需要断开再连接才能应用。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
-                        <Grid ColumnSpacing="10">
+                        <!-- Metrics -->
+                        <Grid x:Name="MetricsGrid" ColumnSpacing="12" RowSpacing="12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.3*" />
-                                <ColumnDefinition Width="1*" />
-                                <ColumnDefinition Width="1*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource WeaveCardStyle}" Padding="16,12,16,12">
+                                <StackPanel Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE896;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                        <TextBlock Text="下载" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="DownRateText" Text="—" Style="{StaticResource WeaveMetricValueStyle}" />
+                                    <TextBlock x:Name="DownPeakText" Text="峰值 —" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource WeaveCardStyle}" Padding="16,12,16,12">
+                                <StackPanel Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE898;" FontSize="12" Foreground="{ThemeResource WeaveBrandBrush}" />
+                                        <TextBlock Text="上传" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="UpRateText" Text="—" Style="{StaticResource WeaveMetricValueStyle}" />
+                                    <TextBlock x:Name="UpPeakText" Text="峰值 —" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource WeaveCardStyle}" Padding="16,12,16,12">
+                                <StackPanel Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE81C;" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="本次流量" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="TotalDownText" Text="—" Style="{StaticResource WeaveMetricValueStyle}" />
+                                    <TextBlock x:Name="TotalUpText" Text="上传 —" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="3" Style="{StaticResource WeaveCardStyle}" Padding="16,12,16,12">
+                                <StackPanel Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE823;" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="连接时长" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="DurationText" Text="—" Style="{StaticResource WeaveMetricValueStyle}" />
+                                    <TextBlock x:Name="DurationDetailText" Text="未连接" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Traffic chart + exit -->
+                        <Grid x:Name="OverviewLowerGrid" ColumnSpacing="12" RowSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition x:Name="OverviewChartColumn" Width="1.7*" />
+                                <ColumnDefinition x:Name="OverviewExitColumn" Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Border x:Name="TrafficCard" Style="{StaticResource WeaveCardStyle}">
+                                <Grid RowSpacing="10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="实时流量" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Rectangle Width="10" Height="3" RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Text="下载" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Rectangle Width="10" Height="3" RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource WeaveBrandBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Text="上传" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid Grid.Row="1" Height="168">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid x:Name="TrafficChart" SizeChanged="TrafficChart_SizeChanged">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Border BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" />
+                                            <Border Grid.Row="1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" />
+                                            <Border Grid.Row="2" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" />
+                                            <Border Grid.Row="3" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,1" />
+                                            <Polygon x:Name="DownArea" Grid.RowSpan="4" Fill="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.16" />
+                                            <Polyline x:Name="DownLine" Grid.RowSpan="4" Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="2" StrokeLineJoin="Round" />
+                                            <Polyline x:Name="UpLine" Grid.RowSpan="4" Stroke="{ThemeResource WeaveBrandBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                            <TextBlock x:Name="TrafficEmptyText" Grid.RowSpan="4" Text="连接后显示最近 60 秒的实时流量"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                        </Grid>
+                                        <Grid Grid.Column="1" Margin="10,0,0,0" MinWidth="64">
+                                            <TextBlock x:Name="TrafficScaleText" Text="" VerticalAlignment="Top" Margin="0,-7,0,0"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock x:Name="TrafficHalfScaleText" Text="" VerticalAlignment="Center"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock Text="60 秒" VerticalAlignment="Bottom" Margin="0,0,0,-7"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <Border x:Name="ExitCard" Grid.Column="1" Style="{StaticResource WeaveCardStyle}">
+                                <StackPanel Spacing="10">
+                                    <Grid>
+                                        <TextBlock Text="出口" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        <HyperlinkButton Content="管理节点" HorizontalAlignment="Right" Padding="6,2" Click="ManageNodesButton_Click" />
+                                    </Grid>
+                                    <ComboBox x:Name="OverviewSubscriptionComboBox" Header="订阅" HorizontalAlignment="Stretch"
+                                              PlaceholderText="尚未导入订阅"
+                                              ItemTemplate="{StaticResource SubscriptionOptionTemplate}"
+                                              SelectionChanged="SubscriptionSelector_SelectionChanged" />
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="节点" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <Grid ColumnSpacing="8" MinHeight="32">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon x:Name="ExitGlyph" Glyph="&#xE945;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock x:Name="ExitNodeText" Text="自动选择" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="ExitNodeDetailText" Text="在订阅内按延迟测速切换" Style="{StaticResource CaptionTextBlockStyle}"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button x:Name="UseAutoExitButton" Grid.Column="2" Content="改为自动" Click="UseAutoExitButton_Click" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,2" />
+                                    <Grid>
+                                        <TextBlock Text="节点健康" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        <Button x:Name="HealthCheckButton" HorizontalAlignment="Right" Click="HealthCheckButton_Click" IsEnabled="False">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE916;" FontSize="12" />
+                                                <TextBlock Text="测试 3 轮" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="中位" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock x:Name="HealthMedianText" Text="—" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="P95" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock x:Name="HealthP95Text" Text="—" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="抖动" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock x:Name="HealthJitterText" Text="—" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="3">
+                                            <TextBlock Text="失败" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock x:Name="HealthFailureText" Text="—" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock x:Name="HealthStatusText" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===================== 节点 ===================== -->
+                <Grid x:Name="NodesPage" Grid.Row="1" Visibility="Collapsed" Padding="28,20,28,20" RowSpacing="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="节点" Style="{StaticResource WeavePageTitleStyle}" />
+                        <TextBlock x:Name="NodesSummaryText" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" MaxWidth="320" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="NodesSubscriptionComboBox" Width="200" PlaceholderText="选择订阅"
+                                  ItemTemplate="{StaticResource SubscriptionOptionTemplate}"
+                                  SelectionChanged="SubscriptionSelector_SelectionChanged" />
+                        <AutoSuggestBox x:Name="NodeSearchBox" Grid.Column="1" PlaceholderText="搜索节点或协议 (Ctrl+F)"
+                                        QueryIcon="Find" TextChanged="NodeSearchBox_TextChanged" />
+                        <ComboBox x:Name="NodeSortComboBox" Grid.Column="2" Width="136" SelectedIndex="0" SelectionChanged="NodeSortComboBox_SelectionChanged">
+                            <ComboBoxItem Content="订阅顺序" />
+                            <ComboBoxItem Content="按稳定度" />
+                            <ComboBoxItem Content="按延迟" />
+                            <ComboBoxItem Content="按名称" />
+                        </ComboBox>
+                        <Button x:Name="CancelCheckButton" Grid.Column="4" Content="取消" Visibility="Collapsed" Click="CancelCheckButton_Click" />
+                        <Button x:Name="CheckAllButton" Grid.Column="5" Style="{StaticResource AccentButtonStyle}" IsEnabled="False"
+                                Click="CheckAllButton_Click" ToolTipService.ToolTip="对订阅内每个节点进行三轮健康检查 (F5)">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE916;" FontSize="13" />
+                                <TextBlock Text="检查全部节点" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <Grid Grid.Row="2" RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid CornerRadius="{StaticResource ControlCornerRadius}" Padding="12,8,8,8" ColumnSpacing="10"
+                              Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                              BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ProcessNameBox" Header="进程名" PlaceholderText="chrome.exe" />
-                            <ComboBox x:Name="RouteSubscriptionComboBox" Grid.Column="1" Header="订阅" DisplayMemberPath="Name" SelectionChanged="RouteSubscriptionComboBox_SelectionChanged" />
-                            <ComboBox x:Name="RouteTargetModeComboBox" Grid.Column="2" Header="出口类型" SelectionChanged="RouteTargetModeComboBox_SelectionChanged" />
-                            <Button Grid.Column="3" Content="添加 / 更新" Click="AddRouteButton_Click" VerticalAlignment="Bottom" />
+                            <FontIcon x:Name="NodesExitGlyph" Glyph="&#xE945;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                <Run Text="连接出口：" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <Run x:Name="NodesExitRun" Text="自动选择" FontWeight="SemiBold" />
+                                <Run x:Name="NodesExitHintRun" Text="  ·  点击列表中的节点即可固定出口" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            </TextBlock>
+                            <Button x:Name="NodesUseAutoButton" Grid.Column="2" Content="改为自动选择" Click="UseAutoExitButton_Click" />
                         </Grid>
-                        <ComboBox x:Name="RouteNodeComboBox" Header="固定节点（仅固定节点时使用）" DisplayMemberPath="DisplayName" />
-                        <ListView x:Name="RouteListView" MinHeight="100">
+                        <Grid x:Name="CheckProgressPanel" Grid.Row="1" Visibility="Collapsed" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar x:Name="CheckProgressBar" VerticalAlignment="Center" />
+                            <TextBlock x:Name="CheckProgressText" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </Grid>
+                    </Grid>
+
+                    <Grid Grid.Row="3" CornerRadius="{StaticResource OverlayCornerRadius}" BorderThickness="1"
+                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid Height="34" Padding="12,0,8,0" ColumnSpacing="8" Background="{ThemeResource WeaveTableHeaderBrush}"
+                              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="92" />
+                                <ColumnDefinition Width="68" />
+                                <ColumnDefinition Width="68" />
+                                <ColumnDefinition Width="60" />
+                                <ColumnDefinition Width="52" />
+                                <ColumnDefinition Width="112" />
+                                <ColumnDefinition Width="32" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="节点" Style="{StaticResource WeaveColumnHeaderStyle}" Margin="18,0,0,0" />
+                            <TextBlock Grid.Column="1" Text="协议" Style="{StaticResource WeaveColumnHeaderStyle}" />
+                            <TextBlock Grid.Column="2" Text="中位" Style="{StaticResource WeaveColumnHeaderStyle}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Column="3" Text="P95" Style="{StaticResource WeaveColumnHeaderStyle}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Column="4" Text="抖动" Style="{StaticResource WeaveColumnHeaderStyle}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Column="5" Text="失败" Style="{StaticResource WeaveColumnHeaderStyle}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Column="6" Text="稳定度" Style="{StaticResource WeaveColumnHeaderStyle}" Margin="12,0,0,0" />
+                        </Grid>
+                        <ListView
+                            x:Name="NodeListView"
+                            Grid.Row="1"
+                            SelectionMode="Single"
+                            Padding="0,4,0,4"
+                            ItemContainerStyle="{StaticResource WeaveTableListItemStyle}"
+                            SelectionChanged="NodeListView_SelectionChanged">
                             <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Padding="2,7">
+                                <DataTemplate x:DataType="local:NodeItem">
+                                    <Grid ColumnSpacing="8" Background="Transparent">
+                                        <Grid.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Text="设为连接出口" Tag="{x:Bind}" Click="NodeMenuUse_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE718;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutItem Text="测试该节点" Tag="{x:Bind}" IsEnabled="{x:Bind CanProbe, Mode=OneWay}" Click="NodeMenuTest_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE916;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutSeparator />
+                                                <MenuFlyoutItem Text="复制节点名称" Tag="{x:Bind}" Click="NodeMenuCopy_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                            </MenuFlyout>
+                                        </Grid.ContextFlyout>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="92" />
+                                            <ColumnDefinition Width="68" />
+                                            <ColumnDefinition Width="68" />
+                                            <ColumnDefinition Width="60" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="112" />
+                                            <ColumnDefinition Width="32" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding ProcessName}" Foreground="{ThemeResource WeaveInkBrush}" />
-                                            <TextBlock Text="{Binding DisplayName}" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <FontIcon Glyph="&#xE718;" FontSize="11" Width="10" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                      Opacity="{x:Bind ExitMarkerOpacity, Mode=OneWay}" />
+                                            <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="删除" Tag="{Binding ProcessName}" Click="DeleteRouteButton_Click" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Protocol}" VerticalAlignment="Center"
+                                                   Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind MedianText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{x:Bind P95Text, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="4" Text="{x:Bind JitterText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="5" Text="{x:Bind FailureText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="7" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                                <Ellipse Fill="{x:Bind ScoreBrush, Mode=OneWay}" />
+                                                <ProgressRing Width="12" Height="12" Margin="-2" IsActive="{x:Bind IsTesting, Mode=OneWay}" />
+                                            </Grid>
+                                            <TextBlock Text="{x:Bind ScoreText, Mode=OneWay}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <Button Grid.Column="7" Style="{StaticResource WeaveIconButtonStyle}" Tag="{x:Bind}"
+                                                IsEnabled="{x:Bind CanProbe, Mode=OneWay}" Click="NodeTestButton_Click"
+                                                ToolTipService.ToolTip="测试该节点（3 轮）">
+                                            <FontIcon Glyph="&#xE916;" FontSize="13" />
+                                        </Button>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
-                    </StackPanel>
-                </Border>
-
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
-                    <StackPanel Spacing="14">
-                        <TextBlock Text="导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <TextBlock Text="本地导入内容使用 Windows DPAPI 加密保存；远程订阅只接受 HTTPS。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
-                        <TextBox x:Name="SubscriptionNameBox" Header="名称（可选）" PlaceholderText="例如：主订阅" />
-                        <TextBox x:Name="SubscriptionUrlBox" Header="HTTPS 链接" PlaceholderText="https://example.com/sub" />
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button Content="导入链接" Click="ImportUrlButton_Click" />
-                            <Button Content="选择订阅文件" Click="ImportFileButton_Click" />
+                        <StackPanel x:Name="NodesEmptyPanel" Grid.Row="1" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                            <FontIcon Glyph="&#xE774;" FontSize="32" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            <TextBlock x:Name="NodesEmptyText" HorizontalAlignment="Center" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Button x:Name="NodesEmptyImportButton" Content="导入订阅" HorizontalAlignment="Center" Click="GoToSubscriptionsButton_Click" />
                         </StackPanel>
-                        <TextBox x:Name="SubscriptionTextBox" Header="或粘贴 Clash YAML、节点 URI、sing-box/V2Ray JSON 或 Base64" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
-                        <Button Content="导入粘贴内容" Click="ImportTextButton_Click" HorizontalAlignment="Left" />
-                    </StackPanel>
-                </Border>
+                    </Grid>
+                </Grid>
 
-                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
-                    <StackPanel Spacing="10">
-                        <TextBlock Text="已导入订阅" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
-                        <ListView x:Name="SubscriptionListView" SelectionChanged="SubscriptionListView_SelectionChanged" MinHeight="130">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Padding="2,8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Name}" Foreground="{ThemeResource WeaveInkBrush}" />
-                                            <TextBlock Text="{Binding Summary}" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
+                <!-- ===================== 订阅 ===================== -->
+                <ScrollViewer x:Name="SubscriptionsPage" Grid.Row="1" Visibility="Collapsed">
+                    <StackPanel Padding="28,20,28,28" Spacing="12" MaxWidth="1240">
+                        <Grid>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="订阅" Style="{StaticResource WeavePageTitleStyle}" />
+                                <TextBlock Text="订阅内容使用 Windows DPAPI 加密保存在本机；远程订阅只接受 HTTPS。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                            <Button x:Name="RefreshAllButton" HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="RefreshAllButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE72C;" FontSize="13" />
+                                    <TextBlock Text="全部刷新" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <Border Style="{StaticResource WeaveCardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="导入订阅" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SubscriptionNameBox" PlaceholderText="名称（可选）" />
+                                    <TextBox x:Name="SubscriptionUrlBox" Grid.Column="1" PlaceholderText="https://example.com/sub" KeyDown="SubscriptionUrlBox_KeyDown" />
+                                    <Button x:Name="ImportUrlButton" Grid.Column="2" Style="{StaticResource AccentButtonStyle}" MinWidth="112" Click="ImportUrlButton_Click">
+                                        <Grid>
+                                            <TextBlock x:Name="ImportUrlButtonText" Text="导入链接" />
+                                            <ProgressRing x:Name="ImportUrlRing" Width="16" Height="16" IsActive="False" />
+                                        </Grid>
+                                    </Button>
+                                </Grid>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Click="ImportFileButton_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE8E5;" FontSize="13" />
+                                            <TextBlock Text="从文件导入…" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="刷新" Tag="{Binding Id}" IsEnabled="{Binding CanRefresh}" Click="RefreshSubscriptionButton_Click" Margin="0,0,8,0" />
-                                        <Button Grid.Column="2" Content="删除" Tag="{Binding Id}" Click="DeleteSubscriptionButton_Click" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </StackPanel>
-                </Border>
+                                    </Button>
+                                    <ToggleButton x:Name="PasteToggle" Grid.Column="1" Checked="PasteToggle_Changed" Unchecked="PasteToggle_Changed">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE77F;" FontSize="13" />
+                                            <TextBlock Text="粘贴内容" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <TextBlock Grid.Column="2" Text="也可以把订阅文件直接拖到窗口中" VerticalAlignment="Center" Margin="6,0,0,0"
+                                               Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </Grid>
+                                <StackPanel x:Name="PastePanel" Spacing="8" Visibility="Collapsed">
+                                    <TextBox x:Name="SubscriptionTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" MaxHeight="260"
+                                             FontFamily="Cascadia Mono,Consolas" FontSize="12"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                             PlaceholderText="粘贴 Clash YAML、节点 URI、sing-box / V2Ray JSON 或 Base64" />
+                                    <Button Content="导入粘贴内容" Click="ImportTextButton_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
-            </StackPanel>
-        </ScrollViewer>
+                        <Grid Margin="0,6,0,0">
+                            <TextBlock x:Name="SubscriptionCountText" Text="已导入" Style="{StaticResource WeaveSectionLabelStyle}" />
+                            <TextBlock Text="选中的订阅即为当前出口订阅" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" VerticalAlignment="Center" />
+                        </Grid>
+                        <Border Style="{StaticResource WeaveCardStyle}" Padding="0,4,0,4">
+                            <Grid>
+                                <ListView x:Name="SubscriptionListView" SelectionMode="Single"
+                                          ItemContainerStyle="{StaticResource WeaveTableListItemStyle}"
+                                          SelectionChanged="SubscriptionSelector_SelectionChanged">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="core:SubscriptionRecord">
+                                            <Grid ColumnSpacing="12" Padding="0,8,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Width="34" Height="34" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                                    <FontIcon Glyph="{x:Bind local:UiFormat.SourceGlyph(CanRefresh)}" FontSize="16"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                    <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{x:Bind local:UiFormat.SubscriptionDetail(Nodes.Count, UpdatedAt, Source)}"
+                                                               Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Style="{StaticResource WeaveIconButtonStyle}" Tag="{x:Bind Id}"
+                                                        IsEnabled="{x:Bind CanRefresh}" Click="RefreshSubscriptionButton_Click"
+                                                        ToolTipService.ToolTip="从来源刷新">
+                                                    <FontIcon Glyph="&#xE72C;" FontSize="13" />
+                                                </Button>
+                                                <Button Grid.Column="3" Style="{StaticResource WeaveIconButtonStyle}" Tag="{x:Bind Id}"
+                                                        Click="DeleteSubscriptionButton_Click" ToolTipService.ToolTip="删除订阅">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="13" />
+                                                </Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <StackPanel x:Name="SubscriptionsEmptyPanel" Spacing="6" Padding="24" HorizontalAlignment="Center" Visibility="Collapsed">
+                                    <FontIcon Glyph="&#xE753;" FontSize="28" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                    <TextBlock Text="还没有订阅" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBlock Text="在上方粘贴 HTTPS 订阅链接，或选择本地订阅文件。" HorizontalAlignment="Center"
+                                               Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===================== 应用分流 ===================== -->
+                <ScrollViewer x:Name="RoutesPage" Grid.Row="1" Visibility="Collapsed">
+                    <StackPanel Padding="28,20,28,28" Spacing="12" MaxWidth="1240">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="应用分流" Style="{StaticResource WeavePageTitleStyle}" />
+                            <TextBlock Text="按 Windows 进程名把应用分配到指定出口。普通桌面 .exe 最可靠；UWP 与系统服务的进程归属可能受系统限制。"
+                                       Style="{StaticResource WeaveSecondaryTextStyle}" />
+                        </StackPanel>
+
+                        <Border Style="{StaticResource WeaveCardStyle}">
+                            <StackPanel Spacing="10">
+                                <Grid>
+                                    <TextBlock x:Name="RouteEditorTitle" Text="添加规则" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <HyperlinkButton HorizontalAlignment="Right" Padding="6,2" Click="BrowseExeButton_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE838;" FontSize="12" />
+                                            <TextBlock Text="浏览 .exe…" />
+                                        </StackPanel>
+                                    </HyperlinkButton>
+                                </Grid>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.4*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="1.1*" />
+                                        <ColumnDefinition Width="1.3*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <AutoSuggestBox x:Name="ProcessNameBox" Header="进程" PlaceholderText="chrome.exe"
+                                                    GotFocus="ProcessNameBox_GotFocus"
+                                                    TextChanged="ProcessNameBox_TextChanged"
+                                                    QuerySubmitted="ProcessNameBox_QuerySubmitted" />
+                                    <ComboBox x:Name="RouteTargetModeComboBox" Grid.Column="1" Header="出口类型" HorizontalAlignment="Stretch"
+                                              SelectedIndex="0" SelectionChanged="RouteTargetModeComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="自动测速" />
+                                        <ComboBoxItem Content="固定节点" />
+                                        <ComboBoxItem Content="直连" />
+                                        <ComboBoxItem Content="阻止" />
+                                    </ComboBox>
+                                    <ComboBox x:Name="RouteSubscriptionComboBox" Grid.Column="2" Header="订阅" HorizontalAlignment="Stretch"
+                                              PlaceholderText="选择订阅"
+                                              ItemTemplate="{StaticResource SubscriptionOptionTemplate}"
+                                              SelectionChanged="RouteSubscriptionComboBox_SelectionChanged" />
+                                    <ComboBox x:Name="RouteNodeComboBox" Grid.Column="3" Header="固定节点" HorizontalAlignment="Stretch"
+                                              PlaceholderText="仅固定节点时需要" IsEnabled="False"
+                                              ItemTemplate="{StaticResource NodeOptionTemplate}" />
+                                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+                                        <Button x:Name="CancelRouteEditButton" Content="取消" Visibility="Collapsed" Click="CancelRouteEditButton_Click" />
+                                        <Button x:Name="SaveRouteButton" Style="{StaticResource AccentButtonStyle}" MinWidth="96" Click="SaveRouteButton_Click">
+                                            <TextBlock x:Name="SaveRouteButtonText" Text="添加规则" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="输入时会建议正在运行的程序；按 Enter 保存。" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock x:Name="RouteCountText" Text="规则" Style="{StaticResource WeaveSectionLabelStyle}" Margin="2,6,0,0" />
+                        <Grid CornerRadius="{StaticResource OverlayCornerRadius}" BorderThickness="1"
+                              BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Height="34" Padding="12,0,8,0" ColumnSpacing="8" Background="{ThemeResource WeaveTableHeaderBrush}"
+                                  BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="1.3*" />
+                                    <ColumnDefinition Width="72" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="应用" Style="{StaticResource WeaveColumnHeaderStyle}" Margin="30,0,0,0" />
+                                <TextBlock Grid.Column="1" Text="出口类型" Style="{StaticResource WeaveColumnHeaderStyle}" />
+                                <TextBlock Grid.Column="2" Text="目标" Style="{StaticResource WeaveColumnHeaderStyle}" />
+                            </Grid>
+                            <ListView x:Name="RouteListView" Grid.Row="1" SelectionMode="None" IsItemClickEnabled="True" Padding="0,4,0,4"
+                                      ItemContainerStyle="{StaticResource WeaveTableListItemStyle}" ItemClick="RouteListView_ItemClick">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:RouteItem">
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="1.3*" />
+                                                <ColumnDefinition Width="72" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                <FontIcon Glyph="&#xECAA;" FontSize="14" Width="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{x:Bind ProcessName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <FontIcon Glyph="{x:Bind KindGlyph}" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                <TextBlock Text="{x:Bind KindText}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{x:Bind TargetText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource WeaveIconButtonStyle}" Tag="{x:Bind ProcessName}" Click="EditRouteButton_Click"
+                                                        ToolTipService.ToolTip="编辑">
+                                                    <FontIcon Glyph="&#xE70F;" FontSize="13" />
+                                                </Button>
+                                                <Button Style="{StaticResource WeaveIconButtonStyle}" Tag="{x:Bind ProcessName}" Click="DeleteRouteButton_Click"
+                                                        ToolTipService.ToolTip="删除">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="13" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                            <StackPanel x:Name="RoutesEmptyPanel" Grid.Row="1" Spacing="6" Padding="24" HorizontalAlignment="Center" Visibility="Collapsed">
+                                <FontIcon Glyph="&#xE71D;" FontSize="28" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                <TextBlock Text="还没有分流规则" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                                <TextBlock Text="未匹配规则的应用使用概览页选择的出口。" HorizontalAlignment="Center"
+                                           Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===================== 网络与设置 ===================== -->
+                <ScrollViewer x:Name="NetworkPage" Grid.Row="1" Visibility="Collapsed">
+                    <StackPanel Padding="28,20,28,28" Spacing="4" MaxWidth="1000">
+                        <StackPanel Spacing="2" Margin="0,0,0,12">
+                            <TextBlock Text="网络与设置" Style="{StaticResource WeavePageTitleStyle}" />
+                            <TextBlock x:Name="NetworkSavedText" Text="更改会自动保存，并在下次连接时生效。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                        </StackPanel>
+
+                        <TextBlock Text="DNS" Style="{StaticResource WeaveSectionLabelStyle}" Margin="2,4,0,4" />
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE774;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="DNS 方案" />
+                                <TextBlock Text="加密 DNS 服务由第三方提供；过滤方案可能拦截部分域名。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                            <ComboBox x:Name="DnsProfileComboBox" Grid.Column="2" Width="220" VerticalAlignment="Center" SelectionChanged="DnsProfileComboBox_SelectionChanged">
+                                <ComboBoxItem Content="默认加密 DNS" />
+                                <ComboBoxItem Content="广告过滤 DNS" />
+                                <ComboBoxItem Content="家庭过滤 DNS" />
+                                <ComboBoxItem Content="自定义 DoH / DoT" />
+                            </ComboBox>
+                        </Grid>
+                        <Grid x:Name="CustomDnsRow" Style="{StaticResource WeaveSettingRowStyle}" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE71B;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="自定义 DNS 地址" />
+                                <TextBlock x:Name="CustomDnsHintText" Text="支持 https:// DoH 或 tls:// DoT；按 Enter 或离开输入框时保存。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                            <TextBox x:Name="CustomDnsEndpointBox" Grid.Column="2" Width="320" VerticalAlignment="Center"
+                                     PlaceholderText="https://example.com/dns-query"
+                                     KeyDown="CustomDnsEndpointBox_KeyDown" LostFocus="CustomDnsEndpointBox_LostFocus" />
+                        </Grid>
+
+                        <TextBlock Text="流量" Style="{StaticResource WeaveSectionLabelStyle}" Margin="2,16,0,4" />
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xEA18;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="TUN 流量接管" />
+                                <TextBlock Text="通过 Wintun 虚拟网卡接管系统流量，并劫持 53 端口 DNS 请求。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="始终开启" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </Grid>
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE839;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="IPv6" />
+                                <TextBlock Text="关闭后核心与 DNS 均不使用 IPv6。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="Ipv6ToggleSwitch" Grid.Column="2" OnContent="开" OffContent="关" MinWidth="0"
+                                          VerticalAlignment="Center" Toggled="NetworkToggle_Toggled" />
+                        </Grid>
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE714;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="阻断 WebRTC STUN" />
+                                <TextBlock Text="拒绝 3478–3479 与 19302–19309 端口，减少 WebRTC 泄露；可能影响语音或视频通话。" Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="BlockStunToggleSwitch" Grid.Column="2" OnContent="开" OffContent="关" MinWidth="0"
+                                          VerticalAlignment="Center" Toggled="NetworkToggle_Toggled" />
+                        </Grid>
+
+                        <TextBlock Text="关于" Style="{StaticResource WeaveSectionLabelStyle}" Margin="2,16,0,4" />
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE756;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Mihomo 核心" />
+                                <TextBlock x:Name="CorePathText" Style="{StaticResource WeaveSecondaryTextStyle}" IsTextSelectionEnabled="True" />
+                            </StackPanel>
+                            <Border x:Name="CoreStateBadge" Grid.Column="2" Style="{StaticResource ChipStyle}" VerticalAlignment="Center">
+                                <TextBlock x:Name="CoreStateText" FontSize="12" />
+                            </Border>
+                        </Grid>
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE8B7;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="本地数据" />
+                                <TextBlock x:Name="DataPathText" Style="{StaticResource WeaveSecondaryTextStyle}" IsTextSelectionEnabled="True" />
+                            </StackPanel>
+                            <Button Grid.Column="2" Content="打开文件夹" VerticalAlignment="Center" Click="OpenDataFolderButton_Click" />
+                        </Grid>
+                        <Grid Style="{StaticResource WeaveSettingRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE946;" FontSize="18" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Weave for Windows · 私用预览" />
+                                <TextBlock Text="快捷键：Ctrl+1–5 切换页面 · Ctrl+Enter 连接/断开 · Ctrl+F 搜索节点 · F5 检查全部节点"
+                                           Style="{StaticResource WeaveSecondaryTextStyle}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Transient notifications float above the page content. -->
+                <Border
+                    x:Name="ToastHost"
+                    Grid.Row="1"
+                    MaxWidth="720"
+                    Margin="28,0,28,20"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    CornerRadius="{StaticResource OverlayCornerRadius}"
+                    Background="{ThemeResource SolidBackgroundFillColorTertiaryBrush}"
+                    Visibility="Collapsed">
+                    <InfoBar x:Name="ToastBar" IsOpen="False" Closed="ToastBar_Closed">
+                        <InfoBar.ActionButton>
+                            <Button x:Name="ToastActionButton" Visibility="Collapsed" Click="ToastActionButton_Click" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+                </Border>
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>

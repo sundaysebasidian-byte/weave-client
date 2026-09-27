@@ -5,22 +5,99 @@
     xmlns:local="using:Weave.Windows">
     <Application.Resources>
         <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F5F7F9" />
-                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#18212B" />
-                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#6E7A86" />
-                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#B9ED4A" />
+                    <Color x:Key="WeaveBrandColor">#5B8A12</Color>
+                    <SolidColorBrush x:Key="WeaveBrandBrush" Color="#5B8A12" />
+                    <LinearGradientBrush x:Key="WeaveMarkBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#C9F266" Offset="0" />
+                        <GradientStop Color="#6FA51F" Offset="1" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="WeaveMarkForegroundBrush" Color="#10200A" />
+                    <SolidColorBrush x:Key="WeaveTableHeaderBrush" Color="#08000000" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#11171C" />
-                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#1B242B" />
-                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#F0F4F6" />
-                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#A7B4BC" />
-                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#C4F45A" />
+                    <Color x:Key="WeaveBrandColor">#C4F45A</Color>
+                    <SolidColorBrush x:Key="WeaveBrandBrush" Color="#C4F45A" />
+                    <LinearGradientBrush x:Key="WeaveMarkBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#D8FA84" Offset="0" />
+                        <GradientStop Color="#86BE2E" Offset="1" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="WeaveMarkForegroundBrush" Color="#10200A" />
+                    <SolidColorBrush x:Key="WeaveTableHeaderBrush" Color="#0CFFFFFF" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <Color x:Key="WeaveBrandColor">#FFFFFF</Color>
+                    <SolidColorBrush x:Key="WeaveBrandBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="WeaveMarkBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="WeaveMarkForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+                    <SolidColorBrush x:Key="WeaveTableHeaderBrush" Color="Transparent" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
+            <FontFamily x:Key="WeaveIconFont">Segoe Fluent Icons,Segoe MDL2 Assets</FontFamily>
+
+            <!-- Windows 11 card surface: layered fill with a hairline stroke. -->
+            <Style x:Key="WeaveCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+                <Setter Property="Padding" Value="16" />
+            </Style>
+
+            <!-- Settings row, matching the Windows Settings app rhythm. -->
+            <Style x:Key="WeaveSettingRowStyle" TargetType="Grid">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+                <Setter Property="Padding" Value="16,10,16,10" />
+                <Setter Property="MinHeight" Value="64" />
+                <Setter Property="ColumnSpacing" Value="16" />
+            </Style>
+
+            <Style x:Key="WeavePageTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+                <Setter Property="FontSize" Value="24" />
+            </Style>
+
+            <Style x:Key="WeaveSectionLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="2,0,0,0" />
+            </Style>
+
+            <Style x:Key="WeaveSecondaryTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <Style x:Key="WeaveColumnHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="WeaveMetricValueStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+                <Setter Property="FontSize" Value="22" />
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                <Setter Property="TextWrapping" Value="NoWrap" />
+            </Style>
+
+            <Style x:Key="WeaveIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Width" Value="32" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+            </Style>
+
+            <Style x:Key="WeaveTableListItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="12,0,8,0" />
+                <Setter Property="MinHeight" Value="40" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

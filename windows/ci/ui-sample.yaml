@@ -1,0 +1,14 @@
+# Fictional nodes used only by CI to render populated UI screenshots.
+proxies:
+  - { name: "🇭🇰 香港 01 · IPLC", type: trojan, server: hk1.example.com, port: 443, password: sample, sni: hk1.example.com }
+  - { name: "🇭🇰 香港 02", type: trojan, server: hk2.example.com, port: 443, password: sample, sni: hk2.example.com }
+  - { name: "🇯🇵 东京 01", type: vmess, server: jp1.example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000001, alterId: 0, cipher: auto }
+  - { name: "🇯🇵 大阪 02", type: vmess, server: jp2.example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000002, alterId: 0, cipher: auto }
+  - { name: "🇸🇬 新加坡 01", type: ss, server: sg1.example.com, port: 8388, cipher: aes-128-gcm, password: sample }
+  - { name: "🇸🇬 新加坡 02", type: ss, server: sg2.example.com, port: 8388, cipher: aes-128-gcm, password: sample }
+  - { name: "🇺🇸 洛杉矶 01", type: trojan, server: us1.example.com, port: 443, password: sample, sni: us1.example.com }
+  - { name: "🇺🇸 圣何塞 02", type: ss, server: us2.example.com, port: 8388, cipher: chacha20-ietf-poly1305, password: sample }
+  - { name: "🇩🇪 法兰克福 01", type: vmess, server: de1.example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000003, alterId: 0, cipher: auto }
+  - { name: "🇬🇧 伦敦 01", type: trojan, server: uk1.example.com, port: 443, password: sample, sni: uk1.example.com }
+  - { name: "🇰🇷 首尔 01", type: ss, server: kr1.example.com, port: 8388, cipher: aes-256-gcm, password: sample }
+  - { name: "🇹🇼 台北 01", type: vmess, server: tw1.example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000004, alterId: 0, cipher: auto }

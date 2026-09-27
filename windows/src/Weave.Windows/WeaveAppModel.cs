@@ -5,12 +5,14 @@ namespace Weave.Windows;
 
 internal sealed class WeaveAppModel : IAsyncDisposable
 {
-    private readonly string _dataDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Weave");
+    private readonly string _dataDirectory =
+        Environment.GetEnvironmentVariable("WEAVE_DATA_DIR") is { Length: > 0 } overrideDirectory
+            ? overrideDirectory
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave");
     private readonly SubscriptionVault _vault;
     private readonly AppRouteStore _routeStore;
     private readonly NetworkOptionsStore _optionsStore;
+    private readonly ConnectionPreferenceStore _preferenceStore;
     private readonly SubscriptionImporter _importer = new();
     private readonly MihomoConfigBuilder _configBuilder = new();
     private readonly object _trafficGate = new();
@@ -33,7 +35,16 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         _optionsStore = new NetworkOptionsStore(
             Path.Combine(_dataDirectory, "network-options.bin"),
             new WindowsDpapiProtector());
+        _preferenceStore = new ConnectionPreferenceStore(
+            Path.Combine(_dataDirectory, "connection-preference.bin"),
+            new WindowsDpapiProtector());
     }
+
+    public string DataDirectory => _dataDirectory;
+
+    public static string? MihomoPath => FindMihomo();
+
+    public ConnectionPreference Preference { get; private set; } = new(null, null);
 
     public ObservableCollection<SubscriptionRecord> Subscriptions { get; } = new();
 
@@ -67,6 +78,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public void Load()
     {
         NetworkOptions = _optionsStore.Load();
+        Preference = _preferenceStore.Load();
         Subscriptions.Clear();
         foreach (var subscription in _vault.List())
         {
@@ -351,6 +363,14 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         MihomoConfigBuilder.ValidateOptions(options);
         _optionsStore.Save(options);
         NetworkOptions = options;
+    }
+
+    public void SavePreference(string? subscriptionId, string? nodeId)
+    {
+        var preference = new ConnectionPreference(subscriptionId, nodeId);
+        if (preference == Preference) return;
+        _preferenceStore.Save(preference);
+        Preference = preference;
     }
 
     private static string? FindMihomo()

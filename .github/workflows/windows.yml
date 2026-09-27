@@ -31,3 +31,23 @@ jobs:
           msbuild-architecture: x64
       - name: WinUI x64 build
         run: msbuild windows/src/Weave.Windows/Weave.Windows.csproj /restore /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
+      - name: Launch smoke test and UI capture
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem windows/src/Weave.Windows/bin -Recurse -Filter Weave.Windows.exe | Select-Object -First 1
+          if (-not $exe) { throw "Weave.Windows.exe not found" }
+          $out = Join-Path $env:RUNNER_TEMP 'weave-ui'
+          $env:WEAVE_UI_CAPTURE_DIR = $out
+          $env:WEAVE_UI_CAPTURE_SAMPLE = (Resolve-Path windows/ci/ui-sample.yaml).Path
+          $env:WEAVE_DATA_DIR = Join-Path $env:RUNNER_TEMP 'weave-data'
+          $app = Start-Process $exe.FullName -PassThru
+          if (-not $app.WaitForExit(180000)) { Stop-Process -Id $app.Id -Force; throw "UI capture timed out" }
+          if (Test-Path "$out/capture-error.txt") { Get-Content "$out/capture-error.txt"; throw "UI capture failed" }
+          if (-not (Test-Path "$out/capture-complete.txt")) { throw "App exited before rendering (exit code $($app.ExitCode))" }
+          Get-ChildItem $out | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weave-windows-ui
+          path: ${{ runner.temp }}/weave-ui
+          if-no-files-found: warn
