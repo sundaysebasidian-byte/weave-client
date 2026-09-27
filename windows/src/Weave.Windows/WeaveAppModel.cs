@@ -49,11 +49,17 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public bool CanProbe(SubscriptionRecord subscription, ProxyNode node)
     {
+        return CanProbeSubscription(subscription) &&
+               subscription.Nodes.Any(candidate => candidate.Id == node.Id);
+    }
+
+    public bool CanProbeSubscription(SubscriptionRecord subscription)
+    {
         if (!IsConnected || _activeBundle is null || _loadedSubscriptions is not { } loadedSubscriptions)
             return false;
-        return loadedSubscriptions.TryGetValue(subscription.Id, out var loaded) &&
-               ReferenceEquals(loaded, subscription) &&
-               subscription.Nodes.Any(candidate => candidate.Id == node.Id);
+        return subscription.Nodes.Count > 0 &&
+               loadedSubscriptions.TryGetValue(subscription.Id, out var loaded) &&
+               ReferenceEquals(loaded, subscription);
     }
 
     public event EventHandler? StatusChanged;
@@ -316,6 +322,26 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         using var client = new MihomoControllerClient(bundle.ControlPort, bundle.ControlSecret);
         return await client.ProbeNodeAsync(
             MihomoConfigBuilder.ProviderName(subscription), node, linked.Token).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<NodeQualityRow>> ProbeSubscriptionAsync(
+        SubscriptionRecord subscription,
+        IProgress<int>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (!CanProbeSubscription(subscription) || _activeBundle is not { } bundle)
+            throw new InvalidDataException("该订阅未被当前运行配置加载；请重新连接后测试");
+
+        CancellationToken connectionToken;
+        lock (_trafficGate)
+        {
+            connectionToken = _trafficCancellation?.Token ?? CancellationToken.None;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, connectionToken);
+        using var client = new MihomoControllerClient(bundle.ControlPort, bundle.ControlSecret);
+        var snapshots = await client.ProbeSubscriptionAsync(
+            MihomoConfigBuilder.ProviderName(subscription), subscription.Nodes, progress, linked.Token).ConfigureAwait(false);
+        return NodeQualityMatrix.Build(snapshots);
     }
 
     public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
