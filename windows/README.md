@@ -15,6 +15,7 @@ Android 的 `VpnService`，而是让 Mihomo 使用 Windows TUN/Wintun 接管流�
 - 应用分流编辑器：按 `.exe` 进程选择自动订阅、固定节点、直连或阻止，并用 DPAPI 保存；
 - Windows Mihomo 配置校验、启动、带随机密钥的本机控制接口就绪探测、日志截断和运行文件清理；
 - WinUI 3 桌面壳：订阅导入、刷新和删除、节点查看、先订阅后节点、连接/断开状态；DNS 预设/自定义 DoH 或 DoT、IPv6 和 STUN 阻断设置使用 DPAPI 保存。
+- 连接页通过带密钥的本机控制接口展示实时上下行速率与累计流量；可对当前运行配置已加载的所选节点手动进行三轮健康检查，展示中位延迟、P95、抖动及失败轮次。
 
 当前仍有两个发布前工作：将经过锁定哈希校验的 `mihomo.exe` 放入发行包，以及在 Windows 10/11
 真机上验证管理员权限、Wintun 安装、DNS 劫持和断开回滚。控制接口就绪只证明核心已启动，
@@ -30,7 +31,9 @@ Android 的 `VpnService`，而是让 Mihomo 使用 Windows TUN/Wintun 接管流�
 | 节点 URI、sing-box/V2Ray JSON | 已接入常见协议的导入链路；无法安全转换的协议、传输或参数会在导入时提示 |
 | 二维码、局域网互传 | 尚未接入 Windows 导入链路 |
 | GeoIP/Geosite、域名与 IP 规则、离线策略包、路由解释 | 尚未接入 Windows 配置和界面 |
-| 节点健康/质量矩阵、网络与隐私检测、实时速率 | 尚未接入 Windows 控制界面 |
+| 节点健康与质量矩阵 | 已接入当前运行配置的单节点三轮健康检查；完整订阅质量矩阵尚未接入 |
+| 实时速率 | 已接入控制界面；需 Windows 真机流量验证 |
+| 网络与隐私检测 | 尚未接入 Windows 控制界面 |
 | TUN 数据面、管理员权限与断开回滚 | 待 Windows 10/11 真机验证 |
 
 完整 Android 基线见 [`docs/ANDROID_FEATURE_MATRIX.md`](../docs/ANDROID_FEATURE_MATRIX.md)。

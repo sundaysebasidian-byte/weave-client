@@ -241,7 +241,7 @@ public sealed class MihomoConfigBuilder
         return endpoint!;
     }
 
-    private static string ProviderName(SubscriptionRecord subscription) => $"provider-{subscription.Id}";
+    public static string ProviderName(SubscriptionRecord subscription) => $"provider-{subscription.Id}";
 
     private static string ProviderFileName(SubscriptionRecord subscription) => $"{ProviderName(subscription)}.yaml";
 

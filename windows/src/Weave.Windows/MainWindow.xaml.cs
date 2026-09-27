@@ -10,6 +10,7 @@ public sealed partial class MainWindow : Window
 {
     private readonly WeaveAppModel _model = new();
     private readonly CancellationTokenSource _lifetime = new();
+    private bool _healthChecking;
 
     public MainWindow()
     {
@@ -46,6 +47,13 @@ public sealed partial class MainWindow : Window
     {
         NodeComboBox.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
         NodeComboBox.SelectedItem = null;
+    }
+
+    private void NodeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (HealthResultText is null || HealthCheckButton is null) return;
+        HealthResultText.Text = "连接后选择节点可进行健康检查";
+        UpdateStatus();
     }
 
     private void SubscriptionListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -252,6 +260,42 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private async void HealthCheckButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SubscriptionComboBox.SelectedItem is not SubscriptionRecord subscription ||
+            NodeComboBox.SelectedItem is not ProxyNode node || !_model.CanProbe(subscription, node))
+            return;
+
+        _healthChecking = true;
+        HealthResultText.Text = "正在进行三轮节点健康检查…";
+        UpdateStatus();
+        try
+        {
+            var result = await _model.ProbeNodeAsync(subscription, node, _lifetime.Token);
+            if (ReferenceEquals(SubscriptionComboBox.SelectedItem, subscription) &&
+                ReferenceEquals(NodeComboBox.SelectedItem, node) && _model.CanProbe(subscription, node))
+            {
+                HealthResultText.Text = $"中位 {FormatLatency(result.MedianLatencyMs)} · " +
+                    $"P95 {FormatLatency(result.P95LatencyMs)} · " +
+                    $"抖动 {FormatLatency(result.JitterMs)} · " +
+                    $"失败 {result.ProbeFailurePercent}%（{result.SuccessfulSamples}/{result.TotalSamples} 轮成功）";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            HealthResultText.Text = "健康检查已取消";
+        }
+        catch (Exception exception)
+        {
+            HealthResultText.Text = $"健康检查失败：{exception.Message}";
+        }
+        finally
+        {
+            _healthChecking = false;
+            UpdateStatus();
+        }
+    }
+
     private async Task RunActionAsync(Func<Task> action)
     {
         try
@@ -274,6 +318,28 @@ public sealed partial class MainWindow : Window
     {
         StatusText.Text = _model.Status;
         ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
+        HealthCheckButton.IsEnabled = !_healthChecking &&
+            SubscriptionComboBox.SelectedItem is SubscriptionRecord subscription &&
+            NodeComboBox.SelectedItem is ProxyNode node && _model.CanProbe(subscription, node);
+        if (!_model.IsConnected) HealthResultText.Text = "连接后选择节点可进行健康检查";
+        TrafficText.Text = !_model.IsConnected
+            ? "未连接时不显示流量"
+            : _model.Traffic is { } traffic
+                ? $"↑ {FormatBytes(traffic.UploadBytesPerSecond)}/s · ↓ {FormatBytes(traffic.DownloadBytesPerSecond)}/s" +
+                  (traffic.UploadTotalBytes is { } upload && traffic.DownloadTotalBytes is { } download
+                      ? $" · 本次累计 ↑ {FormatBytes(upload)} / ↓ {FormatBytes(download)}"
+                      : string.Empty)
+                : "实时速率暂不可用";
+    }
+
+    private static string FormatLatency(int? value) => value is { } milliseconds ? $"{milliseconds} ms" : "—";
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024L * 1024) return $"{bytes / 1024d:0.0} KiB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024d * 1024):0.0} MiB";
+        return $"{bytes / (1024d * 1024 * 1024):0.0} GiB";
     }
 
     private WindowsNetworkOptions ReadNetworkOptions() => new()
