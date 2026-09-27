@@ -26,5 +26,8 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Windows core tests
         run: dotnet test windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/Weave.Windows.Core.Tests.csproj -c Release --nologo
+      - uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
       - name: WinUI x64 build
-        run: dotnet build windows/src/Weave.Windows/Weave.Windows.csproj -c Release -p:Platform=x64 --nologo
+        run: msbuild windows/src/Weave.Windows/Weave.Windows.csproj /restore /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
