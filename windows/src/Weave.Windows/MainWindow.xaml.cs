@@ -311,14 +311,18 @@ public sealed partial class MainWindow : Window
         ClearQualityResult();
         QualityResultText.Text = $"正在检查节点：0/{subscription.Nodes.Count}…";
         UpdateStatus();
-        var progress = new Progress<int>(completed =>
+        var lastProgress = 0;
+        var progress = new Progress<int>(completed => DispatcherQueue.TryEnqueue(() =>
         {
             if (ReferenceEquals(_healthCancellation, cancellation) &&
                 !cancellation.IsCancellationRequested &&
                 ReferenceEquals(SubscriptionComboBox.SelectedItem, subscription) &&
-                _model.CanProbeSubscription(subscription))
+                _model.CanProbeSubscription(subscription) && completed > lastProgress)
+            {
+                lastProgress = completed;
                 QualityResultText.Text = $"正在检查节点：{completed}/{subscription.Nodes.Count}…";
-        });
+            }
+        }));
         try
         {
             var rows = await _model.ProbeSubscriptionAsync(subscription, progress, cancellation.Token);
