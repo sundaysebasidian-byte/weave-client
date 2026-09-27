@@ -10,4 +10,7 @@
   <ItemGroup>
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Weave.Windows.Core.Tests\**\*.cs" />
+  </ItemGroup>
 </Project>

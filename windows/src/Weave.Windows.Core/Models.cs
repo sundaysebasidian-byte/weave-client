@@ -45,6 +45,10 @@ public sealed class SubscriptionRecord
     [JsonIgnore]
     public string Summary => $"{Nodes.Count} 个节点 · {UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}";
 
+    [JsonIgnore]
+    public bool CanRefresh => Uri.TryCreate(Source, UriKind.Absolute, out var uri) &&
+                              uri.Scheme == Uri.UriSchemeHttps;
+
     public override string ToString() => Name;
 }
 
@@ -93,4 +97,6 @@ public sealed class RuntimeBundle
     public required string Directory { get; init; }
     public required string ConfigPath { get; init; }
     public required int MixedPort { get; init; }
+    public required int ControlPort { get; init; }
+    public required string ControlSecret { get; init; }
 }

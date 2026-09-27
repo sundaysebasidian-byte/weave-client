@@ -1,9 +1,17 @@
 using System.Text;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 
 namespace Weave.Windows.Core;
 
 public sealed class MihomoConfigBuilder
 {
+    public static void ValidateOptions(WindowsNetworkOptions options)
+    {
+        _ = DnsEndpoints(options).ToArray();
+    }
+
     public RuntimeBundle Build(
         IReadOnlyCollection<SubscriptionRecord> subscriptions,
         IReadOnlyCollection<WindowsAppRoute> routes,
@@ -12,6 +20,7 @@ public sealed class MihomoConfigBuilder
         WindowsNetworkOptions options,
         string runtimeDirectory)
     {
+        ValidateOptions(options);
         var usable = subscriptions.Where(item => item.Nodes.Count > 0).ToList();
         if (usable.Count == 0)
         {
@@ -42,14 +51,24 @@ public sealed class MihomoConfigBuilder
             File.WriteAllText(providerPath, subscription.ProviderYaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
+        var mixedPort = AvailableLocalPort();
+        var controlPort = AvailableLocalPort();
+        while (controlPort == mixedPort)
+        {
+            controlPort = AvailableLocalPort();
+        }
+        var controlSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var configPath = Path.Combine(runtimeDirectory, "config.yaml");
-        var yaml = BuildYaml(usable, byId, routes, selectedSubscription, selectedNodeId, options);
+        var yaml = BuildYaml(usable, byId, routes, selectedSubscription, selectedNodeId, options,
+            mixedPort, controlPort, controlSecret);
         File.WriteAllText(configPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return new RuntimeBundle
         {
             Directory = runtimeDirectory,
             ConfigPath = configPath,
-            MixedPort = 7890,
+            MixedPort = mixedPort,
+            ControlPort = controlPort,
+            ControlSecret = controlSecret,
         };
     }
 
@@ -59,14 +78,19 @@ public sealed class MihomoConfigBuilder
         IReadOnlyCollection<WindowsAppRoute> routes,
         SubscriptionRecord selectedSubscription,
         string? selectedNodeId,
-        WindowsNetworkOptions options)
+        WindowsNetworkOptions options,
+        int mixedPort,
+        int controlPort,
+        string controlSecret)
     {
         var selectedGroup = selectedNodeId is null
             ? AutomaticGroup(selectedSubscription)
             : FixedGroup(selectedSubscription, selectedNodeId);
         var builder = new StringBuilder();
-        builder.AppendLine("mixed-port: 7890");
+        builder.AppendLine($"mixed-port: {mixedPort}");
         builder.AppendLine("allow-lan: false");
+        builder.AppendLine($"external-controller: 127.0.0.1:{controlPort}");
+        builder.AppendLine($"secret: {YamlString(controlSecret)}");
         builder.AppendLine("mode: rule");
         builder.AppendLine("log-level: warning");
         builder.AppendLine($"ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
@@ -198,10 +222,23 @@ public sealed class MihomoConfigBuilder
         {
             DnsProfile.AdBlock => new[] { "https://dns.adguard-dns.com/dns-query" },
             DnsProfile.Family => new[] { "https://family.adguard-dns.com/dns-query" },
-            DnsProfile.Custom when Uri.TryCreate(options.CustomDnsEndpoint, UriKind.Absolute, out var custom) &&
-                                   custom.Scheme is "https" or "tls" => new[] { options.CustomDnsEndpoint! },
+            DnsProfile.Custom => new[] { ValidateCustomDnsEndpoint(options.CustomDnsEndpoint) },
             _ => new[] { "https://dns.alidns.com/dns-query", "https://doh.pub/dns-query" },
         };
+    }
+
+    private static string ValidateCustomDnsEndpoint(string? endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("https" or "tls") ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+        {
+            throw new InvalidDataException("自定义 DNS 必须是有效的 HTTPS DoH 或 TLS DoT 地址");
+        }
+
+        return endpoint!;
     }
 
     private static string ProviderName(SubscriptionRecord subscription) => $"provider-{subscription.Id}";
@@ -230,4 +267,18 @@ public sealed class MihomoConfigBuilder
     }
 
     private static string YamlString(string value) => $"'{value.Replace("'", "''", StringComparison.Ordinal)}'";
+
+    private static int AvailableLocalPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
 }

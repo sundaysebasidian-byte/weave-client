@@ -39,6 +39,23 @@
                 </Border>
 
                 <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="网络设置" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                        <TextBlock Text="更改后重新连接生效。DNS 服务由第三方提供；STUN 阻断可能影响语音或视频通话。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
+                        <ComboBox x:Name="DnsProfileComboBox" Header="DNS" SelectedIndex="0" SelectionChanged="DnsProfileComboBox_SelectionChanged">
+                            <ComboBoxItem Content="默认加密 DNS" />
+                            <ComboBoxItem Content="广告过滤 DNS" />
+                            <ComboBoxItem Content="家庭过滤 DNS" />
+                            <ComboBoxItem Content="自定义 DoH / DoT" />
+                        </ComboBox>
+                        <TextBox x:Name="CustomDnsEndpointBox" Header="自定义 DNS 地址" PlaceholderText="https://example.com/dns-query 或 tls://example.com" IsEnabled="False" />
+                        <CheckBox x:Name="Ipv6CheckBox" Content="启用 IPv6" IsChecked="True" />
+                        <CheckBox x:Name="BlockStunCheckBox" Content="阻断常见 WebRTC STUN 端口" />
+                        <Button Content="保存网络设置" Click="SaveNetworkOptionsButton_Click" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
                     <StackPanel Spacing="14">
                         <TextBlock Text="应用分流" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
                         <TextBlock Text="按 Windows 进程名分流。添加或修改规则后，需要断开再连接才能应用。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
@@ -100,12 +117,14 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="{Binding Name}" Foreground="{ThemeResource WeaveInkBrush}" />
                                             <TextBlock Text="{Binding Summary}" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="删除" Tag="{Binding Id}" Click="DeleteSubscriptionButton_Click" />
+                                        <Button Grid.Column="1" Content="刷新" Tag="{Binding Id}" IsEnabled="{Binding CanRefresh}" Click="RefreshSubscriptionButton_Click" Margin="0,0,8,0" />
+                                        <Button Grid.Column="2" Content="删除" Tag="{Binding Id}" Click="DeleteSubscriptionButton_Click" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>

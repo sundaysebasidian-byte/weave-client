@@ -15,12 +15,23 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _model.Load();
+        DnsProfileComboBox.SelectedIndex = _model.NetworkOptions.DnsProfile switch
+        {
+            DnsProfile.AdBlock => 1,
+            DnsProfile.Family => 2,
+            DnsProfile.Custom => 3,
+            _ => 0,
+        };
+        CustomDnsEndpointBox.Text = _model.NetworkOptions.CustomDnsEndpoint ?? string.Empty;
+        Ipv6CheckBox.IsChecked = _model.NetworkOptions.Ipv6Enabled;
+        BlockStunCheckBox.IsChecked = _model.NetworkOptions.BlockUdpStun;
         SubscriptionComboBox.ItemsSource = _model.Subscriptions;
         SubscriptionListView.ItemsSource = _model.Subscriptions;
         RouteSubscriptionComboBox.ItemsSource = _model.Subscriptions;
         RouteListView.ItemsSource = _model.AppRoutes;
         RouteTargetModeComboBox.ItemsSource = new[] { "自动测速", "固定节点", "直连", "阻止" };
         RouteTargetModeComboBox.SelectedIndex = 0;
+        _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(UpdateStatus);
         if (_model.Subscriptions.Count > 0)
         {
             SubscriptionComboBox.SelectedIndex = 0;
@@ -59,6 +70,24 @@ public sealed partial class MainWindow : Window
         {
             RouteNodeComboBox.SelectedItem = null;
         }
+    }
+
+    private void DnsProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CustomDnsEndpointBox is not null)
+        {
+            CustomDnsEndpointBox.IsEnabled = DnsProfileComboBox.SelectedIndex == 3;
+        }
+    }
+
+    private async void SaveNetworkOptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunActionAsync(() =>
+        {
+            _model.SaveNetworkOptions(ReadNetworkOptions());
+            MessageText.Text = "网络设置已保存；重新连接后生效";
+            return Task.CompletedTask;
+        });
     }
 
     private async void AddRouteButton_Click(object sender, RoutedEventArgs e)
@@ -103,7 +132,7 @@ public sealed partial class MainWindow : Window
         {
             var record = _model.ImportText(
                 SubscriptionNameBox.Text,
-                "clipboard://manual",
+                $"inline://{Guid.NewGuid():N}",
                 SubscriptionTextBox.Text);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
@@ -121,6 +150,22 @@ public sealed partial class MainWindow : Window
                 _lifetime.Token);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = $"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点";
+        });
+    }
+
+    private async void RefreshSubscriptionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string id } ||
+            _model.Subscriptions.FirstOrDefault(item => item.Id == id) is not { } current)
+        {
+            return;
+        }
+
+        await RunActionAsync(async () =>
+        {
+            var update = await _model.RefreshAsync(current, _lifetime.Token);
+            SubscriptionComboBox.SelectedItem = update.Record;
+            MessageText.Text = $"已刷新 {update.Record.Name}：新增 {update.AddedNodes}、移除 {update.RemovedNodes}、保留 {update.RetainedNodes} 个节点；重新连接后生效";
         });
     }
 
@@ -166,12 +211,16 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        _model.Remove(id);
-        if (SubscriptionComboBox.SelectedItem is SubscriptionRecord selected && selected.Id == id)
+        await RunActionAsync(() =>
         {
-            SubscriptionComboBox.SelectedIndex = _model.Subscriptions.Count > 0 ? 0 : -1;
-        }
-        MessageText.Text = "订阅已删除";
+            _model.Remove(id);
+            if (SubscriptionComboBox.SelectedItem is SubscriptionRecord selected && selected.Id == id)
+            {
+                SubscriptionComboBox.SelectedIndex = _model.Subscriptions.Count > 0 ? 0 : -1;
+            }
+            MessageText.Text = "订阅已删除";
+            return Task.CompletedTask;
+        });
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -181,7 +230,6 @@ public sealed partial class MainWindow : Window
             await RunActionAsync(async () =>
             {
                 await _model.DisconnectAsync();
-                ConnectButton.Content = "连接";
                 MessageText.Text = "已断开，系统网络配置保持不变";
                 UpdateStatus();
             });
@@ -197,9 +245,8 @@ public sealed partial class MainWindow : Window
         await RunActionAsync(async () =>
         {
             var node = NodeComboBox.SelectedItem as ProxyNode;
-            await _model.ConnectAsync(subscription.Id, node?.Id, _lifetime.Token);
-            ConnectButton.Content = "断开连接";
-            MessageText.Text = "Mihomo 已启动。Windows TUN 需要系统允许网络适配器与路由变更。";
+            await _model.ConnectAsync(subscription.Id, node?.Id, ReadNetworkOptions(), _lifetime.Token);
+            MessageText.Text = "Mihomo 已启动；请验证 Windows TUN 适配器和实际出口。";
             UpdateStatus();
         });
     }
@@ -225,7 +272,23 @@ public sealed partial class MainWindow : Window
     private void UpdateStatus()
     {
         StatusText.Text = _model.Status;
+        ConnectButton.Content = _model.IsConnected ? "断开连接" : "连接";
     }
+
+    private WindowsNetworkOptions ReadNetworkOptions() => new()
+    {
+        EnableTun = true,
+        Ipv6Enabled = Ipv6CheckBox.IsChecked == true,
+        BlockUdpStun = BlockStunCheckBox.IsChecked == true,
+        DnsProfile = DnsProfileComboBox.SelectedIndex switch
+        {
+            1 => DnsProfile.AdBlock,
+            2 => DnsProfile.Family,
+            3 => DnsProfile.Custom,
+            _ => DnsProfile.Privacy,
+        },
+        CustomDnsEndpoint = CustomDnsEndpointBox.Text.Trim(),
+    };
 
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {
