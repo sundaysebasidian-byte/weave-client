@@ -10,9 +10,11 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         "Weave");
     private readonly SubscriptionVault _vault;
     private readonly AppRouteStore _routeStore;
+    private readonly NetworkOptionsStore _optionsStore;
     private readonly SubscriptionImporter _importer = new();
     private readonly MihomoConfigBuilder _configBuilder = new();
     private MihomoProcess? _process;
+    private string? _activeRuntimeDirectory;
 
     public WeaveAppModel()
     {
@@ -22,30 +24,39 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         _routeStore = new AppRouteStore(
             Path.Combine(_dataDirectory, "app-routes.bin"),
             new WindowsDpapiProtector());
+        _optionsStore = new NetworkOptionsStore(
+            Path.Combine(_dataDirectory, "network-options.bin"),
+            new WindowsDpapiProtector());
     }
 
     public ObservableCollection<SubscriptionRecord> Subscriptions { get; } = new();
 
     public ObservableCollection<WindowsAppRoute> AppRoutes { get; } = new();
 
+    public WindowsNetworkOptions NetworkOptions { get; private set; } = new();
+
     public bool IsConnected => _process?.IsRunning == true;
 
     public string Status { get; private set; } = "未连接";
 
+    public event EventHandler? StatusChanged;
+
     public void Load()
     {
+        NetworkOptions = _optionsStore.Load();
         Subscriptions.Clear();
         foreach (var subscription in _vault.List())
         {
             Subscriptions.Add(subscription);
         }
 
+        AppRoutes.Clear();
         foreach (var route in _routeStore.Load())
         {
             AppRoutes.Add(route);
         }
 
-        Status = Subscriptions.Count == 0 ? "请先导入订阅" : "未连接";
+        SetStatus(Subscriptions.Count == 0 ? "请先导入订阅" : "未连接");
     }
 
     public SubscriptionRecord ImportText(string name, string source, string payload)
@@ -58,15 +69,38 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public async Task<SubscriptionRecord> ImportUrlAsync(string name, string source, CancellationToken cancellationToken)
     {
-        var record = await _importer.ImportUrlAsync(name, source, cancellationToken);
+        var candidate = await _importer.ImportUrlAsync(name, source, cancellationToken);
+        var old = Subscriptions.FirstOrDefault(item => item.Source == candidate.Source);
+        var record = old is null
+            ? candidate
+            : SubscriptionUpdateGuard.Prepare(old, candidate, AppRoutes).Record;
         _vault.Upsert(record);
         ReplaceInCollection(record);
         return record;
     }
 
+    public async Task<SubscriptionUpdate> RefreshAsync(SubscriptionRecord current, CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(current.Source, UriKind.Absolute, out var source) ||
+            source.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidDataException("只有 HTTPS 订阅可以刷新");
+        }
+
+        var candidate = await _importer.ImportUrlAsync(current.Name, current.Source, cancellationToken);
+        var update = SubscriptionUpdateGuard.Prepare(current, candidate, AppRoutes);
+        _vault.Upsert(update.Record);
+        ReplaceInCollection(update.Record);
+        return update;
+    }
+
     public SubscriptionRecord ImportFile(string name, string path)
     {
-        var record = _importer.ImportFile(name, path);
+        var candidate = _importer.ImportFile(name, path);
+        var old = Subscriptions.FirstOrDefault(item => item.Source == candidate.Source);
+        var record = old is null
+            ? candidate
+            : SubscriptionUpdateGuard.Prepare(old, candidate, AppRoutes).Record;
         _vault.Upsert(record);
         ReplaceInCollection(record);
         return record;
@@ -74,6 +108,11 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public bool Remove(string id)
     {
+        if (AppRoutes.Any(route => route.Target.SubscriptionId == id))
+        {
+            throw new InvalidDataException("该订阅仍被应用分流使用，请先删除或修改相关规则");
+        }
+
         var removed = _vault.Remove(id);
         if (removed)
         {
@@ -130,11 +169,27 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         return true;
     }
 
-    public async Task ConnectAsync(string subscriptionId, string? nodeId, CancellationToken cancellationToken)
+    public async Task ConnectAsync(
+        string subscriptionId,
+        string? nodeId,
+        WindowsNetworkOptions options,
+        CancellationToken cancellationToken)
     {
-        if (_process is not null)
+        SaveNetworkOptions(options);
+        if (_process?.IsRunning == true)
         {
             return;
+        }
+
+        if (_process is not null)
+        {
+            await DisconnectAsync().ConfigureAwait(false);
+        }
+
+        if (_activeRuntimeDirectory is { } previousRuntime)
+        {
+            _activeRuntimeDirectory = null;
+            DeleteRuntime(previousRuntime);
         }
 
         var executable = FindMihomo();
@@ -144,48 +199,79 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         var runtime = Path.Combine(_dataDirectory, "runtime", Guid.NewGuid().ToString("N"));
-        var bundle = _configBuilder.Build(
-            Subscriptions,
-            AppRoutes,
-            subscriptionId,
-            nodeId,
-            new WindowsNetworkOptions { EnableTun = true },
-            runtime);
-        var process = new MihomoProcess(executable);
-        process.Exited += (_, _) =>
+        RuntimeBundle bundle;
+        try
         {
-            if (ReferenceEquals(_process, process))
+            bundle = _configBuilder.Build(
+                Subscriptions,
+                AppRoutes,
+                subscriptionId,
+                nodeId,
+                options,
+                runtime);
+        }
+        catch
+        {
+            DeleteRuntime(runtime);
+            throw;
+        }
+        var process = new MihomoProcess(executable);
+        process.Exited += (_, _) => HandleProcessExit(process);
+        try
+        {
+            var validation = await process.ValidateConfigAsync(bundle, cancellationToken).ConfigureAwait(false);
+            if (!validation.IsValid)
             {
-                _process = null;
-                Status = "核心已停止";
+                throw new InvalidDataException($"Mihomo 配置校验失败：{validation.Diagnostics}");
             }
-        };
-        var validation = await process.ValidateConfigAsync(bundle, cancellationToken).ConfigureAwait(false);
-        if (!validation.IsValid)
+
+            SetStatus("正在启动 TUN");
+            await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
+            if (!process.IsRunning)
+            {
+                throw new InvalidOperationException("Mihomo 在启动后立即退出");
+            }
+
+            _process = process;
+            _activeRuntimeDirectory = runtime;
+            SetStatus("核心运行中 · TUN 已请求");
+        }
+        catch
         {
             await process.DisposeAsync().ConfigureAwait(false);
-            throw new InvalidDataException($"Mihomo 配置校验失败：{validation.Diagnostics}");
+            DeleteRuntime(runtime);
+            SetStatus("未连接");
+            throw;
         }
-
-        Status = "正在启动 TUN";
-        await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
-        _process = process;
-        Status = "已连接 · Mihomo TUN";
     }
 
     public async Task DisconnectAsync()
     {
         var process = _process;
         _process = null;
+        var runtime = _activeRuntimeDirectory;
+        _activeRuntimeDirectory = null;
         if (process is not null)
         {
             await process.DisposeAsync().ConfigureAwait(false);
         }
 
-        Status = "未连接";
+        if (runtime is not null)
+        {
+            DeleteRuntime(runtime);
+        }
+
+        SetStatus("未连接");
     }
 
     public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
+
+    public void SaveNetworkOptions(WindowsNetworkOptions options)
+    {
+        MihomoConfigBuilder.ValidateOptions(options);
+        _optionsStore.Save(options);
+        NetworkOptions = options;
+    }
 
     private static string? FindMihomo()
     {
@@ -209,6 +295,50 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         else
         {
             Subscriptions.Add(record);
+        }
+    }
+
+    private void SetStatus(string status)
+    {
+        Status = status;
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void HandleProcessExit(MihomoProcess process)
+    {
+        if (!ReferenceEquals(_process, process))
+        {
+            return;
+        }
+
+        _process = null;
+        var runtime = _activeRuntimeDirectory;
+        _activeRuntimeDirectory = null;
+        SetStatus("核心已停止");
+        _ = CleanupExitedProcessAsync(process, runtime);
+    }
+
+    private async Task CleanupExitedProcessAsync(MihomoProcess process, string? runtime)
+    {
+        try
+        {
+            await process.DisposeAsync().ConfigureAwait(false);
+            if (runtime is not null)
+            {
+                DeleteRuntime(runtime);
+            }
+        }
+        catch (Exception)
+        {
+            SetStatus("核心已停止；临时文件清理失败");
+        }
+    }
+
+    private static void DeleteRuntime(string runtime)
+    {
+        if (Directory.Exists(runtime))
+        {
+            Directory.Delete(runtime, recursive: true);
         }
     }
 }

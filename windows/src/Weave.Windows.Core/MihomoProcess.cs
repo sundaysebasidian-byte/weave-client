@@ -1,6 +1,6 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
+using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace Weave.Windows.Core;
 
@@ -57,18 +57,7 @@ public sealed class MihomoProcess : IAsyncDisposable
             RedirectStandardError = true,
         };
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        process.Exited += (_, _) =>
-        {
-            lock (_gate)
-            {
-                if (ReferenceEquals(_process, process))
-                {
-                    _process = null;
-                }
-            }
-
-            Exited?.Invoke(this, EventArgs.Empty);
-        };
+        process.Exited += (_, _) => Exited?.Invoke(this, EventArgs.Empty);
         if (!process.Start())
         {
             process.Dispose();
@@ -87,7 +76,7 @@ public sealed class MihomoProcess : IAsyncDisposable
 
         try
         {
-            await WaitForPortAsync(bundle.MixedPort, process, cancellationToken).ConfigureAwait(false);
+            await WaitForReadyAsync(bundle, process, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -118,18 +107,26 @@ public sealed class MihomoProcess : IAsyncDisposable
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
         try
         {
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            throw;
+        }
         catch (OperationCanceledException)
         {
             try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            await process.WaitForExitAsync().ConfigureAwait(false);
             return (false, "Mihomo 配置检查超时");
         }
 
-        var output = (await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false) +
-                      await process.StandardError.ReadToEndAsync().ConfigureAwait(false)).Trim();
+        var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
         return (process.ExitCode == 0, output);
     }
 
@@ -172,28 +169,60 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
-    private async Task WaitForPortAsync(int port, Process process, CancellationToken cancellationToken)
+    private async Task WaitForReadyAsync(RuntimeBundle bundle, Process process, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
-        while (true)
+        using var client = new HttpClient(new HttpClientHandler { UseProxy = false })
         {
-            timeout.Token.ThrowIfCancellationRequested();
-            if (process.HasExited)
+            Timeout = TimeSpan.FromSeconds(1),
+        };
+        try
+        {
+            while (true)
             {
-                throw new InvalidOperationException($"Mihomo 启动失败：{LastDiagnostics}");
-            }
+                timeout.Token.ThrowIfCancellationRequested();
+                if (process.HasExited)
+                {
+                    throw new InvalidOperationException($"Mihomo 启动失败：{LastDiagnostics}");
+                }
 
-            using var client = new TcpClient();
-            try
-            {
-                await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token).ConfigureAwait(false);
-                return;
-            }
-            catch (SocketException)
-            {
+                try
+                {
+                    using var request = new HttpRequestMessage(
+                        HttpMethod.Get,
+                        $"http://127.0.0.1:{bundle.ControlPort}/version");
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bundle.ControlSecret);
+                    using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        using var version = JsonDocument.Parse(
+                            await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+                        if (version.RootElement.TryGetProperty("version", out _))
+                        {
+                            return;
+                        }
+                    }
+                }
+                catch (HttpRequestException)
+                {
+                    // The control API has not started yet.
+                }
+                catch (TaskCanceledException) when (!timeout.IsCancellationRequested)
+                {
+                    // A single probe timed out; the overall startup deadline still applies.
+                }
+                catch (JsonException)
+                {
+                    // Another service answered before Mihomo bound its control port.
+                }
+
                 await Task.Delay(100, timeout.Token).ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Mihomo 控制接口启动超时：{LastDiagnostics}");
         }
     }
 
