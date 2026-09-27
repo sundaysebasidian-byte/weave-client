@@ -102,7 +102,7 @@
                             <Button Content="导入链接" Click="ImportUrlButton_Click" />
                             <Button Content="选择 YAML 文件" Click="ImportFileButton_Click" />
                         </StackPanel>
-                        <TextBox x:Name="SubscriptionTextBox" Header="或粘贴 Clash/Mihomo YAML / Base64" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
+                        <TextBox x:Name="SubscriptionTextBox" Header="或粘贴 Clash YAML、节点 URI、sing-box/V2Ray JSON 或 Base64" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
                         <Button Content="导入粘贴内容" Click="ImportTextButton_Click" HorizontalAlignment="Left" />
                     </StackPanel>
                 </Border>
