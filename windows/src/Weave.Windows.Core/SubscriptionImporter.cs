@@ -34,7 +34,7 @@ public sealed class SubscriptionImporter
             throw new InvalidDataException("订阅文件超过 5 MiB 限制");
         }
 
-        var normalized = NormalizePayload(payload);
+        var normalized = SubscriptionFormatConverter.Normalize(payload);
         var parsed = ClashPayloadParser.Parse(normalized);
         var id = CreateId(source);
         return new SubscriptionRecord
@@ -142,38 +142,6 @@ public sealed class SubscriptionImporter
             string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
             path,
             File.ReadAllText(path, Encoding.UTF8));
-    }
-
-    private static string NormalizePayload(string payload)
-    {
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            throw new InvalidDataException("订阅内容为空");
-        }
-
-        var normalized = payload.Trim().TrimStart('\uFEFF');
-        if (normalized.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
-        {
-            return normalized;
-        }
-
-        var base64 = normalized.Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
-        try
-        {
-            var padded = base64.Replace('-', '+').Replace('_', '/');
-            padded = padded.PadRight(padded.Length + ((4 - padded.Length % 4) % 4), '=');
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(padded)).TrimStart('\uFEFF');
-            if (decoded.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
-            {
-                return decoded;
-            }
-        }
-        catch (FormatException)
-        {
-            // The parser below reports the actionable format error.
-        }
-
-        throw new InvalidDataException("未找到有效的 Clash/Mihomo proxies 节点列表；请导入 YAML 或其 Base64 内容");
     }
 
     private static string CreateId(string source)

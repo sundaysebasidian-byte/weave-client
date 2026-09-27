@@ -8,7 +8,7 @@ Android 的 `VpnService`，而是让 Mihomo 使用 Windows TUN/Wintun 接管流�
 
 已完成第一版工程骨架，并补齐一部分与 Android 对齐的管理能力：
 
-- `Weave.Windows.Core`：Clash/Mihomo YAML 与 Base64 导入、节点提取、5 MiB 限制、HTTPS/私网地址检查；连接时重新校验 DNS 结果，避免解析检查与实际连接之间的地址变化；
+- `Weave.Windows.Core`：Clash/Mihomo YAML、常见节点 URI、sing-box 与基础 V2Ray JSON 及其 Base64 包装导入；节点提取、5 MiB 限制、HTTPS/私网地址检查；连接时重新校验 DNS 结果，避免解析检查与实际连接之间的地址变化；
 - DPAPI 加密订阅保险库接口；
 - HTTPS 订阅手动刷新，保留原订阅和固定节点引用；节点数量骤降或已配置的固定节点消失时保留旧版本，并显示刷新差异；
 - 订阅 provider 文件、自动测速组、固定节点组和 `PROCESS-NAME` 分流规则编译；
@@ -27,12 +27,15 @@ Android 的 `VpnService`，而是让 Mihomo 使用 Windows TUN/Wintun 接管流�
 | Clash YAML/Base64、多订阅、固定节点、按进程分流 | 已接入；需真机流量验证 |
 | 手动 HTTPS 刷新、差异和固定引用保护 | 已接入；没有 Android 的完整 Subscription Guard 审计项 |
 | DNS 预设、自定义 DoH/DoT、IPv6、常见 STUN 端口阻断 | 已接入配置；需真机 DNS/IPv6 泄漏回归 |
-| URI、sing-box/V2Ray JSON、二维码、局域网互传 | 尚未接入 Windows 导入链路 |
+| 节点 URI、sing-box/V2Ray JSON | 已接入常见协议的导入链路；无法安全转换的协议、传输或参数会在导入时提示 |
+| 二维码、局域网互传 | 尚未接入 Windows 导入链路 |
 | GeoIP/Geosite、域名与 IP 规则、离线策略包、路由解释 | 尚未接入 Windows 配置和界面 |
 | 节点健康/质量矩阵、网络与隐私检测、实时速率 | 尚未接入 Windows 控制界面 |
 | TUN 数据面、管理员权限与断开回滚 | 待 Windows 10/11 真机验证 |
 
 完整 Android 基线见 [`docs/ANDROID_FEATURE_MATRIX.md`](../docs/ANDROID_FEATURE_MATRIX.md)。
+
+粘贴、文件和 HTTPS 订阅共用同一解析链。URI 支持 SS/SSR、VMess、VLESS、Trojan、SOCKS5、HTTP、AnyTLS、Hysteria2 和 TUIC 的基础字段；JSON 支持 sing-box 与 V2Ray 的常见单服务器出站。复杂路由、插件、多用户或不支持的传输无法无损转换时，请改用 Clash/Mihomo YAML。WireGuard URI 仍需完整 YAML 配置。
 
 ## Windows 构建
 
