@@ -148,4 +148,19 @@ public sealed class SubscriptionFormatTests
     {
         Assert.Throws<InvalidDataException>(() => _importer.ImportText("main", "inline://unsafe", payload));
     }
+
+    [Fact]
+    public void FileImportRejectsInvalidUtf8InsteadOfCorruptingCredentials()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"weave-invalid-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllBytes(path, new byte[] { (byte)'{', 0xFF, (byte)'}' });
+            Assert.Throws<InvalidDataException>(() => _importer.ImportFile("main", path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }
