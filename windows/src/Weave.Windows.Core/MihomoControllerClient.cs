@@ -105,6 +105,41 @@ public sealed class MihomoControllerClient : IDisposable
         return NodeHealthSnapshot.FromSamples(node, samples);
     }
 
+    public async Task<IReadOnlyList<NodeHealthSnapshot>> ProbeSubscriptionAsync(
+        string providerName,
+        IReadOnlyList<ProxyNode> nodes,
+        IProgress<int>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(providerName) || nodes.Count == 0)
+            throw new ArgumentException("测速订阅无效");
+
+        using var batchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var slots = new SemaphoreSlim(8);
+        var completed = 0;
+        var tasks = nodes.Select(async node =>
+        {
+            await slots.WaitAsync(batchCancellation.Token).ConfigureAwait(false);
+            try
+            {
+                var result = await ProbeNodeAsync(providerName, node, batchCancellation.Token).ConfigureAwait(false);
+                progress?.Report(Interlocked.Increment(ref completed));
+                return result;
+            }
+            catch
+            {
+                batchCancellation.Cancel();
+                throw;
+            }
+            finally
+            {
+                slots.Release();
+            }
+        }).ToArray();
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
     public void Dispose()
     {
         if (_ownsClient) _client.Dispose();

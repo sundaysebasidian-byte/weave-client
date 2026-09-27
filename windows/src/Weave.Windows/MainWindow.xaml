@@ -44,6 +44,29 @@
 
                 <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
                     <StackPanel Spacing="12">
+                        <TextBlock Text="订阅节点质量" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                        <TextBlock Text="对当前订阅的每个节点进行三轮健康检查，按稳定度排序；分数仅用于比较节点。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="SubscriptionHealthButton" Content="检查整份订阅" Click="SubscriptionHealthButton_Click" IsEnabled="False" />
+                            <Button x:Name="CancelHealthButton" Content="取消检查" Click="CancelHealthButton_Click" IsEnabled="False" />
+                        </StackPanel>
+                        <TextBlock x:Name="QualityResultText" Text="连接后可检查已加载的订阅" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
+                        <ListView x:Name="QualityListView" MaxHeight="380" Visibility="Collapsed">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Padding="2,7" Spacing="3">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
+                                        <TextBlock Text="{Binding ScoreText}" Foreground="{ThemeResource WeaveAccentBrush}" />
+                                        <TextBlock Text="{Binding MeasurementsText}" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource WeaveCardBrush}" CornerRadius="24" Padding="24">
+                    <StackPanel Spacing="12">
                         <TextBlock Text="网络设置" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
                         <TextBlock Text="更改后重新连接生效。DNS 服务由第三方提供；STUN 阻断可能影响语音或视频通话。" Foreground="{ThemeResource WeaveMutedBrush}" TextWrapping="Wrap" />
                         <ComboBox x:Name="DnsProfileComboBox" Header="DNS" SelectedIndex="0" SelectionChanged="DnsProfileComboBox_SelectionChanged">

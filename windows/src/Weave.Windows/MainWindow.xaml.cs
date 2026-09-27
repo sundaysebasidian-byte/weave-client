@@ -11,6 +11,7 @@ public sealed partial class MainWindow : Window
     private readonly WeaveAppModel _model = new();
     private readonly CancellationTokenSource _lifetime = new();
     private bool _healthChecking;
+    private CancellationTokenSource? _healthCancellation;
 
     public MainWindow()
     {
@@ -45,6 +46,8 @@ public sealed partial class MainWindow : Window
 
     private void SubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        _healthCancellation?.Cancel();
+        ClearQualityResult();
         NodeComboBox.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
         NodeComboBox.SelectedItem = null;
     }
@@ -262,6 +265,7 @@ public sealed partial class MainWindow : Window
 
     private async void HealthCheckButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_healthChecking) return;
         if (SubscriptionComboBox.SelectedItem is not SubscriptionRecord subscription ||
             NodeComboBox.SelectedItem is not ProxyNode node || !_model.CanProbe(subscription, node))
             return;
@@ -296,6 +300,68 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void SubscriptionHealthButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_healthChecking || SubscriptionComboBox.SelectedItem is not SubscriptionRecord subscription ||
+            !_model.CanProbeSubscription(subscription)) return;
+
+        _healthChecking = true;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _healthCancellation = cancellation;
+        ClearQualityResult();
+        QualityResultText.Text = $"正在检查节点：0/{subscription.Nodes.Count}…";
+        UpdateStatus();
+        var progress = new Progress<int>(completed =>
+        {
+            if (ReferenceEquals(_healthCancellation, cancellation) &&
+                !cancellation.IsCancellationRequested &&
+                ReferenceEquals(SubscriptionComboBox.SelectedItem, subscription) &&
+                _model.CanProbeSubscription(subscription))
+                QualityResultText.Text = $"正在检查节点：{completed}/{subscription.Nodes.Count}…";
+        });
+        try
+        {
+            var rows = await _model.ProbeSubscriptionAsync(subscription, progress, cancellation.Token);
+            if (ReferenceEquals(SubscriptionComboBox.SelectedItem, subscription) &&
+                _model.CanProbeSubscription(subscription))
+            {
+                QualityListView.ItemsSource = rows;
+                QualityListView.Visibility = Visibility.Visible;
+                QualityResultText.Text = $"已完成 {rows.Count} 个节点的检查；按稳定度从高到低排列。";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(SubscriptionComboBox.SelectedItem, subscription) && _model.IsConnected)
+                QualityResultText.Text = "订阅检查已取消";
+        }
+        catch (Exception exception)
+        {
+            if (ReferenceEquals(SubscriptionComboBox.SelectedItem, subscription) && _model.IsConnected)
+                QualityResultText.Text = $"订阅检查失败：{exception.Message}";
+        }
+        finally
+        {
+            _healthCancellation = null;
+            _healthChecking = false;
+            UpdateStatus();
+        }
+    }
+
+    private void CancelHealthButton_Click(object sender, RoutedEventArgs e)
+    {
+        _healthCancellation?.Cancel();
+        UpdateStatus();
+    }
+
+    private void ClearQualityResult()
+    {
+        if (QualityListView is null || QualityResultText is null) return;
+        QualityListView.ItemsSource = null;
+        QualityListView.Visibility = Visibility.Collapsed;
+        QualityResultText.Text = "连接后可检查已加载的订阅";
+    }
+
     private async Task RunActionAsync(Func<Task> action)
     {
         try
@@ -321,7 +387,20 @@ public sealed partial class MainWindow : Window
         HealthCheckButton.IsEnabled = !_healthChecking &&
             SubscriptionComboBox.SelectedItem is SubscriptionRecord subscription &&
             NodeComboBox.SelectedItem is ProxyNode node && _model.CanProbe(subscription, node);
+        SubscriptionHealthButton.IsEnabled = !_healthChecking &&
+            SubscriptionComboBox.SelectedItem is SubscriptionRecord selected &&
+            _model.CanProbeSubscription(selected);
+        CancelHealthButton.IsEnabled = _healthCancellation is { IsCancellationRequested: false };
         if (!_model.IsConnected) HealthResultText.Text = "连接后选择节点可进行健康检查";
+        if (!_model.IsConnected ||
+            SubscriptionComboBox.SelectedItem is not SubscriptionRecord active ||
+            !_model.CanProbeSubscription(active))
+        {
+            _healthCancellation?.Cancel();
+            ClearQualityResult();
+            if (_model.IsConnected)
+                QualityResultText.Text = "当前订阅未加载到运行配置；重新连接后可检查";
+        }
         TrafficText.Text = !_model.IsConnected
             ? "未连接时不显示流量"
             : _model.Traffic is { } traffic
@@ -360,6 +439,7 @@ public sealed partial class MainWindow : Window
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         _lifetime.Cancel();
+        _healthCancellation?.Cancel();
         await _model.DisposeAsync();
         _lifetime.Dispose();
     }
