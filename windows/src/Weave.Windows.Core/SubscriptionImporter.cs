@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
 namespace Weave.Windows.Core;
@@ -8,12 +10,18 @@ namespace Weave.Windows.Core;
 public sealed class SubscriptionImporter
 {
     private const int MaxPayloadBytes = 5 * 1024 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HttpClient _httpClient;
 
     public SubscriptionImporter(HttpClient? httpClient = null)
     {
         _httpClient = httpClient ?? new HttpClient(
-            new HttpClientHandler { AllowAutoRedirect = false })
+            new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                ConnectCallback = ConnectPublicHostAsync,
+            })
         {
             Timeout = TimeSpan.FromSeconds(20),
         };
@@ -22,9 +30,23 @@ public sealed class SubscriptionImporter
 
     public SubscriptionRecord ImportText(string name, string source, string payload)
     {
-        var normalized = NormalizePayload(payload);
+        int payloadBytes;
+        try
+        {
+            payloadBytes = StrictUtf8.GetByteCount(payload);
+        }
+        catch (EncoderFallbackException exception)
+        {
+            throw new InvalidDataException("订阅文本不是有效 UTF-8", exception);
+        }
+        if (payloadBytes > MaxPayloadBytes)
+        {
+            throw new InvalidDataException("订阅文件超过 5 MiB 限制");
+        }
+
+        var normalized = SubscriptionFormatConverter.Normalize(payload);
         var parsed = ClashPayloadParser.Parse(normalized);
-        var id = CreateId(source, parsed.Nodes);
+        var id = CreateId(source);
         return new SubscriptionRecord
         {
             Id = id,
@@ -68,7 +90,7 @@ public sealed class SubscriptionImporter
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);
             redirected.EnsureSuccessStatusCode();
-            return await ReadRemoteAsync(name, location, redirected, cancellationToken).ConfigureAwait(false);
+            return await ReadRemoteAsync(name, uri, redirected, cancellationToken).ConfigureAwait(false);
         }
         response.EnsureSuccessStatusCode();
         return await ReadRemoteAsync(name, uri, response, cancellationToken).ConfigureAwait(false);
@@ -106,7 +128,15 @@ public sealed class SubscriptionImporter
             memory.Write(buffer, 0, read);
         }
 
-        var content = Encoding.UTF8.GetString(memory.ToArray());
+        string content;
+        try
+        {
+            content = StrictUtf8.GetString(memory.ToArray());
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new InvalidDataException("订阅文本不是有效 UTF-8", exception);
+        }
         return ImportText(
             string.IsNullOrWhiteSpace(name) ? source.Host : name,
             source.ToString(),
@@ -126,48 +156,68 @@ public sealed class SubscriptionImporter
             throw new InvalidDataException("订阅文件超过 5 MiB 限制");
         }
 
+        string content;
+        try
+        {
+            content = File.ReadAllText(path, StrictUtf8);
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new InvalidDataException("订阅文本不是有效 UTF-8", exception);
+        }
         return ImportText(
             string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
             path,
-            File.ReadAllText(path, Encoding.UTF8));
+            content);
     }
 
-    private static string NormalizePayload(string payload)
+    private static string CreateId(string source)
     {
-        if (string.IsNullOrWhiteSpace(payload))
+        var input = Encoding.UTF8.GetBytes(source.Trim());
+        return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant()[..16];
+    }
+
+    private static async ValueTask<Stream> ConnectPublicHostAsync(
+        SocketsHttpConnectionContext context,
+        CancellationToken cancellationToken)
+    {
+        var host = context.DnsEndPoint.Host;
+        var addresses = IPAddress.TryParse(host, out var literal)
+            ? new[] { literal }
+            : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+        if (addresses.Length == 0 || addresses.Any(IsPrivate))
         {
-            throw new InvalidDataException("订阅内容为空");
+            throw new InvalidDataException("为避免 SSRF，远程订阅不能连接本机或私有地址");
         }
 
-        var normalized = payload.Trim().TrimStart('\uFEFF');
-        if (normalized.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
+        SocketException? lastFailure = null;
+        foreach (var address in addresses)
         {
-            return normalized;
-        }
-
-        var base64 = normalized.Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
-        try
-        {
-            var padded = base64.Replace('-', '+').Replace('_', '/');
-            padded = padded.PadRight(padded.Length + ((4 - padded.Length % 4) % 4), '=');
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(padded)).TrimStart('\uFEFF');
-            if (decoded.Contains("proxies:", StringComparison.OrdinalIgnoreCase))
+            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            try
             {
-                return decoded;
+                await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken)
+                    .ConfigureAwait(false);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch (SocketException exception)
+            {
+                lastFailure = exception;
+                socket.Dispose();
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
             }
         }
-        catch (FormatException)
+
+        if (lastFailure is not null)
         {
-            // The parser below reports the actionable format error.
+            throw lastFailure;
         }
 
-        throw new InvalidDataException("未找到有效的 Clash/Mihomo proxies 节点列表；请导入 YAML 或其 Base64 内容");
-    }
-
-    private static string CreateId(string source, IReadOnlyList<ProxyNode> nodes)
-    {
-        var input = Encoding.UTF8.GetBytes($"{source}\n{string.Join('\n', nodes.Select(node => node.Name))}");
-        return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant()[..16];
+        throw new InvalidDataException("订阅主机没有可连接的公共地址");
     }
 
     private static async Task RejectPrivateHostAsync(Uri uri, CancellationToken cancellationToken)
@@ -191,6 +241,11 @@ public sealed class SubscriptionImporter
 
     private static bool IsPrivate(IPAddress address)
     {
+        if (address.IsIPv4MappedToIPv6)
+        {
+            return IsPrivate(address.MapToIPv4());
+        }
+
         if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any))
         {
             return true;
@@ -199,7 +254,7 @@ public sealed class SubscriptionImporter
         var bytes = address.GetAddressBytes();
         if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
-            return bytes[0] == 10 ||
+            return bytes[0] == 0 || bytes[0] == 10 || bytes[0] == 127 ||
                    (bytes[0] == 172 && bytes[1] is >= 16 and <= 31) ||
                    (bytes[0] == 192 && bytes[1] == 168) ||
                    (bytes[0] == 169 && bytes[1] == 254) ||
@@ -233,6 +288,7 @@ internal static class ClashPayloadParser
             }
 
             var nodes = new List<ProxyNode>();
+            var nodeNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var item in proxySequence.Children.OfType<YamlMappingNode>())
             {
                 var rawName = Scalar(item, "name")?.Trim() ?? string.Empty;
@@ -243,7 +299,13 @@ internal static class ClashPayloadParser
 
                 var protocol = Scalar(item, "type") ?? "unknown";
                 var index = nodes.Count;
-                var digest = SHA256.HashData(Encoding.UTF8.GetBytes($"{index}\n{rawName}\n{protocol}"));
+                var key = $"{rawName}\n{protocol}\n{Scalar(item, "server")}\n{Scalar(item, "port")}";
+                if (!nodeNames.Add(rawName))
+                {
+                    throw new InvalidDataException($"订阅包含重复节点：{rawName}");
+                }
+
+                var digest = SHA256.HashData(Encoding.UTF8.GetBytes(key));
                 nodes.Add(new ProxyNode
                 {
                     Id = Convert.ToHexString(digest).ToLowerInvariant()[..12],
