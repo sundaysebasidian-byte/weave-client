@@ -82,9 +82,6 @@
                 </NavigationViewItem>
                 <NavigationViewItem Content="节点" Tag="nodes" ToolTipService.ToolTip="节点 (Ctrl+2)">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge x:Name="NodesBadge" Visibility="Collapsed" />
-                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem Content="订阅" Tag="subscriptions" ToolTipService.ToolTip="订阅 (Ctrl+3)">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE753;" /></NavigationViewItem.Icon>
@@ -99,7 +96,7 @@
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
-            <Grid x:Name="ContentHost" AllowDrop="True" DragOver="ContentHost_DragOver" Drop="ContentHost_Drop">
+            <Grid x:Name="ContentHost" Background="Transparent" AllowDrop="True" DragOver="ContentHost_DragOver" Drop="ContentHost_Drop">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -524,9 +521,9 @@
                                         <TextBlock Grid.Column="5" Text="{x:Bind FailureText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="7" Margin="12,0,0,0" VerticalAlignment="Center">
-                                            <Grid Width="8" Height="8" VerticalAlignment="Center">
-                                                <Ellipse Fill="{x:Bind ScoreBrush, Mode=OneWay}" />
-                                                <ProgressRing Width="12" Height="12" Margin="-2" IsActive="{x:Bind IsTesting, Mode=OneWay}" />
+                                            <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                <Ellipse Width="8" Height="8" Fill="{x:Bind ScoreBrush, Mode=OneWay}" />
+                                                <ProgressRing Width="16" Height="16" MinWidth="0" MinHeight="0" IsActive="{x:Bind IsTesting, Mode=OneWay}" />
                                             </Grid>
                                             <TextBlock Text="{x:Bind ScoreText, Mode=OneWay}" VerticalAlignment="Center" />
                                         </StackPanel>
@@ -925,7 +922,7 @@
                     Margin="28,0,28,20"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Bottom"
-                    CornerRadius="{StaticResource OverlayCornerRadius}"
+                    CornerRadius="{StaticResource ControlCornerRadius}"
                     Background="{ThemeResource SolidBackgroundFillColorTertiaryBrush}"
                     Visibility="Collapsed">
                     <InfoBar x:Name="ToastBar" IsOpen="False" Closed="ToastBar_Closed">

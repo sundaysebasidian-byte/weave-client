@@ -80,6 +80,7 @@ public sealed partial class MainWindow : Window
 
         LoadNetworkOptionsIntoControls();
         RestorePreference();
+        RestoreRouteSubscriptionSelection();
         OnRoutesChanged();
         UpdateSubscriptionsPage();
         UpdateAboutSection();
@@ -184,7 +185,9 @@ public sealed partial class MainWindow : Window
             AddAccelerator(global::Windows.System.VirtualKey.Number1 + index, global::Windows.System.VirtualKeyModifiers.Control, () => Navigate(page));
         }
 
-        AddAccelerator(global::Windows.System.VirtualKey.Enter, global::Windows.System.VirtualKeyModifiers.Control, () => _ = ToggleConnectionAsync());
+        AddAccelerator(global::Windows.System.VirtualKey.Enter, global::Windows.System.VirtualKeyModifiers.Control,
+            () => _ = ToggleConnectionAsync(),
+            () => FocusManager.GetFocusedElement(RootGrid.XamlRoot) is not TextBox { AcceptsReturn: true });
         AddAccelerator(global::Windows.System.VirtualKey.F, global::Windows.System.VirtualKeyModifiers.Control, () =>
         {
             Navigate("nodes");
@@ -196,11 +199,13 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private void AddAccelerator(global::Windows.System.VirtualKey key, global::Windows.System.VirtualKeyModifiers modifiers, Action action)
+    private void AddAccelerator(global::Windows.System.VirtualKey key, global::Windows.System.VirtualKeyModifiers modifiers,
+        Action action, Func<bool>? canInvoke = null)
     {
         var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
         accelerator.Invoked += (_, args) =>
         {
+            if (canInvoke?.Invoke() == false) return;
             args.Handled = true;
             action();
         };

@@ -98,8 +98,6 @@ public sealed partial class MainWindow
             ? "导入订阅后，这里会列出全部节点。"
             : total == 0 ? "该订阅没有可用节点。" : "没有匹配的节点。";
         NodesEmptyImportButton.Visibility = Show(_activeSubscription is null);
-        NodesBadge.Visibility = Show(total > 0);
-        NodesBadge.Value = total;
     }
 
     private void NodeSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
