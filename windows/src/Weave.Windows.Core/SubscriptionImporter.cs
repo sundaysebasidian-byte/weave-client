@@ -10,6 +10,7 @@ namespace Weave.Windows.Core;
 public sealed class SubscriptionImporter
 {
     private const int MaxPayloadBytes = 5 * 1024 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HttpClient _httpClient;
 
     public SubscriptionImporter(HttpClient? httpClient = null)
@@ -29,7 +30,16 @@ public sealed class SubscriptionImporter
 
     public SubscriptionRecord ImportText(string name, string source, string payload)
     {
-        if (Encoding.UTF8.GetByteCount(payload) > MaxPayloadBytes)
+        int payloadBytes;
+        try
+        {
+            payloadBytes = StrictUtf8.GetByteCount(payload);
+        }
+        catch (EncoderFallbackException exception)
+        {
+            throw new InvalidDataException("订阅文本不是有效 UTF-8", exception);
+        }
+        if (payloadBytes > MaxPayloadBytes)
         {
             throw new InvalidDataException("订阅文件超过 5 MiB 限制");
         }
@@ -118,7 +128,15 @@ public sealed class SubscriptionImporter
             memory.Write(buffer, 0, read);
         }
 
-        var content = Encoding.UTF8.GetString(memory.ToArray());
+        string content;
+        try
+        {
+            content = StrictUtf8.GetString(memory.ToArray());
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new InvalidDataException("订阅文本不是有效 UTF-8", exception);
+        }
         return ImportText(
             string.IsNullOrWhiteSpace(name) ? source.Host : name,
             source.ToString(),
@@ -138,10 +156,19 @@ public sealed class SubscriptionImporter
             throw new InvalidDataException("订阅文件超过 5 MiB 限制");
         }
 
+        string content;
+        try
+        {
+            content = File.ReadAllText(path, StrictUtf8);
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new InvalidDataException("订阅文本不是有效 UTF-8", exception);
+        }
         return ImportText(
             string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
             path,
-            File.ReadAllText(path, Encoding.UTF8));
+            content);
     }
 
     private static string CreateId(string source)
