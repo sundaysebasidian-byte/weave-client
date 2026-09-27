@@ -1,0 +1,68 @@
+name: Windows package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-x64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
+      - name: Bundle pinned official Mihomo
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-windows-amd64-v1-v1.19.30.zip'
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP/core.zip"
+          $hash = (Get-FileHash "$env:RUNNER_TEMP/core.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278') { throw "Core hash mismatch: $hash" }
+          Expand-Archive "$env:RUNNER_TEMP/core.zip" "$env:RUNNER_TEMP/core"
+          $exe = @(Get-ChildItem "$env:RUNNER_TEMP/core" -Recurse -Filter '*.exe')
+          if ($exe.Count -ne 1) { throw 'Unexpected core archive layout' }
+          New-Item -ItemType Directory -Force windows/src/Weave.Windows/runtime | Out-Null
+          Copy-Item $exe[0].FullName windows/src/Weave.Windows/runtime/mihomo.exe
+          & windows/src/Weave.Windows/runtime/mihomo.exe -v
+          if ($LASTEXITCODE -ne 0) { throw 'Core cannot execute' }
+      - name: Core tests
+        run: dotnet test windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/Weave.Windows.Core.Tests.csproj -c Release --nologo
+      - name: Publish self-contained x64
+        shell: pwsh
+        run: |
+          $out = "$pwd/windows/artifacts/Weave-Windows-x64"
+          msbuild windows/src/Weave.Windows/Weave.Windows.csproj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 `
+            /p:RuntimeIdentifier=win-x64 /p:SelfContained=true "/p:PublishDir=$out\" /verbosity:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+          if (-not (Test-Path "$out/runtime/mihomo.exe")) { throw 'mihomo.exe missing from package' }
+          Copy-Item windows/START-HERE.txt $out
+          Copy-Item LICENSE "$out/LICENSE-Weave.txt"
+          Invoke-WebRequest 'https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.30/LICENSE' -OutFile "$out/LICENSE-Mihomo.txt"
+      - name: Launch check of packaged app
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'weave-ui'
+          $env:WEAVE_UI_CAPTURE_DIR = $out
+          $env:WEAVE_UI_CAPTURE_SAMPLE = (Resolve-Path windows/ci/ui-sample.yaml).Path
+          $env:WEAVE_DATA_DIR = Join-Path $env:RUNNER_TEMP 'weave-data'
+          $app = Start-Process "$pwd/windows/artifacts/Weave-Windows-x64/Weave.Windows.exe" -PassThru
+          if (-not $app.WaitForExit(180000)) { Stop-Process -Id $app.Id -Force; throw 'Packaged app timed out' }
+          if (Test-Path "$out/capture-error.txt") { Get-Content "$out/capture-error.txt"; throw 'Packaged app failed to render' }
+          if (-not (Test-Path "$out/capture-complete.txt")) { throw "Packaged app exited early (exit code $($app.ExitCode))" }
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-FileHash windows/artifacts/Weave-Windows-x64/Weave.Windows.exe, windows/artifacts/Weave-Windows-x64/runtime/mihomo.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-x64
+          path: windows/artifacts/Weave-Windows-x64/
+          if-no-files-found: error

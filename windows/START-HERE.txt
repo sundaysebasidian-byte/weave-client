@@ -1,0 +1,18 @@
+Weave for Windows x64（私用测试版）
+
+1. 把压缩包完整解压到一个文件夹，不要在 ZIP 里直接运行。
+2. 打开 Weave.Windows.exe，在“订阅”页导入你的订阅（链接、文件或拖入窗口）。
+3. TUN 需要管理员权限：关闭 Weave，右键 Weave.Windows.exe →“以管理员身份运行”。
+4. 在“概览”选择订阅与节点（或自动选择），点击“连接”（Ctrl+Enter）。
+
+系统要求：Windows 10 22H2 / Windows 11，Intel 或 AMD x64。
+已内置 .NET 运行时与 Mihomo 核心，请保留所有 DLL 和 runtime 文件夹。
+这是未签名的测试版，Windows 可能显示信誉提示；请不要为此关闭系统安全功能。
+
+核心：官方 Mihomo v1.19.30（不是 Android 版的补丁核心）
+源码：https://github.com/MetaCubeX/mihomo/tree/v1.19.30
+核心压缩包 SHA256：8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278
+
+不包含任何订阅，请导入你信任的配置。“已连接”只代表本机核心在运行，
+不证明网络可达、DNS 防护或 IPv6 路由已生效；Windows 真机验证仍在进行。
+退出前请先断开连接。应用不会自动更新，也不会上传数据。
