@@ -33,8 +33,12 @@
                         <TextBlock Text="连接" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource WeaveInkBrush}" />
                         <TextBlock Text="先选订阅，再选节点。自动策略会在该订阅内测速并切换。" Foreground="{ThemeResource WeaveMutedBrush}" />
                         <ComboBox x:Name="SubscriptionComboBox" Header="订阅" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged" />
-                        <ComboBox x:Name="NodeComboBox" Header="节点（留空为自动测速）" DisplayMemberPath="DisplayName" />
+                        <ComboBox x:Name="NodeComboBox" Header="节点（留空为自动测速）" DisplayMemberPath="DisplayName" SelectionChanged="NodeComboBox_SelectionChanged" />
                         <Button x:Name="ConnectButton" Content="连接" Click="ConnectButton_Click" HorizontalAlignment="Left" Padding="26,11" Background="{ThemeResource WeaveAccentBrush}" />
+                        <TextBlock x:Name="TrafficText" Text="未连接时不显示流量" Foreground="{ThemeResource WeaveMutedBrush}" />
+                        <Button x:Name="HealthCheckButton" Content="测试所选节点（3 轮）" Click="HealthCheckButton_Click" IsEnabled="False" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="HealthResultText" Text="连接后选择节点可进行健康检查" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" />
+                        <TextBlock Text="连接后更改节点选择只影响下次连接；健康检查不会切换当前出口。" TextWrapping="Wrap" Foreground="{ThemeResource WeaveMutedBrush}" FontSize="12" />
                     </StackPanel>
                 </Border>
 
@@ -100,7 +104,7 @@
                         <TextBox x:Name="SubscriptionUrlBox" Header="HTTPS 链接" PlaceholderText="https://example.com/sub" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button Content="导入链接" Click="ImportUrlButton_Click" />
-                            <Button Content="选择 YAML 文件" Click="ImportFileButton_Click" />
+                            <Button Content="选择订阅文件" Click="ImportFileButton_Click" />
                         </StackPanel>
                         <TextBox x:Name="SubscriptionTextBox" Header="或粘贴 Clash YAML、节点 URI、sing-box/V2Ray JSON 或 Base64" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" />
                         <Button Content="导入粘贴内容" Click="ImportTextButton_Click" HorizontalAlignment="Left" />
