@@ -55,7 +55,7 @@ internal static class UriSubscriptionConverter
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
             string.IsNullOrWhiteSpace(uri.Host) || uri.Port is < 1 or > 65535 ||
-            !uri.Authority.EndsWith($":{uri.Port}", StringComparison.Ordinal))
+            !HasExplicitPort(uri))
         {
             throw new InvalidDataException($"{scheme} 节点地址或端口无效");
         }
@@ -180,7 +180,7 @@ internal static class UriSubscriptionConverter
         if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || parts[1].Length == 0 ||
             !Uri.TryCreate($"http://{body[(separator + 1)..]}", UriKind.Absolute, out var address) ||
             string.IsNullOrWhiteSpace(address.Host) || address.Port is < 1 or > 65535 ||
-            !address.Authority.EndsWith($":{address.Port}", StringComparison.Ordinal))
+            !HasExplicitPort(address))
         {
             throw new InvalidDataException("Shadowsocks 节点字段无效");
         }
@@ -363,6 +363,16 @@ internal static class UriSubscriptionConverter
             : value;
 
     private static string Decode(string value) => Uri.UnescapeDataString(value);
+
+    private static bool HasExplicitPort(Uri uri)
+    {
+        var authority = uri.OriginalString[(uri.OriginalString.IndexOf("://", StringComparison.Ordinal) + 3)..];
+        var end = authority.IndexOfAny(['/', '?', '#']);
+        if (end >= 0) authority = authority[..end];
+        var hostPort = authority[(authority.LastIndexOf('@') + 1)..];
+        var separator = hostPort.LastIndexOf(':');
+        return separator >= 0 && int.TryParse(hostPort[(separator + 1)..], out var port) && port == uri.Port;
+    }
 
     private static string DecodeBase64(string value, string label)
     {

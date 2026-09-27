@@ -68,6 +68,14 @@ public sealed class SubscriptionFormatTests
     }
 
     [Fact]
+    public void ImportsHttpProxyWithExplicitDefaultPort()
+    {
+        var record = _importer.ImportText("main", "inline://http", "http://user:pass@proxy.example:80#http-edge");
+        Assert.Equal("http", Assert.Single(record.Nodes).Protocol);
+        Assert.Contains("port: 80", record.ProviderYaml);
+    }
+
+    [Fact]
     public void ImportsShadowsocksRAndHysteria2Uris()
     {
         var password = Convert.ToBase64String(Encoding.UTF8.GetBytes("secret")).TrimEnd('=');
