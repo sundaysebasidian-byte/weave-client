@@ -40,7 +40,7 @@ class ExternalImportParserTest {
             "clash://install-config?url=https%3A%2F%2Fa.example%2Fs&name=%0Abad%09name" + "x".repeat(200),
         ) as ExternalImport.Remote
         assertTrue(value.suggestedName!!.length <= 80)
-        assertTrue(value.suggestedName!!.none(Char::isISOControl))
+        assertTrue(value.suggestedName.orEmpty().none(Char::isISOControl))
     }
 
     @Test fun `shared text finds a link line or falls back to inline content`() {

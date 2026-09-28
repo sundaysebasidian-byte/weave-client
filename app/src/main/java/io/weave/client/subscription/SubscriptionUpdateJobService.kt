@@ -50,6 +50,8 @@ object SubscriptionUpdateScheduler {
             .setPersisted(true)
             .build()
         val pending = scheduler.getPendingJob(JOB_ID)
+        // Rescheduling restarts the period, so only replace the job when its settings changed.
+        @Suppress("DEPRECATION")
         if (pending == null || pending.intervalMillis != job.intervalMillis ||
             pending.networkType != job.networkType
         ) {
