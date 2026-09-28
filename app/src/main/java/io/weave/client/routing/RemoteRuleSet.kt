@@ -55,7 +55,7 @@ object RuleSetParser {
     private val TOKEN = Regex("""[A-Za-z0-9_.@!+-]{1,128}""")
 
     fun parse(body: String, behavior: RuleSetBehavior): List<String> {
-        val trimmed = body.trimStart('﻿')
+        val trimmed = body.trimStart('\uFEFF')
         val raw = if (trimmed.lineSequence().any { it.trimStart().startsWith("payload:") }) {
             val root = runCatching { ClashYamlCodec.read(trimmed) }
                 .getOrElse { throw RuleSetException("规则集 YAML 格式无效") }
