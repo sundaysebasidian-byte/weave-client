@@ -11,12 +11,14 @@ import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.weave.client.MainActivity
 import io.weave.client.R
+import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.core.engine.MihomoEngineAdapter
 import io.weave.client.core.engine.AssembledMihomoConfig
@@ -25,6 +27,8 @@ import io.weave.client.data.AppRouteStore
 import io.weave.client.data.RecoveryVault
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.TrafficFormat
+import io.weave.client.ui.localizeWeaveText
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import kotlinx.coroutines.CoroutineScope
@@ -37,8 +41,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Owns the complete Android VPN lifecycle and transfers the detached TUN fd to Mihomo.
@@ -85,11 +89,27 @@ class WeaveVpnService : VpnService() {
     private var lastSuccessfulRuntime: PreparedRuntime? = null
     @Volatile
     private var preferredUnderlyingNetwork: Network? = null
+    @Volatile
+    private var connectedStatus = "已连接"
+    private var trafficNotificationJob: Job? = null
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(io.weave.client.WeaveLocales.wrap(newBase))
+    }
 
     override fun onCreate() {
         super.onCreate()
         SystemVpnProtection.attach(this)
-        profileTransaction.clean()
+        if (teardown == null && !NativeBridge.isLoaded) {
+            // A fresh :vpn process. Anything left in the runtime cache belongs to a process that
+            // was killed before it could clean up, and may contain decrypted provider payloads.
+            teardown = TEARDOWN_SCOPE.launch {
+                configAssembler.cleanRuntimeFiles()
+                profileTransaction.clean()
+            }
+        } else if (teardown == null) {
+            profileTransaction.clean()
+        }
         underlyingNetworkMonitor.start()
         serviceScope.launch {
             engine.state.collectLatest { state ->
@@ -117,10 +137,18 @@ class WeaveVpnService : VpnService() {
             serviceScope.launch { shutdown("已断开") }
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_RELOAD_IF_RUNNING) {
+            val current = VpnRuntimeState.snapshot.value.state
+            if (current != ConnectionState.CONNECTED && !startInProgress) {
+                // Delivered to an idle service instance: nothing to reload.
+                if (current == ConnectionState.DISCONNECTED) stopSelf(startId)
+                return START_NOT_STICKY
+            }
+        }
         shutdownRequested = false
 
         createNotificationChannel()
-        val reloading = intent?.action == ACTION_RELOAD
+        val reloading = intent?.action == ACTION_RELOAD || intent?.action == ACTION_RELOAD_IF_RUNNING
         if (!reloading) outboundRecoveryJob?.cancel()
         if (reloading) {
             intent.getStringExtra(EXTRA_PROBE_SUBSCRIPTION_ID)
@@ -145,6 +173,7 @@ class WeaveVpnService : VpnService() {
         } else {
             startInProgress = true
             serviceScope.launch {
+                awaitPreviousTeardown()
                 if (reloading) reloadRuntime() else startRuntime()
             }
         }
@@ -156,7 +185,7 @@ class WeaveVpnService : VpnService() {
         shutdownRequested = true
         outboundRecoveryJob?.cancel()
         serviceScope.launch {
-            shutdown("系统或其他 VPN 已接管连接；请关闭 Pixel VPN 或其他代理后重试")
+            shutdown("系统或其他 VPN 已接管连接；请关闭其他 VPN 或代理应用后重试")
         }
         super.onRevoke()
     }
@@ -168,15 +197,24 @@ class WeaveVpnService : VpnService() {
         underlyingNetworkMonitor.stop()
         networkRecoveryJob?.cancel()
         outboundRecoveryJob?.cancel()
-        runBlocking {
-            withContext(NonCancellable + Dispatchers.IO) {
+        serviceScope.cancel()
+        // Never block the main thread here: engine.stop() waits for the core lifecycle lock,
+        // which a running health check can hold for many seconds. The next start in this process
+        // waits for this job, so a quick reconnect cannot race the old teardown.
+        val previous = teardown
+        teardown = TEARDOWN_SCOPE.launch {
+            previous?.join()
+            withTimeoutOrNull(TEARDOWN_TIMEOUT_MS) {
                 engine.stop()
                 configAssembler.cleanRuntimeFiles()
                 profileTransaction.clean()
-            }
+            } ?: Log.w(LOG_TAG, "Runtime teardown timed out")
         }
-        serviceScope.cancel()
         super.onDestroy()
+    }
+
+    private suspend fun awaitPreviousTeardown() {
+        teardown?.join()
     }
 
     private fun scheduleNetworkRecovery() {
@@ -385,10 +423,8 @@ class WeaveVpnService : VpnService() {
         // Stable stage identifiers survive R8 and never contain a server, node name or token.
         var startupStage = "S01"
         runCatching {
-            check(!recoveryVault.snapshot().safeMode) {
-                "安全模式已启用，请在恢复中心解除后再连接"
-            }
-            check(engine.isAvailable) { "Mihomo 原生库无法加载或初始化" }
+            if (recoveryVault.snapshot().safeMode) fail(RuntimeFailure.SAFE_MODE)
+            if (!engine.isAvailable) fail(RuntimeFailure.CORE_UNAVAILABLE)
             startupStage = "S02"
             val prepared = prepareCurrentRuntime()
             launchPreparedRuntime(prepared) { startupStage = it }
@@ -501,10 +537,12 @@ class WeaveVpnService : VpnService() {
         val installedApps = installedAppMappings(routes.map { it.packageName })
         val probeId = probeSubscriptionId.also { probeSubscriptionId = null }
         val networkPreferences = settingsStore.networkPreferences()
+        val mode = settingsStore.routingMode()
+        val installedPackages = installedApps.mapTo(mutableSetOf()) { it.second }
         return PreparedRuntime(
             assembled = configAssembler.assemble(
                 routes = routes,
-                mode = settingsStore.routingMode(),
+                mode = mode,
                 defaultTarget = settingsStore.defaultRouteTarget(),
                 packageUids = installedApps.associate { (uid, packageName) ->
                     packageName to uid
@@ -514,6 +552,16 @@ class WeaveVpnService : VpnService() {
             ),
             installedApps = installedApps,
             ipv6Enabled = networkPreferences.ipv6Mode == io.weave.client.domain.Ipv6Mode.DUAL_STACK,
+            // Only explicit per-app DIRECT rules in rule mode; global/direct modes route every app
+            // through the core so the mode switch keeps meaning what it says.
+            bypassPackages = if (networkPreferences.bypassDirectApps && mode == io.weave.client.domain.RoutingMode.RULE) {
+                routes.filter { it.target.kind == io.weave.client.domain.RouteKind.DIRECT }
+                    .map { it.packageName }
+                    .filter { it in installedPackages && it != packageName }
+            } else {
+                emptyList()
+            },
+            httpProxyPort = MihomoConfigAssembler.MIXED_PORT.takeIf { networkPreferences.systemHttpProxy },
         )
     }
 
@@ -524,7 +572,7 @@ class WeaveVpnService : VpnService() {
         onStage("S03")
         engine.validate(prepared.assembled.yaml).getOrThrow()
         onStage("S04")
-        val tunFd = establishTun(prepared.ipv6Enabled)
+        val tunFd = establishTun(prepared)
         var handedToCore = false
         try {
             onStage("S05")
@@ -564,80 +612,73 @@ class WeaveVpnService : VpnService() {
                     ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return
             delay(50)
         } while (SystemClock.elapsedRealtime() < deadline)
-        error("系统 VPN 路由尚未就绪，请关闭其他 VPN 后重新连接")
+        fail(RuntimeFailure.VPN_ROUTE_NOT_READY)
     }
 
     private fun publishConnected(prepared: PreparedRuntime, message: String) {
-        notifyStatus(
-            if (prepared.assembled.usableSubscriptions == 0) {
-                "已连接 · 直连规则"
-            } else {
-                "已连接 · ${prepared.assembled.usableSubscriptions} 个订阅"
-            },
-        )
+        connectedStatus = if (prepared.assembled.usableSubscriptions == 0) {
+            "已连接 · 直连规则"
+        } else {
+            "已连接 · ${prepared.assembled.usableSubscriptions} 个订阅"
+        }
+        notifyStatus(connectedStatus)
+        startTrafficNotification()
         VpnRuntimeState.update(ConnectionState.CONNECTED, message)
         VpnRuntimeState.pathChanged(if (preferredUnderlyingNetwork == null)
             io.weave.client.domain.NetworkPathStatus.WAITING_NETWORK else io.weave.client.domain.NetworkPathStatus.TUN_READY)
     }
 
-    private fun notifyStatus(status: String) {
+    private fun notifyStatus(status: String, speed: String? = null) {
+        if (status != connectedStatus) trafficNotificationJob?.cancel()
         getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
-            buildNotification(status),
+            buildNotification(status, speed),
         )
     }
 
-    private fun safeError(error: Throwable?): String {
-        val message = error?.message.orEmpty()
-        return when {
-            error is io.weave.client.subscription.SubscriptionImportException ->
-                "订阅节点结构无法读取；原订阅已保留，请更新或重新导入这份订阅"
-            error is io.weave.client.core.bridge.NativeCoreException &&
-                ("proxy" in message.lowercase() || "proxies" in message.lowercase() || "provider" in message.lowercase()) ->
-                "订阅节点参数未通过内核校验，请更新订阅或检查协议、端口及认证字段；原订阅未删除"
-            "DNS" in message.uppercase() -> "DNS 配置未通过校验，请检查自定义 DNS 地址或重新选择预设"
-            "系统 VPN 路由尚未就绪" in message -> "系统 VPN 路由尚未就绪，请关闭其他 VPN 后重新连接"
-            "系统拒绝建立 VPN" in message -> "系统拒绝建立 VPN，请重新授权后再试"
-            "原生库无法加载" in message -> "代理内核无法加载，请重新安装应用"
-            "没有可用订阅" in message -> "没有可用订阅，请先导入或选择直连"
-            "订阅节点未成功载入" in message -> "订阅节点未成功载入，请重新选择出口或更新订阅"
-            "安全模式已启用" in message -> "恢复中心已启用安全模式，请解除后再连接"
-            "底层网络" in message -> "没有可用的 Wi‑Fi 或移动数据网络"
-            "订阅不存在" in message -> "所选订阅已不存在，请重新选择出口"
-            else -> "代理启动失败，VPN 未连接；请查看恢复中心的最近失败记录"
+    /**
+     * Shows the current node and throughput while connected. Updates only while the screen is
+     * on; a dark screen gets no wakeups from this loop beyond its sleep timer.
+     */
+    private fun startTrafficNotification() {
+        trafficNotificationJob?.cancel()
+        trafficNotificationJob = serviceScope.launch {
+            val power = getSystemService(PowerManager::class.java)
+            while (isActive && VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+                delay(TRAFFIC_NOTIFICATION_INTERVAL_MS)
+                if (power?.isInteractive == false) continue
+                val runtime = engine.queryRuntime() ?: continue
+                if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) break
+                val node = runtime.nodeName.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()
+                getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,
+                    buildNotification(
+                        connectedStatus,
+                        getString(
+                            R.string.notification_speed,
+                            TrafficFormat.bytes(runtime.uploadBytesPerSecond),
+                            TrafficFormat.bytes(runtime.downloadBytesPerSecond),
+                        ) + node,
+                    ),
+                )
+            }
         }
     }
+
+    private fun safeError(error: Throwable?): String = RuntimeFailure.of(error).message
 
     /**
      * Persist only an allowlisted failure category. Exception messages can contain a node host,
      * SNI, socket address or provider path, so they must never be written to RecoveryVault.
      */
-    private fun safeFailureCode(error: Throwable?): String {
-        val message = error?.message.orEmpty()
-        val lower = message.lowercase()
-        return when {
-            error == null -> "runtime_failure"
-            error is io.weave.client.subscription.SubscriptionImportException -> "subscription_parse_failed"
-            "安全模式" in message -> "safe_mode_enabled"
-            "原生库" in message -> "native_core_unavailable"
-            "proxy" in lower || "proxies" in lower || "provider" in lower -> "node_configuration_failed"
-            "订阅" in message -> "subscription_validation_failed"
-            "dns" in lower -> "dns_configuration_failed"
-            "系统 VPN 路由尚未就绪" in message -> "system_vpn_route_not_ready"
-            "VPN" in message || "TUN" in message -> "vpn_interface_failed"
-            "网络" in message || "底层" in message -> "underlying_network_unavailable"
-            else -> error.javaClass.simpleName
-                .replace(Regex("[^A-Za-z0-9_.-]"), "_")
-                .take(64)
-                .ifBlank { "runtime_failure" }
-        }
-    }
+    private fun safeFailureCode(error: Throwable?): String = RuntimeFailure.code(error)
 
-    private fun establishTun(ipv6Enabled: Boolean): Int {
+    private fun establishTun(prepared: PreparedRuntime): Int {
+        val ipv6Enabled = prepared.ipv6Enabled
         val underlyingNetworks = underlyingNetworkMonitor.currentNetworks()
         val preferred = underlyingNetworks.firstOrNull()
         preferredUnderlyingNetwork = preferred
-        checkNotNull(preferred) { "没有可用的底层网络" }
+        if (preferred == null) fail(RuntimeFailure.UNDERLYING_NETWORK)
         val builder = Builder()
             .setSession("Weave")
             .setMtu(TUN_MTU)
@@ -659,6 +700,14 @@ class WeaveVpnService : VpnService() {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
+            prepared.httpProxyPort?.let { port ->
+                builder.setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", port))
+            }
+        }
+        prepared.bypassPackages.forEach { packageName ->
+            // A package can be uninstalled between planning and establish(); skip it rather than
+            // failing the whole tunnel.
+            runCatching { builder.addDisallowedApplication(packageName) }
         }
         val descriptor = builder
             .setConfigureIntent(
@@ -670,7 +719,7 @@ class WeaveVpnService : VpnService() {
                 ),
             )
             .establish()
-            ?: error("系统拒绝建立 VPN TUN 接口")
+            ?: fail(RuntimeFailure.VPN_INTERFACE)
         return descriptor.detachFd()
     }
 
@@ -765,26 +814,44 @@ class WeaveVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_stat_weave)
-        .setContentTitle("Weave")
-        .setContentText(status)
-        .setOngoing(true)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .setContentIntent(
-            PendingIntent.getActivity(
-                this,
+    private fun buildNotification(status: String, detail: String? = null): android.app.Notification {
+        val language = settingsStore.language()
+        val title = localizeWeaveText(status, language)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_weave)
+            .setContentTitle(if (detail == null) "Weave" else title)
+            .setContentText(detail ?: title)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(
                 0,
-                Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            ),
-        )
-        .build()
+                getString(R.string.action_disconnect),
+                PendingIntent.getService(
+                    this,
+                    REQUEST_DISCONNECT,
+                    Intent(this, WeaveVpnService::class.java).setAction(ACTION_STOP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+            .build()
+    }
 
     companion object {
         const val ACTION_START = "io.weave.client.action.START"
         const val ACTION_STOP = "io.weave.client.action.STOP"
         const val ACTION_RELOAD = "io.weave.client.action.RELOAD"
+        private const val ACTION_RELOAD_IF_RUNNING = "io.weave.client.action.RELOAD_IF_RUNNING"
         private const val EXTRA_PROBE_SUBSCRIPTION_ID = "probe_subscription_id"
         private const val CHANNEL_ID = "proxy_connection"
         private const val NOTIFICATION_ID = 1107
@@ -796,6 +863,12 @@ class WeaveVpnService : VpnService() {
         private const val TUN_PREFIX6 = 126
         private const val TUN_DNS6 = "fdfe:dcba:9876::2"
         private const val LOG_TAG = "WeaveVpnService"
+        private const val TEARDOWN_TIMEOUT_MS = 20_000L
+        private const val TRAFFIC_NOTIFICATION_INTERVAL_MS = 3_000L
+        private const val REQUEST_DISCONNECT = 11
+        // Process-wide: outlives a destroyed service instance until its core stop completes.
+        private val TEARDOWN_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        @Volatile private var teardown: Job? = null
 
         fun start(context: android.content.Context) {
             ContextCompat.startForegroundService(
@@ -822,6 +895,19 @@ class WeaveVpnService : VpnService() {
             )
         }
 
+        /**
+         * Applies refreshed subscriptions to a running tunnel. A plain startService() is allowed
+         * only while the VPN foreground service keeps the app in the foreground; otherwise there
+         * is nothing to reload and the background-start rejection is expected.
+         */
+        fun reloadIfRunning(context: android.content.Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, WeaveVpnService::class.java).setAction(ACTION_RELOAD_IF_RUNNING),
+                )
+            }
+        }
+
         fun clearRecoverySafeMode(context: android.content.Context) {
             RecoveryVault(context).clearSafeMode()
             VpnRuntimeState.update(
@@ -835,5 +921,7 @@ class WeaveVpnService : VpnService() {
         val assembled: AssembledMihomoConfig,
         val installedApps: List<Pair<Int, String>>,
         val ipv6Enabled: Boolean,
+        val bypassPackages: List<String> = emptyList(),
+        val httpProxyPort: Int? = null,
     )
 }

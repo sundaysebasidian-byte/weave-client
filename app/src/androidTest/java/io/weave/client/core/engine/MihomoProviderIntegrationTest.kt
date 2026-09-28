@@ -176,7 +176,8 @@ class MihomoProviderIntegrationTest {
                         networkPreferences = NetworkPreferences(),
                     )
                     // A loopback-only test listener, never included in production configuration.
-                    val config = compiled.yaml + "\nmixed-port: $inboundPort\nbind-address: 127.0.0.1\n"
+                    // The production profile already pins bind-address to loopback.
+                    val config = compiled.yaml + "\nmixed-port: $inboundPort\n"
                     engine.validate(config).getOrThrow()
                     NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
                     Socket("127.0.0.1", inboundPort).use { client ->

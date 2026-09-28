@@ -45,6 +45,7 @@ fun localizeWeaveText(text: String, language: WeaveLanguage): String {
 }
 
 private fun translateCommonPatterns(text: String, language: WeaveLanguage): String? {
+    translateV2Patterns(text, language)?.let { return it }
     if (text.startsWith("安全拦截 · ")) {
         return localizeWeaveText("安全拦截", language) + " · " + text.substringAfter(" · ")
     }
@@ -1230,7 +1231,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
  * leaves a visible Chinese fragment behind. The English value is a deliberate last-resort
  * fallback for long legal/technical copy; high-frequency controls provide native translations.
  */
-private data class SupplementalTranslation(
+internal data class SupplementalTranslation(
     val english: String,
     val traditional: String = english,
     val japanese: String = english,
@@ -1248,7 +1249,7 @@ private data class SupplementalTranslation(
 }
 
 private fun supplementalUiTranslations(language: WeaveLanguage): Map<String, String> =
-    SUPPLEMENTAL_TRANSLATIONS.mapValues { (_, value) -> value.resolve(language) }
+    (SUPPLEMENTAL_TRANSLATIONS + V2_TRANSLATIONS).mapValues { (_, value) -> value.resolve(language) }
 
 private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "需复核" to SupplementalTranslation("Review needed", "需複核", "要確認", "À vérifier", "Prüfung nötig"),
@@ -1344,7 +1345,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "记录已开启；访问目标应用后返回并刷新" to SupplementalTranslation("Recording is on. Use the target app, then return and refresh.", "記錄已開啟；使用目標應用後返回並重新整理", "記録中です。対象アプリを使用してから戻り、更新してください。", "Enregistrement actif. Utilisez l’application cible, puis revenez et actualisez.", "Aufzeichnung aktiv. Ziel-App nutzen, dann zurückkehren und aktualisieren."),
     "规则优先级" to SupplementalTranslation("Rule priority", "規則優先順序", "ルールの優先順位", "Priorité des règles", "Regelpriorität"),
     "安全拦截" to SupplementalTranslation("Security block", "安全攔截", "セキュリティ遮断", "Blocage de sécurité", "Sicherheitssperre"),
-    "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认" to SupplementalTranslation("Security blocks > app rules > offline packs > local domain/IP rules > mainland direct > default exit. Geo rules and final matches require core confirmation.", "安全攔截 > 應用規則 > 離線規則包 > 本機網域/IP 規則 > 國內直連 > 預設出口；地域規則及最終命中需由核心確認", "安全遮断 > アプリルール > オフラインルール > ローカルドメイン/IP > 中国本土への直接接続 > 既定の出口。地域ルールと最終一致はコアによる確認が必要です。", "Sécurité > applications > règles hors ligne > domaines/IP locaux > accès direct en Chine > sortie par défaut. Les règles géographiques et finales nécessitent la confirmation du moteur.", "Sperren > App-Regeln > Offline-Pakete > lokale Domain/IP-Regeln > Festland-Direktzugriff > Standardausgang. Geo-Regeln und endgültige Treffer müssen vom Kern bestätigt werden."),
+    "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 远程规则集 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认" to SupplementalTranslation("Security blocks > app rules > offline packs > local domain/IP rules > remote rule sets > mainland direct > default exit. Geo rules and final matches require core confirmation.", "安全攔截 > 應用規則 > 離線規則包 > 本機網域/IP 規則 > 遠端規則集 > 國內直連 > 預設出口；地域規則及最終命中需由核心確認", "安全遮断 > アプリルール > オフラインルール > ローカルドメイン/IP > リモートルールセット > 中国本土への直接接続 > 既定の出口。地域ルールと最終一致はコアによる確認が必要です。", "Sécurité > applications > règles hors ligne > domaines/IP locaux > jeux de règles distants > accès direct en Chine > sortie par défaut. Les règles géographiques et finales nécessitent la confirmation du moteur.", "Sperren > App-Regeln > Offline-Pakete > lokale Domain/IP-Regeln > Remote-Regelsätze > Festland-Direktzugriff > Standardausgang. Geo-Regeln und endgültige Treffer müssen vom Kern bestätigt werden."),
     "大陆直连 · 海外代理" to SupplementalTranslation("Mainland direct · overseas proxy", "大陸直連 · 海外代理", "中国本土は直接・海外はプロキシ", "Chine en direct · étranger via proxy", "Festland direkt · Ausland über Proxy"),
     "全部代理" to SupplementalTranslation("Proxy all traffic", "全部代理", "すべてプロキシ", "Tout via proxy", "Alles über Proxy"),
     "订阅节点结构无法读取；原订阅已保留，请更新或重新导入这份订阅" to SupplementalTranslation("Cannot read the subscription node structure. The original is retained; update or reimport this subscription.", "無法讀取訂閱節點結構；原訂閱已保留，請更新或重新匯入此訂閱", "購読のノード構造を読み取れません。元の購読は保持されています。更新または再インポートしてください。", "Structure des nœuds illisible. L’abonnement original est conservé ; mettez-le à jour ou réimportez-le.", "Knotenstruktur nicht lesbar. Das Original bleibt erhalten; Abonnement aktualisieren oder erneut importieren."),
@@ -2366,7 +2367,13 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "系统拒绝建立 VPN" to SupplementalTranslation("The system refused to establish the VPN"),
     "系统拒绝建立 VPN，请重新授权后再试" to SupplementalTranslation("The system refused to establish the VPN; grant permission again and retry"),
     "系统拒绝建立 VPN TUN 接口" to SupplementalTranslation("The system refused to establish the VPN TUN interface"),
-    "系统或其他 VPN 已接管连接；请关闭 Pixel VPN 或其他代理后重试" to SupplementalTranslation("The system or another VPN owns the connection; disable Pixel VPN or another proxy and retry"),
+    "系统或其他 VPN 已接管连接；请关闭其他 VPN 或代理应用后重试" to SupplementalTranslation(
+        "The system or another VPN took over the connection. Turn off the other VPN or proxy app and retry.",
+        "系統或其他 VPN 已接管連線；請關閉其他 VPN 或代理應用程式後重試",
+        "システムまたは別の VPN が接続を引き継ぎました。他の VPN やプロキシアプリをオフにして再試行してください。",
+        "Le système ou un autre VPN a pris le contrôle de la connexion. Désactivez l’autre VPN ou proxy, puis réessayez.",
+        "Das System oder ein anderes VPN hat die Verbindung übernommen. Anderes VPN oder Proxy beenden und erneut versuchen.",
+    ),
     "所选订阅已不存在，请重新选择出口" to SupplementalTranslation("The selected subscription no longer exists; choose an exit again"),
     "订阅节点未成功载入，请重新选择出口或更新订阅" to SupplementalTranslation("Subscription nodes could not be loaded; choose another exit or refresh the subscription", "訂閱節點未成功載入，請重新選擇出口或更新訂閱", "購読のノードを読み込めません。出口を選び直すか、購読を更新してください", "Impossible de charger les nœuds ; choisissez une autre sortie ou actualisez l’abonnement", "Die Knoten konnten nicht geladen werden; bitte einen anderen Ausgang wählen oder das Abonnement aktualisieren"),
     "新配置已安全生效" to SupplementalTranslation("The new configuration is active safely"),

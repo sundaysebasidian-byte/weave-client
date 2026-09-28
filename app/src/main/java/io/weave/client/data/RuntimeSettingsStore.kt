@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.domain.AutomaticStrategy
+import io.weave.client.domain.BootstrapDns
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
@@ -17,8 +18,8 @@ import io.weave.client.domain.WeavePalette
 import io.weave.client.domain.WeaveLanguage
 
 class RuntimeSettingsStore(context: Context) {
-    private val preferences =
-        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
     private val secretBox = AndroidKeystoreSecretBox()
 
     fun routingMode(): RoutingMode = preferences.getString(KEY_ROUTING_MODE, null)
@@ -26,14 +27,14 @@ class RuntimeSettingsStore(context: Context) {
         ?: RoutingMode.RULE
 
     fun setRoutingMode(mode: RoutingMode) {
-        preferences.edit { putString(KEY_ROUTING_MODE, mode.name) }
+        preferences.edit(commit = true) { putString(KEY_ROUTING_MODE, mode.name) }
     }
 
     // Opaque subscription/node IDs only; no node names, hosts or credentials.
     fun favoriteNodeIds(): Set<String> = preferences.getStringSet("favorite_node_ids", emptySet()).orEmpty().toSet()
 
     fun setFavoriteNodeIds(ids: Set<String>) {
-        preferences.edit { putStringSet("favorite_node_ids", ids.take(512).toSet()) }
+        preferences.edit(commit = true) { putStringSet("favorite_node_ids", ids.take(512).toSet()) }
     }
 
     fun networkPreferences() = NetworkPreferences(
@@ -57,32 +58,101 @@ class RuntimeSettingsStore(context: Context) {
         blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
         domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
         weavePalette = weavePalette(),
+        subscriptionAutoUpdateHours = preferences.getInt(KEY_AUTO_UPDATE_HOURS, 0)
+            .takeIf { it in AUTO_UPDATE_CHOICES } ?: 0,
+        subscriptionAutoUpdateUnmeteredOnly = preferences.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true),
+        bypassDirectApps = preferences.getBoolean(KEY_BYPASS_DIRECT_APPS, false),
+        bootstrapDns = enumPreference(KEY_BOOTSTRAP_DNS, BootstrapDns.MAINLAND),
+        systemHttpProxy = preferences.getBoolean(KEY_SYSTEM_HTTP_PROXY, false),
+        lanSharing = preferences.getBoolean(KEY_LAN_SHARING, false),
     )
 
+    fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
+        require(hours in AUTO_UPDATE_CHOICES) { "unsupported interval" }
+        preferences.edit(commit = true) {
+            putInt(KEY_AUTO_UPDATE_HOURS, hours)
+            putBoolean(KEY_AUTO_UPDATE_UNMETERED, unmeteredOnly)
+        }
+    }
+
+    fun setBypassDirectApps(enabled: Boolean) {
+        preferences.edit(commit = true) { putBoolean(KEY_BYPASS_DIRECT_APPS, enabled) }
+    }
+
+    fun setBootstrapDns(value: BootstrapDns) {
+        preferences.edit(commit = true) { putString(KEY_BOOTSTRAP_DNS, value.name) }
+    }
+
+    fun setSystemHttpProxy(enabled: Boolean) {
+        preferences.edit(commit = true) { putBoolean(KEY_SYSTEM_HTTP_PROXY, enabled) }
+    }
+
+    fun setLanSharing(enabled: Boolean) {
+        preferences.edit(commit = true) { putBoolean(KEY_LAN_SHARING, enabled) }
+    }
+
+    /**
+     * Random credentials for the LAN-shared proxy, generated once and kept encrypted. They are
+     * shown to the user so other devices can authenticate; loopback clients skip auth.
+     */
+    fun lanProxyCredentials(): Pair<String, String> {
+        preferences.getString(KEY_LAN_CREDENTIALS, null)?.let { encrypted ->
+            runCatching {
+                secretBox.decrypt(encrypted, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
+            }.getOrNull()?.split(':', limit = 2)?.takeIf { it.size == 2 }?.let { return it[0] to it[1] }
+        }
+        val random = java.security.SecureRandom()
+        fun token(length: Int) = buildString {
+            repeat(length) { append(CREDENTIAL_ALPHABET[random.nextInt(CREDENTIAL_ALPHABET.length)]) }
+        }
+        val credentials = "weave-${token(4)}" to token(16)
+        preferences.edit(commit = true) {
+            putString(
+                KEY_LAN_CREDENTIALS,
+                secretBox.encrypt("${credentials.first}:${credentials.second}".toByteArray(Charsets.UTF_8), LAN_CREDENTIALS_AAD),
+            )
+        }
+        return credentials
+    }
+
+    /** Null means the UI follows the system language. */
+    fun explicitLanguage(): WeaveLanguage? = preferences.getString(KEY_LANGUAGE, null)
+        ?.let { stored -> WeaveLanguage.entries.firstOrNull { it.name == stored } }
+
+    fun isLocaleMigrated(): Boolean = preferences.getBoolean(KEY_LOCALE_MIGRATED, false)
+
+    fun markLocaleMigrated() {
+        preferences.edit(commit = true) { putBoolean(KEY_LOCALE_MIGRATED, true) }
+    }
+
+    fun setFollowSystemLanguage() {
+        preferences.edit(commit = true) { remove(KEY_LANGUAGE) }
+    }
+
     fun setAutomaticStrategy(strategy: AutomaticStrategy) {
-        preferences.edit { putString(KEY_AUTOMATIC_STRATEGY, strategy.name) }
+        preferences.edit(commit = true) { putString(KEY_AUTOMATIC_STRATEGY, strategy.name) }
     }
 
     fun setStrategyScope(scope: StrategyScope) {
-        preferences.edit { putString(KEY_STRATEGY_SCOPE, scope.name) }
+        preferences.edit(commit = true) { putString(KEY_STRATEGY_SCOPE, scope.name) }
     }
 
     fun setDnsTransport(transport: DnsTransport) {
-        preferences.edit { putString(KEY_DNS_TRANSPORT, transport.name) }
+        preferences.edit(commit = true) { putString(KEY_DNS_TRANSPORT, transport.name) }
     }
 
     fun setDnsProfile(profile: DnsProfile) {
-        preferences.edit { putString(KEY_DNS_PROFILE, profile.name) }
+        preferences.edit(commit = true) { putString(KEY_DNS_PROFILE, profile.name) }
     }
 
     fun setDnsRoutingMode(mode: DnsRoutingMode) {
-        preferences.edit { putString(KEY_DNS_ROUTING_MODE, mode.name) }
+        preferences.edit(commit = true) { putString(KEY_DNS_ROUTING_MODE, mode.name) }
     }
 
     fun setCustomDnsEndpoint(endpoint: String) {
         // This may contain a private resolver or a profile token. Never log or export it.
         val normalized = endpoint.trim()
-        preferences.edit {
+        preferences.edit(commit = true) {
             if (normalized.isBlank()) {
                 remove(KEY_CUSTOM_DNS_ENDPOINT_ENCRYPTED)
                 remove(KEY_CUSTOM_DNS_ENDPOINT)
@@ -100,28 +170,25 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     fun setIpv6Mode(mode: Ipv6Mode) {
-        preferences.edit { putString(KEY_IPV6_MODE, mode.name) }
+        preferences.edit(commit = true) { putString(KEY_IPV6_MODE, mode.name) }
     }
 
     fun setBlockUdpStun(enabled: Boolean) {
-        preferences.edit { putBoolean(KEY_BLOCK_UDP_STUN, enabled) }
+        preferences.edit(commit = true) { putBoolean(KEY_BLOCK_UDP_STUN, enabled) }
     }
 
     fun setDomesticDirect(enabled: Boolean) {
-        preferences.edit { putBoolean(KEY_DOMESTIC_DIRECT, enabled) }
+        preferences.edit(commit = true) { putBoolean(KEY_DOMESTIC_DIRECT, enabled) }
     }
 
     fun setWeavePalette(palette: WeavePalette) {
-        preferences.edit { putString(KEY_WEAVE_PALETTE, palette.name) }
+        preferences.edit(commit = true) { putString(KEY_WEAVE_PALETTE, palette.name) }
     }
 
-    fun language(): WeaveLanguage = enumPreference(
-        KEY_LANGUAGE,
-        WeaveLanguage.SIMPLIFIED_CHINESE,
-    )
+    fun language(): WeaveLanguage = explicitLanguage() ?: WeaveLanguage.fromSystem()
 
     fun setLanguage(language: WeaveLanguage) {
-        preferences.edit { putString(KEY_LANGUAGE, language.name) }
+        preferences.edit(commit = true) { putString(KEY_LANGUAGE, language.name) }
     }
 
     fun defaultRouteTarget(): RouteTarget? {
@@ -134,23 +201,26 @@ class RuntimeSettingsStore(context: Context) {
             label = "",
             subscriptionId = preferences.getString(KEY_DEFAULT_SUBSCRIPTION_ID, null),
             nodeId = preferences.getString(KEY_DEFAULT_NODE_ID, null),
+            groupId = preferences.getString(KEY_DEFAULT_GROUP_ID, null),
         )
     }
 
     fun setDefaultRouteTarget(target: RouteTarget) {
         require(target.kind != RouteKind.BLOCK) { "默认出口不能阻止所有联网" }
-        preferences.edit {
+        preferences.edit(commit = true) {
             putString(KEY_DEFAULT_ROUTE_KIND, target.kind.name)
             putString(KEY_DEFAULT_SUBSCRIPTION_ID, target.subscriptionId)
             putString(KEY_DEFAULT_NODE_ID, target.nodeId)
+            putString(KEY_DEFAULT_GROUP_ID, target.groupId)
         }
     }
 
     fun clearDefaultRouteTarget() {
-        preferences.edit {
+        preferences.edit(commit = true) {
             remove(KEY_DEFAULT_ROUTE_KIND)
             remove(KEY_DEFAULT_SUBSCRIPTION_ID)
             remove(KEY_DEFAULT_NODE_ID)
+            remove(KEY_DEFAULT_GROUP_ID)
         }
     }
 
@@ -194,6 +264,7 @@ class RuntimeSettingsStore(context: Context) {
         const val KEY_DEFAULT_ROUTE_KIND = "default_route_kind"
         const val KEY_DEFAULT_SUBSCRIPTION_ID = "default_subscription_id"
         const val KEY_DEFAULT_NODE_ID = "default_node_id"
+        const val KEY_DEFAULT_GROUP_ID = "default_group_id"
         const val KEY_AUTOMATIC_STRATEGY = "automatic_strategy"
         const val KEY_STRATEGY_SCOPE = "strategy_scope"
         const val KEY_DNS_TRANSPORT = "dns_transport"
@@ -207,6 +278,17 @@ class RuntimeSettingsStore(context: Context) {
         const val KEY_WEAVE_PALETTE = "weave_palette"
         // Kept read-only so alpha52's two navigation presets migrate without losing intent.
         const val KEY_LANGUAGE = "language"
+        const val KEY_AUTO_UPDATE_HOURS = "subscription_auto_update_hours"
+        const val KEY_AUTO_UPDATE_UNMETERED = "subscription_auto_update_unmetered"
+        const val KEY_BYPASS_DIRECT_APPS = "bypass_direct_apps"
+        const val KEY_BOOTSTRAP_DNS = "bootstrap_dns"
+        const val KEY_SYSTEM_HTTP_PROXY = "system_http_proxy"
+        const val KEY_LAN_SHARING = "lan_sharing"
+        const val KEY_LOCALE_MIGRATED = "system_locale_migrated_v1"
+        const val KEY_LAN_CREDENTIALS = "lan_proxy_credentials_encrypted"
+        const val CREDENTIAL_ALPHABET = "abcdefghjkmnpqrstuvwxyzACDEFGHJKLMNPQRTUVWXY346789"
+        val AUTO_UPDATE_CHOICES = setOf(0, 6, 12, 24)
+        val LAN_CREDENTIALS_AAD = "weave.settings.lan-proxy.v1".toByteArray(Charsets.UTF_8)
         val CUSTOM_DNS_AAD = "weave.settings.custom-dns.v1".toByteArray(Charsets.UTF_8)
     }
 }

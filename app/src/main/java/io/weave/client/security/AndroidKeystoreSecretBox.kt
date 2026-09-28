@@ -54,13 +54,20 @@ class AndroidKeystoreSecretBox : SecretBox {
         val ciphertext = ByteArray(buffer.remaining()).also(buffer::get)
         return runCatching {
             Cipher.getInstance(TRANSFORMATION).run {
-                init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+                // Never create a key while decrypting: a new key cannot open existing ciphertext,
+                // and generating it from the VPN process could race the UI's first encryption.
+                init(Cipher.DECRYPT_MODE, existingKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
                 updateAAD(associatedData)
                 doFinal(ciphertext)
             }
         }.getOrElse {
             throw SecretEnvelopeException("Encrypted value authentication failed", it)
         }
+    }
+
+    private fun existingKey(): SecretKey = synchronized(KEY_LOCK) {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        checkNotNull(keyStore.getKey(KEY_ALIAS, null) as? SecretKey) { "Keystore key is missing" }
     }
 
     private fun getOrCreateKey(): SecretKey {

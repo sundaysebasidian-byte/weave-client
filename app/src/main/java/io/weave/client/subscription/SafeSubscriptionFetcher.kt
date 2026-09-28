@@ -11,6 +11,8 @@ data class SubscriptionFetchResult(
     val body: String,
     val finalUri: URI,
     val contentType: String?,
+    val usage: SubscriptionUsage? = null,
+    val updateIntervalHours: Int? = null,
 )
 
 /**
@@ -102,6 +104,8 @@ class SafeSubscriptionFetcher(
                         body = requireNotNull(response.body),
                         finalUri = current,
                         contentType = response.contentType,
+                        usage = SubscriptionUsage.parse(response.userInfo),
+                        updateIntervalHours = ProfileUpdateInterval.parse(response.updateInterval),
                     )
                 }
 
@@ -131,6 +135,8 @@ class SafeSubscriptionFetcher(
         val body: String? = null,
         val contentType: String? = null,
         val location: String? = null,
+        val userInfo: String? = null,
+        val updateInterval: String? = null,
     )
 
     private fun fetchHop(uri: URI): HopResponse = try {
@@ -174,6 +180,8 @@ class SafeSubscriptionFetcher(
                         status = status,
                         body = body,
                         contentType = connection.contentType,
+                        userInfo = connection.getHeaderField("subscription-userinfo"),
+                        updateInterval = connection.getHeaderField("profile-update-interval"),
                     )
                 }
 

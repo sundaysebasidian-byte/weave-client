@@ -7,7 +7,8 @@ import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 
 class AppRouteStore(context: Context) {
-    private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
 
     fun load(): List<AppRoute> =
         preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty()
@@ -17,7 +18,7 @@ class AppRouteStore(context: Context) {
     fun save(routes: List<AppRoute>) {
         val packages = routes.mapTo(linkedSetOf()) { it.packageName }
         val removedPackages = preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty() - packages
-        preferences.edit {
+        preferences.edit(commit = true) {
             putStringSet(KEY_PACKAGES, packages)
             removedPackages.forEach { packageName ->
                 ROUTE_FIELDS.forEach { field ->
@@ -32,6 +33,7 @@ class AppRouteStore(context: Context) {
                 putString(key(route.packageName, "label"), route.target.label)
                 putString(key(route.packageName, "subscription"), route.target.subscriptionId)
                 putString(key(route.packageName, "node"), route.target.nodeId)
+                putString(key(route.packageName, "group"), route.target.groupId)
             }
         }
     }
@@ -45,6 +47,8 @@ class AppRouteStore(context: Context) {
         val nodeId = preferences.getString(key(packageName, "node"), null)
         if (kind == RouteKind.AUTO && subscriptionId == null) return null
         if (kind == RouteKind.FIXED && (subscriptionId == null || nodeId == null)) return null
+        val groupId = preferences.getString(key(packageName, "group"), null)
+        if (kind == RouteKind.GROUP && groupId == null) return null
 
         return AppRoute(
             packageName = packageName,
@@ -56,6 +60,7 @@ class AppRouteStore(context: Context) {
                 label = preferences.getString(key(packageName, "label"), null) ?: kind.name,
                 subscriptionId = subscriptionId,
                 nodeId = nodeId,
+                groupId = groupId,
             ),
         )
     }
@@ -73,6 +78,7 @@ class AppRouteStore(context: Context) {
             "label",
             "subscription",
             "node",
+            "group",
         )
         val PACKAGE_NAME = Regex("""[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+""")
     }

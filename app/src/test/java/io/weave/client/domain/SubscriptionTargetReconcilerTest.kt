@@ -8,9 +8,6 @@ class SubscriptionTargetReconcilerTest {
         id = "subscription-1",
         name = "Renamed",
         nodeCount = 1,
-        updatedAt = "",
-        trafficUsedGb = 0.0,
-        trafficTotalGb = 0.0,
     )
     private val node = ProxyNode(
         id = "node-1",

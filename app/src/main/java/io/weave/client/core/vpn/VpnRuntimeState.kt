@@ -13,13 +13,21 @@ data class VpnRuntimeSnapshot(
 )
 
 /**
- * In-process status bus for the current milestone.
- *
- * Before moving VpnService into :core this will be replaced by a signature-protected Binder API.
+ * Runtime status bus. The copy in the `:vpn` process is authoritative; the UI process holds a
+ * mirror fed by CoreClient and forwards reachability evidence back through
+ * [reachabilityForwarder].
  */
 object VpnRuntimeState {
     private val mutableSnapshot = MutableStateFlow(VpnRuntimeSnapshot())
     val snapshot = mutableSnapshot.asStateFlow()
+
+    /** Set only in the UI process. */
+    @Volatile var reachabilityForwarder: ((Long) -> Unit)? = null
+
+    /** Replaces the UI-process mirror with the authoritative snapshot from `:vpn`. */
+    @Synchronized fun mirror(value: VpnRuntimeSnapshot) {
+        mutableSnapshot.value = value
+    }
 
     @Synchronized fun update(state: ConnectionState, message: String? = null) {
         val previous = mutableSnapshot.value
@@ -44,10 +52,12 @@ object VpnRuntimeState {
             current.pathStatus in setOf(NetworkPathStatus.TUN_READY, NetworkPathStatus.VERIFIED)
     }
 
-    @Synchronized fun confirmReachable(revision: Long) {
-        val current = mutableSnapshot.value
-        if (acceptsEvidence(revision)) {
+    fun confirmReachable(revision: Long) {
+        synchronized(this) {
+            val current = mutableSnapshot.value
+            if (!acceptsEvidence(revision)) return
             mutableSnapshot.value = current.copy(pathStatus = NetworkPathStatus.VERIFIED)
         }
+        reachabilityForwarder?.invoke(revision)
     }
 }

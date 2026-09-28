@@ -17,10 +17,8 @@ data class RecoveryState(
 )
 
 class RecoveryVault(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences(
-        PREFERENCES_NAME,
-        Context.MODE_PRIVATE,
-    )
+    private val appContext = context.applicationContext
+    private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
 
     @Synchronized
     fun snapshot(): RecoveryState = RecoveryState(
@@ -35,7 +33,7 @@ class RecoveryVault(context: Context) {
 
     @Synchronized
     fun recordHealthy(revision: String = "connected") {
-        preferences.edit {
+        preferences.edit(commit = true) {
             putBoolean(KEY_SAFE_MODE, false)
             putInt(KEY_FAILURE_COUNT, 0)
             remove(KEY_LAST_FAILURE)
@@ -47,7 +45,7 @@ class RecoveryVault(context: Context) {
 
     @Synchronized
     fun recordFailure(message: String) {
-        preferences.edit {
+        preferences.edit(commit = true) {
             putInt(KEY_FAILURE_COUNT, (preferences.getInt(KEY_FAILURE_COUNT, 0) + 1).coerceAtMost(99))
             putString(KEY_LAST_FAILURE, RecoveryRedactor.redact(message))
         }
@@ -55,7 +53,7 @@ class RecoveryVault(context: Context) {
 
     @Synchronized
     fun enableSafeMode(reason: String) {
-        preferences.edit {
+        preferences.edit(commit = true) {
             putBoolean(KEY_SAFE_MODE, true)
             putString(KEY_SAFE_MODE_REASON, RecoveryRedactor.redact(reason))
         }
@@ -63,7 +61,7 @@ class RecoveryVault(context: Context) {
 
     @Synchronized
     fun clearSafeMode() {
-        preferences.edit {
+        preferences.edit(commit = true) {
             putBoolean(KEY_SAFE_MODE, false)
             remove(KEY_SAFE_MODE_REASON)
             putInt(KEY_FAILURE_COUNT, 0)

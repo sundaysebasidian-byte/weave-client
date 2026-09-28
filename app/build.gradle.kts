@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Local preview build; keep the application ID/signature for a data-preserving update.
-        versionCode = 89
-        versionName = "0.3.0-alpha83"
+        versionCode = 90
+        versionName = "0.4.0-alpha1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -25,8 +25,30 @@ android {
         }
     }
 
+    // Production signing comes only from the environment or ~/.gradle/gradle.properties, never
+    // from this repository. Without it, assembleRelease produces unsigned APKs.
+    val releaseKeystore = providers.gradleProperty("weaveReleaseKeystore")
+        .orElse(providers.environmentVariable("WEAVE_RELEASE_KEYSTORE"))
+        .orNull
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = providers.gradleProperty("weaveReleaseStorePassword")
+                    .orElse(providers.environmentVariable("WEAVE_RELEASE_STORE_PASSWORD")).get()
+                keyAlias = providers.gradleProperty("weaveReleaseKeyAlias")
+                    .orElse(providers.environmentVariable("WEAVE_RELEASE_KEY_ALIAS")).get()
+                keyPassword = providers.gradleProperty("weaveReleaseKeyPassword")
+                    .orElse(providers.environmentVariable("WEAVE_RELEASE_KEY_PASSWORD")).get()
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -86,6 +108,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // Keep release APKs reproducible from source: no Google-encrypted dependency blob in the
+    // signing block (it cannot be rebuilt by third parties such as F-Droid).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     packaging {
