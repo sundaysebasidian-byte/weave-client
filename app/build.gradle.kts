@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 36
         // Local preview build; keep the application ID/signature for a data-preserving update.
-        versionCode = 90
+        versionCode = 101
         versionName = "0.4.0-alpha1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
