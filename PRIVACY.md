@@ -38,7 +38,13 @@ subscription URL can be fetched by the normal user-initiated import workflow.
 To implement routing, the Android VPN process can access packet metadata, DNS
 requests, the local UID/package attribution of a connection, and the proxy rule
 that matched it. The preview build does not upload that information to a Weave
-server.
+server. The optional live-connections and core-log screens show destinations only
+while open, keep at most 500 log lines in memory, block screenshots, and copy logs
+with IP addresses and credentials redacted.
+
+Encrypted backups are written only to a location the user picks. They are protected
+with the user's passphrase (PBKDF2-HMAC-SHA256 and AES-256-GCM); Weave cannot recover
+a forgotten passphrase.
 
 ## Network parties selected by the user
 
@@ -68,6 +74,14 @@ When used, Weave connects to parties outside this project:
 - external browser verification pages (`dnsleaktest.com` and `browserleaks.com`) only after the user
   taps a named link. They open in the system browser, operate under their own privacy practices,
   and Weave neither reads nor stores their results;
+- the same subscription URLs on a schedule, only if the user turns on scheduled subscription
+  updates (off by default; unmetered networks only by default). The provider's
+  `subscription-userinfo` quota and expiry are stored on the device;
+- HTTPS rule-set URLs the user adds, fetched only when the set is added or refreshed;
+- the bootstrap resolvers (`223.5.5.5`, `119.29.29.29`, or `1.1.1.1`, `9.9.9.9` if selected), which
+  receive plain-DNS lookups for the encrypted resolver's own hostname;
+- other devices on the local network, only if the user turns on LAN proxy sharing. They must use a
+  random username and password that stay encrypted on this device;
 
 Those parties have their own privacy practices. A subscription provider or
 proxy operator may observe the source IP, connection timing, destination
@@ -86,7 +100,8 @@ who obtains the complete QR code or link before expiry can import its contents.
 - `INTERNET` sends traffic requested by the user.
 - `ACCESS_NETWORK_STATE` handles network loss and Wi-Fi/mobile transitions.
 - `FOREGROUND_SERVICE_SPECIAL_USE` keeps an active VPN visible and stable.
-- `POST_NOTIFICATIONS` displays VPN state where the Android version requires it.
+- `POST_NOTIFICATIONS` displays VPN state and, if enabled, scheduled-update results.
+- `RECEIVE_BOOT_COMPLETED` keeps the optional scheduled subscription update across reboots.
 - `BIND_VPN_SERVICE` protects the non-exported VPN service.
 
 Weave does not request `QUERY_ALL_PACKAGES`; it lists only applications with a
