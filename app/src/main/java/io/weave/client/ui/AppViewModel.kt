@@ -405,6 +405,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             var previousRevision = VpnRuntimeState.snapshot.value.revision
+            var previousMessage = VpnRuntimeState.snapshot.value.message
             VpnRuntimeState.snapshot.collect { runtime ->
                 if (runtime.state != ConnectionState.CONNECTED || runtime.revision != previousRevision) {
                     subscriptionHealthJob?.cancel()
@@ -421,11 +422,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     mutableDownloadState.value = DownloadProbeState()
                 }
                 previousRevision = runtime.revision
+                // Every snapshot carries the last message, including path-only updates and the
+                // replay sent when the UI rebinds; announce it only when it is actually new.
+                val newMessage = runtime.message?.takeIf { !runtime.replayed && it != previousMessage }
+                previousMessage = runtime.message
                 mutableDashboard.update {
                     it.copy(
                         connectionState = runtime.state,
                         networkPathStatus = runtime.pathStatus,
-                        statusMessage = runtime.message ?: it.statusMessage,
+                        statusMessage = newMessage ?: it.statusMessage,
                     )
                 }
                 mutableRecoveryState.value = recoveryVault.snapshot()

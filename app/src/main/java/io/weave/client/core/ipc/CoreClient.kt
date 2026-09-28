@@ -178,7 +178,8 @@ object CoreClient {
             CoreIpc.MSG_STATE -> {
                 val data = message.data
                 lockdownEnabled = data.lockdown()
-                VpnRuntimeState.mirror(CoreIpc.decodeState(data))
+                // The first state after (re)binding replays what :vpn already had.
+                VpnRuntimeState.mirror(CoreIpc.decodeState(data).copy(replayed = !connected.value))
                 if (service != null) connected.value = true
             }
             CoreIpc.MSG_REPLY -> pending.remove(message.arg1)?.complete(Bundle(message.data))
