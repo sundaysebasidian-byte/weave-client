@@ -10,6 +10,11 @@ data class VpnRuntimeSnapshot(
     val message: String? = null,
     val revision: Long = 0,
     val pathStatus: NetworkPathStatus = NetworkPathStatus.INACTIVE,
+    /**
+     * UI process only, never sent over IPC: the state `:vpn` already had when the UI bound to it,
+     * so [message] describes an earlier event rather than one the user just triggered.
+     */
+    val replayed: Boolean = false,
 )
 
 /**

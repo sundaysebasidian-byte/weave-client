@@ -303,6 +303,7 @@ private fun CustomGroupEditor(
     var chained by remember { mutableStateOf(initial?.entry != null) }
     var query by remember { mutableStateOf("") }
     var pickingEntry by remember { mutableStateOf(false) }
+    var confirmingDelete by remember { mutableStateOf(false) }
     val subscriptionNames = remember(subscriptions) { subscriptions.associate { it.id to it.name } }
     val filtered = remember(nodes, query) {
         val needle = query.trim()
@@ -313,7 +314,11 @@ private fun CustomGroupEditor(
         subtitle = "已选 ${members.size} 个节点",
         onDismiss = onDismiss,
         actions = {
-            onDelete?.let { IconButton(onClick = it) { Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("删除")) } }
+            if (onDelete != null) {
+                IconButton(onClick = { confirmingDelete = true }) {
+                    Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("删除"))
+                }
+            }
             TextButton(
                 enabled = name.isNotBlank() && members.isNotEmpty() && (!chained || entry != null),
                 onClick = {
@@ -350,6 +355,7 @@ private fun CustomGroupEditor(
                                 Text("先连接入口节点，再由成员节点访问目标；延迟会叠加", fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            Spacer(Modifier.width(12.dp))
                             Switch(checked = chained, onCheckedChange = { chained = it })
                         }
                         if (chained) {
@@ -393,28 +399,50 @@ private fun CustomGroupEditor(
             }
         }
     }
+    if (confirmingDelete && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("删除策略组？", fontWeight = FontWeight.Bold) },
+            text = { Text("默认出口或应用分流若在使用它，将改为阻止联网，直到你重新选择出口。") },
+            confirmButton = {
+                TextButton(onClick = { confirmingDelete = false; onDelete() }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("取消") } },
+        )
+    }
     if (pickingEntry) {
+        var entryQuery by remember { mutableStateOf("") }
+        val entryCandidates = remember(nodes, entryQuery) {
+            val needle = entryQuery.trim()
+            nodes.filter { needle.isEmpty() || it.name.contains(needle, true) }
+        }
         AlertDialog(
             onDismissRequest = { pickingEntry = false },
             title = { Text("选择入口节点", fontWeight = FontWeight.Bold) },
             text = {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    items(nodes, key = { "${it.subscriptionId}/${it.id}" }) { node ->
-                        val ref = NodeRef(node.subscriptionId, node.id)
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                entry = ref
-                                members = members - ref
-                                pickingEntry = false
-                            }.padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = entry == ref, onClick = null)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(NodeDisplayName.core(node.name), translate = false, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(subscriptionNames[node.subscriptionId].orEmpty(), fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, translate = false)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = entryQuery, onValueChange = { entryQuery = it.take(100) },
+                        label = { Text("搜索节点") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        items(entryCandidates, key = { "${it.subscriptionId}/${it.id}" }) { node ->
+                            val ref = NodeRef(node.subscriptionId, node.id)
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    entry = ref
+                                    members = members - ref
+                                    pickingEntry = false
+                                }.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = entry == ref, onClick = null)
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(NodeDisplayName.core(node.name), translate = false, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(subscriptionNames[node.subscriptionId].orEmpty(), fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, translate = false)
+                                }
                             }
                         }
                     }
