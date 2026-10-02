@@ -21,7 +21,7 @@ internal object SubscriptionTargetReconciler {
             }
         }
         RouteKind.DIRECT -> target.copy(label = "直连")
-        RouteKind.CHAIN -> target
+        RouteKind.GROUP -> target
         RouteKind.BLOCK -> {
             if (allowBlock) target.copy(label =
                 if (target.nodeId != null || target.subscriptionId != null) "出口已失效，请重新选择" else "阻止联网")

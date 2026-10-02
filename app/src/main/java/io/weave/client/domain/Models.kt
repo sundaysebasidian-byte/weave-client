@@ -19,10 +19,6 @@ enum class AutomaticStrategy(
     val label: String,
     val description: String,
 ) {
-    STABLE_LATENCY(
-        "稳定优先",
-        "低频探测、容忍小幅延迟差；连续失败后才切换，减少节点来回跳动",
-    ),
     LOWEST_LATENCY(
         "最低延迟",
         "定时探测订阅内节点，自动选择延迟最低的可用节点",
@@ -120,6 +116,24 @@ enum class WeaveLanguage(
     JAPANESE("ja", "日本語", "日本語インターフェース"),
     FRENCH("fr", "Français", "Interface française"),
     GERMAN("de", "Deutsch", "Deutsche Oberfläche"),
+    ;
+
+    companion object {
+        /** Best match for the device locale; unsupported languages use English. */
+        fun fromSystem(locale: java.util.Locale = java.util.Locale.getDefault()): WeaveLanguage {
+            val language = locale.language.lowercase()
+            if (language == "zh") {
+                val script = locale.script.lowercase()
+                val region = locale.country.uppercase()
+                return if (script == "hant" || (script.isEmpty() && region in setOf("TW", "HK", "MO"))) {
+                    TRADITIONAL_CHINESE
+                } else {
+                    SIMPLIFIED_CHINESE
+                }
+            }
+            return entries.firstOrNull { it.localeTag == language } ?: ENGLISH
+        }
+    }
 }
 
 /**
@@ -144,17 +158,6 @@ enum class WeavePalette(
     TWILIGHT_GARDEN("暮色花园", "靛紫、雾青与黄昏粉棕", WeaveAppearanceGroup.ART),
 }
 
-/** Two explicitly selected nodes. The exit connects to its server through the entry. */
-@Immutable
-data class ProxyChainSelection(
-    val entrySubscriptionId: String,
-    val entryNodeId: String,
-    val exitSubscriptionId: String,
-    val exitNodeId: String,
-    /** Disable this to use the configured chain only for app rules. */
-    val useAsDefault: Boolean = true,
-)
-
 @Immutable
 data class NetworkPreferences(
     val automaticStrategy: AutomaticStrategy = AutomaticStrategy.LOWEST_LATENCY,
@@ -169,15 +172,31 @@ data class NetworkPreferences(
     // can disable it explicitly in Settings.
     val domesticDirect: Boolean = true,
     val weavePalette: WeavePalette = WeavePalette.MINIMAL_LIGHT,
-    val proxyChain: ProxyChainSelection? = null,
+    /** 0 disables scheduled refresh of HTTPS subscriptions. */
+    val subscriptionAutoUpdateHours: Int = 0,
+    val subscriptionAutoUpdateUnmeteredOnly: Boolean = true,
+    /** Apps routed DIRECT bypass the VPN interface entirely instead of the core's DIRECT rule. */
+    val bypassDirectApps: Boolean = false,
+    val bootstrapDns: BootstrapDns = BootstrapDns.MAINLAND,
+    /** Publishes the local mixed proxy as the VPN's HTTP proxy (browsers skip the TUN stack). */
+    val systemHttpProxy: Boolean = false,
+    /** Lets other LAN/hotspot devices use the authenticated mixed proxy. */
+    val lanSharing: Boolean = false,
 )
+
+/** Plain-DNS resolvers used only to resolve the encrypted DNS hostnames themselves. */
+enum class BootstrapDns(val label: String, val servers: List<String>) {
+    MAINLAND("中国大陆（阿里 / 腾讯）", listOf("223.5.5.5", "119.29.29.29")),
+    GLOBAL("海外（Cloudflare / Quad9）", listOf("1.1.1.1", "9.9.9.9")),
+}
 
 enum class RouteKind {
     AUTO,
     FIXED,
-    CHAIN,
     DIRECT,
     BLOCK,
+    /** A user-defined proxy group (optionally chained through an entry node). */
+    GROUP,
 }
 
 @Immutable
@@ -196,11 +215,22 @@ data class Subscription(
     val id: String,
     val name: String,
     val nodeCount: Int,
-    val updatedAt: String,
-    val trafficUsedGb: Double,
-    val trafficTotalGb: Double,
+    /** From the provider's `subscription-userinfo` header; null when it did not send one. */
+    val quota: SubscriptionQuota? = null,
+    val updatedAtMillis: Long? = null,
+    val remote: Boolean = false,
     val enabled: Boolean = true,
 )
+
+@Immutable
+data class SubscriptionQuota(
+    val usedBytes: Long,
+    val totalBytes: Long,
+    val expireAtMillis: Long?,
+) {
+    val usedFraction: Float
+        get() = if (totalBytes > 0) (usedBytes.toDouble() / totalBytes).toFloat().coerceIn(0f, 1f) else 0f
+}
 
 enum class SubscriptionSourceKind(val label: String) {
     REMOTE("HTTPS 远程订阅"),
@@ -218,8 +248,6 @@ data class EditableSubscription(
     val sourceKind: SubscriptionSourceKind,
     val sourceUrl: String,
     val importCounts: io.weave.client.subscription.SubscriptionImportCounts? = null,
-    val sourceGroups: List<io.weave.client.subscription.SourceProxyGroupPreview> = emptyList(),
-    val supportedSourceRuleCount: Int = 0,
 )
 
 @Immutable
@@ -228,6 +256,7 @@ data class RouteTarget(
     val label: String,
     val subscriptionId: String? = null,
     val nodeId: String? = null,
+    val groupId: String? = null,
 )
 
 @Immutable

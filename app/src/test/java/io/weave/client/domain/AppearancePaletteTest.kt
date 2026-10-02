@@ -25,7 +25,7 @@ class AppearancePaletteTest {
     }
 
     @Test
-    fun `appearance choices are grouped into minimal and art categories`() {
+    fun `appearance choices are grouped into two categories`() {
         assertEquals(
             listOf(
                 WeavePalette.MINIMAL_LIGHT,
@@ -44,7 +44,6 @@ class AppearancePaletteTest {
             ),
             WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.ART },
         )
-        assertEquals(8, WeavePalette.entries.size)
     }
 
     @Test

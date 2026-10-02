@@ -658,8 +658,7 @@ class SubscriptionPayloadParser {
         val mappedType = when (type) {
             "shadowsocks" -> "ss"
             "hysteria2" -> "hysteria2"
-            "vless", "vmess", "trojan", "tuic", "socks", "http", "anytls", "hysteria" ->
-                if (type == "socks") "socks5" else type
+            "vless", "vmess", "trojan", "tuic", "socks", "http" -> if (type == "socks") "socks5" else type
             else -> throw SubscriptionImportException("sing-box $type 出站暂不支持安全转换")
         }
         return ProxySpec(name, mappedType).apply {
@@ -680,58 +679,18 @@ class SubscriptionPayloadParser {
                     fields["cipher"] = YamlScalar(jsonString(outbound, "method").orEmpty())
                     fields["password"] = YamlScalar(jsonString(outbound, "password").orEmpty())
                 }
-                "hysteria2", "anytls" -> {
-                    val password = jsonString(outbound, "password")?.takeIf(String::isNotBlank)
-                        ?: throw SubscriptionImportException("$name 缺少密码")
-                    fields["password"] = YamlScalar(password)
-                }
-                "hysteria" -> {
-                    if (Regex("\"server_ports\"\\s*:").containsMatchIn(outbound)) {
-                        throw SubscriptionImportException("$name 的 Hysteria 端口跳跃暂不支持安全转换")
-                    }
-                    val auth = jsonString(outbound, "auth_str")?.takeIf(String::isNotBlank)
-                        ?: jsonString(outbound, "auth")?.takeIf(String::isNotBlank)?.let { encoded ->
-                            runCatching { Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8) }
-                                .getOrNull()?.takeIf(String::isNotBlank)
-                        }
-                        ?: throw SubscriptionImportException("$name 缺少 Hysteria 认证信息")
-                    fields["auth-str"] = YamlScalar(auth)
-                    for (direction in listOf("up", "down")) {
-                        val rate = jsonString(outbound, direction)?.takeIf(String::isNotBlank)
-                            ?: jsonInt(outbound, "${direction}_mbps")?.takeIf { it > 0 }?.let { "$it Mbps" }
-                            ?: throw SubscriptionImportException("$name 缺少 Hysteria $direction 速率")
-                        fields[direction] = YamlScalar(rate)
-                    }
-                    jsonString(outbound, "obfs")?.takeIf(String::isNotBlank)?.let { fields["obfs"] = YamlScalar(it) }
-                    jsonString(outbound, "network")?.takeIf(String::isNotBlank)?.let { network ->
-                        if (network != "udp") throw SubscriptionImportException("$name 的 Hysteria 网络模式暂不支持安全转换")
-                    }
-                }
-                "socks5", "http" -> {
+                "hysteria2" -> fields["password"] = YamlScalar(jsonString(outbound, "password").orEmpty())
+                "socks", "http" -> {
                     jsonString(outbound, "username")?.takeIf(String::isNotBlank)?.let { fields["username"] = YamlScalar(it) }
                     jsonString(outbound, "password")?.takeIf(String::isNotBlank)?.let { fields["password"] = YamlScalar(it) }
                 }
             }
             val tls = extractJsonObject(outbound, "tls")
-            if (mappedType in setOf("anytls", "hysteria") && (tls == null || jsonBoolean(tls, "enabled") == false)) {
-                throw SubscriptionImportException("$name 缺少已启用的 TLS 配置")
-            }
-            if (mappedType == "anytls" && extractJsonObject(tls.orEmpty(), "reality")?.let {
-                    jsonBoolean(it, "enabled") == true || jsonString(it, "public_key")?.isNotBlank() == true
-                } == true) {
-                throw SubscriptionImportException("$name 的 AnyTLS + Reality 不受 Mihomo 支持")
-            }
-            if (tls != null && jsonBoolean(tls, "enabled") != false) {
-                // AnyTLS and Hysteria have intrinsic TLS in Mihomo; their native schemas use
-                // SNI/verification fields, not a separate tls: true switch.
-                if (mappedType !in setOf("anytls", "hysteria")) {
-                    fields["tls"] = YamlScalar("true", quoted = false)
-                }
-                jsonString(tls, "server_name")?.takeIf(String::isNotBlank)?.let {
-                    fields[if (mappedType in setOf("anytls", "hysteria")) "sni" else "servername"] = YamlScalar(it)
-                }
+            if (tls?.let { jsonBoolean(it, "enabled") } == true) {
+                fields["tls"] = YamlScalar("true", quoted = false)
+                jsonString(tls, "server_name")?.takeIf(String::isNotBlank)?.let { fields["servername"] = YamlScalar(it) }
                 if (jsonBoolean(tls, "insecure") == true) fields["skip-cert-verify"] = YamlScalar("true", quoted = false)
-                extractJsonObject(tls, "reality")?.takeIf { mappedType != "anytls" }?.let { reality ->
+                extractJsonObject(tls, "reality")?.let { reality ->
                     val realityOpts = nested.getOrPut("reality-opts") { linkedMapOf() }
                     jsonString(reality, "public_key")?.takeIf(String::isNotBlank)?.let {
                         realityOpts["public-key"] = YamlScalar(it)
@@ -742,8 +701,7 @@ class SubscriptionPayloadParser {
                 }
             }
             val transport = extractJsonObject(outbound, "transport")
-            val transportType = transport?.let { jsonString(it, "type") }?.lowercase()
-            if (transportType == "ws") {
+            if (transport?.let { jsonString(it, "type") } == "ws") {
                 fields["network"] = YamlScalar("ws")
                 val ws = linkedMapOf<String, YamlScalar>()
                 jsonString(transport, "path")?.takeIf(String::isNotBlank)?.let { ws["path"] = YamlScalar(it) }
@@ -751,13 +709,11 @@ class SubscriptionPayloadParser {
                     jsonString(headers, "Host")?.let(::yamlHostHeader)?.let { ws["headers"] = YamlScalar(it, quoted = false) }
                 }
                 if (ws.isNotEmpty()) nested["ws-opts"] = ws
-            } else if (transportType == "grpc") {
+            } else if (transport?.let { jsonString(it, "type") } == "grpc") {
                 fields["network"] = YamlScalar("grpc")
                 jsonString(transport, "service_name")?.let {
                     nested.getOrPut("grpc-opts") { linkedMapOf() }["grpc-service-name"] = YamlScalar(it)
                 }
-            } else if (!transportType.isNullOrBlank() && transportType != "tcp") {
-                throw SubscriptionImportException("$name 的 $transportType 传输方式暂不支持安全转换")
             }
         }
     }

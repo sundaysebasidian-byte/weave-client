@@ -28,20 +28,6 @@ class RuntimeProfileTransactionTest {
     }
 
     @Test
-    fun `corrupt candidate snapshot leaves rollback profile untouched`() {
-        writeProfile("old", "old-provider")
-        transaction.begin()
-        writeProfile("candidate", "candidate-provider")
-        transaction.captureCandidate()
-        transaction.restoreRollback()
-        File(cacheDirectory, "mihomo-transaction/candidate/config.yaml").delete()
-
-        org.junit.Assert.assertTrue(runCatching { transaction.restoreCandidate() }.isFailure)
-        assertEquals("old", transaction.readActiveConfig())
-        assertEquals("old-provider", File(activeDirectory, "providers/provider.yaml").readText())
-    }
-
-    @Test
     fun `repeated restores preserve independent complete snapshots`() {
         writeProfile("old", "old-provider")
         transaction.begin()

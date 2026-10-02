@@ -16,20 +16,15 @@ internal class DashboardRefreshPolicy {
         idleSamples = if (runtime.uploadBytesPerSecond > 0 || runtime.downloadBytesPerSecond > 0) {
             0
         } else {
-            (idleSamples + 1).coerceAtMost(6)
+            (idleSamples + 1).coerceAtMost(3)
         }
-        return when {
-            idleSamples >= 6 -> LONG_IDLE_INTERVAL_MS
-            idleSamples >= 3 -> IDLE_INTERVAL_MS
-            else -> ACTIVE_INTERVAL_MS
-        }
+        return if (idleSamples >= 3) IDLE_INTERVAL_MS else ACTIVE_INTERVAL_MS
     }
 
     companion object {
         const val RESUME_SETTLE_MS = 350L
         const val ACTIVE_INTERVAL_MS = 3_000L
         const val IDLE_INTERVAL_MS = 15_000L
-        const val LONG_IDLE_INTERVAL_MS = 20_000L
     }
 }
 

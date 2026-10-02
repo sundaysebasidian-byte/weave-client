@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.weave.client.core.ipc.CoreClient
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.core.vpn.WeaveVpnService
 import io.weave.client.data.RuntimeSettingsStore
@@ -38,6 +39,9 @@ class MihomoVpnServiceIntegrationTest {
         assumeTrue(InstrumentationRegistry.getArguments().getString("isolatedVpnTest") == "true")
         assumeTrue(Build.FINGERPRINT.contains("generic") || Build.MODEL.contains("sdk_gphone"))
         assumeTrue("Grant VPN permission in the isolated emulator first", VpnService.prepare(context) == null)
+        // The service runs in :vpn; the test observes it through the same mirror as the UI.
+        instrumentation.runOnMainSync { CoreClient.attach(context) }
+        assertTrue("VPN control service did not bind", CoreClient.awaitConnected(5_000))
         assumeTrue(VpnRuntimeState.snapshot.value.state == ConnectionState.DISCONNECTED)
         val settings = RuntimeSettingsStore(context)
         val previousMode = settings.routingMode()
@@ -123,6 +127,7 @@ class MihomoVpnServiceIntegrationTest {
             upstream.close()
             serving.get(5, TimeUnit.SECONDS)
             pool.shutdownNow()
+            instrumentation.runOnMainSync { CoreClient.detach() }
         }
     }
 }

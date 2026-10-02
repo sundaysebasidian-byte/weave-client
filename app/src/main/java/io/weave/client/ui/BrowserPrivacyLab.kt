@@ -2,6 +2,7 @@ package io.weave.client.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -35,9 +36,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import io.weave.client.domain.WeaveLanguage
 import io.weave.client.core.ipquality.IpAddressValidator
 import org.json.JSONArray
@@ -73,15 +76,17 @@ internal fun BrowserPrivacyLabDialog(
     onCompleted: (BrowserPrivacyResult) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val language = LocalWeaveLanguage.current
-    var selectedSite by remember { mutableStateOf<DiagnosticSite?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var result by remember { mutableStateOf<BrowserPrivacyResult?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var probeRunId by remember { mutableIntStateOf(0) }
 
     fun localized(source: String): String = localizeWeaveText(source, language)
-    selectedSite?.let { site -> EmbeddedPrivacyCheck(site, onDismiss = { selectedSite = null }) }
+    fun openExternal(url: String) {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+    }
 
     DisposableEffect(webView) {
         // Capture the instance owned by this effect. Reading the mutable state in onDispose
@@ -205,13 +210,13 @@ internal fun BrowserPrivacyLabDialog(
                 }
                 item {
                     Text(
-                        localized("应用内独立复核"),
+                        localized("在真实浏览器中复核"),
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
                 item {
                     Text(
-                        localized("测试页面在 Weave 内打开；其结果只代表此 WebView，不能代表 Chrome、Firefox 的 Secure DNS 或 WebRTC 策略。"),
+                        localized("WebView 不能代表 Chrome、Firefox 的扩展、Secure DNS 或 WebRTC 策略。以下页面会交给系统浏览器打开。"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 17.sp,
@@ -219,22 +224,26 @@ internal fun BrowserPrivacyLabDialog(
                 }
                 item {
                     Text(
-                        localized("DNS 泄漏不能仅靠本机代码准确判定；下方测试会由第三方权威 DNS 服务观察查询来源。"),
+                        localized("DNS 泄漏不能仅靠本机代码准确判定；必须由独立权威 DNS 服务观察查询来源。下方外部测试才是实际 DNS 泄漏验证。"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 17.sp,
                     )
                 }
                 items(
-                    items = listOf(DiagnosticSite.DNS, DiagnosticSite.WEBRTC, DiagnosticSite.IDENTITY),
-                    key = { it.name },
-                    contentType = { "embedded-privacy-test" },
-                ) { site ->
+                    items = listOf(
+                        "DNS 泄漏测试" to "https://www.dnsleaktest.com/",
+                        "WebRTC 泄漏测试" to "https://browserleaks.com/webrtc",
+                        "浏览器身份表面" to "https://browserleaks.com/javascript",
+                    ),
+                    key = { it.second },
+                    contentType = { "external-privacy-test" },
+                ) { (label, url) ->
                     TextButton(
-                        onClick = { selectedSite = site },
+                        onClick = { openExternal(url) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(localized(site.title), modifier = Modifier.weight(1f))
+                        Text(localized(label), modifier = Modifier.weight(1f))
                         Icon(Icons.Rounded.ChevronRight, contentDescription = null)
                     }
                 }

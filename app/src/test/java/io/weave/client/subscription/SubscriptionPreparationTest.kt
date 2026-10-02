@@ -49,20 +49,6 @@ class SubscriptionPreparationTest {
         assertEquals((1..65).map { "node-$it" }, result.second.nodes.map { it.name })
     }
 
-    @Test fun `full Clash config reports control plane omitted from node-only import`() {
-        val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = { error("no fetch") }), parser)
-        val input = """{"proxies":[${node(1)}],"proxy-groups":[{"name":"Default","type":"select","proxies":["node-1"]}],"rules":["DOMAIN,example.test,Default","MATCH,DIRECT"],"rule-providers":{"ads":{"type":"inline","behavior":"domain","payload":["example.test"]}}}"""
-        val result = pipeline.prepare(input, "local://file")
-        assertEquals(1, result.second.nodeCount)
-        assertEquals(1, result.counts.proxyGroups)
-        assertEquals(2, result.counts.rules)
-        assertEquals(1, result.counts.ruleProviders)
-        assertTrue(result.counts.hasUnappliedConfiguration)
-        assertEquals(listOf("node-1"), result.sourceGroups.single().explicitMembers)
-        assertFalse(result.first.contains("rule-providers"))
-        assertFalse(result.first.contains("proxy-groups"))
-    }
-
     @Test fun `CMFA request identifies Meta flavor matching the pinned core version`() {
         val lock = sequenceOf(java.io.File("../core-lock.properties"), java.io.File("core-lock.properties")).first { it.isFile }
         val version = java.util.Properties().apply { lock.inputStream().use { load(it) } }.getProperty("cmfa.version")

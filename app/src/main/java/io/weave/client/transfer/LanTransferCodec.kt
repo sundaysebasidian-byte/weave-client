@@ -19,10 +19,6 @@ data class TransferSubscription(
     val payload: String,
     /** Local identity used by LAN Sync selection/merge. */
     val id: String = "",
-    /** Local-only metadata for file backup; the LAN v1 wire format intentionally omits it. */
-    val importCounts: io.weave.client.subscription.SubscriptionImportCounts? = null,
-    val sourceRules: List<String> = emptyList(),
-    val sourceGroups: List<io.weave.client.subscription.SourceProxyGroupPreview> = emptyList(),
 )
 
 data class LanTransferLink(

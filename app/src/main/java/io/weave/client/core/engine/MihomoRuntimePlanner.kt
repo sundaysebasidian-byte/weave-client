@@ -10,6 +10,7 @@ data class MihomoRuntimePlan(
     val effectiveDefaultTarget: RouteTarget?,
     val activeSubscriptionIds: Set<String>,
     val automaticSubscriptionIds: Set<String>,
+    val activeGroupIds: Set<String> = emptySet(),
 )
 
 /**
@@ -26,13 +27,19 @@ object MihomoRuntimePlanner {
         defaultTarget: RouteTarget?,
         usableSubscriptionIds: List<String>,
         additionalSubscriptionIds: Set<String> = emptySet(),
-        probeSubscriptionIds: Set<String> = emptySet(),
-        skipDefaultTarget: Boolean = false,
+        /** Subscriptions each custom group draws nodes from (members and chain entry). */
+        groupSubscriptions: Map<String, Set<String>> = emptyMap(),
     ): MihomoRuntimePlan {
         val effectiveRoutes = routes.takeIf { mode == RoutingMode.RULE }.orEmpty()
-        val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT || skipDefaultTarget }
+        val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT }
         val usableIds = usableSubscriptionIds.toSet()
+        val groupIds = buildSet {
+            effectiveRoutes.filter { it.target.kind == RouteKind.GROUP }.mapNotNullTo(this) { it.target.groupId }
+            effectiveDefaultTarget?.takeIf { it.kind == RouteKind.GROUP }?.groupId?.let(::add)
+            retainAll(groupSubscriptions.keys)
+        }
         val activeIds = buildSet {
+            groupIds.forEach { addAll(groupSubscriptions.getValue(it)) }
             effectiveRoutes.mapNotNullTo(this) { route ->
                 route.target.subscriptionId.takeIf {
                     route.target.kind == RouteKind.AUTO || route.target.kind == RouteKind.FIXED
@@ -46,9 +53,6 @@ object MihomoRuntimePlanner {
                 ?.let(::add)
             addAll(additionalSubscriptionIds)
             retainAll(usableIds)
-            if (effectiveDefaultTarget == null && !skipDefaultTarget && mode != RoutingMode.DIRECT) {
-                usableSubscriptionIds.firstOrNull()?.let(::add)
-            }
             if (isEmpty() && mode != RoutingMode.DIRECT) {
                 usableSubscriptionIds.firstOrNull()?.let(::add)
             }
@@ -60,14 +64,10 @@ object MihomoRuntimePlanner {
                 ?.takeIf { it.kind == RouteKind.AUTO }
                 ?.subscriptionId
                 ?.let(::add)
-            // A one-shot manual test needs a URL-test group even when the user's actual
-            // default is fixed. Do not turn chain/cross-scope providers into probe groups.
-            addAll(probeSubscriptionIds)
             retainAll(activeIds)
             if (
                 isEmpty() &&
                 effectiveDefaultTarget == null &&
-                !skipDefaultTarget &&
                 mode != RoutingMode.DIRECT
             ) {
                 usableSubscriptionIds.firstOrNull { it in activeIds }?.let(::add)
@@ -78,6 +78,7 @@ object MihomoRuntimePlanner {
             effectiveDefaultTarget = effectiveDefaultTarget,
             activeSubscriptionIds = activeIds,
             automaticSubscriptionIds = automaticIds,
+            activeGroupIds = groupIds,
         )
     }
 }

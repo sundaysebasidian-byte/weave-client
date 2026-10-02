@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">Connexion proxy</string>
+    <string name="vpn_channel_description">Affiche l’état de la connexion proxy de Weave</string>
+    <string name="updates_channel_name">Mises à jour des abonnements</string>
+    <string name="updates_channel_description">Résultats des actualisations planifiées</string>
+    <string name="action_disconnect">Déconnecter</string>
+    <string name="action_connect">Connecter</string>
+    <string name="notification_speed">↑ %1$s/s · ↓ %2$s/s</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">Connecté</string>
+    <string name="tile_disconnected">Désactivé</string>
+    <string name="tile_connecting">Connexion…</string>
+    <string name="tile_needs_app">Ouvrez Weave pour autoriser le VPN</string>
+    <string name="shortcut_connect_short">Connecter</string>
+    <string name="shortcut_connect_long">Connecter Weave</string>
+    <string name="shortcut_disconnect_short">Déconnecter</string>
+    <string name="shortcut_disconnect_long">Déconnecter Weave</string>
+    <string name="shortcut_import_short">Importer</string>
+    <string name="shortcut_import_long">Importer un abonnement</string>
+    <string name="update_applied_title">« %1$s » mis à jour</string>
+    <string name="update_applied_body">%1$d ajouté(s) · %2$d retiré(s) · %3$d conservé(s)</string>
+    <string name="update_review_title">« %1$s » à vérifier</string>
+    <string name="update_review_body">Cette mise à jour touche des sorties épinglées ou n’a pas passé l’audit de sécurité. Ouvrez Weave pour la prévisualiser.</string>
+    <string name="update_failed_title">Échec de l’actualisation</string>
+    <string name="update_failed_body">%1$d abonnement(s) n’ont pas pu être actualisés. Les versions précédentes sont conservées.</string>
+</resources>

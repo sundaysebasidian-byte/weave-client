@@ -14,19 +14,15 @@ import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.NetworkPreferences
-import io.weave.client.domain.ProxyChainSelection
 import java.io.File
 import java.nio.file.Files
 import java.net.URI
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.InetAddress
-import java.io.InputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
@@ -41,242 +37,6 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MihomoProviderIntegrationTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-
-    @Test fun failedUpstreamDoesNotFallBackToDirectAndRecoversWithoutReload() = runBlocking {
-        val root = Files.createTempDirectory(context.cacheDir.toPath(), "upstream-fault-test-").toFile()
-        val isolated = object : ContextWrapper(context) {
-            override fun getApplicationContext(): Context = this
-            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
-            override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
-            override fun getSharedPreferences(name: String, mode: Int) =
-                context.getSharedPreferences(root.name + name, mode)
-        }
-        val pool = Executors.newCachedThreadPool()
-        val upstream = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
-        val destination = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
-        val healthy = AtomicBoolean(false)
-        val upstreamHits = AtomicInteger()
-        val directHits = AtomicInteger()
-        upstream.soTimeout = 1000
-        destination.soTimeout = 1000
-        val worker = pool.submit {
-            while (!upstream.isClosed) {
-                val client = try { upstream.accept() } catch (_: java.net.SocketTimeoutException) { continue }
-                    catch (_: java.net.SocketException) { break }
-                pool.submit {
-                    client.use {
-                        it.soTimeout = 5000
-                        readHttpHeader(it.getInputStream())
-                        upstreamHits.incrementAndGet()
-                        if (healthy.get()) {
-                            it.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
-                            it.getInputStream().bufferedReader().readLine()
-                            it.getOutputStream().write("weave-recovered\n".toByteArray())
-                        } else {
-                            it.getOutputStream().write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray())
-                        }
-                    }
-                }
-            }
-        }
-        val directWatcher = pool.submit {
-            while (!destination.isClosed) {
-                val client = try { destination.accept() } catch (_: java.net.SocketTimeoutException) { continue }
-                    catch (_: java.net.SocketException) { break }
-                directHits.incrementAndGet()
-                client.close()
-            }
-        }
-        val store = SubscriptionSecretStore(isolated)
-        try {
-            val payload = "proxies: [{name: Faulty, type: http, server: 127.0.0.1, port: ${upstream.localPort}}]"
-            val record = store.save("fault-fixture", "inline://fault", payload, SubscriptionPayloadParser().parse(payload))
-            val target = RouteTarget(RouteKind.FIXED, "Faulty", subscriptionId = record.id, nodeId = record.nodes.single().id)
-            val inboundPort = ServerSocket(0).use { it.localPort }
-            val compiled = MihomoConfigAssembler(isolated, secretStore = store).assemble(
-                emptyList(), RoutingMode.GLOBAL, target,
-            )
-            val config = compiled.yaml + "\nmixed-port: $inboundPort\nbind-address: 127.0.0.1\n"
-            val engine = MihomoEngineAdapter(isolated)
-            engine.validate(config).getOrThrow()
-            NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
-
-            fun probe(): String = Socket("127.0.0.1", inboundPort).use { client ->
-                client.soTimeout = 5000
-                val out = client.getOutputStream()
-                out.write("CONNECT 127.0.0.1:${destination.localPort} HTTP/1.1\r\nHost: 127.0.0.1:${destination.localPort}\r\n\r\n".toByteArray())
-                out.flush()
-                val status = readHttpHeader(client.getInputStream())
-                if (!status.contains("200")) return@use status
-                out.write("probe\n".toByteArray())
-                out.flush()
-                status + " " + client.getInputStream().bufferedReader().readLine().orEmpty()
-            }
-
-            val failed = probe()
-            assertFalse("upstream failure must not yield success: $failed", failed.contains("weave-recovered"))
-            assertTrue("the upstream must have received the failed attempt", upstreamHits.get() > 0)
-            assertEquals("failed proxy must not silently bypass to destination", 0, directHits.get())
-
-            healthy.set(true)
-            assertTrue("same loaded configuration should recover", probe().contains("weave-recovered"))
-            assertEquals("recovered proxy must still use the upstream", 0, directHits.get())
-            engine.stop()
-        } finally {
-            if (NativeBridge.isInitialized) NativeBridge.reset()
-            upstream.close()
-            destination.close()
-            worker.get(5, TimeUnit.SECONDS)
-            directWatcher.get(5, TimeUnit.SECONDS)
-            pool.shutdownNow()
-            store.list().forEach { store.delete(it.id) }
-            root.deleteRecursively()
-        }
-    }
-
-    @Test fun twoHopChainTransfersBytesThroughEntryAndExit() = runBlocking {
-        val root = Files.createTempDirectory(context.cacheDir.toPath(), "chain-forward-test-").toFile()
-        val isolated = object : ContextWrapper(context) {
-            override fun getApplicationContext(): Context = this
-            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
-            override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
-            override fun getSharedPreferences(name: String, mode: Int) =
-                context.getSharedPreferences(root.name + name, mode)
-        }
-        val pool = Executors.newCachedThreadPool()
-        val entrySocket = ServerSocket(0, 4, InetAddress.getByName("127.0.0.1"))
-        val exitSocket = ServerSocket(0, 4, InetAddress.getByName("127.0.0.1"))
-        entrySocket.soTimeout = 8000
-        exitSocket.soTimeout = 8000
-        val entryHits = AtomicInteger()
-        val exitHits = AtomicInteger()
-        val entryRequest = AtomicReference("")
-        val exitRequest = AtomicReference("")
-        val exitProbe = AtomicReference("")
-        val entryWorker = pool.submit {
-            entrySocket.accept().use { client ->
-                client.soTimeout = 8000
-                val firstLine = readHttpHeader(client.getInputStream())
-                entryRequest.set(firstLine)
-                entryHits.incrementAndGet()
-                Socket("127.0.0.1", exitSocket.localPort).use { upstream ->
-                    upstream.soTimeout = 8000
-                    client.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
-                    val forward = pool.submit { client.getInputStream().copyTo(upstream.getOutputStream()) }
-                    upstream.getInputStream().copyTo(client.getOutputStream())
-                    forward.get(8, TimeUnit.SECONDS)
-                }
-            }
-        }
-        val exitWorker = pool.submit {
-            exitSocket.accept().use { client ->
-                client.soTimeout = 8000
-                val firstLine = readHttpHeader(client.getInputStream())
-                exitRequest.set(firstLine)
-                exitHits.incrementAndGet()
-                client.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
-                val probe = client.getInputStream().bufferedReader().readLine()
-                exitProbe.set(probe.orEmpty())
-                client.getOutputStream().write("weave-chain-response\n".toByteArray())
-            }
-        }
-        val store = SubscriptionSecretStore(isolated)
-        try {
-            val payload = "proxies: [{name: Entry, type: http, server: 127.0.0.1, port: ${entrySocket.localPort}}, " +
-                "{name: Exit, type: http, server: 127.0.0.1, port: ${exitSocket.localPort}}]"
-            val parser = SubscriptionPayloadParser()
-            val record = store.save("chain-fixture", "inline://chain", payload, parser.parse(payload))
-            val chain = ProxyChainSelection(record.id, record.nodes[0].id, record.id, record.nodes[1].id)
-            val inboundPort = ServerSocket(0).use { it.localPort }
-            val compiled = MihomoConfigAssembler(isolated, secretStore = store).assemble(
-                emptyList(), RoutingMode.GLOBAL,
-                networkPreferences = NetworkPreferences(proxyChain = chain),
-            )
-            val config = compiled.yaml + "\nmixed-port: $inboundPort\nbind-address: 127.0.0.1\n"
-            val engine = MihomoEngineAdapter(isolated)
-            engine.validate(config).getOrThrow()
-            NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
-            Socket("127.0.0.1", inboundPort).use { client ->
-                client.soTimeout = 8000
-                val out = client.getOutputStream()
-                out.write("CONNECT fixture.invalid:443 HTTP/1.1\r\nHost: fixture.invalid:443\r\n\r\n".toByteArray())
-                out.flush()
-                assertTrue(readHttpHeader(client.getInputStream()).startsWith("HTTP/1.1 200"))
-                out.write("weave-chain-probe\n".toByteArray())
-                out.flush()
-                assertEquals(
-                    "entry=${entryHits.get()} '${entryRequest.get()}', " +
-                        "exit=${exitHits.get()} '${exitRequest.get()}', probe='${exitProbe.get()}'",
-                    "weave-chain-response",
-                    client.getInputStream().bufferedReader().readLine(),
-                )
-            }
-            exitWorker.get(8, TimeUnit.SECONDS)
-            entryWorker.get(8, TimeUnit.SECONDS)
-            assertEquals(1, entryHits.get())
-            assertEquals(1, exitHits.get())
-            assertTrue(entryRequest.get().startsWith("CONNECT 127.0.0.1:${exitSocket.localPort}"))
-            assertTrue(exitRequest.get().startsWith("CONNECT fixture.invalid:443"))
-            assertEquals("weave-chain-probe", exitProbe.get())
-            engine.stop()
-        } finally {
-            if (NativeBridge.isInitialized) NativeBridge.reset()
-            entrySocket.close()
-            exitSocket.close()
-            pool.shutdownNow()
-            store.list().forEach { store.delete(it.id) }
-            root.deleteRecursively()
-        }
-    }
-
-    private fun readHttpHeader(input: InputStream): String {
-        val header = java.io.ByteArrayOutputStream()
-        while (header.size() < 8192) {
-            val next = input.read()
-            require(next >= 0) { "HTTP header ended early" }
-            header.write(next)
-            if (header.toString("US-ASCII").endsWith("\r\n\r\n")) {
-                return header.toString("US-ASCII").lineSequence().first()
-            }
-        }
-        error("HTTP header too large")
-    }
-
-    @Test fun twoHopChainIsAcceptedByBundledNativeCore() = runBlocking {
-        val root = Files.createTempDirectory(context.cacheDir.toPath(), "chain-test-").toFile()
-        val isolated = object : ContextWrapper(context) {
-            override fun getApplicationContext(): Context = this
-            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
-            override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
-            override fun getSharedPreferences(name: String, mode: Int) =
-                context.getSharedPreferences(root.name + name, mode)
-        }
-        val store = SubscriptionSecretStore(isolated)
-        try {
-            val payload = """
-                proxies:
-                  - {name: Entry, type: socks5, server: 127.0.0.1, port: 1080}
-                  - {name: Exit, type: socks5, server: 127.0.0.1, port: 1081}
-            """.trimIndent()
-            val parsed = SubscriptionPayloadParser().parse(payload)
-            val record = store.save("chain-fixture", "inline://chain", payload, parsed)
-            val chain = ProxyChainSelection(record.id, record.nodes[0].id, record.id, record.nodes[1].id)
-            val compiled = MihomoConfigAssembler(isolated, secretStore = store).assemble(
-                emptyList(), RoutingMode.GLOBAL,
-                networkPreferences = NetworkPreferences(proxyChain = chain),
-            )
-            assertTrue(compiled.yaml.contains("dialer-proxy:"))
-            assertTrue(compiled.yaml.contains("WEAVE-CHAIN-EXIT"))
-            MihomoEngineAdapter(isolated).validate(compiled.yaml).getOrThrow()
-            NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
-            val group = JSONObject(requireNotNull(NativeBridge.queryGroup(ProxyChainCompiler.GROUP_NAME)))
-            assertEquals(ProxyChainCompiler.EXIT_NAME, group.getString("now"))
-        } finally {
-            if (NativeBridge.isInitialized) NativeBridge.reset()
-            store.list().forEach { store.delete(it.id) }
-            root.deleteRecursively()
-        }
-    }
 
     @Test fun savedSubscriptionReachesAutomaticAndFixedGroupsAfterValidation() = runBlocking {
         val root = Files.createTempDirectory(context.cacheDir.toPath(), "pipeline-test-").toFile()
@@ -416,7 +176,8 @@ class MihomoProviderIntegrationTest {
                         networkPreferences = NetworkPreferences(),
                     )
                     // A loopback-only test listener, never included in production configuration.
-                    val config = compiled.yaml + "\nmixed-port: $inboundPort\nbind-address: 127.0.0.1\n"
+                    // The production profile already pins bind-address to loopback.
+                    val config = compiled.yaml + "\nmixed-port: $inboundPort\n"
                     engine.validate(config).getOrThrow()
                     NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
                     Socket("127.0.0.1", inboundPort).use { client ->

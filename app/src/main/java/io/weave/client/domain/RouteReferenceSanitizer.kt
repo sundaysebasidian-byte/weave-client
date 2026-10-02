@@ -13,15 +13,16 @@ object RouteReferenceSanitizer {
         routes: List<AppRoute>,
         subscriptions: List<Subscription>,
         nodes: List<ProxyNode>,
-        chainConfigured: Boolean = false,
+        groups: Map<String, String> = emptyMap(),
     ): List<AppRoute> {
         val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
         return routes.map { route ->
             val target = route.target
             when (target.kind) {
+                RouteKind.GROUP -> groups[target.groupId]?.let { name ->
+                    route.copy(target = target.copy(label = name))
+                } ?: route.copy(target = target.copy(kind = RouteKind.BLOCK, label = "出口已失效，请重新选择"))
                 RouteKind.DIRECT -> route.copy(target = target.copy(label = "直连"))
-                RouteKind.CHAIN -> route.copy(target = target.copy(label =
-                    if (chainConfigured) "链式代理" else "链式已关闭 · 拒绝连接"))
                 RouteKind.BLOCK -> route.copy(target = target.copy(label =
                     if (target.nodeId != null || target.subscriptionId != null) "出口已失效，请重新选择" else "阻止联网"))
                 RouteKind.AUTO -> {
@@ -59,13 +60,13 @@ object RouteReferenceSanitizer {
         target: RouteTarget?,
         subscriptions: List<Subscription>,
         nodes: List<ProxyNode>,
-        chainConfigured: Boolean = false,
+        groups: Map<String, String> = emptyMap(),
     ): RouteTarget? {
         target ?: return null
         return when (target.kind) {
+            RouteKind.GROUP -> groups[target.groupId]?.let { target.copy(label = it) }
+                ?: target.copy(label = "出口已失效，请重新选择")
             RouteKind.DIRECT -> target.copy(label = "直连")
-            RouteKind.CHAIN -> target.copy(label =
-                if (chainConfigured) "链式代理" else "链式出口不可用")
             RouteKind.BLOCK -> target
             RouteKind.AUTO -> if (subscriptions.any { it.id == target.subscriptionId }) {
                 target.copy(label = "自动选择")

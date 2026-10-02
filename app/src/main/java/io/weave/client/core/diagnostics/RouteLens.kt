@@ -113,9 +113,9 @@ object RouteLens {
             add(RouteLensCheck(
                 title = "规则优先级",
                 state = LensState.UNKNOWN,
-                detail = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
+                detail = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 远程规则集 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
             ))
-            add(dnsCheck(query.domain, preferences))
+            add(dnsCheck(preferences))
             add(udpCheck(query, preferences))
             add(
                 RouteLensCheck(
@@ -174,16 +174,23 @@ object RouteLens {
         }
     }
 
-    private fun dnsCheck(domain: String, preferences: NetworkPreferences): RouteLensCheck {
-        if (preferences.dnsProfile == DnsProfile.CUSTOM && preferences.customDnsEndpoint.isBlank()) {
-            return RouteLensCheck("DNS 决策", LensState.ATTENTION, "自定义 DNS 尚未填写")
+    private fun dnsCheck(preferences: NetworkPreferences): RouteLensCheck {
+        val detail = when (preferences.dnsProfile) {
+            DnsProfile.CUSTOM -> if (preferences.customDnsEndpoint.isBlank()) {
+                "自定义 DNS 尚未填写"
+            } else {
+                "${preferences.dnsTransport.label} 加密解析 · 自定义端点"
+            }
+            else -> "${preferences.dnsTransport.label} 加密解析 · ${preferences.dnsProfile.label}"
         }
-        val decision = DnsDecisionExplainer.explain(domain, preferences)
-        return RouteLensCheck(
-            "DNS 决策",
-            if (decision.exact) LensState.VERIFIED else LensState.UNKNOWN,
-            "${decision.policy} · ${decision.resolvers} · ${decision.addressMode} · ${decision.ipv6}。此处是配置解释，实际响应和泄漏需主动检测。",
-        )
+        val state = if (preferences.dnsProfile == DnsProfile.CUSTOM &&
+            preferences.customDnsEndpoint.isBlank()
+        ) {
+            LensState.ATTENTION
+        } else {
+            LensState.VERIFIED
+        }
+        return RouteLensCheck("DNS 策略", state, detail)
     }
 
     private fun udpCheck(
@@ -220,8 +227,8 @@ object RouteLens {
     private fun RouteKind.label(): String = when (this) {
         RouteKind.AUTO -> "自动选择"
         RouteKind.FIXED -> "固定节点"
-        RouteKind.CHAIN -> "链式代理"
         RouteKind.DIRECT -> "直连"
         RouteKind.BLOCK -> "阻止"
+        RouteKind.GROUP -> "自定义策略组"
     }
 }

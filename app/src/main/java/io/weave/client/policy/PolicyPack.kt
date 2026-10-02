@@ -2,6 +2,7 @@ package io.weave.client.policy
 
 import android.content.Context
 import androidx.core.content.edit
+import io.weave.client.data.crossProcessPreferences
 import androidx.compose.runtime.Immutable
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
@@ -237,7 +238,7 @@ class PolicyPackStore(
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
 ) {
     private val appContext = context.applicationContext
-    private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
     private val directory = File(appContext.noBackupFilesDir, DIRECTORY).apply { mkdirs() }
 
     @Synchronized
@@ -277,7 +278,7 @@ class PolicyPackStore(
         }
         val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
         ids += pack.id
-        preferences.edit {
+        preferences.edit(commit = true) {
             putStringSet(KEY_IDS, ids)
             putBoolean(key(pack.id, ACTIVE), pack.active)
         }
@@ -302,7 +303,7 @@ class PolicyPackStore(
     @Synchronized
     fun setActive(id: String, active: Boolean): PolicyPack {
         val pack = read(id)
-        preferences.edit { putBoolean(key(id, ACTIVE), active) }
+        preferences.edit(commit = true) { putBoolean(key(id, ACTIVE), active) }
         return pack.copy(active = active)
     }
 
@@ -312,7 +313,7 @@ class PolicyPackStore(
         File(directory, "${id}.enc").delete()
         val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
         ids -= id
-        preferences.edit {
+        preferences.edit(commit = true) {
             putStringSet(KEY_IDS, ids)
             remove(key(id, ACTIVE))
         }

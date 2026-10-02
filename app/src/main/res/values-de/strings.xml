@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">Proxy-Verbindung</string>
+    <string name="vpn_channel_description">Zeigt den Status der Weave-Proxy-Verbindung</string>
+    <string name="updates_channel_name">Abo-Aktualisierungen</string>
+    <string name="updates_channel_description">Ergebnisse geplanter Abo-Aktualisierungen</string>
+    <string name="action_disconnect">Trennen</string>
+    <string name="action_connect">Verbinden</string>
+    <string name="notification_speed">↑ %1$s/s · ↓ %2$s/s</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">Verbunden</string>
+    <string name="tile_disconnected">Aus</string>
+    <string name="tile_connecting">Verbinde…</string>
+    <string name="tile_needs_app">Weave öffnen, um das VPN zu erlauben</string>
+    <string name="shortcut_connect_short">Verbinden</string>
+    <string name="shortcut_connect_long">Weave verbinden</string>
+    <string name="shortcut_disconnect_short">Trennen</string>
+    <string name="shortcut_disconnect_long">Weave trennen</string>
+    <string name="shortcut_import_short">Importieren</string>
+    <string name="shortcut_import_long">Abonnement importieren</string>
+    <string name="update_applied_title">„%1$s“ aktualisiert</string>
+    <string name="update_applied_body">%1$d neu · %2$d entfernt · %3$d behalten</string>
+    <string name="update_review_title">„%1$s“ prüfen</string>
+    <string name="update_review_body">Das Update betrifft festgelegte Ausgänge oder hat die Sicherheitsprüfung nicht bestanden. Öffne Weave für die Vorschau.</string>
+    <string name="update_failed_title">Abo-Aktualisierung fehlgeschlagen</string>
+    <string name="update_failed_body">%1$d Abonnement(s) konnten nicht aktualisiert werden. Vorherige Versionen bleiben erhalten.</string>
+</resources>

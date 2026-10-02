@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.compose.runtime.Immutable
 import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.core.bridge.NativeTunCallback
+import io.weave.client.core.vpn.RuntimeFailure
+import io.weave.client.core.vpn.RuntimeFailureException
 import io.weave.client.domain.ConnectionState
 import java.io.File
 import java.nio.file.Files
@@ -21,7 +23,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 @Immutable
@@ -105,38 +106,6 @@ internal object NodeHealthAggregator {
     }
 }
 
-/** A probe timeout is a measurement failure, not a change to the VPN network path. */
-internal suspend fun <T : Any> withNodeHealthTimeout(
-    timeoutMs: Long,
-    action: suspend () -> T,
-): T = withTimeoutOrNull(timeoutMs) { action() }
-    ?: throw IllegalStateException("节点测速超过 ${timeoutMs / 1_000} 秒，请检查网络后重试")
-
-internal data class NodeHealthWorkload(val rounds: Int, val roundTimeoutMs: Long)
-
-/** The pinned Mihomo provider tests at most ten nodes concurrently, up to 5 s each. */
-internal object NodeHealthWorkloadPolicy {
-    fun forNodeCount(count: Int): NodeHealthWorkload {
-        require(count > 0)
-        val rounds = when {
-            count > 64 -> 1
-            count > 24 -> 2
-            else -> 3
-        }
-        val batches = (count + NATIVE_CONCURRENCY - 1) / NATIVE_CONCURRENCY
-        return NodeHealthWorkload(
-            rounds = rounds,
-            roundTimeoutMs = (batches * NODE_TIMEOUT_MS + ROUND_MARGIN_MS)
-                .coerceAtMost(MAX_ROUND_TIMEOUT_MS),
-        )
-    }
-
-    private const val NATIVE_CONCURRENCY = 10
-    private const val NODE_TIMEOUT_MS = 5_000L
-    private const val ROUND_MARGIN_MS = 12_000L
-    private const val MAX_ROUND_TIMEOUT_MS = 180_000L
-}
-
 /**
  * Narrow, fail-closed adapter around the pinned CMFA/Mihomo native bridge.
  */
@@ -161,7 +130,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         // A failed replacement must invalidate the previous validation token.
         validatedDigest = null
         if (!isAvailable) {
-            return@withLock Result.failure(IllegalStateException(CORE_UNAVAILABLE))
+            return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
         runCatching {
             NativeBridge.initialize(appContext).getOrThrow()
@@ -189,7 +158,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
     ): Result<Unit> = lifecycleMutex.withLock {
         if (!isAvailable) {
             mutableState.value = ConnectionState.ERROR
-            return@withLock Result.failure(IllegalStateException(CORE_UNAVAILABLE))
+            return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
         if (!digest(config).contentEquals(validatedDigest)) {
             mutableState.value = ConnectionState.ERROR
@@ -309,7 +278,10 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             "Loaded profile has no real node in required groups: " +
                 missing.joinToString { readinessDiagnostic(it) },
         )
-        error("订阅节点未成功载入：所选出口没有实际节点，已停止连接")
+        throw RuntimeFailureException(
+            RuntimeFailure.NODES_NOT_LOADED,
+            "订阅节点未成功载入：所选出口没有实际节点，已停止连接",
+        )
     }
 
     private fun isReadyGroup(name: String): Boolean {
@@ -453,22 +425,17 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             check(NativeBridge.queryGroup(group) != null) {
                 "该订阅未被当前运行配置加载，请先把它设为默认出口或应用出口"
             }
-            val initial = checkNotNull(querySubscriptionHealthUnlocked(subscriptionId)) {
-                "测速节点组尚未就绪，请稍后重试"
-            }
-            check(initial.isNotEmpty()) { "当前订阅没有可测速节点" }
-            val workload = NodeHealthWorkloadPolicy.forNodeCount(initial.size)
             val rounds = buildList {
-                repeat(workload.rounds) { round ->
+                repeat(HEALTH_ROUNDS) { round ->
                     runCatching {
-                        withNodeHealthTimeout(workload.roundTimeoutMs) {
+                        withTimeout(HEALTH_OPERATION_TIMEOUT_MS) {
                             NativeBridge.healthCheck(group).getOrThrow()
                         }
                         checkNotNull(awaitSettledSubscriptionHealthUnlocked(subscriptionId)) {
                             "测速完成后无法读取节点状态"
                         }
                     }.getOrThrow().also { add(it) }
-                    if (round < workload.rounds - 1) {
+                    if (round < HEALTH_ROUNDS - 1) {
                         // Give the core a short breather so consecutive HTTP probes do not
                         // contend with each other on mobile radios.
                         delay(HEALTH_ROUND_GAP_MS)
@@ -543,10 +510,12 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         const val CORE_UNAVAILABLE = "Mihomo 原生库无法加载或初始化"
         const val LOG_TAG = "WeaveEngine"
         const val DEFAULT_GROUP = "DEFAULT"
+        const val HEALTH_ROUNDS = 3
         const val HEALTH_ROUND_GAP_MS = 250L
         const val HEALTH_RESULT_POLL_ATTEMPTS = 4
         const val HEALTH_RESULT_POLL_GAP_MS = 50L
         const val CONFIG_OPERATION_TIMEOUT_MS = 15_000L
+        const val HEALTH_OPERATION_TIMEOUT_MS = 8_000L
         val NODE_PREFIX = Regex("""^weave:[^:]+:""")
         val ATTRIBUTION_QUERIES = AtomicLong()
         val ATTRIBUTION_MATCHES = AtomicLong()

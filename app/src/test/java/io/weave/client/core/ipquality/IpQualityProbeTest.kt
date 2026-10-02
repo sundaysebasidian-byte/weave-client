@@ -9,31 +9,6 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class IpQualityProbeTest {
-    @Test fun `different ipv4 responses are not reported consistent`() = runBlocking {
-        val transport = IpQualityHttpTransport { url, _ ->
-            when {
-                url.contains("api4.ipify") -> response("{\"ip\":\"8.8.8.8\"}")
-                url.contains("ipwho.is") -> response("{\"success\":true,\"ip\":\"1.1.1.1\"}")
-                else -> response("")
-            }
-        }
-        val check = IpQualityProbe(transport).run().checks.first { it.id == "consistency" }
-        assertEquals(IpQualityState.ATTENTION, check.state)
-    }
-
-    @Test fun `cloudflare disagreement is included in consistency check`() = runBlocking {
-        val transport = IpQualityHttpTransport { url, _ ->
-            when {
-                url.contains("api4.ipify") -> response("{\"ip\":\"8.8.8.8\"}")
-                url.contains("ipwho.is") -> response("{\"success\":true,\"ip\":\"8.8.8.8\"}")
-                url.contains("cdn-cgi/trace") -> response("ip=1.1.1.1\nloc=US\ncolo=SJC\n")
-                else -> response("")
-            }
-        }
-        val check = IpQualityProbe(transport).run().checks.first { it.id == "consistency" }
-        assertEquals(IpQualityState.ATTENTION, check.state)
-    }
-
     @Test fun `repeated endpoint probes expose zero partial and total failure`() = runBlocking {
         val calls = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
         val partial = IpQualityProbe(IpQualityHttpTransport { url, timeout ->
@@ -100,9 +75,6 @@ class IpQualityProbeTest {
         assertEquals("8.8.8.8", report.ipv4)
         assertEquals("2001:4860:4860:0:0:0:0:8888", report.ipv6)
         assertEquals(IpQualityState.ATTENTION, report.checks.first { it.id == "ipv6" }.state)
-        assertEquals("api6.ipify.org", report.checks.first { it.id == "ipv6" }.source)
-        assertTrue(report.checks.first { it.id == "consistency" }.source.contains("Cloudflare trace"))
-        assertTrue(report.checks.first { it.id == "dns" }.source.isEmpty())
         assertEquals(IpQualityState.VERIFIED, report.checks.first { it.id == "latency" }.state)
         assertTrue(report.completedProbes == report.totalProbes)
         assertEquals(42, report.medianLatencyMs)

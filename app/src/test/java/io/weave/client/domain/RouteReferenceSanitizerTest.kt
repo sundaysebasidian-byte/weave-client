@@ -5,22 +5,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RouteReferenceSanitizerTest {
-    @Test fun `chain route stays explicit and reports disabled state`() {
-        val route = route("browser.app", RouteTarget(RouteKind.CHAIN, "链式代理"))
-        val unavailable = RouteReferenceSanitizer.routes(listOf(route), emptyList(), emptyList())
-        assertEquals(RouteKind.CHAIN, unavailable.single().target.kind)
-        assertEquals("链式已关闭 · 拒绝连接", unavailable.single().target.label)
-        val available = RouteReferenceSanitizer.routes(listOf(route), emptyList(), emptyList(), true)
-        assertEquals("链式代理", available.single().target.label)
-    }
-
     private val subscription = Subscription(
         id = "kept",
         name = "Kept",
         nodeCount = 1,
-        updatedAt = "",
-        trafficUsedGb = 0.0,
-        trafficTotalGb = 0.0,
     )
     private val node = ProxyNode(
         id = "jp-1",

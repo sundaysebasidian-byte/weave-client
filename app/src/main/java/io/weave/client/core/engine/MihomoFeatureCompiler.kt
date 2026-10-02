@@ -142,13 +142,6 @@ object MihomoFeatureCompiler {
     )
 
     fun automaticGroup(strategy: AutomaticStrategy): AutomaticGroupConfig = when (strategy) {
-        AutomaticStrategy.STABLE_LATENCY -> AutomaticGroupConfig(
-            type = "url-test",
-            tolerance = 150,
-            intervalSeconds = 120,
-            timeoutMs = 5_000,
-            maxFailedTimes = 3,
-        )
         AutomaticStrategy.LOWEST_LATENCY -> AutomaticGroupConfig(
             type = "url-test",
             tolerance = 80,
@@ -252,17 +245,6 @@ object MihomoFeatureCompiler {
     /** Resolver list used by policy/direct lookups, including only the safe compatibility fallbacks. */
     fun policyNameServers(preferences: NetworkPreferences): List<String> =
         encryptedNameServers(preferences) + dnsCompatibilityFallbacks(preferences)
-
-    /**
-     * Filtered DNS is for destination lookups, not for resolving the proxy infrastructure itself.
-     * Family/ad-block resolvers can classify dynamic proxy hostnames as unsafe and return a
-     * negative answer before Mihomo tries a later resolver. Keep this bootstrap encrypted but
-     * neutral; custom DNS remains explicit and is not silently bypassed.
-     */
-    fun proxyServerNameServers(preferences: NetworkPreferences): List<String> = when (preferences.dnsProfile) {
-        DnsProfile.AD_BLOCK, DnsProfile.FAMILY -> encryptedNameServers(preferences.dnsTransport)
-        else -> policyNameServers(preferences)
-    }
 
     /**
      * Compiles Mihomo's nameserver-policy map. The map is intentionally small and deterministic:

@@ -2,14 +2,15 @@ package io.weave.client.subscription
 
 import android.annotation.SuppressLint
 import android.content.Context
+import io.weave.client.WeaveProcess
+import io.weave.client.data.crossProcessPreferences
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import java.io.File
+import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
-import org.json.JSONArray
-import org.json.JSONObject
 
 data class StoredSubscription(
     val id: String,
@@ -18,6 +19,9 @@ data class StoredSubscription(
     val format: SubscriptionFormat,
     val nodes: List<StoredNode>,
     val hasPayload: Boolean,
+    val usage: SubscriptionUsage? = null,
+    val updatedAtMillis: Long? = null,
+    val updateIntervalHours: Int? = null,
 )
 
 data class StoredNode(
@@ -30,15 +34,46 @@ class SubscriptionSecretStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
 ) {
-    private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    private val payloadDirectory = File(context.noBackupFilesDir, PAYLOAD_DIRECTORY)
+    private val appContext = context.applicationContext
+    private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
+    private val payloadDirectory = File(appContext.noBackupFilesDir, PAYLOAD_DIRECTORY)
+    private val lockFile = File(appContext.noBackupFilesDir, LOCK_FILE)
 
     init {
-        synchronized(STORE_LOCK) {
+        locked {
             payloadDirectory.mkdirs()
-            cleanPayloadDirectory(payloadDirectory)
-            migrateLegacyNodeMetadata()
-            repairNodeIndexes()
+            // The VPN process only reads subscriptions. Cleanup, migration and index repair are
+            // owned by the UI process so a runtime start can never race an import.
+            if (!WeaveProcess.isVpnProcess) {
+                cleanPayloadDirectory(payloadDirectory)
+                migrateLegacyNodeMetadata()
+                repairNodeIndexes()
+            }
+        }
+    }
+
+    /**
+     * Serializes store access across threads (monitor) and across the UI and `:vpn` processes
+     * (file lock). JVM file locks are not reentrant, so nested calls reuse the outer lock.
+     */
+    private inline fun <T> locked(block: () -> T): T = synchronized(STORE_LOCK) {
+        if (lockDepth > 0) {
+            lockDepth++
+            try {
+                return block()
+            } finally {
+                lockDepth--
+            }
+        }
+        RandomAccessFile(lockFile, "rw").use { file ->
+            file.channel.lock().use {
+                lockDepth = 1
+                try {
+                    return block()
+                } finally {
+                    lockDepth = 0
+                }
+            }
         }
     }
 
@@ -49,10 +84,8 @@ class SubscriptionSecretStore(
         parsed: ParsedSubscription,
         id: String = UUID.randomUUID().toString(),
         counts: SubscriptionImportCounts? = null,
-        sourceGroups: List<SourceProxyGroupPreview> = emptyList(),
-        sourceRules: List<String> = emptyList(),
     ): StoredSubscription {
-        synchronized(STORE_LOCK) {
+        locked {
             val normalizedName = normalizeName(name)
             val encryptedUrl = secretBox.encrypt(
                 plaintext = url.toByteArray(Charsets.UTF_8),
@@ -83,13 +116,6 @@ class SubscriptionSecretStore(
             val generation = UUID.randomUUID().toString().replace("-", "")
             val candidatePayload = writePayloadCandidate(id, generation, encryptedPayload)
             val encryptedNodeMetadata = encryptNodeMetadata(id, nodes)
-            val encryptedSourceGroups = sourceGroups.take(SourceProxyGroupPreviewParser.MAX_GROUPS)
-                .takeIf { it.isNotEmpty() }
-                ?.let { encryptSourceGroups(id, it) }
-            val encryptedSourceRules = sourceRules.take(256).takeIf { it.isNotEmpty() }?.let { rules ->
-                secretBox.encrypt(JSONArray(rules).toString().toByteArray(Charsets.UTF_8),
-                    "$id:source-rules".toByteArray(Charsets.UTF_8))
-            }
 
             val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
             ids += id
@@ -98,16 +124,13 @@ class SubscriptionSecretStore(
                 .putString(key(id, "name"), normalizedName)
                 .putString(key(id, "url"), encryptedUrl)
                 .putInt(key(id, "nodes"), parsed.nodeCount)
-                .putString(key(id, "import_counts"), counts?.let {
-                    "${it.root},${it.providers},${it.collections},${it.imported},${it.proxyGroups},${it.rules},${it.ruleProviders}"
-                })
+                .putString(key(id, "import_counts"), counts?.let { "${it.root},${it.providers},${it.collections},${it.imported}" })
                 .putString(key(id, "format"), parsed.format.name)
                 .putString(key(id, "node_metadata_encrypted"), encryptedNodeMetadata)
-                .putString(key(id, "source_groups_encrypted"), encryptedSourceGroups)
-                .putString(key(id, "source_rules_encrypted"), encryptedSourceRules)
                 .putInt(key(id, "node_index_version"), NODE_INDEX_VERSION)
                 .remove(key(id, "node_metadata"))
                 .putString(key(id, "payload_generation"), generation)
+                .putLong(key(id, "updated_at"), System.currentTimeMillis())
                 .commit()
             if (!committed) {
                 candidatePayload.delete()
@@ -129,66 +152,22 @@ class SubscriptionSecretStore(
     }
 
     fun saveReviewed(id: String, expectedRevision: String, name: String, source: String,
-        payload: String, parsed: ParsedSubscription, counts: SubscriptionImportCounts,
-        sourceGroups: List<SourceProxyGroupPreview> = emptyList(),
-        sourceRules: List<String> = emptyList()): StoredSubscription = synchronized(STORE_LOCK) {
+        payload: String, parsed: ParsedSubscription, counts: SubscriptionImportCounts): StoredSubscription = locked {
         val current = requireNotNull(get(id)) { "订阅不存在" }
         check(subscriptionRevision(current, readPayload(id), readUrl(id)) == expectedRevision) {
             "订阅已变化，请重新预览"
         }
-        save(name, source, payload, parsed, id, counts, sourceGroups, sourceRules)
+        save(name, source, payload, parsed, id, counts)
     }
 
-    fun sourceRules(id: String): List<String> = synchronized(STORE_LOCK) {
-        val encrypted = preferences.getString(key(id, "source_rules_encrypted"), null)
-            ?: return@synchronized emptyList()
-        runCatching {
-            val json = secretBox.decrypt(encrypted, "$id:source-rules".toByteArray(Charsets.UTF_8))
-                .toString(Charsets.UTF_8)
-            val array = JSONArray(json)
-            (0 until minOf(array.length(), 256)).map { array.getString(it) }
-        }.getOrDefault(emptyList())
-    }
-
-    fun sourceGroups(id: String): List<SourceProxyGroupPreview> = synchronized(STORE_LOCK) {
-        val encrypted = preferences.getString(key(id, "source_groups_encrypted"), null)
-            ?: return@synchronized emptyList()
-        runCatching {
-            val json = secretBox.decrypt(encrypted, "$id:source-groups".toByteArray(Charsets.UTF_8))
-                .toString(Charsets.UTF_8)
-            val array = JSONArray(json)
-            (0 until minOf(array.length(), SourceProxyGroupPreviewParser.MAX_GROUPS)).map { index ->
-                val item = array.getJSONObject(index)
-                fun names(key: String, limit: Int): List<String> {
-                    val values = item.optJSONArray(key) ?: return emptyList()
-                    return (0 until minOf(values.length(), limit)).map { values.getString(it) }
-                }
-                SourceProxyGroupPreview(
-                    name = item.getString("name").take(100),
-                    type = item.getString("type").take(100),
-                    explicitMembers = names("members", 40),
-                    providerReferences = names("providers", 16),
-                    includesAll = item.optBoolean("all"),
-                    hasFilter = item.optBoolean("filter"),
-                    hasSourceIcon = item.optBoolean("icon"),
-                    membersTruncated = item.optBoolean("truncated"),
-                )
-            }
-        }.getOrDefault(emptyList())
-    }
-
-    fun importCounts(id: String): SubscriptionImportCounts? = synchronized(STORE_LOCK) {
+    fun importCounts(id: String): SubscriptionImportCounts? = locked {
         val values = preferences.getString(key(id, "import_counts"), null)?.split(',')
-            ?.map { it.toIntOrNull() ?: return@synchronized null } ?: return@synchronized null
-        // Four-field records were written before the configuration-loss report was added.
-        if (values.size !in setOf(4, 7) || values.any { it < 0 }) return@synchronized null
-        SubscriptionImportCounts(
-            values[0], values[1], values[2], values[3],
-            values.getOrElse(4) { 0 }, values.getOrElse(5) { 0 }, values.getOrElse(6) { 0 },
-        )
+            ?.map { it.toIntOrNull() ?: return@locked null } ?: return@locked null
+        if (values.size != 4 || values.any { it < 0 }) return@locked null
+        SubscriptionImportCounts(values[0], values[1], values[2], values[3])
     }
 
-    fun list(): List<StoredSubscription> = synchronized(STORE_LOCK) {
+    fun list(): List<StoredSubscription> = locked {
         preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
             .mapNotNull { id ->
                 val name = preferences.getString(key(id, "name"), null) ?: return@mapNotNull null
@@ -203,16 +182,32 @@ class SubscriptionSecretStore(
                     nodes = readNodeMetadata(id)
                         .sortedBy { it.name.lowercase() },
                     hasPayload = payloadFile(id).isFile,
+                    usage = SubscriptionUsage.decode(preferences.getString(key(id, "usage"), null)),
+                    updatedAtMillis = preferences.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
+                    updateIntervalHours = preferences.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
                 )
             }
             .sortedBy { it.name.lowercase() }
+    }
+
+    /** Provider-declared quota and refresh interval; neither is secret nor an endpoint. */
+    fun recordRemoteMetadata(id: String, usage: SubscriptionUsage?, updateIntervalHours: Int?) = locked {
+        if (id !in preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()) return@locked
+        val editor = preferences.edit()
+        if (usage != null) editor.putString(key(id, "usage"), usage.encode()) else editor.remove(key(id, "usage"))
+        if (updateIntervalHours != null) {
+            editor.putInt(key(id, "update_interval_hours"), updateIntervalHours)
+        } else {
+            editor.remove(key(id, "update_interval_hours"))
+        }
+        editor.commit()
     }
 
     fun get(id: String): StoredSubscription? = list().firstOrNull { it.id == id }
 
     @SuppressLint("UseKtx") // commit() is required here because rename must report persistence failure.
     fun rename(id: String, name: String): StoredSubscription {
-        synchronized(STORE_LOCK) {
+        locked {
             val record = get(id) ?: throw NoSuchElementException("订阅不存在")
             val normalizedName = normalizeName(name)
             check(
@@ -225,7 +220,7 @@ class SubscriptionSecretStore(
     }
 
     fun delete(id: String): StoredSubscription {
-        synchronized(STORE_LOCK) {
+        locked {
             val record = get(id) ?: throw NoSuchElementException("订阅不存在")
             val payload = payloadFile(id)
             val pendingDeletion = File(payloadDirectory, "$id.$DELETED_PAYLOAD_EXTENSION")
@@ -256,7 +251,7 @@ class SubscriptionSecretStore(
      * The URL is decrypted only for a network update or an explicitly opened, transient editor.
      */
     fun readUrl(id: String): String {
-        synchronized(STORE_LOCK) {
+        locked {
             val encrypted = preferences.getString(key(id, "url"), null)
                 ?: throw NoSuchElementException("Subscription not found")
             return secretBox.decrypt(
@@ -267,7 +262,7 @@ class SubscriptionSecretStore(
     }
 
     fun readPayload(id: String): String {
-        synchronized(STORE_LOCK) {
+        locked {
             val encrypted = payloadFile(id).takeIf(File::isFile)?.readText(Charsets.UTF_8)
                 ?: throw NoSuchElementException("订阅内容不存在，请重新导入")
             return secretBox.decrypt(
@@ -305,26 +300,6 @@ class SubscriptionSecretStore(
                 .toByteArray(Charsets.UTF_8),
             associatedData = "$id:nodes".toByteArray(Charsets.UTF_8),
         )
-
-    private fun encryptSourceGroups(id: String, groups: List<SourceProxyGroupPreview>): String {
-        val json = JSONArray().apply {
-            groups.forEach { group ->
-                put(JSONObject()
-                    .put("name", group.name)
-                    .put("type", group.type)
-                    .put("members", JSONArray(group.explicitMembers))
-                    .put("providers", JSONArray(group.providerReferences))
-                    .put("all", group.includesAll)
-                    .put("filter", group.hasFilter)
-                    .put("icon", group.hasSourceIcon)
-                    .put("truncated", group.membersTruncated))
-            }
-        }
-        return secretBox.encrypt(
-            json.toString().toByteArray(Charsets.UTF_8),
-            "$id:source-groups".toByteArray(Charsets.UTF_8),
-        )
-    }
 
     private fun readNodeMetadata(id: String): List<StoredNode> {
         val encrypted = preferences.getString(key(id, "node_metadata_encrypted"), null)
@@ -459,6 +434,9 @@ class SubscriptionSecretStore(
         // UI, import worker and VPN service construct different instances in the same process.
         // A per-instance @Synchronized method does not protect against constructor cleanup.
         val STORE_LOCK = Any()
+        // Guarded by STORE_LOCK.
+        var lockDepth = 0
+        const val LOCK_FILE = "subscriptions.lock"
         const val NODE_INDEX_VERSION = 3
         const val PREFERENCES_NAME = "encrypted_subscriptions_v1"
         const val KEY_IDS = "subscription.ids"
@@ -474,11 +452,12 @@ class SubscriptionSecretStore(
             "format",
             "node_metadata",
             "node_metadata_encrypted",
-            "source_groups_encrypted",
-            "source_rules_encrypted",
             "node_index_version",
             "payload_generation",
             "import_counts",
+            "usage",
+            "updated_at",
+            "update_interval_hours",
         )
     }
 }

@@ -1,7 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Weave</string>
-    <string name="vpn_channel_name">代理连接</string>
-    <string name="vpn_channel_description">显示 Weave 的代理连接状态</string>
+    <string name="app_name" translatable="false">Weave</string>
+    <string name="vpn_channel_name">Proxy connection</string>
+    <string name="vpn_channel_description">Shows Weave\'s proxy connection status</string>
+    <string name="updates_channel_name">Subscription updates</string>
+    <string name="updates_channel_description">Results of scheduled subscription refreshes</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_connect">Connect</string>
+    <string name="notification_speed">↑ %1$s/s · ↓ %2$s/s</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">Connected</string>
+    <string name="tile_disconnected">Off</string>
+    <string name="tile_connecting">Connecting…</string>
+    <string name="tile_needs_app">Open Weave to authorize the VPN</string>
+    <string name="shortcut_connect_short">Connect</string>
+    <string name="shortcut_connect_long">Connect Weave</string>
+    <string name="shortcut_disconnect_short">Disconnect</string>
+    <string name="shortcut_disconnect_long">Disconnect Weave</string>
+    <string name="shortcut_import_short">Import</string>
+    <string name="shortcut_import_long">Import a subscription</string>
+    <string name="update_applied_title">%1$s updated</string>
+    <string name="update_applied_body">%1$d added · %2$d removed · %3$d kept</string>
+    <string name="update_review_title">%1$s needs review</string>
+    <string name="update_review_body">The update changes nodes that routes depend on or failed the safety audit. Open Weave to preview it.</string>
+    <string name="update_failed_title">Subscription refresh failed</string>
+    <string name="update_failed_body">%1$d subscription(s) could not be refreshed. The previous versions are kept.</string>
 </resources>
-

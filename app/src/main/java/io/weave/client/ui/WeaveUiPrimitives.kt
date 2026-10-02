@@ -3,7 +3,9 @@ package io.weave.client.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.BorderStroke
@@ -36,7 +38,7 @@ internal fun MonetAtmosphere(
     modifier: Modifier = Modifier,
 ) {
     val background = MaterialTheme.colorScheme.background
-    if (palette.group != WeaveAppearanceGroup.ART) {
+    if (palette.group == WeaveAppearanceGroup.MINIMAL) {
         // All minimal canvases are neutral and stable; green belongs to actions, not the backdrop.
         Box(modifier = modifier.background(background))
         return
@@ -130,16 +132,24 @@ internal fun LiquidGlassPanel(
     content: @Composable () -> Unit,
 ) {
     val palette = LocalWeavePalette.current
+    val interaction = remember { MutableInteractionSource() }
+    val indication = LocalIndication.current
+    val pressModifier = if (onClick != null) Modifier.pressScale(interaction) else Modifier
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable(interactionSource = interaction, indication = indication, onClick = onClick)
+    } else {
+        Modifier
+    }
     if (palette == WeavePalette.MINIMAL_PAPER) {
-        Box(modifier = modifier.clip(shape)
+        Box(modifier = modifier.then(pressModifier).clip(shape)
             .background(MaterialTheme.colorScheme.surface)
             .then(if (showEdge) Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, shape) else Modifier)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
+            .then(clickModifier)) {
             content()
         }
         return
     }
-    val minimal = palette.group != WeaveAppearanceGroup.ART
+    val minimal = palette.group == WeaveAppearanceGroup.MINIMAL
     val minimalWhiteGreen = palette == WeavePalette.MINIMAL_WHITE_GREEN
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.35f
     val surface = MaterialTheme.colorScheme.surface
@@ -223,6 +233,7 @@ internal fun LiquidGlassPanel(
     }
     Box(
         modifier = modifier
+            .then(pressModifier)
             // Dense cards intentionally skip a zero-elevation shadow layer. The gradient and
             // cached rim carry the glass depth without asking RenderThread to blur every row.
             .then(shadowModifier)
@@ -268,9 +279,7 @@ internal fun LiquidGlassPanel(
                     }
                 }
             }
-            .then(
-                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
-            ),
+            .then(clickModifier),
     ) {
         content()
     }

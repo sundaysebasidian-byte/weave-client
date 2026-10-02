@@ -11,35 +11,6 @@ import org.junit.Test
 
 class MihomoFeatureCompilerTest {
     @Test
-    fun `filtered DNS does not filter proxy bootstrap hostnames`() {
-        assertEquals(
-            listOf("https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"),
-            MihomoFeatureCompiler.proxyServerNameServers(NetworkPreferences(dnsProfile = DnsProfile.FAMILY)),
-        )
-        assertEquals(
-            listOf("tls://dns.alidns.com", "tls://dot.pub"),
-            MihomoFeatureCompiler.proxyServerNameServers(NetworkPreferences(
-                dnsProfile = DnsProfile.AD_BLOCK, dnsTransport = DnsTransport.DOT,
-            )),
-        )
-        assertEquals(
-            listOf("https://custom.example/dns-query"),
-            MihomoFeatureCompiler.proxyServerNameServers(NetworkPreferences(
-                dnsProfile = DnsProfile.CUSTOM,
-                customDnsEndpoint = "https://custom.example/dns-query",
-            )),
-        )
-    }
-
-    @Test
-    fun `stable choice uses lazy low frequency probes and wider hysteresis`() {
-        assertEquals(
-            AutomaticGroupConfig(type = "url-test", tolerance = 150,
-                intervalSeconds = 120, timeoutMs = 5_000, maxFailedTimes = 3),
-            MihomoFeatureCompiler.automaticGroup(AutomaticStrategy.STABLE_LATENCY),
-        )
-    }
-    @Test
     fun `lowest latency compiles to bounded url test`() {
         assertEquals(
             AutomaticGroupConfig(

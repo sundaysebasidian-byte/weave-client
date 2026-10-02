@@ -11,35 +11,6 @@ import org.junit.Test
 
 class MihomoRuntimePlannerTest {
     @Test
-    fun appOnlyChainKeepsFirstSubscriptionAsDefaultFallback() {
-        val plan = MihomoRuntimePlanner.plan(
-            routes = listOf(route("app.chain", target(RouteKind.CHAIN))),
-            mode = RoutingMode.RULE,
-            defaultTarget = null,
-            usableSubscriptionIds = listOf("default", "entry", "exit"),
-            additionalSubscriptionIds = setOf("entry", "exit"),
-        )
-
-        assertEquals(setOf("default", "entry", "exit"), plan.activeSubscriptionIds)
-        assertEquals(setOf("default"), plan.automaticSubscriptionIds)
-    }
-
-    @Test
-    fun chainLoadsBothHopsButNotReplacedDefault() {
-        val plan = MihomoRuntimePlanner.plan(
-            routes = emptyList(),
-            mode = RoutingMode.GLOBAL,
-            defaultTarget = target(RouteKind.FIXED, "old-default", "old-node"),
-            usableSubscriptionIds = listOf("old-default", "entry", "exit"),
-            additionalSubscriptionIds = setOf("entry", "exit"),
-            skipDefaultTarget = true,
-        )
-        assertNull(plan.effectiveDefaultTarget)
-        assertEquals(setOf("entry", "exit"), plan.activeSubscriptionIds)
-        assertTrue(plan.automaticSubscriptionIds.isEmpty())
-    }
-
-    @Test
     fun fixedDefaultLoadsOnlyItsProviderWithoutAutomaticHealthCheck() {
         val plan = MihomoRuntimePlanner.plan(
             routes = emptyList(),
@@ -50,21 +21,6 @@ class MihomoRuntimePlannerTest {
 
         assertEquals(setOf("selected"), plan.activeSubscriptionIds)
         assertTrue(plan.automaticSubscriptionIds.isEmpty())
-    }
-
-    @Test
-    fun explicitProbeAddsTestGroupForFixedDefaultOnlyWhenRequested() {
-        val plan = MihomoRuntimePlanner.plan(
-            routes = emptyList(),
-            mode = RoutingMode.RULE,
-            defaultTarget = target(RouteKind.FIXED, "selected", "node-1"),
-            usableSubscriptionIds = listOf("selected", "unused"),
-            additionalSubscriptionIds = setOf("selected"),
-            probeSubscriptionIds = setOf("selected"),
-        )
-
-        assertEquals(setOf("selected"), plan.activeSubscriptionIds)
-        assertEquals(setOf("selected"), plan.automaticSubscriptionIds)
     }
 
     @Test
@@ -123,11 +79,9 @@ class MihomoRuntimePlannerTest {
             defaultTarget = target(RouteKind.FIXED, "active", "node-1"),
             usableSubscriptionIds = listOf("active", "probe", "unused"),
             additionalSubscriptionIds = setOf("probe"),
-            probeSubscriptionIds = setOf("probe"),
         )
 
         assertEquals(setOf("active", "probe"), plan.activeSubscriptionIds)
-        assertEquals(setOf("probe"), plan.automaticSubscriptionIds)
     }
 
     private fun route(packageName: String, target: RouteTarget) = AppRoute(

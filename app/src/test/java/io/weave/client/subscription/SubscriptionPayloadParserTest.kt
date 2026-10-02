@@ -184,49 +184,6 @@ class SubscriptionPayloadParserTest {
     }
 
     @Test
-    fun `sing box socks credentials are retained during conversion`() {
-        val input = """{"outbounds":[{"type":"socks","tag":"private-socks","server":"example.com","server_port":1080,"username":"alice","password":"secret"}]}"""
-        val node = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(input))).single()
-        assertEquals("socks5", node["type"])
-        assertEquals("alice", node["username"])
-        assertEquals("secret", node["password"])
-    }
-
-    @Test
-    fun `sing box anytls and hysteria retain required Mihomo fields`() {
-        val input = """{"outbounds":[
-          {"type":"anytls","tag":"any","server":"a.example","server_port":443,"password":"pass-a","tls":{"enabled":true,"server_name":"a.example"}},
-          {"type":"hysteria","tag":"hy1","server":"h.example","server_port":443,"auth_str":"pass-h","up_mbps":30,"down_mbps":200,"obfs":"mask","tls":{"enabled":true,"server_name":"h.example"}}
-        ]}"""
-        val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(input)))
-        assertEquals(2, nodes.size)
-        assertEquals("anytls", nodes[0]["type"])
-        assertEquals("pass-a", nodes[0]["password"])
-        assertEquals("a.example", nodes[0]["sni"])
-        assertTrue(!nodes[0].containsKey("tls"))
-        assertEquals("hysteria", nodes[1]["type"])
-        assertEquals("pass-h", nodes[1]["auth-str"])
-        assertEquals("30 Mbps", nodes[1]["up"])
-        assertEquals("200 Mbps", nodes[1]["down"])
-        assertEquals("mask", nodes[1]["obfs"])
-        assertTrue(!nodes[1].containsKey("tls"))
-    }
-
-    @Test
-    fun `unsupported AnyTLS Reality and incomplete Hysteria fail before import`() {
-        val reality = """{"outbounds":[{"type":"anytls","server":"a.example","server_port":443,"password":"pass","tls":{"enabled":true,"reality":{"enabled":true,"public_key":"key"}}}]}"""
-        val missingRate = """{"outbounds":[{"type":"hysteria","server":"h.example","server_port":443,"auth_str":"pass","up_mbps":30,"tls":{"enabled":true}}]}"""
-        assertThrows(SubscriptionImportException::class.java) { parser.normalizeForMihomo(reality) }
-        assertThrows(SubscriptionImportException::class.java) { parser.normalizeForMihomo(missingRate) }
-    }
-
-    @Test
-    fun `unsupported sing box transport cannot silently become plain TCP`() {
-        val input = """{"outbounds":[{"type":"vless","server":"example.com","server_port":443,"uuid":"00000000-0000-0000-0000-000000000001","transport":{"type":"httpupgrade","path":"/edge"}}]}"""
-        assertThrows(SubscriptionImportException::class.java) { parser.normalizeForMihomo(input) }
-    }
-
-    @Test
     fun `counts only sing box outbounds`() {
         val parsed = parser.parse(
             """

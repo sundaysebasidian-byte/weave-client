@@ -1,5 +1,6 @@
 package io.weave.client.ui
 
+import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -103,7 +104,6 @@ internal fun NetworkPrivacyCenterDialog(
     val context = LocalContext.current
     val language = LocalWeaveLanguage.current
     var webView by remember { mutableStateOf<WebView?>(null) }
-    var selectedSite by remember { mutableStateOf<DiagnosticSite?>(null) }
     var summaryPreview by remember { mutableStateOf<String?>(null) }
     var summaryCopied by remember(report, ipQualityState.report, endpointState.report, browserResult,
         ipQualityState.stale, endpointState.stale) { mutableStateOf(false) }
@@ -111,15 +111,15 @@ internal fun NetworkPrivacyCenterDialog(
     val running = ipQualityState.running || endpointState.running || browserRunning || downloadState.running
 
     fun l(source: String): String = localizeWeaveText(source, language)
+    fun openExternal(url: String) {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+    }
+
     DisposableEffect(webView) {
         val ownedWebView = webView
         onDispose {
             releasePrivacyProbeWebView(ownedWebView)
         }
-    }
-
-    selectedSite?.let { site ->
-        EmbeddedPrivacyCheck(site = site, onDismiss = { selectedSite = null })
     }
 
     summaryPreview?.let { snapshot ->
@@ -398,32 +398,36 @@ internal fun NetworkPrivacyCenterDialog(
                     item { BrowserCandidatesSummary(browser, language) }
                 }
 
-                item { DiagnosticsSectionTitle(l("应用内独立复核"), Icons.Rounded.ChevronRight) }
+                item { DiagnosticsSectionTitle(l("外部复核入口"), Icons.Rounded.ChevronRight) }
                 item {
                     Text(
-                        l("第三方测试页直接在 Weave 内显示，无需跳转。DNS 泄漏需由站点的权威服务器观测；WebRTC 与身份结果只代表此 WebView，真实浏览器仍需另测。"),
+                        l("应用内结果只代表本机或当前 HTTPS 出口证据。DNS、IPv6 和 WebRTC 泄漏仍应在真实浏览器中用独立测试站复核。"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 17.sp,
                     )
                 }
                 items(
-                    items = DiagnosticSite.entries,
-                    key = { it.name },
-                    contentType = { "embedded-check" },
-                ) { site ->
+                    items = listOf(
+                        "DNS 泄漏测试" to "https://www.dnsleaktest.com/",
+                        "WebRTC / IPv6 测试" to "https://browserleaks.com/webrtc",
+                        "浏览器身份表面" to "https://browserleaks.com/javascript",
+                        "综合 IP 质量" to "https://browserleaks.com/ip",
+                    ),
+                    key = { it.second },
+                    contentType = { "external-check" },
+                ) { (label, url) ->
                     TextButton(
-                        onClick = { selectedSite = site },
-                        enabled = !running,
+                        onClick = { openExternal(url) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(l(site.title), modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                        Text(l(label), modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
                         Icon(Icons.Rounded.ChevronRight, contentDescription = null)
                     }
                 }
                 item {
                     Text(
-                        l("Weave 不上传自己的检测报告；第三方测试页按其隐私政策处理数据。地区、ASN、代理标签和指纹字段也可能误判。"),
+                        l("结果只在本机内存中展示，不上传检测报告；第三方地区、ASN、代理标签和浏览器指纹字段都可能存在误判。"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp,
                         lineHeight = 16.sp,
@@ -677,14 +681,6 @@ private fun NetworkIpCheckRow(check: IpQualityCheck) {
                 Text(localizeWeaveText(label, LocalWeaveLanguage.current), color = color, fontSize = 10.sp)
             }
             Text(check.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
-            if (check.source.isNotBlank()) {
-                Text(
-                    localizeWeaveText("来源：${check.source}", LocalWeaveLanguage.current),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                )
-            }
         }
     }
 }

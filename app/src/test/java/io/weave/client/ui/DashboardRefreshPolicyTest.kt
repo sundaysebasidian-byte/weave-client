@@ -10,12 +10,11 @@ import org.junit.Test
 class DashboardRefreshPolicyTest {
     private val idle = EngineRuntimeSnapshot("test-node", "http", 25, 0, 0, 0)
 
-    @Test fun `idle polling backs off in two bounded stages`() {
+    @Test fun `idle polling backs off only after three samples`() {
         val policy = DashboardRefreshPolicy()
         assertEquals(3_000L, policy.nextDelayMillis(idle))
         assertEquals(3_000L, policy.nextDelayMillis(idle))
-        repeat(3) { assertEquals(15_000L, policy.nextDelayMillis(idle)) }
-        repeat(100) { assertEquals(20_000L, policy.nextDelayMillis(idle)) }
+        repeat(100) { assertEquals(15_000L, policy.nextDelayMillis(idle)) }
     }
 
     @Test fun `either traffic direction immediately restores active cadence`() {
@@ -39,7 +38,7 @@ class DashboardRefreshPolicyTest {
         assertEquals(3_000L, DashboardRefreshPolicy().nextDelayMillis(idle))
     }
 
-    @Test fun `ten minutes of idle UI needs fewer than 35 queries instead of 200`() {
+    @Test fun `ten minutes of idle UI needs at most 42 queries instead of 200`() {
         val policy = DashboardRefreshPolicy()
         var elapsed = 0L
         var queries = 0
@@ -47,7 +46,7 @@ class DashboardRefreshPolicyTest {
             queries++
             elapsed += policy.nextDelayMillis(idle)
         }
-        assertTrue(queries < 35)
+        assertEquals(42, queries)
     }
 
     @Test fun `unchanged samples retain the identical dashboard and node`() {

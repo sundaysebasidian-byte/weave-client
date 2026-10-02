@@ -1,6 +1,9 @@
 package io.weave.client.core.engine
 
 import android.content.Context
+import io.weave.client.core.vpn.RuntimeFailure
+import io.weave.client.core.vpn.RuntimeFailureException
+import io.weave.client.core.vpn.fail
 import io.weave.client.domain.AppRoute
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
@@ -13,7 +16,13 @@ import io.weave.client.subscription.SubscriptionSecretStore
 import io.weave.client.subscription.ClashYamlCodec
 import io.weave.client.policy.PolicyPackCompiler
 import io.weave.client.policy.PolicyPackStore
+import io.weave.client.routing.CustomGroupStrategy
+import io.weave.client.routing.CustomProxyGroup
+import io.weave.client.routing.CustomProxyGroupStore
+import io.weave.client.routing.CustomProxyGroupValidator
 import io.weave.client.routing.LocalRouteRuleStore
+import io.weave.client.routing.RemoteRuleSetStore
+import io.weave.client.routing.RuleSetCompiler
 import io.weave.client.routing.LocalRuleCompiler
 import java.io.File
 
@@ -40,6 +49,11 @@ class MihomoConfigAssembler(
     private val providerDirectory = File(context.cacheDir, "mihomo-runtime/providers")
     private val policyPackStore = PolicyPackStore(context)
     private val localRuleStore = LocalRouteRuleStore(context)
+    private val settingsStore = io.weave.client.data.RuntimeSettingsStore(context)
+    private val customGroupStore = CustomProxyGroupStore(context)
+    private val ruleSetStore = RemoteRuleSetStore(context)
+
+    private fun lanCredentials(): Pair<String, String> = settingsStore.lanProxyCredentials()
 
     fun assemble(
         routes: List<AppRoute>,
@@ -51,74 +65,83 @@ class MihomoConfigAssembler(
     ): AssembledMihomoConfig {
         val subscriptions = secretStore.list()
         val usable = subscriptions.filter { it.hasPayload }
-        require(
-            mode == RoutingMode.DIRECT ||
-                defaultTarget?.kind == RouteKind.DIRECT ||
-                usable.isNotEmpty(),
+        if (
+            mode != RoutingMode.DIRECT &&
+            defaultTarget?.kind != RouteKind.DIRECT &&
+            usable.isEmpty()
         ) {
-            if (subscriptions.isEmpty()) {
-                "没有可用订阅，请先导入或选择直连"
-            } else {
-                "已导入的订阅没有可用配置内容，请重新导入"
-            }
+            throw RuntimeFailureException(
+                RuntimeFailure.NO_SUBSCRIPTION,
+                if (subscriptions.isEmpty()) {
+                    "没有可用订阅，请先导入或选择直连"
+                } else {
+                    "已导入的订阅没有可用配置内容，请重新导入"
+                },
+            )
         }
         val byId = usable.associateBy(StoredSubscription::id)
-        val chainSelection = networkPreferences.proxyChain?.takeIf { selected ->
-            mode != RoutingMode.DIRECT && (selected.useAsDefault ||
-                defaultTarget?.kind == RouteKind.CHAIN ||
-                (mode == RoutingMode.RULE && routes.any { it.target.kind == RouteKind.CHAIN }))
-        }
-        require(mode == RoutingMode.DIRECT || defaultTarget?.kind != RouteKind.CHAIN || chainSelection != null) {
-            "链式代理已关闭，请重新配置默认出口"
-        }
-        val crossAutomaticNeeded =
-            networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION &&
-                mode != RoutingMode.DIRECT && (
-                    (mode == RoutingMode.RULE && routes.any { it.target.kind == RouteKind.AUTO }) ||
-                        (chainSelection?.useAsDefault != true &&
-                            (defaultTarget == null || defaultTarget.kind == RouteKind.AUTO ||
-                                defaultTarget.kind == RouteKind.BLOCK))
-                    )
+        val customGroups = customGroupStore.list().associateBy(CustomProxyGroup::id)
         val plan = MihomoRuntimePlanner.plan(
             routes = routes,
             mode = mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
-            additionalSubscriptionIds = additionalSubscriptionIds + listOfNotNull(
-                chainSelection?.entrySubscriptionId,
-                chainSelection?.exitSubscriptionId,
-            ) + if (crossAutomaticNeeded) {
+            additionalSubscriptionIds = additionalSubscriptionIds + if (
+                networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
+            ) {
                 usable.mapTo(linkedSetOf(), StoredSubscription::id)
             } else {
                 emptySet()
             },
-            probeSubscriptionIds = additionalSubscriptionIds,
-            skipDefaultTarget = chainSelection?.useAsDefault == true,
+            groupSubscriptions = customGroups.mapValues { it.value.subscriptionIds },
         )
+        val activeGroups = plan.activeGroupIds.mapNotNull(customGroups::get)
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
         val effectiveRoutes = plan.effectiveRoutes
 
-        validateTargets(effectiveRoutes, byId)
-        effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId) }
+        runCatching {
+            validateTargets(effectiveRoutes, byId, customGroups)
+            effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId, customGroups) }
+        }.onFailure { throw RuntimeFailureException(RuntimeFailure.SUBSCRIPTION_MISSING, it.message.orEmpty()) }
         val activeSubscriptions = usable.filter { it.id in plan.activeSubscriptionIds }
         // Put the actual node objects in the validated configuration. A file provider can fail
         // Initial() after config validation succeeds and silently publish COMPATIBLE; inline
         // providers are parsed by the same native validation as the rest of the configuration.
-        val rawNodesBySubscription = activeSubscriptions.associate { subscription ->
+        val nodesBySubscription = activeSubscriptions.associate { subscription ->
             val raw = secretStore.readPayload(subscription.id)
             val normalized = payloadParser.normalizeForMihomo(raw)
             val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(normalized))
-            check(nodes.isNotEmpty()) { "订阅中没有可用节点" }
+            if (nodes.isEmpty()) fail(RuntimeFailure.NODES_NOT_LOADED)
             subscription.id to nodes
         }
-        val chain = chainSelection?.let { ProxyChainCompiler.compile(it, byId, rawNodesBySubscription) }
-        val providerDefinitions = activeSubscriptions.associate { subscription ->
-            providerName(subscription) to mapOf(
+        val providerDefinitions = linkedMapOf<String, Any?>()
+        activeSubscriptions.forEach { subscription ->
+            providerDefinitions[providerName(subscription)] = mapOf(
                 "type" to "inline",
-                "payload" to rawNodesBySubscription.getValue(subscription.id),
+                "payload" to nodesBySubscription.getValue(subscription.id),
                 "override" to mapOf("additional-prefix" to nodePrefix(subscription)),
             )
         }
+        // A chained group gets its own copy of the member nodes whose dialer is the entry node.
+        activeGroups.filter { it.entry != null }.forEach { group ->
+            val members = group.members.map { ref ->
+                val subscription = byId.getValue(ref.subscriptionId)
+                val node = subscription.nodes.first { it.id == ref.nodeId }
+                val source = nodesBySubscription.getValue(ref.subscriptionId)
+                    .firstOrNull { it["name"]?.toString() == node.name }
+                    ?: fail(RuntimeFailure.NODES_NOT_LOADED)
+                source + ("name" to nodePrefix(subscription) + node.name)
+            }
+            providerDefinitions[chainProviderName(group)] = mapOf(
+                "type" to "inline",
+                "payload" to members,
+                "override" to mapOf(
+                    "additional-prefix" to "chain:${group.id.take(8)}:",
+                    "dialer-proxy" to chainEntryGroup(group),
+                ),
+            )
+        }
+        val ruleSets = ruleSetStore.active()
         val ipv6Enabled = networkPreferences.ipv6Mode == Ipv6Mode.DUAL_STACK
         val automaticGroupConfig = MihomoFeatureCompiler.automaticGroup(
             networkPreferences.automaticStrategy,
@@ -138,7 +161,24 @@ class MihomoConfigAssembler(
             // actionable engine errors by default; the app's own diagnostics already reduce
             // failures to allowlisted categories without retaining endpoint text.
             appendLine("log-level: error")
-            appendLine("allow-lan: false")
+            if (networkPreferences.systemHttpProxy || networkPreferences.lanSharing) {
+                appendLine("mixed-port: $MIXED_PORT")
+            }
+            if (networkPreferences.lanSharing) {
+                // Other devices must authenticate; loopback (this phone's own apps via the system
+                // HTTP proxy) is exempt. Credentials are random and stored encrypted.
+                val (user, password) = lanCredentials()
+                appendLine("allow-lan: true")
+                appendLine("bind-address: '*'")
+                appendLine("authentication:")
+                appendLine("  - ${yamlString("$user:$password")}")
+                appendLine("skip-auth-prefixes:")
+                appendLine("  - 127.0.0.1/8")
+                appendLine("  - ::1/128")
+            } else {
+                appendLine("allow-lan: false")
+                appendLine("bind-address: 127.0.0.1")
+            }
             appendLine("external-controller-unix: '${io.weave.client.core.diagnostics.PrivateCoreConnections.socketPath(appContext)}'")
             appendLine("ipv6: $ipv6Enabled")
             // The APK ships the CMFA/Mihomo .dat datasets. Keep the data mode stable even when
@@ -188,8 +228,7 @@ class MihomoConfigAssembler(
                 appendLine("  direct-nameserver-follow-policy: true")
             }
             appendLine("  default-nameserver:")
-            appendLine("    - 223.5.5.5")
-            appendLine("    - 119.29.29.29")
+            networkPreferences.bootstrapDns.servers.forEach { appendLine("    - $it") }
             appendLine("  nameserver:")
             // Keep the selected resolver first, but make the mainland-compatible encrypted
             // resolvers available to every query class (including TXT/PTR). Mihomo's separate
@@ -208,12 +247,10 @@ class MihomoConfigAssembler(
                 appendLine("    geoip: true")
                 appendLine("    geoip-code: CN")
             }
-            // Proxy hostnames must also use encrypted upstreams. Filtering DNS can return a
-            // negative answer for a dynamic proxy hostname before a later fallback is queried;
-            // keep infrastructure bootstrap neutral while preserving the user's filtered DNS
-            // profile for destination lookups. Custom DNS is never silently bypassed.
+            // Proxy hostnames must also use encrypted upstreams. Plain default-nameserver is now
+            // limited to bootstrapping the DoH/DoT hostnames, preventing per-proxy DNS leakage.
             appendLine("  proxy-server-nameserver:")
-            MihomoFeatureCompiler.proxyServerNameServers(networkPreferences)
+            MihomoFeatureCompiler.policyNameServers(networkPreferences)
                 .forEach { appendLine("    - $it") }
             // Preserve the original host for fake-IP connections and recover SNI/HTTP hosts for
             // clients that connect using a literal address. This is local inspection only; no
@@ -237,30 +274,24 @@ class MihomoConfigAssembler(
             appendLine("      ports: [443, 8443]")
             // CMFA rejects profiles that contain neither an explicit proxy nor a provider,
             // even though Mihomo itself exposes the built-in DIRECT outbound.
-            appendLine(ClashYamlCodec.write(mapOf("proxies" to buildList {
-                add(mapOf("name" to EXPLICIT_DIRECT_PROXY, "type" to "direct"))
-                chain?.let {
-                    add(it.entryProxy)
-                    add(it.exitProxy)
-                }
-            })).trimEnd())
+            appendLine("proxies:")
+            appendLine("  - name: $EXPLICIT_DIRECT_PROXY")
+            appendLine("    type: direct")
 
-            if (activeSubscriptions.isNotEmpty()) {
+            if (providerDefinitions.isNotEmpty()) {
                 appendLine(ClashYamlCodec.write(mapOf("proxy-providers" to providerDefinitions)).trimEnd())
             }
+            append(RuleSetCompiler.providers(ruleSets, ::yamlString))
 
             appendLine("proxy-groups:")
-            if (chain != null) {
-                requiredNodeGroups += ProxyChainCompiler.GROUP_NAME
-                appendLine("  - name: ${yamlString(ProxyChainCompiler.GROUP_NAME)}")
-                appendLine("    type: select")
-                appendLine("    proxies:")
-                appendLine("      - ${yamlString(ProxyChainCompiler.EXIT_NAME)}")
-            }
-            activeSubscriptions.filter { it.id in plan.automaticSubscriptionIds }.forEach { subscription ->
-                // A chain/fixed-only provider must not spawn an unused URL-test group: Mihomo
-                // may probe it during initial load even with lazy=true, adding startup traffic.
-                requiredNodeGroups += autoGroup(subscription.id)
+            activeSubscriptions.forEach { subscription ->
+                // A subscription referenced only by a fixed route still gets an automatic group
+                // in the profile (it keeps switching back to automatic cheap), but that group is
+                // not on the active data path.  Do not let a slow/unsupported URL-test group
+                // block a valid explicitly selected node from starting the tunnel.
+                if (subscription.id in plan.automaticSubscriptionIds) {
+                    requiredNodeGroups += autoGroup(subscription.id)
+                }
                 appendLine("  - name: ${yamlString(autoGroup(subscription.id))}")
                 appendLine("    type: ${automaticGroupConfig.type}")
                 appendLine("    use:")
@@ -284,7 +315,7 @@ class MihomoConfigAssembler(
                 }
                 appendLine("    lazy: true")
             }
-            if (crossAutomaticNeeded) {
+            if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
                 requiredNodeGroups += CROSS_SUBSCRIPTION_GROUP
                 appendLine("  - name: ${yamlString(CROSS_SUBSCRIPTION_GROUP)}")
                 appendLine("    type: ${automaticGroupConfig.type}")
@@ -322,12 +353,52 @@ class MihomoConfigAssembler(
                         "    filter: ${yamlString(exactRegex(nodePrefix(subscription) + node.name))}",
                     )
                 }
+            activeGroups.forEach { group ->
+                requiredNodeGroups += CustomProxyGroupValidator.groupName(group.id)
+                val config = MihomoFeatureCompiler.automaticGroup(
+                    when (group.strategy) {
+                        CustomGroupStrategy.LOWEST_LATENCY -> io.weave.client.domain.AutomaticStrategy.LOWEST_LATENCY
+                        CustomGroupStrategy.FAILOVER -> io.weave.client.domain.AutomaticStrategy.FAILOVER
+                        CustomGroupStrategy.LOAD_BALANCE -> io.weave.client.domain.AutomaticStrategy.LOAD_BALANCE
+                    },
+                )
+                group.entry?.let { entry ->
+                    val entrySubscription = byId.getValue(entry.subscriptionId)
+                    val entryNode = entrySubscription.nodes.first { it.id == entry.nodeId }
+                    appendLine("  - name: ${yamlString(chainEntryGroup(group))}")
+                    appendLine("    type: select")
+                    appendLine("    use:")
+                    appendLine("      - ${yamlString(providerName(entrySubscription))}")
+                    appendLine("    filter: ${yamlString(exactRegex(nodePrefix(entrySubscription) + entryNode.name))}")
+                }
+                appendLine("  - name: ${yamlString(CustomProxyGroupValidator.groupName(group.id))}")
+                appendLine("    type: ${config.type}")
+                appendLine("    use:")
+                if (group.entry != null) {
+                    appendLine("      - ${yamlString(chainProviderName(group))}")
+                } else {
+                    group.members.map { it.subscriptionId }.distinct().forEach { id ->
+                        appendLine("      - ${yamlString(providerName(byId.getValue(id)))}")
+                    }
+                    val names = group.members.map { ref ->
+                        val subscription = byId.getValue(ref.subscriptionId)
+                        exactBody(nodePrefix(subscription) + subscription.nodes.first { it.id == ref.nodeId }.name)
+                    }
+                    appendLine("    filter: ${yamlString("^(?:" + names.joinToString("|") + ")$")}")
+                }
+                appendLine("    url: $HEALTH_CHECK_URL")
+                appendLine("    interval: ${config.intervalSeconds}")
+                appendLine("    timeout: ${config.timeoutMs}")
+                appendLine("    max-failed-times: ${config.maxFailedTimes}")
+                appendLine("    expected-status: 204")
+                config.tolerance?.let { appendLine("    tolerance: $it") }
+                config.strategy?.let { appendLine("    strategy: $it") }
+                appendLine("    lazy: true")
+            }
             appendLine("  - name: DEFAULT")
             appendLine("    type: select")
             appendLine("    proxies:")
-            val requestedDefaultProxy = if (chain != null && chainSelection?.useAsDefault == true) {
-                ProxyChainCompiler.GROUP_NAME
-            } else when (effectiveDefaultTarget?.kind) {
+            val requestedDefaultProxy = when (effectiveDefaultTarget?.kind) {
                 RouteKind.AUTO -> if (
                     networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
                 ) {
@@ -336,15 +407,14 @@ class MihomoConfigAssembler(
                     autoGroup(requireNotNull(effectiveDefaultTarget.subscriptionId))
                 }
                 RouteKind.FIXED -> fixedGroup(effectiveDefaultTarget)
-                RouteKind.CHAIN -> ProxyChainCompiler.GROUP_NAME.takeIf { chain != null }
+                RouteKind.GROUP -> CustomProxyGroupValidator.groupName(requireNotNull(effectiveDefaultTarget.groupId))
                 RouteKind.DIRECT -> EXPLICIT_DIRECT_PROXY
                 RouteKind.BLOCK, null -> null
             }
             val defaultProxies = DefaultProxyPolicy.compile(
                 mode = mode,
                 requestedProxy = requestedDefaultProxy,
-                fallbackAutomaticProxy = if ((chain != null && chainSelection?.useAsDefault == true) ||
-                    effectiveDefaultTarget?.kind == RouteKind.CHAIN) null else if (
+                fallbackAutomaticProxy = if (
                     networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
                 ) {
                     CROSS_SUBSCRIPTION_GROUP.takeIf { activeSubscriptions.isNotEmpty() }
@@ -353,9 +423,7 @@ class MihomoConfigAssembler(
                 },
                 directProxy = EXPLICIT_DIRECT_PROXY,
             )
-            check(defaultProxies.isNotEmpty()) {
-                "没有可用订阅，请先导入或选择直连"
-            }
+            if (defaultProxies.isEmpty()) fail(RuntimeFailure.NO_SUBSCRIPTION)
             defaultProxies.forEach {
                 appendLine("      - ${yamlString(it)}")
             }
@@ -366,7 +434,7 @@ class MihomoConfigAssembler(
                     effectiveRoutes,
                     packageUids,
                     leadingRules,
-                    offlinePolicyRules + localRules + domesticDirectRules,
+                    offlinePolicyRules + localRules + RuleSetCompiler.rules(ruleSets) + domesticDirectRules,
                     automaticGroupName = { subscriptionId ->
                         if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
                             CROSS_SUBSCRIPTION_GROUP
@@ -374,7 +442,6 @@ class MihomoConfigAssembler(
                             autoGroup(subscriptionId)
                         }
                     },
-                    chainGroupName = ProxyChainCompiler.GROUP_NAME.takeIf { chain != null },
                 )
                 RoutingMode.GLOBAL -> leadingRules + offlinePolicyRules + "MATCH,DEFAULT"
                 RoutingMode.DIRECT -> leadingRules + offlinePolicyRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
@@ -392,9 +459,10 @@ class MihomoConfigAssembler(
     private fun validateTargets(
         routes: List<AppRoute>,
         subscriptions: Map<String, StoredSubscription>,
+        groups: Map<String, CustomProxyGroup>,
     ) {
         routes.forEach { route ->
-            validateTarget(route.appName, route.target, subscriptions)
+            validateTarget(route.appName, route.target, subscriptions, groups)
         }
     }
 
@@ -402,9 +470,21 @@ class MihomoConfigAssembler(
         owner: String,
         target: RouteTarget,
         subscriptions: Map<String, StoredSubscription>,
+        groups: Map<String, CustomProxyGroup>,
     ) {
         when (target.kind) {
-            RouteKind.DIRECT, RouteKind.BLOCK, RouteKind.CHAIN -> Unit
+            RouteKind.GROUP -> {
+                val group = requireNotNull(groups[target.groupId]) { "$owner 指向的策略组已不存在，请重新选择" }
+                (group.members + listOfNotNull(group.entry)).forEach { ref ->
+                    val subscription = requireNotNull(subscriptions[ref.subscriptionId]) {
+                        "$owner 使用的策略组包含已删除的订阅"
+                    }
+                    require(subscription.nodes.any { it.id == ref.nodeId }) {
+                        "$owner 使用的策略组包含已失效的节点"
+                    }
+                }
+            }
+            RouteKind.DIRECT, RouteKind.BLOCK -> Unit
             RouteKind.AUTO -> {
                 val id = requireNotNull(target.subscriptionId) {
                     "$owner 没有指定订阅"
@@ -441,14 +521,18 @@ class MihomoConfigAssembler(
     private fun fixedGroup(target: RouteTarget): String =
         "node.${target.subscriptionId}.${target.nodeId}"
 
-    private fun exactRegex(value: String): String = buildString {
-        append('^')
+    private fun exactRegex(value: String): String = "^" + exactBody(value) + "$"
+
+    private fun exactBody(value: String): String = buildString {
         value.forEach { character ->
             if (character in REGEX_META_CHARACTERS) append('\\')
             append(character)
         }
-        append('$')
     }
+
+    private fun chainProviderName(group: CustomProxyGroup) = "chain_${group.id.filter(Char::isLetterOrDigit)}"
+
+    private fun chainEntryGroup(group: CustomProxyGroup) = "chain.${group.id}.entry"
 
     private fun yamlString(value: String): String = buildString {
         append('"')
@@ -463,11 +547,13 @@ class MihomoConfigAssembler(
         append('"')
     }
 
-    private companion object {
-        const val EXPLICIT_DIRECT_PROXY = "WEAVE-DIRECT"
-        const val CROSS_SUBSCRIPTION_GROUP = "WEAVE-CROSS-AUTO"
-        const val HEALTH_CHECK_URL = "http://www.gstatic.com/generate_204"
-        const val REGEX_META_CHARACTERS = "\\.^$|?*+()[]{}"
+    companion object {
+        /** Local HTTP/SOCKS port for the optional system proxy and LAN sharing. */
+        const val MIXED_PORT = 7890
+        private const val EXPLICIT_DIRECT_PROXY = "WEAVE-DIRECT"
+        private const val CROSS_SUBSCRIPTION_GROUP = "WEAVE-CROSS-AUTO"
+        private const val HEALTH_CHECK_URL = "http://www.gstatic.com/generate_204"
+        private const val REGEX_META_CHARACTERS = "\\.^$|?*+()[]{}"
     }
 }
 

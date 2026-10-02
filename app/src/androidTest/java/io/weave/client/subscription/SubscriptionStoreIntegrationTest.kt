@@ -43,23 +43,6 @@ class SubscriptionStoreIntegrationTest {
         }
     }
 
-    @Test fun sourceGroupsRemainEncryptedAndReadableOnlyFromSubscriptionEditor() = isolated { context ->
-        val input = """
-            proxies:
-              - {name: Tokyo, type: socks5, server: 127.0.0.1, port: 1080}
-            proxy-groups:
-              - {name: Private group, type: select, proxies: [Tokyo, DIRECT], icon: 'https://example.test/icon?token=secret'}
-        """.trimIndent()
-        val record = runBlocking { SubscriptionRepository(context).importText("test", input) }
-        val editor = runBlocking { SubscriptionRepository(context).loadEditor(record.id) }
-        assertEquals("Private group", editor.sourceGroups.single().name)
-        assertEquals(listOf("Tokyo", "DIRECT"), editor.sourceGroups.single().explicitMembers)
-        val persisted = context.getSharedPreferences("encrypted_subscriptions_v1", Context.MODE_PRIVATE)
-            .all.values.joinToString(" ")
-        assertFalse(persisted.contains("Private group"))
-        assertFalse(persisted.contains("token=secret"))
-    }
-
     @Test fun reviewedUpdateCannotOverwriteANewerSavedPayload() = isolated { context ->
         val store = SubscriptionSecretStore(context)
         val parser = SubscriptionPayloadParser()
