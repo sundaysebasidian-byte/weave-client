@@ -3,7 +3,10 @@ package io.weave.client.core.vpn
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -92,6 +95,15 @@ class WeaveVpnService : VpnService() {
     @Volatile
     private var connectedStatus = "已连接"
     private var trafficNotificationJob: Job? = null
+    private var screenReceiverRegistered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> stopTrafficNotification()
+                Intent.ACTION_SCREEN_ON -> startTrafficNotification()
+            }
+        }
+    }
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(io.weave.client.WeaveLocales.wrap(newBase))
@@ -99,6 +111,16 @@ class WeaveVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        screenReceiverRegistered = true
         SystemVpnProtection.attach(this)
         if (teardown == null && !NativeBridge.isLoaded) {
             // A fresh :vpn process. Anything left in the runtime cache belongs to a process that
@@ -191,6 +213,11 @@ class WeaveVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        if (screenReceiverRegistered) {
+            unregisterReceiver(screenReceiver)
+            screenReceiverRegistered = false
+        }
+        stopTrafficNotification()
         SystemVpnProtection.detach(this)
         io.weave.client.core.diagnostics.AppConnectionTrace.stop()
         shutdownRequested = true
@@ -622,14 +649,14 @@ class WeaveVpnService : VpnService() {
             "已连接 · ${prepared.assembled.usableSubscriptions} 个订阅"
         }
         notifyStatus(connectedStatus)
-        startTrafficNotification()
         VpnRuntimeState.update(ConnectionState.CONNECTED, message)
+        startTrafficNotification()
         VpnRuntimeState.pathChanged(if (preferredUnderlyingNetwork == null)
             io.weave.client.domain.NetworkPathStatus.WAITING_NETWORK else io.weave.client.domain.NetworkPathStatus.TUN_READY)
     }
 
     private fun notifyStatus(status: String, speed: String? = null) {
-        if (status != connectedStatus) trafficNotificationJob?.cancel()
+        if (status != connectedStatus) stopTrafficNotification()
         getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
             buildNotification(status, speed),
@@ -637,32 +664,57 @@ class WeaveVpnService : VpnService() {
     }
 
     /**
-     * Shows the current node and throughput while connected. Updates only while the screen is
-     * on; a dark screen gets no wakeups from this loop beyond its sleep timer.
+     * Visible notification telemetry only. Screen-off cancels the timer, hidden notifications
+     * do not query the engine, and identical displayed content is not repeatedly posted.
      */
+    @Synchronized
     private fun startTrafficNotification() {
-        trafficNotificationJob?.cancel()
+        stopTrafficNotification()
+        if (!shouldPollTrafficNotification()) return
         trafficNotificationJob = serviceScope.launch {
-            val power = getSystemService(PowerManager::class.java)
-            while (isActive && VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
-                delay(TRAFFIC_NOTIFICATION_INTERVAL_MS)
-                if (power?.isInteractive == false) continue
-                val runtime = engine.queryRuntime() ?: continue
-                if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) break
+            val policy = TrafficNotificationPolicy()
+            var nextDelay = TrafficNotificationPolicy.ACTIVE_INTERVAL_MS
+            while (isActive && shouldPollTrafficNotification()) {
+                delay(nextDelay)
+                if (!shouldPollTrafficNotification()) break
+                val runtime = engine.queryRuntime()
+                if (runtime == null) {
+                    nextDelay = TrafficNotificationPolicy.IDLE_INTERVAL_MS
+                    continue
+                }
+                if (!isActive || !shouldPollTrafficNotification()) break
+                nextDelay = policy.nextDelayMillis(
+                    runtime.uploadBytesPerSecond > 0 || runtime.downloadBytesPerSecond > 0,
+                )
                 val node = runtime.nodeName.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()
+                val detail = getString(
+                    R.string.notification_speed,
+                    TrafficFormat.bytes(runtime.uploadBytesPerSecond),
+                    TrafficFormat.bytes(runtime.downloadBytesPerSecond),
+                ) + node
+                if (!policy.shouldPublish("$connectedStatus|$detail")) continue
                 getSystemService(NotificationManager::class.java).notify(
                     NOTIFICATION_ID,
-                    buildNotification(
-                        connectedStatus,
-                        getString(
-                            R.string.notification_speed,
-                            TrafficFormat.bytes(runtime.uploadBytesPerSecond),
-                            TrafficFormat.bytes(runtime.downloadBytesPerSecond),
-                        ) + node,
-                    ),
+                    buildNotification(connectedStatus, detail),
                 )
             }
         }
+    }
+
+    @Synchronized
+    private fun stopTrafficNotification() {
+        trafficNotificationJob?.cancel()
+        trafficNotificationJob = null
+    }
+
+    private fun shouldPollTrafficNotification(): Boolean {
+        val manager = getSystemService(NotificationManager::class.java)
+        return TrafficNotificationPolicy.shouldPoll(
+            connected = !shutdownRequested && VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED,
+            interactive = getSystemService(PowerManager::class.java)?.isInteractive == true,
+            notificationVisible = manager.areNotificationsEnabled() &&
+                manager.getNotificationChannel(CHANNEL_ID)?.importance != NotificationManager.IMPORTANCE_NONE,
+        )
     }
 
     private fun safeError(error: Throwable?): String = RuntimeFailure.of(error).message
@@ -864,7 +916,6 @@ class WeaveVpnService : VpnService() {
         private const val TUN_DNS6 = "fdfe:dcba:9876::2"
         private const val LOG_TAG = "WeaveVpnService"
         private const val TEARDOWN_TIMEOUT_MS = 20_000L
-        private const val TRAFFIC_NOTIFICATION_INTERVAL_MS = 3_000L
         private const val REQUEST_DISCONNECT = 11
         // Process-wide: outlives a destroyed service instance until its core stop completes.
         private val TEARDOWN_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
