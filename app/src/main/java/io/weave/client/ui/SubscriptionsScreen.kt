@@ -182,6 +182,9 @@ import io.weave.client.routing.LocalRuleType
 import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
+import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 
 @Composable
 internal fun SubscriptionsScreen(
@@ -195,6 +198,14 @@ internal fun SubscriptionsScreen(
     onSubscriptionClick: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
+    val language = LocalWeaveLanguage.current
+    val empty = subscriptions.isEmpty()
+    // The migration hint names a count only; detected package names stay on the device.
+    val migrationSubtitle = if (migrationClients.isNotEmpty()) {
+        "检测到 ${migrationClients.size} 个兼容客户端 · 由你确认后选择导出文件"
+    } else {
+        "导入其他客户端导出的订阅文件、链接或二维码"
+    }
     LazyColumn(
         state = rememberSmoothLazyListState(),
         modifier = Modifier
@@ -206,155 +217,336 @@ internal fun SubscriptionsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
+        item(key = "header") {
             ScreenHeader(
                 eyebrow = "本机加密管理",
                 title = "订阅",
                 action = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        IconButton(
-                            onClick = onRefresh,
-                            enabled = !refreshState.running,
+                    // With no subscriptions the empty state carries every import action, so the
+                    // header stays quiet instead of repeating them.
+                    if (!empty) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (refreshState.running) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                )
-                            } else {
-                                Icon(Icons.Rounded.Sync, contentDescription = localizedContentDescription("刷新远程订阅"))
+                            IconButton(
+                                onClick = onRefresh,
+                                enabled = !refreshState.running,
+                            ) {
+                                if (refreshState.running) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                } else {
+                                    Icon(Icons.Rounded.Sync, contentDescription = localizedContentDescription("刷新远程订阅"))
+                                }
                             }
-                        }
-                        IconButton(onClick = onTransfer) {
-                            Icon(
-                                Icons.Rounded.SyncAlt,
-                                contentDescription = localizedContentDescription("局域网互传"),
-                            )
-                        }
-                        Surface(
-                            onClick = onAdd,
-                            modifier = Modifier.size(42.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = CircleShape,
-                            border = null,
-                        ) {
-                            Icon(
-                                Icons.Rounded.Add,
-                                contentDescription = localizedContentDescription("添加订阅"),
-                                modifier = Modifier
-                                    .padding(11.dp)
-                                    .size(20.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
+                            IconButton(onClick = onTransfer) {
+                                Icon(
+                                    Icons.Rounded.SyncAlt,
+                                    contentDescription = localizedContentDescription("局域网互传"),
+                                )
+                            }
+                            Surface(
+                                onClick = onAdd,
+                                modifier = Modifier.size(WeaveUiTokens.headerActionSize),
+                                color = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                shape = CircleShape,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Rounded.Add,
+                                        contentDescription = localizedContentDescription("添加订阅"),
+                                        modifier = Modifier.size(WeaveUiTokens.iconSize),
+                                    )
+                                }
+                            }
                         }
                     }
                 },
             )
         }
-        item {
-            LiquidGlassPanel(
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-            ) {
+
+        if (refreshState.running || refreshState.message != null) {
+            item(key = "refresh-status") {
+                RefreshStatus(refreshState = refreshState, onRetry = onRefresh)
+            }
+        }
+
+        if (empty) {
+            item(key = "empty") {
+                EmptySubscriptions(
+                    migrationSubtitle = migrationSubtitle,
+                    onAdd = onAdd,
+                    onMigrate = onMigrate,
+                    onTransfer = onTransfer,
+                )
+            }
+        } else {
+            item(key = "summary") {
                 Row(
-                    modifier = Modifier.padding(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = WeaveUiTokens.sectionLabelHorizontal),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
-                    ) {
-                        Icon(
-                            Icons.Rounded.Sync,
-                            null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(10.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("订阅已载入", fontWeight = FontWeight.SemiBold)
-                        Text(
+                    Text(
+                        text = listOf(
+                            "${subscriptions.size} 个订阅",
                             "共 ${subscriptions.sumOf { it.nodeCount }} 个节点",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
-                    }
+                        ).joinToString(" · ") { localizeWeaveText(it, language) },
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        translate = false,
+                    )
+                    Icon(
+                        Icons.Rounded.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
                     Text(
                         "本机加密",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                     )
                 }
-                if (refreshState.running || refreshState.message != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = if (refreshState.running) {
-                            "正在刷新 ${refreshState.currentName ?: "远程订阅"} · ${refreshState.completed}/${refreshState.total}"
-                        } else {
-                            refreshState.message.orEmpty()
-                        },
-                        color = if (refreshState.failed > 0) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
-                }
             }
-        }
-        item {
-            LiquidGlassPanel(
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                onClick = onMigrate,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(13.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
+            items(
+                items = subscriptions,
+                key = { it.id },
+                contentType = { "subscription-card" },
+            ) { subscription ->
+                SubscriptionCard(
+                    subscription = subscription,
+                    onClick = { onSubscriptionClick(subscription.id) },
+                )
+            }
+            item(key = "more-import") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WeaveSectionHeading("其他导入方式")
+                    LiquidGlassPanel(
+                        modifier = Modifier
+                            .padding(horizontal = WeaveUiTokens.screenHorizontal)
+                            .fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
                     ) {
-                        Icon(
-                            Icons.Rounded.SyncAlt,
-                            contentDescription = null,
-                            modifier = Modifier.padding(10.dp),
-                        )
+                        Column {
+                            ImportOptionRow(
+                                icon = Icons.Rounded.SyncAlt,
+                                title = "从其他客户端迁移",
+                                subtitle = migrationSubtitle,
+                                onClick = onMigrate,
+                            )
+                            WeaveDivider()
+                            ImportOptionRow(
+                                icon = Icons.Rounded.Wifi,
+                                title = "局域网互传",
+                                subtitle = "从另一台设备接收或发送订阅",
+                                onClick = onTransfer,
+                            )
+                        }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("从其他客户端迁移", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "导入其他客户端导出的订阅文件、链接或二维码",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
-                    }
-                    Icon(
-                        Icons.Rounded.ChevronRight,
-                        contentDescription = localizedContentDescription("继续"),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
-        items(
-            items = subscriptions,
-            key = { it.id },
-            contentType = { "subscription-card" },
-        ) { subscription ->
-            SubscriptionCard(
-                subscription = subscription,
-                onClick = { onSubscriptionClick(subscription.id) },
-            )
-        }
-        item {
+        item(key = "security-note") {
             SecurityNote()
         }
+    }
+}
+
+/**
+ * One status line for the bulk refresh: progress while running, a retry action after failures
+ * and a quiet confirmation otherwise. The view model owns the messages; this only presents them.
+ */
+@Composable
+private fun RefreshStatus(
+    refreshState: SubscriptionRefreshState,
+    onRetry: () -> Unit,
+) {
+    val language = LocalWeaveLanguage.current
+    val modifier = Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)
+    when {
+        refreshState.running -> {
+            val progress = if (refreshState.total > 0) {
+                (refreshState.completed + refreshState.failed).toFloat() / refreshState.total
+            } else {
+                null
+            }
+            Surface(
+                modifier = modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(WeaveUiTokens.actionRadius),
+                color = weaveToneContainer(WeaveStatusTone.PROGRESS),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text(
+                        text = if (refreshState.total > 0) {
+                            listOf(
+                                localizeWeaveText("正在刷新", language),
+                                refreshState.currentName ?: localizeWeaveText("远程订阅", language),
+                            ).joinToString(" ") + " · ${refreshState.completed + refreshState.failed}/${refreshState.total}"
+                        } else {
+                            localizeWeaveText(refreshState.message ?: "正在刷新", language)
+                        },
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        translate = false,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (progress != null) {
+                        LinearProgressIndicator(
+                            progress = { progress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().clip(CircleShape),
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(CircleShape))
+                    }
+                }
+            }
+        }
+        refreshState.failed > 0 -> WeaveNotice(
+            icon = Icons.Rounded.Warning,
+            message = refreshState.message.orEmpty(),
+            tone = WeaveStatusTone.CRITICAL,
+            modifier = modifier,
+            actionLabel = "重试",
+            onAction = onRetry,
+        )
+        else -> WeaveNotice(
+            icon = Icons.Rounded.Info,
+            message = refreshState.message.orEmpty(),
+            tone = WeaveStatusTone.NEUTRAL,
+            modifier = modifier,
+        )
+    }
+}
+
+@Composable
+private fun EmptySubscriptions(
+    migrationSubtitle: String,
+    onAdd: () -> Unit,
+    onMigrate: () -> Unit,
+    onTransfer: () -> Unit,
+) {
+    LiquidGlassPanel(
+        modifier = Modifier
+            .padding(horizontal = WeaveUiTokens.screenHorizontal)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
+    ) {
+        Column {
+            Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 16.dp)) {
+                WeaveIconTile(
+                    icon = Icons.Rounded.CloudDownload,
+                    container = MaterialTheme.colorScheme.primaryContainer,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "还没有订阅",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "添加订阅链接、文件或二维码后，即可在连接页选择出口并连接。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                Spacer(Modifier.height(18.dp))
+                Button(
+                    onClick = onAdd,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = WeaveUiTokens.actionHeight),
+                    shape = RoundedCornerShape(WeaveUiTokens.actionRadius),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(WeaveUiTokens.iconSize))
+                    Spacer(Modifier.width(8.dp))
+                    Text("添加订阅", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            }
+            WeaveDivider()
+            Text(
+                "其他导入方式",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 2.dp),
+            )
+            ImportOptionRow(
+                icon = Icons.Rounded.SyncAlt,
+                title = "从其他客户端迁移",
+                subtitle = migrationSubtitle,
+                onClick = onMigrate,
+            )
+            WeaveDivider()
+            ImportOptionRow(
+                icon = Icons.Rounded.Wifi,
+                title = "局域网互传",
+                subtitle = "从另一台设备接收或发送订阅",
+                onClick = onTransfer,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+@Composable
+private fun ImportOptionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = WeaveUiTokens.rowMinHeight)
+            .pressScale(interaction, pressedScale = 0.985f)
+            .clickable(
+                interactionSource = interaction,
+                indication = androidx.compose.foundation.LocalIndication.current,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = WeaveUiTokens.rowHorizontal, vertical = WeaveUiTokens.rowVertical),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        WeaveIconTile(
+            icon = icon,
+            container = MaterialTheme.colorScheme.secondaryContainer,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(
+                subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -372,26 +564,25 @@ private fun SubscriptionCard(
 
     LiquidGlassPanel(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = WeaveUiTokens.screenHorizontal)
             .fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
         onClick = onClick,
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(WeaveUiTokens.cardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(13.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.CloudDownload,
-                        contentDescription = null,
-                        modifier = Modifier.padding(11.dp),
-                    )
-                }
+                WeaveIconTile(icon = Icons.Rounded.CloudDownload)
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(subscription.name, fontWeight = FontWeight.Bold, translate = false)
+                    // The user's own subscription name leads and is never translated.
+                    Text(
+                        subscription.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        translate = false,
+                    )
                     Text(
                         listOfNotNull(
                             localizeWeaveText("${subscription.nodeCount} 个节点", language),
@@ -399,8 +590,14 @@ private fun SubscriptionCard(
                         ).joinToString(" · "),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.padding(top = 2.dp),
                         translate = false,
                     )
+                }
+                if (!subscription.enabled) {
+                    Spacer(Modifier.width(8.dp))
+                    WeaveStatusPill(text = "已停用", tone = WeaveStatusTone.NEUTRAL)
                 }
                 Icon(
                     Icons.Rounded.ChevronRight,
@@ -408,59 +605,56 @@ private fun SubscriptionCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(Modifier.height(18.dp))
-            val barStart = MaterialTheme.colorScheme.primaryContainer
-            val barEnd = if (fraction < 0.8f) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
-            val animatedFraction by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = fraction,
-                animationSpec = androidx.compose.animation.core.tween(600),
-                label = "quota",
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(7.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
+            // Usage is shown only when the provider reports it; an empty bar would be noise.
+            if (quota != null) {
+                Spacer(Modifier.height(14.dp))
+                val barStart = MaterialTheme.colorScheme.primaryContainer
+                val barEnd = if (fraction < 0.8f) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                val animatedFraction by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = fraction,
+                    animationSpec = WeaveMotion.standard(),
+                    label = "quota",
+                )
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(animatedFraction)
-                        .height(7.dp)
+                        .fillMaxWidth()
+                        .height(6.dp)
                         .clip(CircleShape)
-                        .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(barStart, barEnd))),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row {
-                Text(
-                    if (quota != null) {
-                        localizeWeaveText("已用", language) + " " + io.weave.client.domain.TrafficFormat.bytes(quota.usedBytes)
-                    } else {
-                        localizeWeaveText("未提供流量信息", language)
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    translate = false,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    quota?.let { io.weave.client.domain.TrafficFormat.bytes(it.totalBytes) } ?: "—",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    translate = false,
-                )
-            }
-            quota?.expireAtMillis?.let { expireAt ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    localizeWeaveText(if (expired) "已到期" else "到期", language) + " · " +
-                        java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(expireAt)),
-                    color = if (expired || expiresSoon) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    fontWeight = if (expired || expiresSoon) FontWeight.SemiBold else null,
-                    translate = false,
-                )
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(animatedFraction)
+                            .height(6.dp)
+                            .clip(CircleShape)
+                            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(barStart, barEnd))),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        localizeWeaveText("已用", language) + " " +
+                            io.weave.client.domain.TrafficFormat.bytes(quota.usedBytes) + " / " +
+                            io.weave.client.domain.TrafficFormat.bytes(quota.totalBytes),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
+                        modifier = Modifier.weight(1f),
+                        translate = false,
+                    )
+                    quota.expireAtMillis?.let { expireAt ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            localizeWeaveText(if (expired) "已到期" else "到期", language) + " · " +
+                                java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(expireAt)),
+                            color = if (expired || expiresSoon) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            fontWeight = if (expired || expiresSoon) FontWeight.SemiBold else null,
+                            textAlign = TextAlign.End,
+                            translate = false,
+                        )
+                    }
+                }
             }
         }
     }
