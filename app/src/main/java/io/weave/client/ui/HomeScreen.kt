@@ -514,6 +514,22 @@ private fun OverviewActions(
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         onConnect()
     }
+    // Error recovery needs two readable actions even with long labels and larger text.
+    if (connection == ConnectionState.ERROR) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            OverviewPrimaryButton(
+                label = "重试连接",
+                emphasized = true,
+                enabled = coreAvailable && readiness != ExitReadiness.INVALID,
+                onClick = connectWithFeedback,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (readiness != ExitReadiness.NOT_USED) {
+                OverviewSecondaryButton(label = "更换出口", onClick = onChooseExit, modifier = Modifier.fillMaxWidth())
+            }
+        }
+        return
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -533,18 +549,7 @@ private fun OverviewActions(
                 onClick = {},
                 modifier = Modifier.weight(1f),
             )
-            ConnectionState.ERROR -> {
-                OverviewPrimaryButton(
-                    label = "重试连接",
-                    emphasized = true,
-                    enabled = coreAvailable && readiness != ExitReadiness.INVALID,
-                    onClick = connectWithFeedback,
-                    modifier = Modifier.weight(1f),
-                )
-                if (readiness != ExitReadiness.NOT_USED) {
-                    OverviewSecondaryButton(label = "更换出口", onClick = onChooseExit, modifier = Modifier.weight(1f))
-                }
-            }
+            ConnectionState.ERROR -> Unit // Handled above with vertically arranged recovery actions.
             ConnectionState.DISCONNECTED -> when (readiness) {
                 // A deleted exit cannot pass validation, so choosing a new one leads.
                 ExitReadiness.INVALID -> {

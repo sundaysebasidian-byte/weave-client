@@ -40,6 +40,9 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
     private val mutableLocalRouteRuleState = MutableStateFlow(LocalRouteRuleState())
     val localRouteRuleState = mutableLocalRouteRuleState.asStateFlow()
 
+    private val mutableRuleSetState = MutableStateFlow(RuleSetState())
+    val ruleSetState = mutableRuleSetState.asStateFlow()
+
     init {
         reload()
         // A backup restore replaces these stores underneath us.
@@ -166,8 +169,6 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     // Remote rule sets -------------------------------------------------------------------
 
-    private val mutableRuleSetState = MutableStateFlow(RuleSetState())
-    val ruleSetState = mutableRuleSetState.asStateFlow()
 
     fun loadRuleSets() {
         viewModelScope.launch {

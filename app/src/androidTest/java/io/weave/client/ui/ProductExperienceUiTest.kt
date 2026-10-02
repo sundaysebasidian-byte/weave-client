@@ -18,6 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.domain.*
 import io.weave.client.ui.theme.WeaveTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -132,6 +133,13 @@ class ProductExperienceUiTest {
                 .assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithText(localizeWeaveText("更换出口", WeaveLanguage.GERMAN))
                 .assertIsDisplayed().assertIsEnabled()
+            val retryBounds = compose.onNodeWithText(localizeWeaveText("重试连接", WeaveLanguage.GERMAN))
+                .fetchSemanticsNode().boundsInRoot
+            val changeBounds = compose.onNodeWithText(localizeWeaveText("更换出口", WeaveLanguage.GERMAN))
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue("Long recovery actions need readable full-width space", retryBounds.width >
+                compose.onRoot().fetchSemanticsNode().boundsInRoot.width * 0.7f)
+            assertTrue("Recovery actions must not compete for horizontal space", changeBounds.top >= retryBounds.bottom)
             capture("home-german-large-${value.name.lowercase()}")
         }
     }
@@ -150,7 +158,7 @@ class ProductExperienceUiTest {
         var cancelled = 0
         compose.setContent { settings { cancelled++ } }
         scrollSettings("DNS").performClick()
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.onNodeWithText(label("取消")).assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(1, cancelled) }
     }
 
