@@ -5,6 +5,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RouteReferenceSanitizerTest {
+    @Test fun `chain route stays explicit and reports disabled state`() {
+        val route = route("browser.app", RouteTarget(RouteKind.CHAIN, "链式代理"))
+        val unavailable = RouteReferenceSanitizer.routes(listOf(route), emptyList(), emptyList())
+        assertEquals(RouteKind.CHAIN, unavailable.single().target.kind)
+        assertEquals("链式已关闭 · 拒绝连接", unavailable.single().target.label)
+        val available = RouteReferenceSanitizer.routes(listOf(route), emptyList(), emptyList(), true)
+        assertEquals("链式代理", available.single().target.label)
+    }
+
     private val subscription = Subscription(
         id = "kept",
         name = "Kept",
@@ -23,7 +32,7 @@ class RouteReferenceSanitizerTest {
     )
 
     @Test
-    fun `removes deleted subscription routes and downgrades stale nodes`() {
+    fun `missing exits block rather than deleting rules or switching nodes`() {
         val result = RouteReferenceSanitizer.routes(
             routes = listOf(
                 route("deleted.app", RouteTarget(RouteKind.AUTO, "旧", "deleted")),
@@ -34,20 +43,21 @@ class RouteReferenceSanitizerTest {
             nodes = listOf(node),
         )
 
-        assertEquals(listOf("stale-node.app", "valid.app"), result.map { it.packageName })
-        assertEquals(RouteKind.AUTO, result.first().target.kind)
-        assertEquals("kept", result.first().target.subscriptionId)
+        assertEquals(listOf("deleted.app", "stale-node.app", "valid.app"), result.map { it.packageName })
+        assertEquals(RouteKind.BLOCK, result.first().target.kind)
+        assertEquals(RouteKind.BLOCK, result[1].target.kind)
+        assertEquals("kept", result[1].target.subscriptionId)
         assertEquals("JP 01", result.last().target.label)
     }
 
     @Test
     fun `invalid default fails closed instead of silently selecting direct`() {
-        assertNull(
+        assertEquals("deleted",
             RouteReferenceSanitizer.defaultTarget(
                 RouteTarget(RouteKind.AUTO, "旧", "deleted"),
                 subscriptions = listOf(subscription),
                 nodes = listOf(node),
-            ),
+            )?.subscriptionId,
         )
         assertNull(
             RouteReferenceSanitizer.defaultTarget(

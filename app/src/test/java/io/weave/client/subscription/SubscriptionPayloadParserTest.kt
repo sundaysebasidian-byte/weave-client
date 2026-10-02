@@ -7,7 +7,93 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubscriptionPayloadParserTest {
+    @Test fun `all 65 clash nodes survive metadata and normalization including native-only types`() {
+        val payload = "proxies:\n" + (1..65).joinToString("\n") { index ->
+            val type = if (index <= 23) "http" else "snell"
+            "  - {name: node-$index, type: $type, server: example.com, port: 443}"
+        }
+        val parser = SubscriptionPayloadParser()
+        assertEquals(65, parser.parse(payload).nodeCount)
+        val normalized = parser.normalizeForMihomo(payload)
+        assertEquals(65, parser.parse(normalized).nodeCount)
+        assertEquals(65, ClashYamlCodec.nodes(ClashYamlCodec.read(normalized)).size)
+    }
+
+    @Test fun `malformed clash node cannot silently vanish from index`() {
+        assertTrue(runCatching { SubscriptionPayloadParser().parse("proxies: [{name: one, type: http}, {name: broken}]") }.isFailure)
+    }
     private val parser = SubscriptionPayloadParser()
+
+    @Test fun `anonymous and unnamed proxy links allow absent URI components`() {
+        for (input in listOf("socks5://127.0.0.1:1080#Smoke", "http://example.net:8080")) {
+            val normalized = parser.normalizeForMihomo(input)
+            val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(normalized))
+            assertEquals(1, nodes.size)
+            assertTrue(nodes.single()["name"].toString().isNotBlank())
+            assertTrue(!nodes.single().containsKey("username"))
+            assertTrue(!nodes.single().containsKey("password"))
+        }
+    }
+
+    @Test fun `missing mandatory credentials return an import error not a null pointer`() {
+        assertThrows(SubscriptionImportException::class.java) {
+            parser.normalizeForMihomo("vless://example.net:443")
+        }
+        assertThrows(SubscriptionImportException::class.java) {
+            parser.normalizeForMihomo("trojan://example.net:443")
+        }
+    }
+
+    @Test fun `yaml escaped names match the native proxy name without truncation`() {
+        val yaml = """
+            proxies:
+              - name: "\U0001F1EF\U0001F1F5 \u6771\u4eac #1" # label
+                type: socks5
+                server: example.com
+                port: 1080
+        """.trimIndent()
+        assertEquals("🇯🇵 東京 #1", parser.parse(yaml).nodes.single().name)
+        val longName = "a".repeat(240)
+        assertEquals(longName, parser.parse("proxies: [{name: '$longName', type: socks5}]").nodes.single().name)
+    }
+
+    @Test
+    fun `indentless clash nodes survive provider sanitization`() {
+        val input = """
+            proxies:
+            - name: secure-http
+              type: http
+              server: example.com
+              port: 443
+              tls: true
+            external-controller: 0.0.0.0:9090
+            proxy-groups:
+            - name: ignored
+              type: select
+              proxies: [secure-http]
+        """.trimIndent()
+        val normalized = parser.normalizeForMihomo(input)
+        assertEquals(listOf(ParsedNode("secure-http", "http")), parser.parse(normalized).nodes)
+        assertTrue(!normalized.contains("external-controller"))
+        assertTrue(!normalized.contains("proxy-groups"))
+        assertTrue(!normalized.contains("ignored"))
+    }
+
+    @Test
+    fun `quoted yaml fields and protocol comments are supported`() {
+        val input = """
+            "proxies" :
+              - "name": test-http
+                'type': "http" # encrypted HTTP proxy
+                server: example.com
+                port: 443
+                tls: true
+            "external-controller": 0.0.0.0:9090
+        """.trimIndent()
+        val normalized = parser.normalizeForMihomo(input)
+        assertEquals(listOf(ParsedNode("test-http", "http")), parser.parse(normalized).nodes)
+        assertTrue(!normalized.contains("external-controller"))
+    }
 
     @Test
     fun `parses plain and base64 uri lists without exposing credentials`() {
@@ -43,6 +129,101 @@ class SubscriptionPayloadParserTest {
         assertEquals(setOf("hysteria2", "trojan"), parsed.protocols)
         assertEquals(listOf("one", "two"), parsed.nodes.map { it.name })
         assertEquals(listOf("hysteria2", "trojan"), parsed.nodes.map { it.protocol })
+    }
+
+    @Test
+    fun `decodes base64 wrapped clash yaml before counting and normalizing nodes`() {
+        val clash = """
+            mixed-port: 7890
+            proxies:
+              - name: walless-jp
+                type: trojan
+                server: edge.example
+                port: 443
+            proxy-groups:
+              - name: proxy
+                type: select
+                proxies: [walless-jp]
+        """.trimIndent()
+        val encoded = Base64.getEncoder().encodeToString(clash.toByteArray())
+
+        val parsed = parser.parse(encoded)
+        val normalized = parser.normalizeForMihomo(encoded, parsed)
+
+        assertEquals(SubscriptionFormat.CLASH_YAML, parsed.format)
+        assertEquals(listOf(ParsedNode("walless-jp", "trojan")), parsed.nodes)
+        assertEquals(listOf("walless-jp"), parser.parse(normalized).nodes.map { it.name })
+        assertTrue(!normalized.contains("mixed-port:"))
+        assertTrue(!normalized.contains("proxy-groups:"))
+    }
+
+    @Test
+    fun `accepts a BOM inside a base64 wrapped clash document`() {
+        val clash = "\uFEFFproxies:\n  - name: bom-node\n    type: trojan\n    server: edge.example\n    port: 443"
+        val encoded = Base64.getEncoder().encodeToString(clash.toByteArray())
+
+        assertEquals(listOf("bom-node"), parser.parse(encoded).nodes.map { it.name })
+    }
+
+    @Test
+    fun `decodes base64 wrapped sing box json before conversion`() {
+        val singBox = """
+            {
+              "outbounds": [
+                {"type":"vless","tag":"walless-edge","server":"edge.example","server_port":443,"uuid":"00000000-0000-0000-0000-000000000001"}
+              ]
+            }
+        """.trimIndent()
+        val encoded = Base64.getEncoder().encodeToString(singBox.toByteArray())
+
+        val parsed = parser.parse(encoded)
+        val normalized = parser.normalizeForMihomo(encoded, parsed)
+
+        assertEquals(SubscriptionFormat.SING_BOX_JSON, parsed.format)
+        assertEquals(listOf("walless-edge"), parser.parse(normalized).nodes.map { it.name })
+    }
+
+    @Test
+    fun `sing box socks credentials are retained during conversion`() {
+        val input = """{"outbounds":[{"type":"socks","tag":"private-socks","server":"example.com","server_port":1080,"username":"alice","password":"secret"}]}"""
+        val node = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(input))).single()
+        assertEquals("socks5", node["type"])
+        assertEquals("alice", node["username"])
+        assertEquals("secret", node["password"])
+    }
+
+    @Test
+    fun `sing box anytls and hysteria retain required Mihomo fields`() {
+        val input = """{"outbounds":[
+          {"type":"anytls","tag":"any","server":"a.example","server_port":443,"password":"pass-a","tls":{"enabled":true,"server_name":"a.example"}},
+          {"type":"hysteria","tag":"hy1","server":"h.example","server_port":443,"auth_str":"pass-h","up_mbps":30,"down_mbps":200,"obfs":"mask","tls":{"enabled":true,"server_name":"h.example"}}
+        ]}"""
+        val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(input)))
+        assertEquals(2, nodes.size)
+        assertEquals("anytls", nodes[0]["type"])
+        assertEquals("pass-a", nodes[0]["password"])
+        assertEquals("a.example", nodes[0]["sni"])
+        assertTrue(!nodes[0].containsKey("tls"))
+        assertEquals("hysteria", nodes[1]["type"])
+        assertEquals("pass-h", nodes[1]["auth-str"])
+        assertEquals("30 Mbps", nodes[1]["up"])
+        assertEquals("200 Mbps", nodes[1]["down"])
+        assertEquals("mask", nodes[1]["obfs"])
+        assertTrue(!nodes[1].containsKey("tls"))
+    }
+
+    @Test
+    fun `unsupported AnyTLS Reality and incomplete Hysteria fail before import`() {
+        val reality = """{"outbounds":[{"type":"anytls","server":"a.example","server_port":443,"password":"pass","tls":{"enabled":true,"reality":{"enabled":true,"public_key":"key"}}}]}"""
+        val missingRate = """{"outbounds":[{"type":"hysteria","server":"h.example","server_port":443,"auth_str":"pass","up_mbps":30,"tls":{"enabled":true}}]}"""
+        assertThrows(SubscriptionImportException::class.java) { parser.normalizeForMihomo(reality) }
+        assertThrows(SubscriptionImportException::class.java) { parser.normalizeForMihomo(missingRate) }
+    }
+
+    @Test
+    fun `unsupported sing box transport cannot silently become plain TCP`() {
+        val input = """{"outbounds":[{"type":"vless","server":"example.com","server_port":443,"uuid":"00000000-0000-0000-0000-000000000001","transport":{"type":"httpupgrade","path":"/edge"}}]}"""
+        assertThrows(SubscriptionImportException::class.java) { parser.normalizeForMihomo(input) }
     }
 
     @Test
@@ -131,7 +312,10 @@ class SubscriptionPayloadParserTest {
 
         val normalized = parser.normalizeForMihomo(raw)
 
-        assertTrue(normalized.contains("x-openvpn-common: &openvpn-common"))
+        // Alias fields survive semantically, without retaining root-level control-plane keys.
+        assertTrue(normalized.contains("type: openvpn"))
+        assertTrue(normalized.contains("username: test"))
+        assertTrue(normalized.contains("password: test"))
         assertTrue(normalized.contains("proxies:"))
         assertTrue(!normalized.contains("external-controller:"))
         assertTrue(!normalized.contains("rules:"))

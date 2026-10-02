@@ -142,6 +142,13 @@ object MihomoFeatureCompiler {
     )
 
     fun automaticGroup(strategy: AutomaticStrategy): AutomaticGroupConfig = when (strategy) {
+        AutomaticStrategy.STABLE_LATENCY -> AutomaticGroupConfig(
+            type = "url-test",
+            tolerance = 150,
+            intervalSeconds = 120,
+            timeoutMs = 5_000,
+            maxFailedTimes = 3,
+        )
         AutomaticStrategy.LOWEST_LATENCY -> AutomaticGroupConfig(
             type = "url-test",
             tolerance = 80,
@@ -247,6 +254,17 @@ object MihomoFeatureCompiler {
         encryptedNameServers(preferences) + dnsCompatibilityFallbacks(preferences)
 
     /**
+     * Filtered DNS is for destination lookups, not for resolving the proxy infrastructure itself.
+     * Family/ad-block resolvers can classify dynamic proxy hostnames as unsafe and return a
+     * negative answer before Mihomo tries a later resolver. Keep this bootstrap encrypted but
+     * neutral; custom DNS remains explicit and is not silently bypassed.
+     */
+    fun proxyServerNameServers(preferences: NetworkPreferences): List<String> = when (preferences.dnsProfile) {
+        DnsProfile.AD_BLOCK, DnsProfile.FAMILY -> encryptedNameServers(preferences.dnsTransport)
+        else -> policyNameServers(preferences)
+    }
+
+    /**
      * Compiles Mihomo's nameserver-policy map. The map is intentionally small and deterministic:
      * built-in geosite categories are used instead of a remote ruleset, so DNS routing continues
      * to work while the device is offline or before a provider has refreshed.
@@ -265,7 +283,11 @@ object MihomoFeatureCompiler {
         return linkedMapOf(
             (if (preferences.domesticDirect) "'geosite:cn,private'" else "'geosite:cn'") to
                 policyNameServers(domestic),
-            "'geosite:geolocation-!cn'" to policyNameServers(overseas),
+            // The APK deliberately ships MetaCubeX's lite GeoSite dataset. It has a
+            // stable `proxy` category, but does not include the full dataset's
+            // `geolocation-!cn` synthetic category. Referencing the latter makes Mihomo
+            // reject the whole config before TUN startup on a clean device.
+            "'geosite:proxy'" to policyNameServers(overseas),
         )
     }
 

@@ -271,9 +271,20 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeInit(
     jint sdk_version
 ) {
     (void) instance;
-    const char *native_home = (*env)->GetStringUTFChars(env, home, NULL);
-    const char *native_version = (*env)->GetStringUTFChars(env, version_name, NULL);
+    if (home == NULL || version_name == NULL) {
+        return;
+    }
+    const char *native_home = NULL;
+    const char *native_version = NULL;
+    native_home = (*env)->GetStringUTFChars(env, home, NULL);
+    native_version = (*env)->GetStringUTFChars(env, version_name, NULL);
     if (native_home == NULL || native_version == NULL) {
+        if (native_home != NULL) {
+            (*env)->ReleaseStringUTFChars(env, home, native_home);
+        }
+        if (native_version != NULL) {
+            (*env)->ReleaseStringUTFChars(env, version_name, native_version);
+        }
         return;
     }
     coreInit(native_home, native_version, CORE_REVISION, sdk_version);
@@ -299,6 +310,9 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeLoad(
     jstring path
 ) {
     (void) instance;
+    if (completion == NULL || path == NULL) {
+        return;
+    }
     jobject global_completion = (*env)->NewGlobalRef(env, completion);
     const char *native_path = (*env)->GetStringUTFChars(env, path, NULL);
     if (global_completion == NULL || native_path == NULL) {
@@ -319,6 +333,9 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeValidateConfiguration(
     jstring path
 ) {
     (void) instance;
+    if (completion == NULL || path == NULL) {
+        return;
+    }
     jobject global_completion = (*env)->NewGlobalRef(env, completion);
     const char *native_path = (*env)->GetStringUTFChars(env, path, NULL);
     if (global_completion == NULL || native_path == NULL) {
@@ -343,11 +360,18 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeStartTun(
     jobject callback
 ) {
     (void) instance;
-    const char *native_stack = (*env)->GetStringUTFChars(env, stack, NULL);
-    const char *native_gateway = (*env)->GetStringUTFChars(env, gateway, NULL);
-    const char *native_portal = (*env)->GetStringUTFChars(env, portal, NULL);
-    const char *native_dns = (*env)->GetStringUTFChars(env, dns, NULL);
+    if (fd < 0 || stack == NULL || gateway == NULL || portal == NULL || dns == NULL || callback == NULL) {
+        return 1;
+    }
+    const char *native_stack = NULL;
+    const char *native_gateway = NULL;
+    const char *native_portal = NULL;
+    const char *native_dns = NULL;
     jobject global_callback = (*env)->NewGlobalRef(env, callback);
+    native_stack = (*env)->GetStringUTFChars(env, stack, NULL);
+    native_gateway = (*env)->GetStringUTFChars(env, gateway, NULL);
+    native_portal = (*env)->GetStringUTFChars(env, portal, NULL);
+    native_dns = (*env)->GetStringUTFChars(env, dns, NULL);
     if (
         native_stack == NULL ||
         native_gateway == NULL ||
@@ -357,6 +381,18 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeStartTun(
     ) {
         if (global_callback != NULL) {
             (*env)->DeleteGlobalRef(env, global_callback);
+        }
+        if (native_stack != NULL) {
+            (*env)->ReleaseStringUTFChars(env, stack, native_stack);
+        }
+        if (native_gateway != NULL) {
+            (*env)->ReleaseStringUTFChars(env, gateway, native_gateway);
+        }
+        if (native_portal != NULL) {
+            (*env)->ReleaseStringUTFChars(env, portal, native_portal);
+        }
+        if (native_dns != NULL) {
+            (*env)->ReleaseStringUTFChars(env, dns, native_dns);
         }
         return 1;
     }
@@ -392,6 +428,9 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeNotifyInstalledAppsChanged(
     jstring apps
 ) {
     (void) instance;
+    if (apps == NULL) {
+        return;
+    }
     const char *native_apps = (*env)->GetStringUTFChars(env, apps, NULL);
     if (native_apps == NULL) {
         return;
@@ -429,6 +468,9 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeQueryGroup(
     jstring name
 ) {
     (void) instance;
+    if (name == NULL) {
+        return NULL;
+    }
     const char *native_name = (*env)->GetStringUTFChars(env, name, NULL);
     if (native_name == NULL) {
         return NULL;
@@ -451,6 +493,9 @@ Java_io_weave_client_core_bridge_NativeBridge_nativeHealthCheck(
     jstring name
 ) {
     (void) instance;
+    if (completion == NULL || name == NULL) {
+        return;
+    }
     jobject global_completion = (*env)->NewGlobalRef(env, completion);
     const char *native_name = (*env)->GetStringUTFChars(env, name, NULL);
     if (global_completion == NULL || native_name == NULL) {

@@ -33,9 +33,9 @@ struct ContentView: View {
             WeaveImpressionBackdrop()
             HStack(spacing: 0) {
                 WeaveSidebar(destination: $destination)
-                    .frame(width: 190)
+                    .frame(width: 184)
                 Rectangle()
-                    .fill(Color.weaveStroke.opacity(0.68))
+                    .fill(Color.weaveStroke)
                     .frame(width: 1)
                 ZStack {
                     retainedPage(ConnectionView(), for: .connection)
@@ -44,7 +44,7 @@ struct ContentView: View {
                     retainedPage(SettingsView(), for: .settings)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.weaveCanvas.opacity(0.82))
+                .background(Color.weaveCanvas)
             }
         }
         .tint(.weaveAcid)
@@ -52,7 +52,7 @@ struct ContentView: View {
             transaction.animation = nil
             transaction.disablesAnimations = true
         }
-        .frame(minWidth: 960, minHeight: 660)
+        .frame(minWidth: 900, minHeight: 620)
     }
 
     private func retainedPage<Content: View>(
@@ -71,26 +71,8 @@ struct ContentView: View {
 }
 
 private struct WeaveImpressionBackdrop: View {
-    private var image: NSImage? {
-        guard let url = Bundle.main.url(
-            forResource: "WeaveImpressionTexture",
-            withExtension: "webp",
-        ) else { return nil }
-        return NSImage(contentsOf: url)
-    }
-
     var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .opacity(0.18)
-                    .blendMode(.multiply)
-            } else {
-                Color.weaveCanvas
-            }
-        }
+        Color.weaveCanvas
         .ignoresSafeArea()
     }
 }
@@ -123,10 +105,10 @@ private struct WeaveSidebar: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 28)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
 
-            VStack(spacing: 7) {
+            VStack(spacing: 6) {
                 ForEach(MacDestination.allCases) { item in
                     Button {
                         var transaction = Transaction(animation: nil)
@@ -142,12 +124,12 @@ private struct WeaveSidebar: View {
                                 .font(.system(size: 14, weight: .semibold))
                             Spacer()
                         }
-                        .foregroundStyle(Color.weaveInk)
+                        .foregroundStyle(destination == item ? Color.weaveInk : Color.weaveMuted)
                         .padding(.horizontal, 14)
-                        .frame(height: 44)
+                        .frame(height: 46)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(destination == item ? Color.weaveAcid : .clear)
+                                .fill(destination == item ? Color.weavePrimaryContainer : .clear)
                         )
                     }
                     .buttonStyle(.plain)
@@ -161,9 +143,14 @@ private struct WeaveSidebar: View {
                 Circle()
                     .fill(Color.weaveGood)
                     .frame(width: 8, height: 8)
-                Text("本地加密")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.weaveMuted)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("本地优先")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.weaveInk)
+                    Text("订阅与配置仅保存在本机")
+                        .font(.caption2)
+                        .foregroundStyle(Color.weaveMuted)
+                }
             }
             .padding(20)
         }
@@ -277,148 +264,199 @@ private struct ConnectionView: View {
     @State private var showSubscriptionSelector = false
     @State private var showNodeSelector = false
 
-    private var isRunning: Bool { model.core.state == .localProxy }
+    private var isRunning: Bool { model.core.state.isConnected }
+    private var statusColor: Color {
+        switch model.core.state {
+        case .tun, .localProxy: return .weaveGood
+        case .failed: return .weaveError
+        default: return .weaveMuted
+        }
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                WeavePageHeader(eyebrow: "OVERVIEW", title: "连接")
-
-                HStack(alignment: .top, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(isRunning ? Color.weaveGood : Color.white.opacity(0.1))
-                                Image(systemName: isRunning ? "lock.shield.fill" : "shield")
-                                    .font(.system(size: 25, weight: .bold))
-                                    .foregroundStyle(isRunning ? Color.white : Color.weaveAcid)
-                            }
-                            .frame(width: 58, height: 58)
-                            Spacer()
-                            Text(isRunning ? "PROTECTED" : "READY")
-                                .font(.system(size: 10, weight: .bold))
-                                .tracking(1.4)
-                                .foregroundStyle(Color.weaveAcid)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(.white.opacity(0.08), in: Capsule())
-                        }
-                        Spacer()
-                        Text(model.core.state.rawValue)
-                            .font(.system(size: 34, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text(model.core.message)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.white.opacity(0.64))
-                            .lineLimit(2)
-                    }
-                    .padding(24)
-                    .frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
-                    .background(Color.weaveInk, in: RoundedRectangle(cornerRadius: 24))
-
-                    VStack(alignment: .leading, spacing: 14) {
-                        WeaveSectionLabel("出口")
-                        WeavePickerRow(title: "订阅", icon: "square.stack.3d.up.fill") {
-                            Button {
-                                showSubscriptionSelector = true
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text(model.selectedSubscription?.name ?? "请选择")
-                                        .lineLimit(1)
-                                    Spacer(minLength: 8)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 9, weight: .bold))
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                            .popover(isPresented: $showSubscriptionSelector, arrowEdge: .bottom) {
-                                SubscriptionSelectorPopover(
-                                    subscriptions: model.subscriptions,
-                                    selectedID: model.selectedSubscriptionID,
-                                    onSelect: model.selectSubscription
-                                )
-                            }
-                        }
-                        WeavePickerRow(title: "节点", icon: "point.3.connected.trianglepath.dotted") {
-                            Button {
-                                showNodeSelector = true
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text(
-                                        model.selectedNodeName.map(ClashNodeNames.display) ??
-                                            "自动选择"
-                                    )
-                                    .lineLimit(1)
-                                    Spacer(minLength: 8)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 9, weight: .bold))
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                            .disabled(model.selectedSubscription == nil)
-                            .popover(isPresented: $showNodeSelector, arrowEdge: .bottom) {
-                                NodeSelectorPopover(
-                                    nodes: model.selectedNodes,
-                                    selectedNode: model.selectedNodeName,
-                                    onSelect: { model.selectedNodeName = $0 }
-                                )
-                            }
-                        }
-                        Spacer()
-                        Button {
-                            model.toggleConnection()
-                        } label: {
-                            HStack {
-                                Image(systemName: isRunning ? "stop.fill" : "power")
-                                Text(isRunning ? "停止本地代理" : "启动本地代理")
-                                Spacer()
-                                Image(systemName: "arrow.right")
-                            }
-                            .font(.system(size: 14, weight: .bold))
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .bottom, spacing: 16) {
+                    WeavePageHeader(eyebrow: "私密网络", title: "Weave")
+                    Spacer()
+                    Button {
+                        // Kept intentionally quiet on macOS; the Android layout uses this
+                        // affordance for secondary diagnostics and settings.
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Color.weaveInk)
-                            .padding(.horizontal, 18)
-                            .frame(height: 48)
-                            .background(Color.weaveAcid, in: RoundedRectangle(cornerRadius: 15))
+                            .frame(width: 36, height: 36)
+                            .background(Color.weaveSurfaceVariant, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("更多")
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 8, height: 8)
+                            Text(statusLabel)
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.weaveInk)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.weaveSurfaceVariant, in: Capsule())
+                        Spacer()
+                        Text(model.core.coreAvailable ? "内核已安装" : "内核不可用")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.weaveMuted)
+                    }
+
+                    Text(isRunning ? "连接安全" : "保持私密")
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.weaveInk)
+                        .padding(.top, 28)
+                    Text(model.core.message)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.weaveMuted)
+                        .lineLimit(2)
+                        .padding(.top, 6)
+
+                    Button {
+                        model.toggleConnection()
+                    } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: isRunning ? "stop.fill" : "power")
+                            Text(isRunning ? "断开" : "连接")
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(isRunning ? Color.weaveInk : Color.white)
+                        .padding(.horizontal, 18)
+                        .frame(height: 56)
+                        .background(
+                            isRunning ? Color.weavePrimaryContainer : Color.weavePrimary,
+                            in: RoundedRectangle(cornerRadius: 20)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(connectDisabled)
+                    .opacity(connectDisabled ? 0.45 : 1)
+                    .padding(.top, 24)
+                }
+                .padding(22)
+                .weaveCard(radius: 28)
+
+                WeaveSectionLabel("出口")
+                    .padding(.horizontal, 2)
+                VStack(spacing: 10) {
+                    WeavePickerRow(title: "订阅", icon: "square.stack.3d.up.fill") {
+                        Button {
+                            showSubscriptionSelector = true
+                        } label: {
+                            pickerValue(model.selectedSubscription?.name ?? "请选择")
                         }
                         .buttonStyle(.plain)
-                        .disabled(
-                            model.core.state == .starting ||
-                                (
-                                    (!model.core.coreAvailable ||
-                                        model.selectedSubscription == nil) &&
-                                        model.core.state != .localProxy
-                                )
-                        )
-                        .opacity(
-                            model.core.state == .starting ||
-                                (
-                                    (!model.core.coreAvailable ||
-                                        model.selectedSubscription == nil) &&
-                                        model.core.state != .localProxy
-                                ) ? 0.45 : 1
-                        )
+                        .frame(maxWidth: .infinity)
+                        .popover(isPresented: $showSubscriptionSelector, arrowEdge: .bottom) {
+                            SubscriptionSelectorPopover(
+                                subscriptions: model.subscriptions,
+                                selectedID: model.selectedSubscriptionID,
+                                onSelect: model.selectSubscription
+                            )
+                        }
                     }
-                    .padding(20)
-                    .frame(width: 370)
-                    .frame(minHeight: 220)
-                    .weaveCard()
+                    WeavePickerRow(title: "节点", icon: "point.3.connected.trianglepath.dotted") {
+                        Button {
+                            showNodeSelector = true
+                        } label: {
+                            pickerValue(
+                                model.selectedNodeName.map(ClashNodeNames.display) ?? "自动选择"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .disabled(model.selectedSubscription == nil)
+                        .popover(isPresented: $showNodeSelector, arrowEdge: .bottom) {
+                            NodeSelectorPopover(
+                                nodes: model.selectedNodes,
+                                selectedNode: model.selectedNodeName,
+                                onSelect: { model.selectedNodeName = $0 }
+                            )
+                        }
+                    }
                 }
+                .padding(14)
+                .weaveCard(radius: 24)
 
-                HStack(spacing: 12) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundStyle(Color.weaveGood)
-                    Text("连接时接管当前网络服务的 HTTP/HTTPS/SOCKS 代理并关闭 PAC 绕过，转发到 127.0.0.1:7890；完整设备 VPN 仍需要签名的 Network Extension。")
-                        .font(.caption)
-                        .foregroundStyle(Color.weaveMuted)
+                HStack(spacing: 11) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.weavePrimary)
+                        .frame(width: 36, height: 36)
+                        .background(Color.weavePrimaryContainer, in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("当前出口")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.weaveMuted)
+                        Text(model.selectedNodeName.map(ClashNodeNames.display) ?? "自动选择")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.weaveInk)
+                            .lineLimit(1)
+                    }
                     Spacer()
+                    Text(model.core.state == .tun ? "双栈 TUN" : "等待连接")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.weaveMuted)
                 }
                 .padding(16)
-                .background(Color.weaveGood.opacity(0.1), in: RoundedRectangle(cornerRadius: 16))
+                .weaveCard(radius: 22)
+
+                HStack(alignment: .top, spacing: 11) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(Color.weaveGood)
+                        .padding(.top, 1)
+                    Text(model.core.state == .tun
+                         ? "全设备 IPv4/IPv6 TUN 已接管流量，DNS 请求被劫持，标准 STUN 端口已阻断。"
+                         : "默认使用双栈 TUN；如果 utun、路由或 DNS 未就绪，会拒绝连接而不是让 IPv4 直连。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.weaveMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(15)
+                .background(Color.weaveSecondaryContainer, in: RoundedRectangle(cornerRadius: 18))
             }
-            .padding(28)
+            .frame(maxWidth: 920, alignment: .leading)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 28)
+        }
+    }
+
+    private var connectDisabled: Bool {
+        model.core.state == .starting ||
+            ((!model.core.coreAvailable || model.selectedSubscription == nil) && !isRunning)
+    }
+
+    private var statusLabel: String {
+        switch model.core.state {
+        case .tun, .localProxy: return "已保护"
+        case .starting: return "正在连接"
+        case .failed: return "需要处理"
+        case .stopped: return "未连接"
+        }
+    }
+
+    private func pickerValue(_ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(value)
+                .foregroundStyle(Color.weaveInk)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.weaveMuted)
         }
     }
 }
@@ -617,19 +655,19 @@ private struct SubscriptionListView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("本机订阅已载入")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.weaveInk)
                         Text("共 \(model.subscriptions.reduce(0) { $0 + $1.nodeCount }) 个节点 · 自动刷新可用")
                             .font(.caption)
-                            .foregroundStyle(Color.white.opacity(0.62))
+                            .foregroundStyle(Color.weaveMuted)
                     }
                     Spacer()
                     Text("KEYCHAIN")
                         .font(.system(size: 9, weight: .bold))
                         .tracking(1.2)
-                        .foregroundStyle(Color.white.opacity(0.58))
+                        .foregroundStyle(Color.weaveMuted)
                 }
                 .padding(19)
-                .background(Color.weaveInk, in: RoundedRectangle(cornerRadius: 22))
+                .weaveCard(radius: 22)
 
                 if model.subscriptions.isEmpty {
                     VStack(spacing: 12) {
@@ -1104,10 +1142,10 @@ private struct TransferView: View {
 private struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     private let rows = [
-        ("版本", "0.1.0-alpha06", "number"),
+        ("版本", "0.1.0-alpha09", "number"),
         ("架构", "Apple Silicon arm64", "cpu"),
         ("本地存储", "Keychain + AES-256-GCM", "lock.fill"),
-        ("VPN 模式", "需要 Network Extension entitlement", "network"),
+        ("VPN 模式", "Mihomo 原生双栈 TUN · 失败闭锁", "network"),
     ]
 
     var body: some View {
@@ -1137,14 +1175,16 @@ private struct SettingsView: View {
                 .weaveCard()
 
                 HStack(spacing: 12) {
-                    Image(systemName: model.core.state == .localProxy ? "network" : "lock.shield")
-                        .foregroundStyle(model.core.state == .localProxy ? Color.weaveGood : Color.weaveMuted)
+                    Image(systemName: model.core.state.isConnected ? "network" : "lock.shield")
+                        .foregroundStyle(model.core.state.isConnected ? Color.weaveGood : Color.weaveMuted)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("系统代理接管")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(model.core.state == .localProxy
+                        Text(model.core.state == .tun
+                             ? "全设备 IPv4/IPv6 TUN · DNS 劫持 · STUN 防泄漏"
+                             : model.core.state == .localProxy
                              ? "HTTP/HTTPS/SOCKS → 127.0.0.1:7890；PAC 和原设置会自动恢复"
-                             : "连接时接管主网络服务，完整 VPN 仍需 Network Extension")
+                             : "TUN 未就绪时拒绝连接；关闭下方开关才会使用本地代理")
                             .font(.caption)
                             .foregroundStyle(Color.weaveMuted)
                     }
@@ -1152,6 +1192,29 @@ private struct SettingsView: View {
                     Text("自动")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.weaveTeal)
+                }
+                .padding(17)
+                .weaveCard()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(isOn: Binding(
+                        get: { model.tunEnabled },
+                        set: { model.setTunEnabled($0) },
+                    )) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("强制全设备双栈 TUN")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("接管 IPv4、IPv6、UDP 和 DNS；失败时拒绝连接")
+                                .font(.caption)
+                                .foregroundStyle(Color.weaveMuted)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(model.core.state.isActive)
+
+                    Text("关闭后才会允许本地 HTTP/HTTPS/SOCKS 代理模式；该模式不保证 IPv4、IPv6 或 DNS 全部经过 Weave。")
+                        .font(.caption2)
+                        .foregroundStyle(Color.weaveMuted)
                 }
                 .padding(17)
                 .weaveCard()
@@ -1221,11 +1284,13 @@ private struct WeaveCardTitle: View {
 }
 
 private struct WeaveCardModifier: ViewModifier {
+    let radius: CGFloat
+
     func body(content: Content) -> some View {
         content
-            .background(Color.weavePaper, in: RoundedRectangle(cornerRadius: 20))
+            .background(Color.weavePaper, in: RoundedRectangle(cornerRadius: radius))
             .overlay {
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: radius)
                     .stroke(Color.weaveStroke, lineWidth: 1)
             }
     }
@@ -1233,16 +1298,20 @@ private struct WeaveCardModifier: ViewModifier {
 
 private extension View {
     func weaveCard() -> some View {
-        modifier(WeaveCardModifier())
+        modifier(WeaveCardModifier(radius: 20))
+    }
+
+    func weaveCard(radius: CGFloat) -> some View {
+        modifier(WeaveCardModifier(radius: radius))
     }
 
     func weavePrimaryButton() -> some View {
         font(.system(size: 14, weight: .bold))
-            .foregroundStyle(Color.weaveInk)
+            .foregroundStyle(Color.white)
             .padding(.horizontal, 17)
             .frame(maxWidth: .infinity)
             .frame(height: 46)
-            .background(Color.weaveAcid, in: RoundedRectangle(cornerRadius: 14))
+            .background(Color.weavePrimary, in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -1268,32 +1337,36 @@ private extension NSColor {
 private extension Color {
     static let weaveInk = Color(nsColor: .weaveDynamic(
         name: "WeaveInk",
-        light: (36, 56, 92),
-        dark: (239, 242, 235)
+        light: (29, 37, 45),
+        dark: (233, 238, 242)
     ))
-    // Sea-glass teal is the shared accent in the woven mark and the controls.
-    static let weaveAcid = Color(red: 122 / 255, green: 169 / 255, blue: 161 / 255)
-    static let weaveTeal = Color(red: 122 / 255, green: 169 / 255, blue: 161 / 255)
+    // Android's minimal-light tokens: a cool slate action color and quiet sea-glass secondary.
+    static let weavePrimary = Color(red: 47 / 255, green: 72 / 255, blue: 88 / 255)
+    static let weavePrimaryContainer = Color(red: 220 / 255, green: 231 / 255, blue: 238 / 255)
+    static let weaveSecondaryContainer = Color(red: 220 / 255, green: 234 / 255, blue: 228 / 255)
+    static let weaveSurfaceVariant = Color(red: 233 / 255, green: 237 / 255, blue: 241 / 255)
+    static let weaveAcid = Color(red: 220 / 255, green: 231 / 255, blue: 238 / 255)
+    static let weaveTeal = Color(red: 76 / 255, green: 106 / 255, blue: 97 / 255)
     static let weaveCanvas = Color(nsColor: .weaveDynamic(
         name: "WeaveCanvas",
-        light: (241, 235, 221),
-        dark: (21, 27, 40)
+        light: (244, 246, 248),
+        dark: (14, 19, 24)
     ))
     static let weavePaper = Color(nsColor: .weaveDynamic(
         name: "WeavePaper",
-        light: (255, 252, 245),
-        dark: (29, 38, 55)
+        light: (251, 252, 253),
+        dark: (23, 30, 37)
     ))
     static let weaveMuted = Color(nsColor: .weaveDynamic(
         name: "WeaveMuted",
-        light: (109, 113, 128),
-        dark: (194, 199, 211)
+        light: (93, 104, 115),
+        dark: (166, 177, 187)
     ))
     static let weaveStroke = Color(nsColor: .weaveDynamic(
         name: "WeaveStroke",
-        light: (218, 210, 198),
-        dark: (58, 67, 84)
+        light: (209, 216, 222),
+        dark: (58, 67, 75)
     ))
-    static let weaveGood = Color(red: 63 / 255, green: 113 / 255, blue: 107 / 255)
-    static let weaveError = Color(red: 217 / 255, green: 134 / 255, blue: 118 / 255)
+    static let weaveGood = Color(red: 61 / 255, green: 111 / 255, blue: 99 / 255)
+    static let weaveError = Color(red: 186 / 255, green: 26 / 255, blue: 26 / 255)
 }

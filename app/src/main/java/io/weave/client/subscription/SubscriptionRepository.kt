@@ -13,15 +13,86 @@ import kotlinx.coroutines.withContext
 
 class SubscriptionRepository(
     context: Context,
-    private val fetcher: SafeSubscriptionFetcher = SafeSubscriptionFetcher(),
+    fetcher: SafeSubscriptionFetcher? = null,
     private val parser: SubscriptionPayloadParser = SubscriptionPayloadParser(),
     private val store: SubscriptionSecretStore = SubscriptionSecretStore(context),
     private val localReader: LocalSubscriptionReader = LocalSubscriptionReader(),
     private val qrDecoder: QrSubscriptionDecoder = QrSubscriptionDecoder(),
 ) {
+    // Subscription traffic follows the user's current system/VPN route.
+    private val safeFetcher = fetcher ?: SafeSubscriptionFetcher()
+    private val providerResolver = ClashProviderResolver(
+        fetch = { safeFetcher.fetch(it, adaptMainSubscription = false) },
+    )
+    private val preparation = SubscriptionPreparation(providerResolver, parser)
     private val contentResolver = context.applicationContext.contentResolver
+    private data class PendingUpdate(val preview: SubscriptionUpdatePreview, val revision: String,
+        val name: String, val source: String, val prepared: PreparedSubscription, val diff: SubscriptionDiff,
+        val expiresAtNanos: Long)
+    @Volatile private var pendingUpdate: PendingUpdate? = null
+
+    suspend fun previewRemote(id: String, name: String, rawUrl: String): SubscriptionUpdatePreview = withContext(Dispatchers.IO) {
+        pendingUpdate = null
+        val fetched = safeFetcher.fetch(rawUrl)
+        prepareReview(id, name, SubscriptionRequestCompatibility.adapt(java.net.URI(rawUrl.trim())).toString(),
+            fetched.body, fetched.finalUri.toString())
+    }
+
+    suspend fun previewFile(id: String, name: String, uri: Uri): SubscriptionUpdatePreview = withContext(Dispatchers.IO) {
+        pendingUpdate = null
+        val body = contentResolver.openInputStream(uri)?.use(localReader::read)
+            ?: throw SubscriptionImportException("无法读取所选订阅文件")
+        prepareReview(id, name, LOCAL_IMPORT_SOURCE, body, LOCAL_IMPORT_SOURCE)
+    }
+
+    private fun prepareReview(id: String, name: String, source: String, payload: String, resolutionSource: String): SubscriptionUpdatePreview {
+        val previous = requireNotNull(store.get(id)) { "订阅不存在" }
+        val oldSource = store.readUrl(id)
+        val revision = subscriptionRevision(previous, store.readPayload(id), oldSource)
+        val prepared = prepareRuntimePayload(payload, resolutionSource)
+        require(prepared.second.nodeCount > 0) { "订阅中没有可用节点" }
+        val oldKeys = previous.nodes.map { it.name to it.protocol }
+        val newKeys = prepared.second.nodes.map { it.name to it.protocol }
+        val removed = unmatchedOccurrences(previous.nodes, newKeys) { it.name to it.protocol }
+        val audit = SubscriptionGuard.audit(previous, prepared.second, oldSource, source)
+        val preview = SubscriptionUpdatePreview(java.util.UUID.randomUUID().toString(), id,
+            previous.nodeCount, prepared.second.nodeCount,
+            unmatchedOccurrences(prepared.second.nodes, oldKeys) { it.name to it.protocol }.map { it.name },
+            removed.map { it.name }, removed.mapTo(linkedSetOf()) { it.id }, audit)
+        pendingUpdate = PendingUpdate(preview, revision, name, source, prepared,
+            SubscriptionDiffer.compare(previous.nodes, prepared.second.nodes), System.nanoTime() + 300_000_000_000L)
+        return preview
+    }
+
+    fun discardReview() { pendingUpdate = null }
+
+    suspend fun applyReview(token: String, acceptCountChange: Boolean): SubscriptionUpdate = withContext(Dispatchers.IO) {
+        val pending = pendingUpdate
+        require(pending != null && pending.preview.token == token && System.nanoTime() < pending.expiresAtNanos) {
+            "预览已失效，请重新获取"
+        }
+        val blockers = pending.preview.audit.findings.filter { it.severity == SubscriptionAuditSeverity.BLOCKED }
+        require(blockers.isEmpty() || (acceptCountChange && blockers.all { it.code in setOf("node_drop", "large_removal", "node_spike") })) {
+            "请先核对异常节点数量变化"
+        }
+        val saved = store.saveReviewed(pending.preview.subscriptionId, pending.revision, pending.name,
+            pending.source, pending.prepared.first, pending.prepared.second, pending.prepared.counts,
+            pending.prepared.sourceGroups, pending.prepared.sourceRules.supported)
+        pendingUpdate = null
+        SubscriptionUpdate(toDomain(saved), pending.diff, pending.preview.audit)
+    }
 
     fun loadMetadata(): List<Subscription> = store.list().map(::toDomain)
+
+    /** One encrypted-index read for both UI lists; caller owns the IO dispatcher. */
+    fun loadSnapshot(): Pair<List<Subscription>, List<ProxyNode>> {
+        val records = store.list()
+        return records.map(::toDomain) to records.flatMap { subscription ->
+            subscription.nodes.map { node ->
+                ProxyNode(node.id, node.name, "", subscription.id, node.protocol, null)
+            }
+        }
+    }
 
     fun loadNodes(): List<ProxyNode> = store.list().flatMap { subscription ->
         subscription.nodes.map { node ->
@@ -44,6 +115,17 @@ class SubscriptionRepository(
         .filter { runCatching { store.readUrl(it.id) }.getOrNull()?.startsWith("https://", ignoreCase = true) == true }
         .mapTo(linkedSetOf()) { it.id }
 
+    /** Counts only; safe to surface after import without reading the encrypted URL or nodes. */
+    fun hasUnappliedSourceConfiguration(subscriptionId: String): Boolean =
+        store.importCounts(subscriptionId)?.hasUnappliedConfiguration == true
+
+    /** Returns only the validated DIRECT/REJECT subset for an explicit user import action. */
+    fun supportedSourceRules(subscriptionId: String): List<io.weave.client.routing.LocalRouteRule> {
+        val lines = store.sourceRules(subscriptionId)
+        return if (lines.isEmpty()) emptyList() else
+            io.weave.client.routing.LocalRuleBatchParser.parse(lines.joinToString("\n"))
+    }
+
     suspend fun loadEditor(subscriptionId: String): EditableSubscription =
         withContext(Dispatchers.IO) {
             val record = store.get(subscriptionId)
@@ -64,6 +146,9 @@ class SubscriptionRepository(
                 sourceUrl = source.takeIf {
                     kind == SubscriptionSourceKind.REMOTE
                 }.orEmpty(),
+                importCounts = store.importCounts(record.id),
+                sourceGroups = store.sourceGroups(record.id),
+                supportedSourceRuleCount = store.sourceRules(record.id).size,
             )
         }
 
@@ -77,17 +162,23 @@ class SubscriptionRepository(
     }
 
     suspend fun exportForLanTransfer(
-        selectedIds: Set<String> = emptySet(),
+        selectedIds: Set<String>,
     ): List<TransferSubscription> =
         withContext(Dispatchers.IO) {
-            store.list()
-                .filter { selectedIds.isEmpty() || it.id in selectedIds }
+            val records = store.list()
+            val allowed = io.weave.client.transfer.SubscriptionShareSelection.validate(
+                records.mapTo(linkedSetOf()) { it.id }, selectedIds,
+            )
+            records.filter { it.id in allowed }
                 .map { subscription ->
                 TransferSubscription(
                     id = subscription.id,
                     name = subscription.name,
                     source = store.readUrl(subscription.id),
                     payload = store.readPayload(subscription.id),
+                    importCounts = store.importCounts(subscription.id),
+                    sourceRules = store.sourceRules(subscription.id),
+                    sourceGroups = store.sourceGroups(subscription.id),
                 )
                 }
         }
@@ -104,11 +195,17 @@ class SubscriptionRepository(
             val record: StoredSubscription,
             val source: String,
             val payload: String,
+            val counts: SubscriptionImportCounts?,
+            val groups: List<SourceProxyGroupPreview>,
+            val sourceRules: List<String>,
         )
         data class PreparedImport(
             val item: TransferSubscription,
             val runtimePayload: String,
             val parsed: ParsedSubscription,
+            val counts: SubscriptionImportCounts,
+            val groups: List<SourceProxyGroupPreview>,
+            val sourceRules: List<String>,
             val existing: ExistingSnapshot?,
         )
         fun stableId(value: String): String? = value.trim().takeIf {
@@ -120,12 +217,13 @@ class SubscriptionRepository(
                 it.name == item.name && sourceById[it.id] == item.source
             } ?: return null
             val source = sourceById[record.id] ?: return null
-            return ExistingSnapshot(record, source, store.readPayload(record.id))
+            return ExistingSnapshot(record, source, store.readPayload(record.id),
+                store.importCounts(record.id), store.sourceGroups(record.id), store.sourceRules(record.id))
         }
 
         val validated = items.map { item ->
             val existing = existingFor(item)
-            val prepared = prepareRuntimePayload(item.payload).also { (_, parsed) ->
+            val prepared = prepareRuntimePayload(item.payload, item.source).also { (_, parsed) ->
                 if (parsed.nodeCount == 0) {
                     throw SubscriptionImportException("订阅中没有可用节点")
                 }
@@ -139,7 +237,15 @@ class SubscriptionRepository(
                 )
                 if (audit.blocked) throw SubscriptionGuardException(audit)
             }
-            PreparedImport(item, prepared.first, prepared.second, existing)
+            val preservedRules = item.sourceRules.takeIf { it.isNotEmpty() }?.also { lines ->
+                require(lines.size <= 256 && SourceRuleImportPlan.from(mapOf("rules" to lines)).unsupported == 0) {
+                    "传输中的原规则元数据无效"
+                }
+            }
+            PreparedImport(item, prepared.first, prepared.second,
+                item.importCounts ?: prepared.counts,
+                item.sourceGroups.takeIf { it.isNotEmpty() }?.take(48) ?: prepared.sourceGroups,
+                preservedRules ?: prepared.sourceRules.supported, existing)
         }
         val incomingIds = items.mapNotNull { stableId(it.id) }
         check(incomingIds.size == incomingIds.distinct().size) {
@@ -163,6 +269,9 @@ class SubscriptionRepository(
                         payload = prepared.runtimePayload,
                         parsed = prepared.parsed,
                         id = id,
+                        counts = prepared.counts,
+                        sourceGroups = prepared.groups,
+                        sourceRules = prepared.sourceRules,
                     )
                 saved += prepared to id
                 imported += toDomain(savedRecord)
@@ -185,11 +294,43 @@ class SubscriptionRepository(
                             payload = oldParsed.first,
                             parsed = oldParsed.second,
                             id = snapshot.record.id,
+                            counts = snapshot.counts,
+                            sourceGroups = snapshot.groups,
+                            sourceRules = snapshot.sourceRules,
                         )
                     }
                 }
             }
             throw error
+        }
+    }
+
+    /** Roll back a snapshot read from this device before a multi-store restore began. */
+    suspend fun restoreOwnSnapshot(
+        items: List<TransferSubscription>,
+        originalIds: Set<String>,
+        createdIds: Set<String>,
+    ) = withContext(Dispatchers.IO) {
+        require(items.map { it.id }.toSet() == originalIds && items.size == originalIds.size) {
+            "本机订阅快照不完整"
+        }
+        require(createdIds.none { it in originalIds }) { "回滚订阅范围无效" }
+        val prepared = items.map { item ->
+            require(item.id in originalIds) { "本机订阅快照 ID 无效" }
+            item to prepareRuntimePayload(item.payload, item.source)
+        }
+        store.list().filter { it.id in createdIds }.forEach { store.delete(it.id) }
+        prepared.forEach { (item, normalized) ->
+            store.save(
+                name = item.name,
+                url = item.source,
+                payload = normalized.first,
+                parsed = normalized.second,
+                id = item.id,
+                counts = item.importCounts,
+                sourceGroups = item.sourceGroups,
+                sourceRules = item.sourceRules,
+            )
         }
     }
 
@@ -199,12 +340,13 @@ class SubscriptionRepository(
         rawUrl: String,
     ): SubscriptionUpdate = withContext(Dispatchers.IO) {
         requireExisting(subscriptionId)
-        val fetched = fetcher.fetch(rawUrl)
+        val fetched = safeFetcher.fetch(rawUrl)
         replacePayloadWithDiff(
             subscriptionId = subscriptionId,
             name = name,
-            source = fetched.finalUri.toString(),
+            source = SubscriptionRequestCompatibility.adapt(java.net.URI(rawUrl.trim())).toString(),
             payload = fetched.body,
+            resolutionSource = fetched.finalUri.toString(),
         )
     }
 
@@ -231,8 +373,9 @@ class SubscriptionRepository(
     }
 
     suspend fun import(name: String, rawUrl: String): Subscription = withContext(Dispatchers.IO) {
-        val fetched = fetcher.fetch(rawUrl)
-        importPayload(name, fetched.finalUri.toString(), fetched.body)
+        val fetched = safeFetcher.fetch(rawUrl)
+        replacePayload(null, name, SubscriptionRequestCompatibility.adapt(java.net.URI(rawUrl.trim())).toString(), fetched.body,
+            resolutionSource = fetched.finalUri.toString())
     }
 
     /** Accepts either a remote HTTPS subscription or pasted URI/Base64/JSON content. */
@@ -241,9 +384,9 @@ class SubscriptionRepository(
         if (value.toByteArray(Charsets.UTF_8).size > MAX_INLINE_BYTES) {
             throw SubscriptionImportException("粘贴内容超过 ${MAX_INLINE_BYTES / (1024 * 1024)} MiB 限制")
         }
-        if (value.startsWith("https://", ignoreCase = true)) {
-            val fetched = fetcher.fetch(value)
-            importPayload(name, fetched.finalUri.toString(), fetched.body)
+        if (qrDecoder.isRemoteLink(value)) {
+            // Pasted client wrapper links must follow the same decoding/HTTPS policy as QR.
+            importQr(name, value)
         } else {
             importPayload(name, INLINE_IMPORT_SOURCE, value)
         }
@@ -291,8 +434,10 @@ class SubscriptionRepository(
         name: String,
         source: String,
         payload: String,
+        resolutionSource: String = source,
     ): Subscription {
-        val (runtimePayload, parsed) = prepareRuntimePayload(payload)
+        val prepared = prepareRuntimePayload(payload, resolutionSource)
+        val (runtimePayload, parsed) = prepared
         if (parsed.nodeCount == 0) {
             throw SubscriptionImportException("订阅中没有可用节点")
         }
@@ -303,6 +448,9 @@ class SubscriptionRepository(
                 payload = runtimePayload,
                 parsed = parsed,
                 id = subscriptionId ?: java.util.UUID.randomUUID().toString(),
+                counts = prepared.counts,
+                sourceGroups = prepared.sourceGroups,
+                sourceRules = prepared.sourceRules.supported,
             ),
         )
     }
@@ -312,14 +460,17 @@ class SubscriptionRepository(
         name: String,
         source: String,
         payload: String,
+        resolutionSource: String = source,
     ): SubscriptionUpdate {
         val previous = store.get(subscriptionId)
             ?: throw SubscriptionImportException("订阅不存在")
-        val (runtimePayload, parsed) = prepareRuntimePayload(payload)
+        val prepared = prepareRuntimePayload(payload, resolutionSource)
+        val (runtimePayload, parsed) = prepared
         if (parsed.nodeCount == 0) {
             throw SubscriptionImportException("订阅中没有可用节点")
         }
         val diff = SubscriptionDiffer.compare(previous.nodes, parsed.nodes)
+        require(diff.added == 0 && diff.removed == 0) { "订阅节点有变化，请在详情中预览后更新" }
         val audit = SubscriptionGuard.audit(
             previous = previous,
             candidate = parsed,
@@ -337,6 +488,9 @@ class SubscriptionRepository(
             payload = runtimePayload,
             parsed = parsed,
             id = subscriptionId,
+            counts = prepared.counts,
+            sourceGroups = prepared.sourceGroups,
+            sourceRules = prepared.sourceRules.supported,
         )
         return SubscriptionUpdate(toDomain(updated), diff, audit)
     }
@@ -347,13 +501,8 @@ class SubscriptionRepository(
         }
     }
 
-    private fun prepareRuntimePayload(payload: String): Pair<String, ParsedSubscription> {
-        val parsed = parser.parse(payload)
-        val normalized = parser.normalizeForMihomo(payload, parsed)
-        // Reparse the generated provider so metadata, stable node IDs, and the runtime payload
-        // always describe the exact same node set.
-        return normalized to parser.parse(normalized)
-    }
+    private fun prepareRuntimePayload(payload: String, source: String = ""): PreparedSubscription =
+        preparation.prepare(payload, source)
 
     private fun toDomain(record: StoredSubscription) = Subscription(
         id = record.id,

@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 enum class IpQualityState {
     VERIFIED,
@@ -20,6 +22,7 @@ data class IpQualityCheck(
     val title: String,
     val state: IpQualityState,
     val detail: String,
+    val source: String = "",
 )
 
 data class IpQualityLatency(
@@ -27,6 +30,8 @@ data class IpQualityLatency(
     val latencyMs: Int?,
     val state: IpQualityState,
     val detail: String,
+    val attemptedSamples: Int = 1,
+    val successfulSamples: Int = if (latencyMs != null) 1 else 0,
 )
 
 data class IpQualityMetadata(
@@ -59,6 +64,11 @@ data class IpQualityReport(
     val successfulLatencyCount: Int
         get() = latency.count { it.latencyMs != null }
 
+    val latencyAttempts: Int get() = latency.sumOf { it.attemptedSamples }
+    val latencySuccesses: Int get() = latency.sumOf { it.successfulSamples }
+    val probeFailurePercent: Int?
+        get() = latencyAttempts.takeIf { it > 0 }?.let { (it - latencySuccesses) * 100 / it }
+
     val medianLatencyMs: Int?
         get() = latency.mapNotNull { it.latencyMs }.sorted().let { values ->
             values.getOrNull(values.size / 2)
@@ -88,7 +98,7 @@ class IpQualityProbe(
         ipv6Mode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
         now: Long = System.currentTimeMillis(),
     ): IpQualityReport = coroutineScope {
-        val startedAt = System.currentTimeMillis()
+        val startedAt = System.nanoTime()
         // Independent probes must not queue six full timeout windows. On a blocked or broken
         // path the old serial implementation looked frozen for up to 24 seconds.
         val resultJobs = listOf(
@@ -113,10 +123,10 @@ class IpQualityProbe(
         )
         val latencyJobs = listOf(
             async(Dispatchers.IO) {
-                probeLatency("Cloudflare 204", CLOUDFLARE_204_ENDPOINT)
+                probeLatencySeries("Cloudflare 204", CLOUDFLARE_204_ENDPOINT)
             },
             async(Dispatchers.IO) {
-                probeLatency("Google 204", GOOGLE_204_ENDPOINT)
+                probeLatencySeries("Google 204", GOOGLE_204_ENDPOINT)
             },
         )
         val results = resultJobs.awaitAll()
@@ -132,10 +142,11 @@ class IpQualityProbe(
             ipv4 = ipv4,
             ipv6 = ipv6,
             metadata = metadata,
+            traceIp = traceMetadata?.ip,
             ipv6Mode = ipv6Mode,
         )
-        val completed = results.count { it.completed } + latency.count { it.latencyMs != null }
-        val total = results.size + latency.size
+        val completed = results.count { it.completed } + latency.sumOf { it.successfulSamples }
+        val total = results.size + latency.sumOf { it.attemptedSamples }
         IpQualityReport(
             generatedAtEpochMillis = now,
             ipv4 = ipv4,
@@ -145,7 +156,7 @@ class IpQualityProbe(
             checks = checks,
             completedProbes = completed,
             totalProbes = total,
-            elapsedMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+            elapsedMillis = ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(0L),
         )
     }
 
@@ -163,8 +174,26 @@ class IpQualityProbe(
         ProbeResult(label, value = null, completed = false, error = error.safeMessage())
     }
 
+    private suspend fun probeLatencySeries(provider: String, endpoint: String): IpQualityLatency {
+        val samples = buildList {
+            repeat(3) {
+                currentCoroutineContext().ensureActive()
+                add(probeLatency(provider, endpoint))
+            }
+        }
+        val delays = samples.mapNotNull { it.latencyMs }.sorted()
+        return samples.last().copy(
+            latencyMs = delays.getOrNull(delays.size / 2),
+            state = if (delays.size == samples.size) IpQualityState.VERIFIED else IpQualityState.ATTENTION,
+            detail = if (delays.isNotEmpty()) "HTTPS 端点可达" else samples.last().detail,
+            attemptedSamples = samples.size,
+            successfulSamples = delays.size,
+        )
+    }
+
     private fun probeLatency(provider: String, endpoint: String): IpQualityLatency = runCatching {
-        val response = transport.get(endpoint, timeoutMillis)
+        // Two concurrent series, each bounded to three short probes; no background polling.
+        val response = transport.get(endpoint, minOf(timeoutMillis, 1500))
         require(response.statusCode in 200..299) { "HTTP ${response.statusCode}" }
         val latency = response.elapsedMillis.coerceIn(1L, MAX_LATENCY_MILLIS.toLong()).toInt()
         IpQualityLatency(provider, latency, IpQualityState.VERIFIED, "HTTPS 端点可达")
@@ -178,6 +207,7 @@ class IpQualityProbe(
         ipv4: String?,
         ipv6: String?,
         metadata: IpQualityMetadata?,
+        traceIp: String?,
         ipv6Mode: Ipv6Mode,
     ): List<IpQualityCheck> = buildList {
         val ipv4Probe = results.firstOrNull { it.label == "IPv4" }
@@ -188,6 +218,7 @@ class IpQualityProbe(
                 title = "IPv4 出口",
                 state = if (ipv4 != null) IpQualityState.VERIFIED else IpQualityState.ATTENTION,
                 detail = ipv4 ?: "未取得 IPv4 公网地址 · ${ipv4Probe?.error ?: "未完成"}",
+                source = "api4.ipify.org",
             ),
         )
         add(
@@ -206,23 +237,31 @@ class IpQualityProbe(
                     ipv6 != null -> ipv6
                     else -> "未取得 IPv6 公网地址；这不能单独证明没有 IPv6 泄漏"
                 },
+                source = "api6.ipify.org",
             ),
         )
-        val observedIps = listOfNotNull(ipv4, ipv6, metadata?.ip).toSet()
+        // Only compare addresses from the same family. An IPv4 and IPv6 result are expected
+        // to differ, while two different IPv4 results must not be reported as consistent.
+        val observations = listOfNotNull(ipv4, ipv6, metadata?.ip, traceIp)
+            .groupBy(IpAddressValidator::family)
+            .filterKeys { it != null }
+        val comparable = observations.values.any { it.size >= 2 }
+        val inconsistent = observations.values.any { it.size >= 2 && it.toSet().size > 1 }
         add(
             IpQualityCheck(
                 id = "consistency",
                 title = "出口一致性",
                 state = when {
-                    metadata?.ip == null -> IpQualityState.UNKNOWN
-                    observedIps.size <= 2 -> IpQualityState.VERIFIED
-                    else -> IpQualityState.ATTENTION
+                    inconsistent -> IpQualityState.ATTENTION
+                    comparable -> IpQualityState.VERIFIED
+                    else -> IpQualityState.UNKNOWN
                 },
                 detail = when {
-                    metadata?.ip == null -> "出口信息服务没有返回可比对的地址"
-                    observedIps.size <= 2 -> "公开探测端点返回的出口地址没有明显冲突"
-                    else -> "不同探测端点返回了多个出口地址；可能存在代理链或网络切换"
+                    inconsistent -> "同一 IP 协议的公开探测端点返回不同地址；可能是代理链、负载均衡或网络切换，不能单独判定泄漏"
+                    comparable -> "同一 IP 协议的公开探测端点返回相同地址"
+                    else -> "没有取得同一 IP 协议的两份地址，无法判断一致性"
                 },
+                source = "ipify.org · ipwho.is · Cloudflare trace",
             ),
         )
         val suspicious = listOf(metadata?.proxy, metadata?.vpn, metadata?.tor, metadata?.hosting)
@@ -241,6 +280,7 @@ class IpQualityProbe(
                     metadata == null -> "未取得第三方安全标签"
                     else -> "未发现该服务标记的代理、VPN、Tor 或托管出口"
                 },
+                source = "ipwho.is · Cloudflare trace",
             ),
         )
         add(
@@ -254,6 +294,7 @@ class IpQualityProbe(
                     else -> IpQualityState.ATTENTION
                 },
                 detail = "${latency.count { it.latencyMs != null }}/${latency.size} 个端点可达 · 中位 ${latency.mapNotNull { it.latencyMs }.sorted().medianOrDash()} ms",
+                source = "Cloudflare 204 · Google 204",
             ),
         )
         add(
@@ -261,7 +302,7 @@ class IpQualityProbe(
                 id = "dns",
                 title = "DNS 泄漏",
                 state = IpQualityState.NOT_TESTED,
-                detail = "应用内 HTTPS 探测无法证明浏览器或系统 DNS 是否泄漏，请用外部 DNS 测试页复核",
+                detail = "HTTPS 探测不能证明 DNS 无泄漏；可在下方应用内独立复核中进行权威 DNS 测试",
             ),
         )
         add(

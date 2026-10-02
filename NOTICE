@@ -17,7 +17,7 @@ instructions must remain available with every distributed binary.
 Bundled GeoIP/GeoSite lite data is derived from MetaCubeX meta-rules-dat. Its
 release coordinate and artifact hashes are in geodata-lock.properties.
 
-AndroidX and ZXing components are licensed under Apache-2.0. The Android
+AndroidX, ZXing and SnakeYAML components are licensed under Apache-2.0. The Android
 preview does not bundle Google Play services or ML Kit runtime artifacts;
 camera QR decoding uses the system camera preview and the bundled ZXing core.
 Additional project roles and links are listed in THIRD_PARTY.md. A production

@@ -12,7 +12,6 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -21,6 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 @Immutable
@@ -104,6 +105,38 @@ internal object NodeHealthAggregator {
     }
 }
 
+/** A probe timeout is a measurement failure, not a change to the VPN network path. */
+internal suspend fun <T : Any> withNodeHealthTimeout(
+    timeoutMs: Long,
+    action: suspend () -> T,
+): T = withTimeoutOrNull(timeoutMs) { action() }
+    ?: throw IllegalStateException("节点测速超过 ${timeoutMs / 1_000} 秒，请检查网络后重试")
+
+internal data class NodeHealthWorkload(val rounds: Int, val roundTimeoutMs: Long)
+
+/** The pinned Mihomo provider tests at most ten nodes concurrently, up to 5 s each. */
+internal object NodeHealthWorkloadPolicy {
+    fun forNodeCount(count: Int): NodeHealthWorkload {
+        require(count > 0)
+        val rounds = when {
+            count > 64 -> 1
+            count > 24 -> 2
+            else -> 3
+        }
+        val batches = (count + NATIVE_CONCURRENCY - 1) / NATIVE_CONCURRENCY
+        return NodeHealthWorkload(
+            rounds = rounds,
+            roundTimeoutMs = (batches * NODE_TIMEOUT_MS + ROUND_MARGIN_MS)
+                .coerceAtMost(MAX_ROUND_TIMEOUT_MS),
+        )
+    }
+
+    private const val NATIVE_CONCURRENCY = 10
+    private const val NODE_TIMEOUT_MS = 5_000L
+    private const val ROUND_MARGIN_MS = 12_000L
+    private const val MAX_ROUND_TIMEOUT_MS = 180_000L
+}
+
 /**
  * Narrow, fail-closed adapter around the pinned CMFA/Mihomo native bridge.
  */
@@ -125,6 +158,8 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         get() = NativeBridge.isInstalled(appContext)
 
     override suspend fun validate(config: String): Result<Unit> = lifecycleMutex.withLock {
+        // A failed replacement must invalidate the previous validation token.
+        validatedDigest = null
         if (!isAvailable) {
             return@withLock Result.failure(IllegalStateException(CORE_UNAVAILABLE))
         }
@@ -133,15 +168,12 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             runtimeDirectory.mkdirs()
             val pending = File(runtimeDirectory, "config.yaml.pending")
             pending.writeText(config, Charsets.UTF_8)
-            Files.move(
-                pending.toPath(),
-                configFile.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
+            moveReplace(pending, configFile)
         }.mapCatching {
             // CMFA's load() accepts a profile directory and appends config.yaml itself.
-            NativeBridge.validateConfiguration(runtimeDirectory.absolutePath).getOrThrow()
+            withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
+                NativeBridge.validateConfiguration(runtimeDirectory.absolutePath).getOrThrow()
+            }
             validatedDigest = digest(config)
         }
     }
@@ -152,6 +184,8 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         protectSocket: (Int) -> Boolean,
         querySocketUid: (protocol: Int, source: String, target: String) -> Int,
         installedApps: List<Pair<Int, String>>,
+        ipv6Enabled: Boolean,
+        requiredNodeGroups: Set<String>,
     ): Result<Unit> = lifecycleMutex.withLock {
         if (!isAvailable) {
             mutableState.value = ConnectionState.ERROR
@@ -165,10 +199,21 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         }
 
         mutableState.value = ConnectionState.CONNECTING
+        var nativeStartAttempted = false
         runCatching {
+            // Other adapter instances share this directory. Check the actual file under the
+            // lifecycle lock, not only the caller's copy of the configuration.
+            check(digest(configFile.readText(Charsets.UTF_8)).contentEquals(validatedDigest)) {
+                "配置在校验后发生变化，已拒绝建立 TUN"
+            }
             // Validation deliberately has no side effects. Apply the exact validated profile only
             // after the service has committed to starting/restarting this candidate.
-            NativeBridge.loadConfiguration(runtimeDirectory.absolutePath).getOrThrow()
+            withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
+                NativeBridge.loadConfiguration(runtimeDirectory.absolutePath).getOrThrow()
+            }
+            // Inline providers are validated and loaded synchronously by the pinned core.
+            // Never present COMPATIBLE (a synthetic DIRECT fallback) as a connected proxy.
+            ensureRequiredNodeGroups(requiredNodeGroups)
             val protectFailed = AtomicBoolean(false)
             val routedUids = installedApps.mapTo(mutableSetOf(), Pair<Int, String>::first)
             ATTRIBUTION_QUERIES.set(0)
@@ -179,26 +224,42 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
                     .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second })
                     .joinToString(",") { "${it.first}:${it.second}" },
             )
+            nativeStartAttempted = true
             val result = NativeBridge.startTun(
                 fd = tunFd,
                 // Match CMFA's Android default. The system stack avoids the extra userspace
                 // translation layer on Android and follows the platform's socket lifecycle
                 // during Wi-Fi/cellular handover.
                 stack = MihomoTunDefaults.STACK,
-                gateway = "172.19.0.1/30,fdfe:dcba:9876::1/126",
-                portal = "172.19.0.2,fdfe:dcba:9876::2",
+                gateway = if (ipv6Enabled) {
+                    "172.19.0.1/30,fdfe:dcba:9876::1/126"
+                } else {
+                    "172.19.0.1/30"
+                },
+                portal = if (ipv6Enabled) {
+                    "172.19.0.2,fdfe:dcba:9876::2"
+                } else {
+                    "172.19.0.2"
+                },
                 // CMFA enables DNS hijacking for any resolver destination. Restricting this to
                 // only the virtual Android DNS address lets raw/private DNS packets hit Weave's
                 // port-53 reject rules instead of reaching Mihomo's resolver.
-                dns = MihomoTunDefaults.DNS_HIJACK,
+                dns = if (ipv6Enabled) {
+                    MihomoTunDefaults.DNS_HIJACK
+                } else {
+                    MihomoTunDefaults.DNS_HIJACK_IPV4_ONLY
+                },
                 callback = object : NativeTunCallback {
                     override fun markSocket(fd: Int) {
                         if (!protectSocket(fd) && protectFailed.compareAndSet(false, true)) {
                             Log.e(LOG_TAG, "VpnService.protect rejected outbound fd=$fd")
+                            // Do not call nativeStopTun from this callback. The CMFA core can
+                            // invoke markSocket on one of its own worker threads while
+                            // nativeStartTun is still unwinding; stopping the process-global core
+                            // re-entrantly races its TUN teardown and is a common SIGSEGV source.
+                            // The serialized adapter path below (or the service recovery loop for
+                            // a late callback) performs the stop after the native call boundary.
                             mutableState.value = ConnectionState.ERROR
-                            thread(name = "weave-protect-failure") {
-                                NativeBridge.stopTun()
-                            }
                         }
                     }
 
@@ -217,32 +278,127 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
                 },
             )
             check(result == 0) { "Mihomo TUN 启动失败，错误码 $result" }
-            check(!protectFailed.get()) { "系统拒绝保护 Mihomo 出站 socket" }
+            if (protectFailed.get()) {
+                // The single onFailure rollback below owns teardown.
+                error("系统拒绝保护 Mihomo 出站 socket")
+            }
             mutableState.value = ConnectionState.CONNECTED
         }.onFailure {
+            // A failed native start can leave worker state or DNS caches behind even though the
+            // Kotlin call returned an error. Stop only after entering startTun; validation/load
+            // failures must not tear down a healthy runtime owned by another operation.
+            if (nativeStartAttempted) {
+                runCatching { NativeBridge.stopTun() }
+            }
             mutableState.value = ConnectionState.ERROR
         }
     }
 
     override suspend fun reload(config: String): Result<Unit> = validate(config)
 
+    private suspend fun ensureRequiredNodeGroups(names: Set<String>) {
+        if (names.isEmpty()) return
+        repeat(5) {
+            if (names.all(::isReadyGroup)) return
+            delay(100)
+        }
+        val missing = names.filterNot(::isReadyGroup)
+        if (missing.isEmpty()) return
+        Log.w(
+            LOG_TAG,
+            "Loaded profile has no real node in required groups: " +
+                missing.joinToString { readinessDiagnostic(it) },
+        )
+        error("订阅节点未成功载入：所选出口没有实际节点，已停止连接")
+    }
+
+    private fun isReadyGroup(name: String): Boolean {
+        val group = queryGroupJson(name)
+        val memberNames = groupMemberNames(group)
+        return RuntimeProxyGroupReadiness.isReady(
+            group?.optString("now"), memberNames, group?.optString("type"),
+        )
+    }
+
+    /** Parse the pinned CMFA JSON contract without letting a malformed response crash start(). */
+    private fun queryGroupJson(name: String): JSONObject? =
+        NativeBridge.queryGroup(name)?.let { raw ->
+            runCatching { JSONObject(raw) }.getOrNull()
+        }
+
+    /**
+     * CMFA returns an array of proxy objects.  A few repackaged/older Mihomo bridges return plain
+     * strings instead, while standard Mihomo's HTTP shape calls the same list `all`; accepting
+     * all three forms makes the readiness gate a compatibility check rather than a false
+     * negative.  Group entries are ignored so an empty provider can never pass as a node.
+     */
+    private fun groupMemberNames(group: JSONObject?): Set<String> {
+        if (group == null) return emptySet()
+        val names = linkedSetOf<String>()
+        fun collect(arrayKey: String) {
+            val values = group.optJSONArray(arrayKey) ?: return
+            for (index in 0 until values.length()) {
+                val value = values.opt(index)
+                val candidate = when (value) {
+                    is JSONObject -> value.optString("name")
+                    is String -> value
+                    else -> ""
+                }.trim()
+                if (candidate.isNotEmpty()) {
+                    val isGroup = value is JSONObject && value.optBoolean("isGroup")
+                    if (!isGroup) names += candidate
+                }
+            }
+        }
+        collect("proxies")
+        collect("all")
+        return names
+    }
+
+    private fun readinessDiagnostic(name: String): String {
+        val group = queryGroupJson(name)
+            ?: return "$name=missing"
+        val members = groupMemberNames(group)
+        val selected = group.optString("now").trim()
+        val selectedKind = when {
+            selected.isEmpty() -> "blank"
+            selected.uppercase() in setOf("COMPATIBLE", "DIRECT", "GLOBAL", "PASS", "REJECT") -> "synthetic"
+            else -> "real"
+        }
+        val type = group.optString("type").ifBlank { "unknown" }
+        val shape = when {
+            group.has("proxies") -> "proxies"
+            group.has("all") -> "all"
+            else -> "none"
+        }
+        return "$name type=$type members=${members.size} selected=$selectedKind shape=$shape"
+    }
+
+    private fun proxyMetadata(group: JSONObject?, selectedName: String): JSONObject? {
+        if (group == null) return null
+        for (arrayKey in listOf("proxies", "all")) {
+            val values = group.optJSONArray(arrayKey) ?: continue
+            for (index in 0 until values.length()) {
+                val value = values.opt(index) as? JSONObject ?: continue
+                if (!value.optBoolean("isGroup") && value.optString("name") == selectedName) {
+                    return value
+                }
+            }
+        }
+        return null
+    }
+
     fun queryRuntime(): EngineRuntimeSnapshot? = runCatching {
-        val defaultGroup = NativeBridge.queryGroup(DEFAULT_GROUP)
-            ?.let(::JSONObject)
+        val defaultGroup = queryGroupJson(DEFAULT_GROUP)
             ?: return null
         val defaultSelection = defaultGroup.optString("now")
         if (defaultSelection.isBlank()) return null
 
-        val nestedGroup = NativeBridge.queryGroup(defaultSelection)?.let(::JSONObject)
+        val nestedGroup = queryGroupJson(defaultSelection)
         val selectedName = nestedGroup?.optString("now")
             ?.takeIf(String::isNotBlank)
             ?: defaultSelection
-        val selectedMetadata = nestedGroup?.optJSONArray("proxies")?.let { proxies ->
-            (0 until proxies.length())
-                .asSequence()
-                .mapNotNull(proxies::optJSONObject)
-                .firstOrNull { it.optString("name") == selectedName }
-        }
+        val selectedMetadata = proxyMetadata(nestedGroup, selectedName)
         val traffic = NativeBridge.queryTraffic(total = false)
         EngineRuntimeSnapshot(
             nodeName = selectedName.replaceFirst(NODE_PREFIX, ""),
@@ -267,20 +423,24 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         subscriptionId: String,
     ): List<NodeHealthSnapshot>? = runCatching {
         val prefix = nodePrefix(subscriptionId)
-        val group = NativeBridge.queryGroup(automaticGroup(subscriptionId))
-            ?.let(::JSONObject)
+        val group = queryGroupJson(automaticGroup(subscriptionId))
             ?: return null
         val proxies = group.optJSONArray("proxies") ?: return emptyList()
         (0 until proxies.length()).mapNotNull { index ->
-            val proxy = proxies.optJSONObject(index) ?: return@mapNotNull null
-            val internalName = proxy.optString("name")
-            if (proxy.optBoolean("isGroup") || !internalName.startsWith(prefix)) {
+            val value = proxies.opt(index)
+            val proxy = value as? JSONObject
+            val internalName = when (value) {
+                is JSONObject -> value.optString("name")
+                is String -> value
+                else -> ""
+            }
+            if (proxy?.optBoolean("isGroup") == true || !internalName.startsWith(prefix)) {
                 return@mapNotNull null
             }
             NodeHealthSnapshot(
                 name = internalName.removePrefix(prefix),
-                protocol = proxy.optString("type").ifBlank { "Mihomo" },
-                latencyMs = LatencySamplePolicy.sanitize(proxy.optInt("delay", 0)),
+                protocol = proxy?.optString("type").orEmpty().ifBlank { "Mihomo" },
+                latencyMs = LatencySamplePolicy.sanitize(proxy?.optInt("delay", 0)),
             )
         }
     }.getOrNull()
@@ -293,28 +453,30 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             check(NativeBridge.queryGroup(group) != null) {
                 "该订阅未被当前运行配置加载，请先把它设为默认出口或应用出口"
             }
-            var lastFailure: Throwable? = null
+            val initial = checkNotNull(querySubscriptionHealthUnlocked(subscriptionId)) {
+                "测速节点组尚未就绪，请稍后重试"
+            }
+            check(initial.isNotEmpty()) { "当前订阅没有可测速节点" }
+            val workload = NodeHealthWorkloadPolicy.forNodeCount(initial.size)
             val rounds = buildList {
-                repeat(HEALTH_ROUNDS) { round ->
+                repeat(workload.rounds) { round ->
                     runCatching {
-                        NativeBridge.healthCheck(group).getOrThrow()
+                        withNodeHealthTimeout(workload.roundTimeoutMs) {
+                            NativeBridge.healthCheck(group).getOrThrow()
+                        }
                         checkNotNull(awaitSettledSubscriptionHealthUnlocked(subscriptionId)) {
                             "测速完成后无法读取节点状态"
                         }
-                    }.onSuccess { add(it) }.onFailure { error ->
-                        if (error is CancellationException) throw error
-                        lastFailure = error
-                    }
-                    if (round < HEALTH_ROUNDS - 1) {
+                    }.getOrThrow().also { add(it) }
+                    if (round < workload.rounds - 1) {
                         // Give the core a short breather so consecutive HTTP probes do not
                         // contend with each other on mobile radios.
                         delay(HEALTH_ROUND_GAP_MS)
                     }
                 }
             }
-            check(rounds.isNotEmpty()) {
-                lastFailure?.message ?: "节点检测失败，请稍后重试"
-            }
+            // A controller/readback failure is not evidence of network loss. Do not silently
+            // discard that round and present a shorter, deceptively healthy sample series.
             NodeHealthAggregator.aggregate(rounds)
         }
     }
@@ -336,7 +498,32 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         return latest
     }
 
-    override suspend fun stop() = lifecycleMutex.withLock {
+    /** Android OEM filesystems do not all implement ATOMIC_MOVE. */
+    private fun moveReplace(source: File, target: File) {
+        runCatching {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.recoverCatching {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.getOrElse {
+            check(source.renameTo(target)) { "无法替换 Mihomo 配置文件" }
+        }
+    }
+
+    override suspend fun stop() = stopInternal(clearRuntimeFiles = true)
+
+    /** Reuses the exact validated profile during a physical-network recovery, not new settings. */
+    internal suspend fun stopForRestart() = stopInternal(clearRuntimeFiles = false)
+
+    private suspend fun stopInternal(clearRuntimeFiles: Boolean) = lifecycleMutex.withLock {
         if (NativeBridge.isLoaded) {
             runCatching { NativeBridge.stopTun() }
             // DNS and fake-IP caches live in the process-wide Mihomo core. Clear them between
@@ -344,7 +531,10 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             // created by the previous DNS profile.
             runCatching { NativeBridge.reset() }
         }
-        runtimeDirectory.deleteRecursively()
+        // Automatic recovery starts from lastSuccessfulRuntime, whose YAML refers to these
+        // provider files. Deleting them here leaves every restarted group empty. A real stop
+        // still removes all plaintext; reload transactions retain their own candidate snapshot.
+        if (clearRuntimeFiles) runtimeDirectory.deleteRecursively()
         validatedDigest = null
         mutableState.value = ConnectionState.DISCONNECTED
     }
@@ -353,10 +543,10 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         const val CORE_UNAVAILABLE = "Mihomo 原生库无法加载或初始化"
         const val LOG_TAG = "WeaveEngine"
         const val DEFAULT_GROUP = "DEFAULT"
-        const val HEALTH_ROUNDS = 3
         const val HEALTH_ROUND_GAP_MS = 250L
         const val HEALTH_RESULT_POLL_ATTEMPTS = 4
         const val HEALTH_RESULT_POLL_GAP_MS = 50L
+        const val CONFIG_OPERATION_TIMEOUT_MS = 15_000L
         val NODE_PREFIX = Regex("""^weave:[^:]+:""")
         val ATTRIBUTION_QUERIES = AtomicLong()
         val ATTRIBUTION_MATCHES = AtomicLong()

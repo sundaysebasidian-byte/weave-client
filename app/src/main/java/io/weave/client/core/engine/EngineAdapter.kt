@@ -22,6 +22,8 @@ interface EngineAdapter {
         protectSocket: (Int) -> Boolean,
         querySocketUid: (protocol: Int, source: String, target: String) -> Int,
         installedApps: List<Pair<Int, String>>,
+        ipv6Enabled: Boolean = true,
+        requiredNodeGroups: Set<String> = emptySet(),
     ): Result<Unit>
 
     suspend fun reload(config: String): Result<Unit>

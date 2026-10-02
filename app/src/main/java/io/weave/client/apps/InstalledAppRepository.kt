@@ -36,7 +36,7 @@ class InstalledAppRepository(
             context.packageManager.queryIntentActivities(intent, 0)
         }
 
-        return resolved.asSequence()
+        val launchable = resolved.asSequence()
             .mapNotNull { info ->
                 val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
                 if (packageName == context.packageName) return@mapNotNull null
@@ -53,6 +53,22 @@ class InstalledAppRepository(
             .distinctBy { it.packageName }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
             .toList()
+        // Exact package queries also find known clients whose launcher entry is hidden/disabled.
+        // Never enumerate all packages or open another app's private configuration.
+        val known = ProxyClientDetector.knownPackages.mapNotNull { packageName ->
+            try {
+                @Suppress("DEPRECATION")
+                val info = context.packageManager.getApplicationInfo(packageName, 0)
+                val label = context.packageManager.getApplicationLabel(info).toString()
+                InstalledApp(packageName, label, label.monogram(), APP_TINTS[0], true)
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            } catch (_: SecurityException) {
+                null
+            }
+        }
+        return (launchable + known).distinctBy { it.packageName }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
     }
 
     private fun String.monogram(): String {
@@ -75,21 +91,26 @@ class InstalledAppRepository(
 
 /** Exact identifiers only: a generic VPN-looking label must never become a migration prompt. */
 internal object ProxyClientDetector {
-    private val knownPackages = setOf(
+    val knownPackages = setOf(
         "com.github.kr328.clash",
         "com.github.kr328.clash.premium",
         "com.github.metacubex.clash.meta",
+        "com.github.metacubex.clash",
+        "com.github.metacubex.clash.alpha",
         "com.nebula.karing",
+        "com.nebula.clashmi",
         "com.v2ray.ang",
         "io.nekohasekai.sagernet",
         "io.nekohasekai.sfa",
         "moe.nb4a",
         "app.hiddify.com",
         "com.follow.clash",
+        "com.follow.clash.dev",
     )
     private val knownLabels = setOf(
         "clash meta",
         "clash meta for android",
+        "clash meta alpha",
         "clash for android",
         "cmfa",
         "flclash",
@@ -98,11 +119,18 @@ internal object ProxyClientDetector {
         "nekobox",
         "sagernet",
         "sing-box",
+        "sing-box for android",
         "v2rayng",
+        "clash mi",
+        "clashmi",
+        "clash verge",
+        "clash verge rev",
+        "clash for windows",
+        "clashx",
     )
 
     fun matches(packageName: String, label: String): Boolean {
-        if (packageName.trim().lowercase() in knownPackages) return true
-        return label.trim().lowercase() in knownLabels
+        if (packageName.trim().lowercase(java.util.Locale.ROOT) in knownPackages) return true
+        return label.trim().replace(Regex("\\s+"), " ").lowercase(java.util.Locale.ROOT) in knownLabels
     }
 }

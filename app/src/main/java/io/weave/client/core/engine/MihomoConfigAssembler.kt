@@ -2,7 +2,6 @@ package io.weave.client.core.engine
 
 import android.content.Context
 import io.weave.client.domain.AppRoute
-import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
 import io.weave.client.domain.RouteKind
@@ -11,6 +10,7 @@ import io.weave.client.domain.RoutingMode
 import io.weave.client.subscription.StoredSubscription
 import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
+import io.weave.client.subscription.ClashYamlCodec
 import io.weave.client.policy.PolicyPackCompiler
 import io.weave.client.policy.PolicyPackStore
 import io.weave.client.routing.LocalRouteRuleStore
@@ -20,23 +20,8 @@ import java.io.File
 data class AssembledMihomoConfig(
     val yaml: String,
     val usableSubscriptions: Int,
+    val requiredNodeGroups: Set<String>,
 )
-
-internal data class ExperienceRuntimePolicy(
-    val routes: List<AppRoute>,
-    val mode: RoutingMode,
-    val includeAdvancedRules: Boolean,
-)
-
-internal fun resolveExperienceRuntimePolicy(
-    routes: List<AppRoute>,
-    mode: RoutingMode,
-    experienceMode: ExperienceMode,
-): ExperienceRuntimePolicy = if (experienceMode == ExperienceMode.NEWCOMER) {
-    ExperienceRuntimePolicy(emptyList(), RoutingMode.RULE, includeAdvancedRules = false)
-} else {
-    ExperienceRuntimePolicy(routes, mode, includeAdvancedRules = true)
-}
 
 /**
  * Builds a minimal Mihomo control plane around encrypted Clash providers.
@@ -51,6 +36,7 @@ class MihomoConfigAssembler(
     private val routeCompiler: RouteConfigCompiler = RouteConfigCompiler(),
 ) {
     private val payloadParser = SubscriptionPayloadParser()
+    private val appContext = context.applicationContext
     private val providerDirectory = File(context.cacheDir, "mihomo-runtime/providers")
     private val policyPackStore = PolicyPackStore(context)
     private val localRuleStore = LocalRouteRuleStore(context)
@@ -65,16 +51,8 @@ class MihomoConfigAssembler(
     ): AssembledMihomoConfig {
         val subscriptions = secretStore.list()
         val usable = subscriptions.filter { it.hasPayload }
-        val experiencePolicy = resolveExperienceRuntimePolicy(
-            routes = routes,
-            mode = mode,
-            experienceMode = networkPreferences.experienceMode,
-        )
-        // Newcomer mode is a genuinely simplified runtime, not merely a hidden settings screen.
-        // Preserve advanced rules on disk so switching back restores them, but do not silently
-        // execute app, policy-pack or local rules while their editors are unavailable.
         require(
-            experiencePolicy.mode == RoutingMode.DIRECT ||
+            mode == RoutingMode.DIRECT ||
                 defaultTarget?.kind == RouteKind.DIRECT ||
                 usable.isNotEmpty(),
         ) {
@@ -85,18 +63,37 @@ class MihomoConfigAssembler(
             }
         }
         val byId = usable.associateBy(StoredSubscription::id)
+        val chainSelection = networkPreferences.proxyChain?.takeIf { selected ->
+            mode != RoutingMode.DIRECT && (selected.useAsDefault ||
+                defaultTarget?.kind == RouteKind.CHAIN ||
+                (mode == RoutingMode.RULE && routes.any { it.target.kind == RouteKind.CHAIN }))
+        }
+        require(mode == RoutingMode.DIRECT || defaultTarget?.kind != RouteKind.CHAIN || chainSelection != null) {
+            "链式代理已关闭，请重新配置默认出口"
+        }
+        val crossAutomaticNeeded =
+            networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION &&
+                mode != RoutingMode.DIRECT && (
+                    (mode == RoutingMode.RULE && routes.any { it.target.kind == RouteKind.AUTO }) ||
+                        (chainSelection?.useAsDefault != true &&
+                            (defaultTarget == null || defaultTarget.kind == RouteKind.AUTO ||
+                                defaultTarget.kind == RouteKind.BLOCK))
+                    )
         val plan = MihomoRuntimePlanner.plan(
-            routes = experiencePolicy.routes,
-            mode = experiencePolicy.mode,
+            routes = routes,
+            mode = mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
-            additionalSubscriptionIds = additionalSubscriptionIds + if (
-                networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
-            ) {
+            additionalSubscriptionIds = additionalSubscriptionIds + listOfNotNull(
+                chainSelection?.entrySubscriptionId,
+                chainSelection?.exitSubscriptionId,
+            ) + if (crossAutomaticNeeded) {
                 usable.mapTo(linkedSetOf(), StoredSubscription::id)
             } else {
                 emptySet()
             },
+            probeSubscriptionIds = additionalSubscriptionIds,
+            skipDefaultTarget = chainSelection?.useAsDefault == true,
         )
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
         val effectiveRoutes = plan.effectiveRoutes
@@ -104,7 +101,24 @@ class MihomoConfigAssembler(
         validateTargets(effectiveRoutes, byId)
         effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId) }
         val activeSubscriptions = usable.filter { it.id in plan.activeSubscriptionIds }
-        writeProviderFiles(activeSubscriptions)
+        // Put the actual node objects in the validated configuration. A file provider can fail
+        // Initial() after config validation succeeds and silently publish COMPATIBLE; inline
+        // providers are parsed by the same native validation as the rest of the configuration.
+        val rawNodesBySubscription = activeSubscriptions.associate { subscription ->
+            val raw = secretStore.readPayload(subscription.id)
+            val normalized = payloadParser.normalizeForMihomo(raw)
+            val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(normalized))
+            check(nodes.isNotEmpty()) { "订阅中没有可用节点" }
+            subscription.id to nodes
+        }
+        val chain = chainSelection?.let { ProxyChainCompiler.compile(it, byId, rawNodesBySubscription) }
+        val providerDefinitions = activeSubscriptions.associate { subscription ->
+            providerName(subscription) to mapOf(
+                "type" to "inline",
+                "payload" to rawNodesBySubscription.getValue(subscription.id),
+                "override" to mapOf("additional-prefix" to nodePrefix(subscription)),
+            )
+        }
         val ipv6Enabled = networkPreferences.ipv6Mode == Ipv6Mode.DUAL_STACK
         val automaticGroupConfig = MihomoFeatureCompiler.automaticGroup(
             networkPreferences.automaticStrategy,
@@ -114,17 +128,10 @@ class MihomoConfigAssembler(
         val fakeIpFilter = MihomoFeatureCompiler.fakeIpFilter(networkPreferences)
         val leadingRules = MihomoFeatureCompiler.leadingRules(networkPreferences)
         val domesticDirectRules = MihomoFeatureCompiler.domesticDirectRules(networkPreferences)
-        val offlinePolicyRules = if (experiencePolicy.includeAdvancedRules) {
-            PolicyPackCompiler.compile(policyPackStore.active())
-        } else {
-            emptyList()
-        }
-        val localRules = if (experiencePolicy.includeAdvancedRules) {
-            LocalRuleCompiler.compile(localRuleStore.list())
-        } else {
-            emptyList()
-        }
+        val offlinePolicyRules = PolicyPackCompiler.compile(policyPackStore.active())
+        val localRules = LocalRuleCompiler.compile(localRuleStore.list())
 
+        val requiredNodeGroups = linkedSetOf<String>()
         val yaml = buildString {
             appendLine("mode: rule")
             // Mihomo warning logs can include host/SNI context from failed dials. Keep only
@@ -132,6 +139,7 @@ class MihomoConfigAssembler(
             // failures to allowlisted categories without retaining endpoint text.
             appendLine("log-level: error")
             appendLine("allow-lan: false")
+            appendLine("external-controller-unix: '${io.weave.client.core.diagnostics.PrivateCoreConnections.socketPath(appContext)}'")
             appendLine("ipv6: $ipv6Enabled")
             // The APK ships the CMFA/Mihomo .dat datasets. Keep the data mode stable even when
             // the user toggles CN direct routing; tying the file format to a routing switch can
@@ -139,6 +147,9 @@ class MihomoConfigAssembler(
             appendLine("geodata-mode: true")
             appendLine("geodata-loader: memconservative")
             appendLine("unified-delay: true")
+            // Match Mihomo/CMFA's robust address selection. A proxy hostname can legitimately
+            // resolve to both IPv4 and IPv6 while only one family is usable on the current
+            // carrier; concurrent dialing avoids pinning the whole tunnel to the dead family.
             appendLine("tcp-concurrent: true")
             // UID attribution is sufficient when there are no per-app rules. Avoid Mihomo's
             // process scanner in that common/newcomer path to reduce wakeups and retained process
@@ -197,17 +208,22 @@ class MihomoConfigAssembler(
                 appendLine("    geoip: true")
                 appendLine("    geoip-code: CN")
             }
-            // Proxy hostnames must also use encrypted upstreams. Plain default-nameserver is now
-            // limited to bootstrapping the DoH/DoT hostnames, preventing per-proxy DNS leakage.
+            // Proxy hostnames must also use encrypted upstreams. Filtering DNS can return a
+            // negative answer for a dynamic proxy hostname before a later fallback is queried;
+            // keep infrastructure bootstrap neutral while preserving the user's filtered DNS
+            // profile for destination lookups. Custom DNS is never silently bypassed.
             appendLine("  proxy-server-nameserver:")
-            MihomoFeatureCompiler.policyNameServers(networkPreferences)
+            MihomoFeatureCompiler.proxyServerNameServers(networkPreferences)
                 .forEach { appendLine("    - $it") }
             // Preserve the original host for fake-IP connections and recover SNI/HTTP hosts for
             // clients that connect using a literal address. This is local inspection only; no
             // sniffed host is exported from the app.
             appendLine("sniffer:")
             appendLine("  enable: true")
-            appendLine("  force-dns-mapping: true")
+            // Do not force redir-host mappings onto every sniffed connection. In particular, a
+            // stale mapping during Wi‑Fi/cellular handover can send a healthy HTTPS flow to an old
+            // address. Fake-IP and the explicit CN policy already preserve the routing context.
+            appendLine("  force-dns-mapping: false")
             appendLine("  parse-pure-ip: true")
             // Use the sniffed host for rule matching, but never replace the actual destination;
             // this avoids a fake-IP re-resolution loop for proxy endpoints and literal-IP apps.
@@ -221,24 +237,30 @@ class MihomoConfigAssembler(
             appendLine("      ports: [443, 8443]")
             // CMFA rejects profiles that contain neither an explicit proxy nor a provider,
             // even though Mihomo itself exposes the built-in DIRECT outbound.
-            appendLine("proxies:")
-            appendLine("  - name: $EXPLICIT_DIRECT_PROXY")
-            appendLine("    type: direct")
+            appendLine(ClashYamlCodec.write(mapOf("proxies" to buildList {
+                add(mapOf("name" to EXPLICIT_DIRECT_PROXY, "type" to "direct"))
+                chain?.let {
+                    add(it.entryProxy)
+                    add(it.exitProxy)
+                }
+            })).trimEnd())
 
             if (activeSubscriptions.isNotEmpty()) {
-                appendLine("proxy-providers:")
-                activeSubscriptions.forEach { subscription ->
-                    appendLine("  ${yamlString(providerName(subscription))}:")
-                    appendLine("    type: file")
-                    // CMFA resolves provider paths below <profile>/providers/.
-                    appendLine("    path: ${yamlString(providerFile(subscription).name)}")
-                    appendLine("    override:")
-                    appendLine("      additional-prefix: ${yamlString(nodePrefix(subscription))}")
-                }
+                appendLine(ClashYamlCodec.write(mapOf("proxy-providers" to providerDefinitions)).trimEnd())
             }
 
             appendLine("proxy-groups:")
-            activeSubscriptions.forEach { subscription ->
+            if (chain != null) {
+                requiredNodeGroups += ProxyChainCompiler.GROUP_NAME
+                appendLine("  - name: ${yamlString(ProxyChainCompiler.GROUP_NAME)}")
+                appendLine("    type: select")
+                appendLine("    proxies:")
+                appendLine("      - ${yamlString(ProxyChainCompiler.EXIT_NAME)}")
+            }
+            activeSubscriptions.filter { it.id in plan.automaticSubscriptionIds }.forEach { subscription ->
+                // A chain/fixed-only provider must not spawn an unused URL-test group: Mihomo
+                // may probe it during initial load even with lazy=true, adding startup traffic.
+                requiredNodeGroups += autoGroup(subscription.id)
                 appendLine("  - name: ${yamlString(autoGroup(subscription.id))}")
                 appendLine("    type: ${automaticGroupConfig.type}")
                 appendLine("    use:")
@@ -262,7 +284,8 @@ class MihomoConfigAssembler(
                 }
                 appendLine("    lazy: true")
             }
-            if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
+            if (crossAutomaticNeeded) {
+                requiredNodeGroups += CROSS_SUBSCRIPTION_GROUP
                 appendLine("  - name: ${yamlString(CROSS_SUBSCRIPTION_GROUP)}")
                 appendLine("    type: ${automaticGroupConfig.type}")
                 appendLine("    use:")
@@ -286,6 +309,7 @@ class MihomoConfigAssembler(
                 )
                 .distinctBy(::fixedGroup)
             fixedTargets.forEach { target ->
+                    requiredNodeGroups += fixedGroup(target)
                     val subscription = byId.getValue(requireNotNull(target.subscriptionId))
                     val node = subscription.nodes.first {
                         it.id == requireNotNull(target.nodeId)
@@ -301,7 +325,9 @@ class MihomoConfigAssembler(
             appendLine("  - name: DEFAULT")
             appendLine("    type: select")
             appendLine("    proxies:")
-            val requestedDefaultProxy = when (effectiveDefaultTarget?.kind) {
+            val requestedDefaultProxy = if (chain != null && chainSelection?.useAsDefault == true) {
+                ProxyChainCompiler.GROUP_NAME
+            } else when (effectiveDefaultTarget?.kind) {
                 RouteKind.AUTO -> if (
                     networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
                 ) {
@@ -310,13 +336,15 @@ class MihomoConfigAssembler(
                     autoGroup(requireNotNull(effectiveDefaultTarget.subscriptionId))
                 }
                 RouteKind.FIXED -> fixedGroup(effectiveDefaultTarget)
+                RouteKind.CHAIN -> ProxyChainCompiler.GROUP_NAME.takeIf { chain != null }
                 RouteKind.DIRECT -> EXPLICIT_DIRECT_PROXY
                 RouteKind.BLOCK, null -> null
             }
             val defaultProxies = DefaultProxyPolicy.compile(
-                mode = experiencePolicy.mode,
+                mode = mode,
                 requestedProxy = requestedDefaultProxy,
-                fallbackAutomaticProxy = if (
+                fallbackAutomaticProxy = if ((chain != null && chainSelection?.useAsDefault == true) ||
+                    effectiveDefaultTarget?.kind == RouteKind.CHAIN) null else if (
                     networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
                 ) {
                     CROSS_SUBSCRIPTION_GROUP.takeIf { activeSubscriptions.isNotEmpty() }
@@ -333,7 +361,7 @@ class MihomoConfigAssembler(
             }
 
             appendLine("rules:")
-            val rules = when (experiencePolicy.mode) {
+            val rules = when (mode) {
                 RoutingMode.RULE -> routeCompiler.compileRules(
                     effectiveRoutes,
                     packageUids,
@@ -346,6 +374,7 @@ class MihomoConfigAssembler(
                             autoGroup(subscriptionId)
                         }
                     },
+                    chainGroupName = ProxyChainCompiler.GROUP_NAME.takeIf { chain != null },
                 )
                 RoutingMode.GLOBAL -> leadingRules + offlinePolicyRules + "MATCH,DEFAULT"
                 RoutingMode.DIRECT -> leadingRules + offlinePolicyRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
@@ -353,7 +382,7 @@ class MihomoConfigAssembler(
             rules.forEach { appendLine("  - ${yamlString(it)}") }
         }
 
-        return AssembledMihomoConfig(yaml, activeSubscriptions.size)
+        return AssembledMihomoConfig(yaml, activeSubscriptions.size, requiredNodeGroups)
     }
 
     fun cleanRuntimeFiles() {
@@ -375,7 +404,7 @@ class MihomoConfigAssembler(
         subscriptions: Map<String, StoredSubscription>,
     ) {
         when (target.kind) {
-            RouteKind.DIRECT, RouteKind.BLOCK -> Unit
+            RouteKind.DIRECT, RouteKind.BLOCK, RouteKind.CHAIN -> Unit
             RouteKind.AUTO -> {
                 val id = requireNotNull(target.subscriptionId) {
                     "$owner 没有指定订阅"
@@ -401,29 +430,8 @@ class MihomoConfigAssembler(
         }
     }
 
-    private fun writeProviderFiles(subscriptions: List<StoredSubscription>) {
-        providerDirectory.parentFile?.deleteRecursively()
-        check(providerDirectory.mkdirs() || providerDirectory.isDirectory) {
-            "无法创建 Mihomo provider 目录"
-        }
-        subscriptions.forEach { subscription ->
-            val destination = providerFile(subscription)
-            val pending = File(providerDirectory, "${destination.name}.pending")
-            val rawPayload = secretStore.readPayload(subscription.id)
-            val parsed = payloadParser.parse(rawPayload)
-            val runtimePayload = payloadParser.normalizeForMihomo(rawPayload, parsed)
-            pending.writeText(runtimePayload, Charsets.UTF_8)
-            check(pending.renameTo(destination)) {
-                "无法写入订阅 ${subscription.name} 的运行时副本"
-            }
-        }
-    }
-
     private fun providerName(subscription: StoredSubscription) =
         "provider_${subscription.id.filter(Char::isLetterOrDigit)}"
-
-    private fun providerFile(subscription: StoredSubscription) =
-        File(providerDirectory, "${providerName(subscription)}.yaml")
 
     private fun nodePrefix(subscription: StoredSubscription) =
         "weave:${subscription.id.take(8)}:"
@@ -442,7 +450,18 @@ class MihomoConfigAssembler(
         append('$')
     }
 
-    private fun yamlString(value: String): String = "'${value.replace("'", "''")}'"
+    private fun yamlString(value: String): String = buildString {
+        append('"')
+        value.forEach { char ->
+            when {
+                char == '"' || char == '\\' -> { append('\\'); append(char) }
+                char.code < 0x20 || char.code == 0x85 || char.code == 0x2028 || char.code == 0x2029 ->
+                    append("\\u%04x".format(char.code))
+                else -> append(char)
+            }
+        }
+        append('"')
+    }
 
     private companion object {
         const val EXPLICIT_DIRECT_PROXY = "WEAVE-DIRECT"

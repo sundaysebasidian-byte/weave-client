@@ -19,6 +19,10 @@ enum class AutomaticStrategy(
     val label: String,
     val description: String,
 ) {
+    STABLE_LATENCY(
+        "稳定优先",
+        "低频探测、容忍小幅延迟差；连续失败后才切换，减少节点来回跳动",
+    ),
     LOWEST_LATENCY(
         "最低延迟",
         "定时探测订阅内节点，自动选择延迟最低的可用节点",
@@ -98,40 +102,11 @@ enum class WeaveAppearanceGroup(val label: String) {
     ART("艺术风"),
 }
 
-enum class ExperienceMode(
-    val label: String,
-    val description: String,
-) {
-    NEWCOMER("新手模式", "三步引导连接，并暂停应用分流、策略包与本地规则"),
-    STANDARD("标准模式", "恢复完整分流、诊断与全部可审计网络设置"),
-}
-
 enum class NavigationItem(val label: String) {
     HOME("连接"),
     ROUTES("分流"),
     SUBSCRIPTIONS("订阅"),
     SETTINGS("设置"),
-}
-
-@Immutable
-data class NavigationConfiguration(
-    val order: List<NavigationItem> = NavigationItem.entries.toList(),
-    val hidden: Set<NavigationItem> = emptySet(),
-) {
-    fun normalized(): NavigationConfiguration {
-        val completeOrder = order.distinct() + NavigationItem.entries.filterNot(order::contains)
-        val safeHidden = hidden.intersect(HIDEABLE_ITEMS)
-        return NavigationConfiguration(completeOrder, safeHidden)
-    }
-
-    fun visibleItems(): List<NavigationItem> {
-        val normalized = normalized()
-        return normalized.order.filterNot(normalized.hidden::contains)
-    }
-
-    companion object {
-        val HIDEABLE_ITEMS = setOf(NavigationItem.ROUTES, NavigationItem.SUBSCRIPTIONS)
-    }
 }
 
 enum class WeaveLanguage(
@@ -162,13 +137,23 @@ enum class WeavePalette(
     MINIMAL_LIGHT("浅色模式", "清晰留白与冷暖中性灰，适合日常使用", WeaveAppearanceGroup.MINIMAL),
     MINIMAL_WHITE_GREEN("白绿", "纯净白底、柔和青绿与清晰深色文字", WeaveAppearanceGroup.MINIMAL),
     MINIMAL_DARK("深色模式", "墨蓝黑画布、柔白文字与克制青绿高光", WeaveAppearanceGroup.MINIMAL, forceDark = true),
-    MINIMAL_DEEP_OCEAN("深海蓝", "澄澈深蓝、海玻璃青与冷白层次", WeaveAppearanceGroup.MINIMAL, forceDark = true),
-    MINIMAL_NIGHT_PINE("夜松青", "深松绿画布、薄荷高光与柔和对比", WeaveAppearanceGroup.MINIMAL, forceDark = true),
+    MINIMAL_PAPER("素纸", "黑白留白、平整卡片，无玻璃高光与投影", WeaveAppearanceGroup.MINIMAL),
     IMPRESSION_SUNRISE("日出·印象", "雾蓝、海玻璃与一笔暖橙", WeaveAppearanceGroup.ART),
     WATER_LILIES("睡莲", "青绿、薰衣草与水面灰蓝", WeaveAppearanceGroup.ART),
     POPPY_FIELD("罂粟田", "鼠尾草、奶油纸与柔珊瑚", WeaveAppearanceGroup.ART),
     TWILIGHT_GARDEN("暮色花园", "靛紫、雾青与黄昏粉棕", WeaveAppearanceGroup.ART),
 }
+
+/** Two explicitly selected nodes. The exit connects to its server through the entry. */
+@Immutable
+data class ProxyChainSelection(
+    val entrySubscriptionId: String,
+    val entryNodeId: String,
+    val exitSubscriptionId: String,
+    val exitNodeId: String,
+    /** Disable this to use the configured chain only for app rules. */
+    val useAsDefault: Boolean = true,
+)
 
 @Immutable
 data class NetworkPreferences(
@@ -184,13 +169,13 @@ data class NetworkPreferences(
     // can disable it explicitly in Settings.
     val domesticDirect: Boolean = true,
     val weavePalette: WeavePalette = WeavePalette.MINIMAL_LIGHT,
-    val experienceMode: ExperienceMode = ExperienceMode.NEWCOMER,
-    val navigation: NavigationConfiguration = NavigationConfiguration(),
+    val proxyChain: ProxyChainSelection? = null,
 )
 
 enum class RouteKind {
     AUTO,
     FIXED,
+    CHAIN,
     DIRECT,
     BLOCK,
 }
@@ -232,6 +217,9 @@ data class EditableSubscription(
     val name: String,
     val sourceKind: SubscriptionSourceKind,
     val sourceUrl: String,
+    val importCounts: io.weave.client.subscription.SubscriptionImportCounts? = null,
+    val sourceGroups: List<io.weave.client.subscription.SourceProxyGroupPreview> = emptyList(),
+    val supportedSourceRuleCount: Int = 0,
 )
 
 @Immutable
@@ -252,6 +240,12 @@ data class AppRoute(
 )
 
 @Immutable
+enum class NetworkPathStatus(val label: String) {
+    INACTIVE("未连接"), STARTING("正在连接"), TUN_READY("隧道已建立"),
+    WAITING_NETWORK("等待网络"), RECOVERING("正在恢复"), VERIFIED("出口已验证"),
+}
+
+@Immutable
 data class DashboardState(
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val routingMode: RoutingMode = RoutingMode.RULE,
@@ -260,7 +254,7 @@ data class DashboardState(
     val uploadBytesPerSecond: Long = 0,
     val downloadBytesPerSecond: Long = 0,
     val attributedAppConnections: Long = 0,
-    val sessionDurationSeconds: Long = 0,
     val coreAvailable: Boolean = false,
     val statusMessage: String? = null,
+    val networkPathStatus: NetworkPathStatus = NetworkPathStatus.INACTIVE,
 )

@@ -26,9 +26,11 @@ object MihomoRuntimePlanner {
         defaultTarget: RouteTarget?,
         usableSubscriptionIds: List<String>,
         additionalSubscriptionIds: Set<String> = emptySet(),
+        probeSubscriptionIds: Set<String> = emptySet(),
+        skipDefaultTarget: Boolean = false,
     ): MihomoRuntimePlan {
         val effectiveRoutes = routes.takeIf { mode == RoutingMode.RULE }.orEmpty()
-        val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT }
+        val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT || skipDefaultTarget }
         val usableIds = usableSubscriptionIds.toSet()
         val activeIds = buildSet {
             effectiveRoutes.mapNotNullTo(this) { route ->
@@ -44,6 +46,9 @@ object MihomoRuntimePlanner {
                 ?.let(::add)
             addAll(additionalSubscriptionIds)
             retainAll(usableIds)
+            if (effectiveDefaultTarget == null && !skipDefaultTarget && mode != RoutingMode.DIRECT) {
+                usableSubscriptionIds.firstOrNull()?.let(::add)
+            }
             if (isEmpty() && mode != RoutingMode.DIRECT) {
                 usableSubscriptionIds.firstOrNull()?.let(::add)
             }
@@ -55,10 +60,14 @@ object MihomoRuntimePlanner {
                 ?.takeIf { it.kind == RouteKind.AUTO }
                 ?.subscriptionId
                 ?.let(::add)
+            // A one-shot manual test needs a URL-test group even when the user's actual
+            // default is fixed. Do not turn chain/cross-scope providers into probe groups.
+            addAll(probeSubscriptionIds)
             retainAll(activeIds)
             if (
                 isEmpty() &&
                 effectiveDefaultTarget == null &&
+                !skipDefaultTarget &&
                 mode != RoutingMode.DIRECT
             ) {
                 usableSubscriptionIds.firstOrNull { it in activeIds }?.let(::add)

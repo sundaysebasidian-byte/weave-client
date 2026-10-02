@@ -81,7 +81,7 @@ object SubscriptionGuard {
             findings += finding(
                 "large_removal",
                 "移除了超过一半节点",
-                SubscriptionAuditSeverity.REVIEW,
+                SubscriptionAuditSeverity.BLOCKED,
             )
         }
         if (oldCount >= MIN_BASELINE_NODES && newCount > oldCount * 4) {
@@ -138,7 +138,7 @@ object SubscriptionGuard {
         title = title,
         detail = when (code) {
             "node_drop" -> "候选节点少于旧版本四分之一，旧版本已保留"
-            "large_removal" -> "更新需要人工确认，旧版本仍可回退"
+            "large_removal" -> "节点减少超过一半，已阻止覆盖并保留原订阅"
             "node_spike" -> "候选节点超过旧版本四倍，旧版本已保留"
             "duplicates" -> "重复项不会被静默合并"
             "source_host" -> "重定向或编辑后的来源与旧版本不同"

@@ -177,6 +177,63 @@ object LocalRuleCompiler {
     private fun escape(value: String): String = value.replace("\\", "\\\\").replace(",", "\\,")
 }
 
+/** A deliberately bounded, offline subset of Mihomo rule syntax for editable local rules. */
+object LocalRuleBatchParser {
+    fun parse(text: String): List<LocalRouteRule> {
+        require(text.length <= 32_768) { "规则文本过长" }
+        val lines = text.lineSequence().toList()
+        require(lines.size <= LocalRouteRuleValidator.MAX_RULES) { "规则行数过多" }
+        val rules = lines.mapIndexedNotNull { index, source ->
+            val line = source.trim().removePrefix("- ").trim()
+                .let { raw ->
+                    if (raw.length >= 2 && (raw.first() == '\'' && raw.last() == '\'' ||
+                            raw.first() == '"' && raw.last() == '"')) raw.substring(1, raw.lastIndex) else raw
+                }
+            if (line.isBlank() || line.startsWith('#')) return@mapIndexedNotNull null
+            val parts = line.split(',').map(String::trim)
+            require(parts.size == 3 || parts.size == 4 && parts[3].equals("no-resolve", true)) {
+                "第 ${index + 1} 行格式无效"
+            }
+            val type = when (parts[0].uppercase()) {
+                "DOMAIN" -> LocalRuleType.DOMAIN
+                "DOMAIN-SUFFIX" -> LocalRuleType.DOMAIN_SUFFIX
+                "DOMAIN-KEYWORD" -> LocalRuleType.DOMAIN_KEYWORD
+                "IP-CIDR" -> LocalRuleType.IP_CIDR
+                "IP-CIDR6" -> LocalRuleType.IP_CIDR6
+                else -> throw LocalRouteRuleException("第 ${index + 1} 行规则类型不支持")
+            }
+            require(parts.size == 3 || type == LocalRuleType.IP_CIDR || type == LocalRuleType.IP_CIDR6) {
+                "第 ${index + 1} 行 no-resolve 只能用于 IP 网段"
+            }
+            val action = when (parts[2].uppercase()) {
+                "DEFAULT" -> LocalRuleAction.DEFAULT
+                "DIRECT" -> LocalRuleAction.DIRECT
+                "REJECT" -> LocalRuleAction.REJECT
+                else -> throw LocalRouteRuleException("第 ${index + 1} 行目标不支持")
+            }
+            try {
+                LocalRouteRuleValidator.normalize(LocalRouteRule(type = type, value = parts[1], action = action))
+            } catch (error: IllegalArgumentException) {
+                throw LocalRouteRuleException("第 ${index + 1} 行：${error.message ?: "规则无效"}")
+            }
+        }
+        require(rules.isNotEmpty()) { "没有可导入的规则" }
+        return rules
+    }
+}
+
+/** Preserve priority explicitly: Mihomo stops at the first matching rule. */
+object LocalRuleOrdering {
+    fun move(rules: List<LocalRouteRule>, id: String, direction: Int): List<LocalRouteRule> {
+        require(direction == -1 || direction == 1) { "规则移动方向无效" }
+        val from = rules.indexOfFirst { it.id == id }
+        if (from < 0) return rules
+        val to = from + direction
+        if (to !in rules.indices) return rules
+        return rules.toMutableList().apply { add(to, removeAt(from)) }
+    }
+}
+
 class LocalRouteRuleStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),

@@ -5,6 +5,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubscriptionGuardTest {
+    @Test fun `65 to 23 must block replacement instead of just displaying a warning`() {
+        val previous = StoredSubscription("sub", "fixture", 65, SubscriptionFormat.CLASH_YAML,
+            (1..65).map { StoredNode("$it", "node-$it", "http") }, true)
+        val candidate = ParsedSubscription(SubscriptionFormat.CLASH_YAML, 23, setOf("http"),
+            (1..23).map { ParsedNode("node-$it", "http") })
+        assertTrue(SubscriptionGuard.audit(previous, candidate).blocked)
+    }
     @Test
     fun `catastrophic node loss is blocked`() {
         val previous = StoredSubscription(

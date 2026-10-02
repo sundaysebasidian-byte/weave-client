@@ -1,7 +1,6 @@
 package io.weave.client.core.engine
 
 import io.weave.client.domain.AppRoute
-import io.weave.client.domain.ExperienceMode
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
@@ -12,26 +11,32 @@ import org.junit.Test
 
 class MihomoRuntimePlannerTest {
     @Test
-    fun `newcomer mode pauses advanced routing without deleting it`() {
-        val savedRoutes = listOf(route("app.fixed", target(RouteKind.FIXED, "saved", "node")))
-
-        val newcomer = resolveExperienceRuntimePolicy(
-            routes = savedRoutes,
-            mode = RoutingMode.GLOBAL,
-            experienceMode = ExperienceMode.NEWCOMER,
-        )
-        val standard = resolveExperienceRuntimePolicy(
-            routes = savedRoutes,
-            mode = RoutingMode.GLOBAL,
-            experienceMode = ExperienceMode.STANDARD,
+    fun appOnlyChainKeepsFirstSubscriptionAsDefaultFallback() {
+        val plan = MihomoRuntimePlanner.plan(
+            routes = listOf(route("app.chain", target(RouteKind.CHAIN))),
+            mode = RoutingMode.RULE,
+            defaultTarget = null,
+            usableSubscriptionIds = listOf("default", "entry", "exit"),
+            additionalSubscriptionIds = setOf("entry", "exit"),
         )
 
-        assertTrue(newcomer.routes.isEmpty())
-        assertEquals(RoutingMode.RULE, newcomer.mode)
-        assertTrue(!newcomer.includeAdvancedRules)
-        assertEquals(savedRoutes, standard.routes)
-        assertEquals(RoutingMode.GLOBAL, standard.mode)
-        assertTrue(standard.includeAdvancedRules)
+        assertEquals(setOf("default", "entry", "exit"), plan.activeSubscriptionIds)
+        assertEquals(setOf("default"), plan.automaticSubscriptionIds)
+    }
+
+    @Test
+    fun chainLoadsBothHopsButNotReplacedDefault() {
+        val plan = MihomoRuntimePlanner.plan(
+            routes = emptyList(),
+            mode = RoutingMode.GLOBAL,
+            defaultTarget = target(RouteKind.FIXED, "old-default", "old-node"),
+            usableSubscriptionIds = listOf("old-default", "entry", "exit"),
+            additionalSubscriptionIds = setOf("entry", "exit"),
+            skipDefaultTarget = true,
+        )
+        assertNull(plan.effectiveDefaultTarget)
+        assertEquals(setOf("entry", "exit"), plan.activeSubscriptionIds)
+        assertTrue(plan.automaticSubscriptionIds.isEmpty())
     }
 
     @Test
@@ -45,6 +50,21 @@ class MihomoRuntimePlannerTest {
 
         assertEquals(setOf("selected"), plan.activeSubscriptionIds)
         assertTrue(plan.automaticSubscriptionIds.isEmpty())
+    }
+
+    @Test
+    fun explicitProbeAddsTestGroupForFixedDefaultOnlyWhenRequested() {
+        val plan = MihomoRuntimePlanner.plan(
+            routes = emptyList(),
+            mode = RoutingMode.RULE,
+            defaultTarget = target(RouteKind.FIXED, "selected", "node-1"),
+            usableSubscriptionIds = listOf("selected", "unused"),
+            additionalSubscriptionIds = setOf("selected"),
+            probeSubscriptionIds = setOf("selected"),
+        )
+
+        assertEquals(setOf("selected"), plan.activeSubscriptionIds)
+        assertEquals(setOf("selected"), plan.automaticSubscriptionIds)
     }
 
     @Test
@@ -103,9 +123,11 @@ class MihomoRuntimePlannerTest {
             defaultTarget = target(RouteKind.FIXED, "active", "node-1"),
             usableSubscriptionIds = listOf("active", "probe", "unused"),
             additionalSubscriptionIds = setOf("probe"),
+            probeSubscriptionIds = setOf("probe"),
         )
 
         assertEquals(setOf("active", "probe"), plan.activeSubscriptionIds)
+        assertEquals(setOf("probe"), plan.automaticSubscriptionIds)
     }
 
     private fun route(packageName: String, target: RouteTarget) = AppRoute(

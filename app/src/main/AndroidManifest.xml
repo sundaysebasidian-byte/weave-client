@@ -12,6 +12,20 @@
         android:required="false" />
 
     <queries>
+        <package android:name="com.github.kr328.clash" />
+        <package android:name="com.github.kr328.clash.premium" />
+        <package android:name="com.github.metacubex.clash" />
+        <package android:name="com.github.metacubex.clash.meta" />
+        <package android:name="com.github.metacubex.clash.alpha" />
+        <package android:name="com.nebula.karing" />
+        <package android:name="com.nebula.clashmi" />
+        <package android:name="com.follow.clash" />
+        <package android:name="com.follow.clash.dev" />
+        <package android:name="com.v2ray.ang" />
+        <package android:name="io.nekohasekai.sagernet" />
+        <package android:name="io.nekohasekai.sfa" />
+        <package android:name="moe.nb4a" />
+        <package android:name="app.hiddify.com" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

@@ -26,4 +26,5 @@ app/release/
 *.dmg
 *.pkg
 captures/
+app/src/main/assets/geodata/cache.db
 .DS_Store

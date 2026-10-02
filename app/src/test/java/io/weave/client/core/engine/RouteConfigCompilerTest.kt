@@ -10,6 +10,20 @@ import org.junit.Test
 class RouteConfigCompilerTest {
     private val compiler = RouteConfigCompiler()
 
+    @Test fun `app chain route is explicit and fails closed when chain is unavailable`() {
+        val app = route("browser.app", RouteTarget(RouteKind.CHAIN, "链式代理"))
+        assertEquals(
+            listOf("UID,10123,WEAVE-CHAIN", "PROCESS-NAME,browser.app,WEAVE-CHAIN",
+                "AND,((NETWORK,UDP),(UID,10123)),REJECT", "MATCH,DEFAULT"),
+            compiler.compileRules(listOf(app), packageUids = mapOf("browser.app" to 10123),
+                chainGroupName = "WEAVE-CHAIN"),
+        )
+        assertEquals(
+            listOf("PROCESS-NAME,browser.app,REJECT", "MATCH,DEFAULT"),
+            compiler.compileRules(listOf(app)),
+        )
+    }
+
     @Test
     fun `rules are deterministic and end in fallback`() {
         val routes = listOf(

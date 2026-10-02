@@ -1,5 +1,226 @@
 # Android 运行验证
 
+## 2026-09-14：vivo Android 16 旧订阅恢复与交互更新（alpha72 / 最终 versionCode 75）
+
+- 真机 V2359A 上复现并定位 `S02:wm1`，还原混淆堆栈到 `ClashYamlCodec.nodeList`。
+  7 份已保存订阅共 277 个节点，其中一份保存了 65 个节点对象，后面紧接 4912 条规则字符串。
+  旧版逐行导入器删掉了 `rules:` 标题，未缩进的规则列表被 YAML 解析为 `proxies` 的尾部。
+  这份订阅参与运行配置组装时会使启动失败，并不是所有服务器同时失效或 DNS 不可用。
+- 兼容范围严格限定为完整节点对象后面的已识别规则文本；只提取实际节点，不执行订阅规则，
+  不改写原始密文。其他混合类型、无效节点和不明确文本仍然拒绝，原生校验与 VPN 就绪门禁不变。
+- 手机本地 opt-in 测试两项通过：每份订阅规范化后节点数与原记录一致，原始 payload 未改变；
+  共 277 个节点保留，实际默认出口与应用分流配置通过随包原生内核校验。测试只返回计数/类型，
+  未将节点服务器、凭据、订阅地址或正文导出到电脑。
+- debug 包在真机通过首页连接按钮启动原保存的 DMIT-Hysteria2 出口，系统 VPN 建立，界面
+  显示已保护及 Hysteria2，不再出现原有 S02。
+- 本轮首个压缩候选实际覆盖到同一手机，核实 alpha72 / 74、非 debuggable，保存出口仍在，
+  再次从首页成功连接。通过应用自身正常网络栈运行 9 站 HTTPS 探测：X/TikTok/YouTube/GPT/
+  Netflix/Facebook/Disney+ 返回 200，Google 返回 204，Claude 返回 302；耗时 1966 ms。
+  这证明该时刻的实际连通性，不等于流媒体内容解锁、长时间稳定或所有节点均正常。
+  在同一订阅切换自动选择后重新探测，9 站也分别收到相同类别的有效 HTTP 响应，
+  当前默认出口暂留同一订阅的自动选择，已请求用户确认恢复原固定 HY2 节点；
+  未修改订阅正文、DNS 或应用分流设置。
+  临时 `io.weave.client.test` 组件已移除，Weave 及用户订阅保留。
+- JVM 单元测试 167 项通过；debug lint 0 错误、19 警告、1 提示。本地发行审计通过，合并后的
+  manifest 未增加麦克风、存储或全量包发现权限；相机服务不导出，相机画面仅本机识别。
+- Android 16 隔离模拟器：原生配置、自动/手动实际转发、加密存储共 12 项通过，真实订阅
+  opt-in 用例未启用；新增旧规则尾部 fixture 经规范化后在真实内核只产生预期的代理成员。
+  主题渲染两项通过，三个极简主题的四组正文/背景对比度均不低于 4.5:1，四款艺术主题能渲染。
+- CameraX 实时预览替代拍照返回缩略图；本地 QR 解码的普通、反色、旋转及空帧用例通过。
+  最终包在 vivo 上打开实时扫描页、点击对焦/补光并关闭；系统相机记录确认 Weave 独占取景
+  后正确 DISCONNECT，无残留 active client。未保存相机帧；未做对着实体二维码的完整导入测试。
+  移除新手模式、自订导航，固定四页；迁移入口始终可见，仍须由用户从其他客户端导出，
+  不绕过 Android 私有数据隔离。白绿/深色重做，深海蓝与夜松青迁移为深色，四款艺术配色保留。
+- 实机截图额外发现透明 Scaffold 下未指定颜色的标题/图标继承黑色；原先仅校验配色值的
+  测试无法发现此问题。现为根主题和透明 Scaffold 显式提供正文色，回归增加无 Surface 包裹
+  时的继承颜色对比度。该新增用例在 vivo 上被同版本安装提示遮挡，随后主动停止本次运行；
+  改在隔离 Android 16 设备重跑，包含继承颜色检查的两项主题测试通过（12.02 s）。
+  vivo 上当前 debug 包的实际首页截图也已确认标题/图标不再黑底黑字。
+- vivo 多次同版本覆盖返回 `INSTALL_FAILED_ABORTED: User rejected permissions`，用户手动
+  确认也失败；APK 本地签名校验正常、手机空间充足，严格限定的安装器日志没有更具体原因。
+  不卸载应用、不关闭系统安装保护；最终仅把构建号从 74 递增到 75，改走正常升级流程。
+  75 构建的覆盖流程仍显示系统安装失败，未完成最终覆盖；手机保留 alpha72 / 74 debug 验证包。
+  手机电量已显示 1%、USB powered true，停止重复安装及压力测试，待充电和系统安装恢复。
+- 成品 `dist/Weave-0.3.0-alpha72-arm64.apk`：19,152,611 字节；v2 签名通过，与原本地覆盖
+  包同证书。SHA-256：`06b5430f2b9825bb1d52705a002581b816d38a75e31e119958abc3eac652257b`。
+  本地测试签名不应当当成已经建立正式开源发行签名链。
+- 边界：不能由这些结果保证所有订阅节点、所有运营商、长时间休眠/切网或 120 fps 永不掉帧。
+  vivo 上已连接、白绿首页预热后 6 次上下滑动的短时采样：466 帧，12 帧被系统标记为 jank
+  （2.58%），CPU 帧耗时 p50 8 ms / p95 12 ms / p99 26 ms。没有有效的同条件旧版对照，
+  不能据此计算性能提升比例；该样本也不是整机持续 120 fps 的证明。
+
+## 2026-09-13：S02:wm1 追加排查（仍为 alpha71）
+
+- 用户反馈最近失败为 `S02:wm1`。对照交付 alpha71 的 R8 mapping，`wm1` 为
+  `SubscriptionImportException`；该错误发生于运行配置生成、实际原生校验和 VPN 建立之前。
+  目前不能据此判断是 YAML 语法、旧订阅兼容性还是解析库内部异常：现有 YAML 包装异常
+  出于隐私考虑不保留原始消息/cause，恢复记录不足以区分这些情况。
+- 在同一份最终压缩 APK（versionCode 73）的 API 36 ARM64 隔离模拟器中，经文件选择器
+  导入新的假 HY2 节点，包含 SNI、ALPN 列表、布尔值及数值带宽字段。首次选择并连接成功；
+  强制结束进程、重新打开后节点与选择保留，第二次连接亦启动到 CONNECTED，无 S02 日志。
+  此节点指向模拟器 loopback 的无服务端口，仅证明解析和启动路径，不证明真实 HY2 联网。
+- ADB 仅识别模拟器，没有用户手机；未读取私人订阅。未复现用户的 S02，未修改生产配置、
+  DNS、内核门禁或订阅数据，未生成新的“修复版”。下一步需要失败手机的脱敏堆栈或保留格式
+  的脱敏配置，并区分旧订阅与当前版本新导入的订阅是否都失败。
+
+## 2026-09-13：启动路由时序与分阶段诊断（alpha71 / versionCode 73）
+
+- 用户截图只有通用配置/内核失败提示，没有异常明细。本轮 ADB 仍仅有隔离模拟器，没有真机，
+  未读取真实订阅账号；不能依据该截图认定是 DNS、Hysteria2 参数或同一个配置问题。
+- alpha70 最终压缩 APK 经过界面点击、系统 VPN 授权后，在普通本地假 SOCKS 配置下能启动。
+  该检查不证明假节点联网成功，也不证明用户节点可用。
+- 新增 `MihomoStartupConfigurationTest`：真实加密存储、配置生成、随包 native validate，
+  覆盖 Hysteria2 的手动/自动、规则/全局/直连、DNS 预设与传输协议以及策略相关设置。
+- 新增 opt-in `MihomoVpnServiceIntegrationTest`：仅隔离模拟器且事先已授权 VPN 才运行；
+  流量目标为文档保留地址，由 TUN 内选择的本地 HTTP CONNECT 假代理返回固定响应，不访问
+  真实目标。测试结束恢复原运行模式/出口，删除本次假订阅，不清理既有订阅。
+- 修复前实际出现：应用已报告 CONNECTED，但首个 Socket 仍从模拟器实体地址出站并失败。
+  测试等待系统 VPN 路由可见后，自动/固定各两轮、共 4 次转发成功。产品端现加入同样的本地
+  就绪等待；回归测试改为 CONNECTED 后直接断言路由就绪并发送请求，不替产品补等待。
+- 启动阶段：S01 基础检查，S02 配置生成，S03 原生校验，S04 系统 VPN 接口，S05 内核/TUN
+  启动，S06 系统路由发布。仅保存这些阶段及错误类别，不存原始异常消息、主机或认证字段。
+- 后续仍需真机“设置 → 恢复中心 → 最近失败”或 USB 调试证据，确认用户截图的具体失败。
+- 修复后最终检查：164 项单元测试通过；lint 0 错误、9 警告。Android instrumentation 共
+  13 项，12 项通过，读取真实订阅的 opt-in 用例 1 项跳过；系统 VPN 测试四次转发均成功。
+- 最终压缩 APK 实际覆盖到模拟器后，版本为 alpha71 / 73，保留之前导入和选中的本地假节点。
+  通过界面点击连接，由另一个进程向 `198.51.100.23:80` 发出 HTTP 请求，实际穿过 VPN 到
+  主机 loopback 测试代理，收到固定 `WEAVE TUN VERIFIED` 回包。不是仅验证 debug 包。
+- 交付包 `dist/Weave-0.3.0-alpha71-arm64.apk`：18,661,356 字节；v2 签名验证通过，证书与
+  alpha70 相同；SHA-256 `b226627cfda8abe595ad7831d4735fc283d890ddf39c6df0430a16c85bc64eb5`。
+
+## 2026-09-13：完整节点集合与原生转发回归（alpha70 / versionCode 72）
+
+- 在 Android 16 / API 36 ARM64 模拟器上安装修复前 APK，新增回归用例实际复现三处失败：
+  Unicode 转义名称的固定组返回 `COMPATIBLE`；另一个存储实例的构造清理删除尚未提交的节点
+  文件；节点元数据损坏后虽然加密 payload 存在，但节点列表为空。最小文件 provider 和普通
+  自动组并未失败，因此不能把所有用户问题都归咎于 `queryGroup` 的异步延迟。
+- Walless 的[公开说明](https://t.me/s/WallessPKUChannel?before=115)提及主文件与 provider
+  文件分开分发。此前 Weave 未实现通用 provider 展开，只尝试修改请求参数。现在导入/更新
+  显式展开 HTTPS 或 inline 集合，保留所有节点字段，不执行订阅自带的控制面和规则下载。
+- 运行配置使用原生 inline provider；节点实际对象与规则一同校验，不依赖第二份临时 YAML。
+  `COMPATIBLE` 仍然是空集合的占位项，不允许它作为“已连接”的真实代理出口。
+- 最终 debug APK：163 项单元测试通过；lint 0 错误（16 警告、1 提示）。真实原生库的
+  Android instrumentation 10 项通过；读取用户真实订阅的 opt-in 用例未启用，1 项跳过。
+- 原生转发测试：模拟主订阅下载子节点集合，经过实际加密存储、配置生成与原生加载，然后
+  由 Mihomo 的 loopback 入站转发到本地 HTTP CONNECT 测试代理；自动/手动各测试首连和
+  完整停止后的再连接，共 4 次确认上游收到请求且客户端收到正确回包。不是仅检查 UI 状态。
+- 测试另外覆盖国旗转义、名称中的换行、缺失文件负例、错误端口在 native validate 阶段拒绝、
+  并发保存保留文件、从保留的加密内容重建损坏索引，以及非法 YAML 类型/循环/重复键拒绝。
+- 最终包界面测试另发现匿名 SOCKS URI 导入空指针；还原堆栈并在 debug 完整仓库流程复现后，
+  确认是 URI 可选 user-info/fragment 被当成非空参数，并非 R8/YAML 反射问题。修复可选字段
+  空值处理，新增仓库粘贴导入及重建后节点保留测试；未将失败包交付。
+- 随后的压缩包检查还复现 `TypeDescription` 静态初始化空指针：R8 将类移到无名包，而库调用
+  `Class.getPackage().getName()`；Android 返回 null。仅保留 SnakeYAML 的包名，继续允许类/
+  成员压缩和混淆；修复后映射显示 `org.yaml.snakeyaml.TypeDescription -> org.yaml.snakeyaml.e`。
+- 最终 `localOptimized` APK 在模拟器实际覆盖安装、冷启动成功；通过界面粘贴匿名 SOCKS
+  链接，并经系统文件选择器导入含 inline `proxy-providers` 的完整 YAML。两份订阅各 1 节点，
+  强制结束进程后重新打开仍为 2 份订阅、2 个节点。测试未使用私人订阅/凭据。
+- 交付包 `dist/Weave-0.3.0-alpha70-arm64.apk`：18,657,464 字节，v2 签名验证通过，证书与
+  alpha69 一致；SHA-256：`cfc7e2886ab46e511ad04d250a3b850494934df3c14be23ead6d280919835f4b`。
+  不修改依赖锁文件的普通测试/lint/压缩构建命令也已通过，本地发行审计通过。
+- 限制：本轮 ADB 未识别真机，用户只提供了打码地址；未验证其真实 Walless 账号、运营商
+  路径、VPN TUN 流量、长时间运行或 Android 17 的系统行为。不能据此承诺所有节点已经可达。
+  覆盖安装后需要更新一次 Walless 订阅，才能下载旧版本遗漏的节点集合；不要卸载或清除数据。
+
+## 2026-09-08：移除误杀式节点组门禁（alpha69 / versionCode 71）
+
+- 对照 CMFA 的 `Load` 与 `patchProviders` 实现确认：provider 文件名由 wrapper 解析到
+  `<profile>/providers/`，alpha68 的路径修复方向正确。
+- `queryGroup` 只用于不含敏感端点的启动观察；即使 provider 成员尚未同步到查询接口，也不再
+  在 TUN 启动前抛出“订阅节点未成功载入”。原生配置验证、加密存储读取和本地 provider 规范化
+  仍然失败关闭。
+- `tcp-concurrent` 恢复为开启，使双栈代理服务器可以在 IPv4/IPv6 中使用实际可达的地址族。
+- `testDebugUnitTest`、`lintDebug`、ARM64 `assembleLocalOptimized`、R8/资源压缩和本地发行
+  审计均通过。成品为 18,611,292 字节，APK Signature Scheme v2 验证通过；SHA-256：
+  `daf202161621772a23b3c584f7b2f4afa1afaa87e9815f534d72b1fd8adeab0c`。
+- 本版尚未连接到 Android 真机；必须用用户实际订阅完成覆盖安装、连接与出口验证后，才能宣称
+  真机回归修复完成。
+
+## 2026-09-08：订阅请求绕过已接管的 VPN 默认网络（alpha68 / versionCode 70）
+
+- 当系统默认网络是 VPN 时，远程订阅请求会依次尝试当前可用的实体以太网、Wi‑Fi 和移动数据
+  网络，且每次尝试都使用同一实体网络完成 DNS 解析与 HTTPS 连接；没有 VPN 时不改变系统
+  默认路由。
+- 连接异常统一映射为不包含主机、订阅令牌或底层地址的提示，保留失败原因但不把敏感信息写入
+  UI 或持久化状态。
+- Walless 当前及历史域名的兼容参数和一次 Base64 包装的 Clash/sing-box/V2Ray 解析继续在导入
+  边界处理；原生 provider 集成 fixture 已改为 CMFA wrapper 实际使用的 `path: <filename>` 形式。
+- `testDebugUnitTest`、`lintDebug`、ARM64 `assembleLocalOptimized` 及本地发行审计已通过；本版尚未
+  在当前会话连接到 Android 17 真机，不能把真机网络可达性
+  或所有 Walless 账号返回内容宣称为已验证。
+- ARM64 `localOptimized` 安装包为 18,612,876 字节，versionCode 70，APK Signature Scheme v2
+  验证通过；SHA-256：`e8bdcd1afe5dfb1ebf5b124b8cd2ef8cc464db43cec52a6904a3ba049eb98e7b`。
+
+## 2026-09-08：修复 CMFA provider 路径回归（alpha67 / versionCode 69）
+
+- 对照 CMFA 原生 `patchProviders` 处理链确认：Android wrapper 会把配置中的 provider
+  `path` 规范化为 `<profile>/providers/<path>`。alpha65/66 传入
+  `providers/<文件名>` 会被重复拼接成 `providers/providers/<文件名>`，因此文件存在但策略组
+  仍为空并显示 `COMPATIBLE`。alpha67 恢复为仅传文件名，与运行时文件目录一致。
+- 连接就绪检查兼容 CMFA 的对象数组及旧/重打包桥接的字符串、`all` 列表，并在超时日志中只保留
+  组类型、成员计数和 JSON 形状；不输出节点地址、订阅 URL、UUID 或密码。
+- 未使用的自动策略组不再阻断固定节点的启动；当前默认出口和实际路由所需的组仍保持 fail-closed。
+- `testDebugUnitTest`、`lintDebug`、ARM64 `assembleLocalOptimized` 及本地发行审计已通过。
+  alpha67 APK 为 18,611,412 字节，versionCode 69，v2 签名有效；SHA-256：
+  `bc2178910bcb6a834408afb2b66246925147763778aea296afd830cd1f4a2f5e`。当前 ADB 无设备，
+  仍需在 Android 17 真机确认 Walless/Clash 订阅的实际连通性。
+
+## 2026-09-08：延长大 provider 就绪窗口（alpha66 / versionCode 68）
+
+- 针对较慢 OEM 在异步解析大体积 Clash/OpenVPN provider 时超过 900 ms 的情况，将启动就绪
+  轮询扩大为 40 次、每次 100 ms（最多 3.9 秒）；仍 fail-closed，不接受空组或
+  `COMPATIBLE` 占位项。
+- alpha65 的路径实验已在 alpha67 回溯：CMFA Android wrapper 会自动补上 `providers/`，
+  因此该版本的 `providers/<文件名>` 会重复拼接；本节只记录 alpha66 的 3.9 秒有界等待。
+- `testDebugUnitTest`（146 项）、`lintDebug`、ARM64 `assembleLocalOptimized` 和发行审计通过。
+  APK 18,611,032 字节，v2 签名有效；SHA-256：
+  `9e0dcd6feb4bd867f8acd4f9679352b3194d1bc7d2ca23afc699967fec64d0ba`。
+
+## 2026-09-08：修复 provider 运行路径（alpha65 / versionCode 67）
+
+- 该版本首次尝试把运行时目录前缀写入 provider `path`，但没有考虑 CMFA Android wrapper
+  会在 `patchProviders` 中自动补上 `providers/`，因而 alpha65 实际查找成了重复目录。
+- alpha67 已根据 CMFA 原生实现回溯为仅传文件名；本节保留为历史记录，不代表该版本已修复
+  Android 真机上的 provider 路径。
+
+## 2026-09-08：连接就绪重试与 provider 兼容性修复（alpha64 / versionCode 66）
+
+- 修复首次点击连接时内核刚完成 `load`、provider 仍在初始化，策略组短暂返回空/`COMPATIBLE`
+  导致连接被误拒绝的问题：启动边界增加 10 次、每次 100 ms 的有界就绪轮询，最多等待 900 ms，
+  不会后台持续重试或放行未验证的出口。
+- 策略组就绪判断兼容旧版/重打包 CMFA 未返回 `additional-prefix` 的情况：仍拒绝
+  `COMPATIBLE`、`DIRECT`、`REJECT` 等占位项，但接受已实际载入的非空节点名；URLTest、Fallback
+  和 LoadBalance 只要求至少一个真实成员，不再要求首个探测完成前存在固定 `now`。
+- 新增回归断言覆盖无前缀节点与大小写占位项；保留首次 provider 缺失时的 fail-closed 行为。
+- 本轮 `testDebugUnitTest`（含全部 146 项单元测试）、`lintDebug` 和 `assembleLocalOptimized
+  -PweaveArm64Only=true` 通过。APK 18,611,120 字节，v2 签名有效，签名证书与手机旧版本一致；
+  SHA-256：`f91217c5db23c92b9109e626f744bd1be063d9d5aa857f696f05bdf5ba7db739`。
+- 真机验证仍待 ADB 授权，目前连接设备仍显示 `unauthorized`。
+
+## 2026-09-07：节点文件恢复与真实出口校验（alpha63 / versionCode 65）
+
+- 真机旧版本曾显示“已保护”，但实际活动项为 `COMPATIBLE`，不是订阅节点。
+  这不能证明网页可达；TUN 存在、系统 VPN 已验证、fake-IP ping 返回也不能代替 HTTPS 测试。
+- 代码确认：出站自动恢复调用完整 `stop()` 删除 provider 明文文件，随后仅用上一份 YAML
+  启动，未重建文件。改为仅在恢复期间保留同一运行配置；正常断开、完整重载仍执行原有清理。
+- CMFA/Mihomo 的 provider 初始化错误只记录日志，不一定使配置应用失败。启动后增加已加载
+  策略组检查，拒绝把空组的 `COMPATIBLE` / `DIRECT` 占位项当作订阅出口。负载均衡的 `Now()`
+  本来为空，因此按真实成员校验，不要求固定选择；不把节点加载成功描述为互联网探测成功。
+- 新增 `RuntimeProxyGroupReadinessTest`，覆盖空组、占位项、失配选择、正常选择和负载均衡。
+- 新增 `MihomoProviderIntegrationTest`，使用无凭据的本地 fixture 检查实际内核加载、空文件
+  provider、负载均衡及停止/恢复文件生命周期。普通执行不读取用户订阅、不启动 VPN 或代理监听。
+  仅显式传入 `weaveInspectStoredProviders=true` 才对已存订阅作本机加载诊断，输出节点数量和
+  协议，不输出服务器、订阅 URL、节点名或凭据。
+- 本轮 146 项单元测试、`lintDebug`（无错误，仍有现存警告）和 ARM64 `assembleLocalOptimized`
+  通过。APK 18,611,384 字节，v2 签名验证通过，签名证书与手机旧版本一致；SHA-256：
+  `1c6522dc8ee9c7d85ad2c71fe9c377dc3a960599e6c24fab87640c055576354a`。
+- 本地 ARM64 `libclash.so` SHA-256 与 `core-lock.properties` 一致。额外执行的
+  `verify-core-lock.sh` 远端 advertised-ref 检查未通过；不把此结果表述为完整来源校验通过，
+  本轮没有更换原生库或调整锁定提交。
+- 真机随后处于 ADB `unauthorized`，原生设备测试、覆盖安装及真实 HTTPS、
+  切换节点和网络切换后的回归仍待 USB 调试授权；不得把本节当作全网恢复或无漏洞保证。
+- 本轮未修改界面样式、关闭证书验证或移除 DNS 防护，也未发布 GitHub 版本。
+
 ## 2026-08-20：保持原始外观的滚动性能修复（alpha60）
 
 - 主页面 `LazyColumn` 仅预组装视口前 240dp、后 80dp 的少量内容，快速滑动时提前完成卡片测量；未修改卡片绘制链、颜色、阴影、圆角或布局。

@@ -14,4 +14,7 @@ internal object MihomoTunDefaults {
 
     /** Catch app DNS packets sent to both IPv4 and IPv6 resolver addresses. */
     const val DNS_HIJACK = "0.0.0.0,::"
+
+    /** IPv4-only mode must not install an IPv6 DNS hijack target. */
+    const val DNS_HIJACK_IPV4_ONLY = "0.0.0.0"
 }

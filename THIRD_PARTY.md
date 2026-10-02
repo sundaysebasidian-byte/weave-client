@@ -15,7 +15,12 @@ Design and architecture references:
 | [MetaCubeX meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) | Immutable lite GeoIP/GeoSite data bundled for optional China-direct routing; exact assets and hashes are in `geodata-lock.properties` | Generated data; retain upstream source attribution and audit each pinned release |
 | [sing-box](https://github.com/SagerNet/sing-box) | Candidate second engine and Android package-name routing reference | Verify exact pinned revision before integration |
 | [AndroidX](https://github.com/androidx/androidx) | Android UI and lifecycle libraries | Apache-2.0 |
+| [CameraX](https://developer.android.com/jetpack/androidx/releases/camera) | Version 1.5.3; lifecycle-bound live QR preview and bounded image analysis, decoded locally with ZXing | Apache-2.0 |
 | [ZXing](https://github.com/zxing/zxing) | QR generation and payload utilities | Apache-2.0 |
+| [SnakeYAML](https://github.com/snakeyaml/snakeyaml) | Version 2.5, bounded data-only Clash YAML parsing with SafeConstructor | Apache-2.0 |
 
-Before a production release, generate a complete Go dependency SBOM and copyright/NOTICE bundle, and
-publish the exact corresponding source plus build instructions as required by GPL-3.0.
+The alpha77 binary release provides the pinned CMFA and Mihomo source archives alongside APKs.
+Weave source, its CMFA patch, lockfiles and build instructions are available under the matching tag.
+Source-availability obligations also apply to preview binaries, not just production releases.
+A complete Go dependency SBOM and consolidated copyright/NOTICE bundle remain required before a
+production release; this preview is not a compliance or security certification.

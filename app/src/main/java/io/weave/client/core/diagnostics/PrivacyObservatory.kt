@@ -45,6 +45,7 @@ object PrivacyObservatory {
         routes: List<AppRoute> = emptyList(),
         defaultTarget: RouteTarget? = null,
         now: Long = System.currentTimeMillis(),
+        lockdownEnabled: Boolean? = null,
     ): PrivacyObservationReport {
         val observations = buildList {
             add(
@@ -85,7 +86,8 @@ object PrivacyObservatory {
                 PrivacyObservation(
                     id = "dns-leak-guard",
                     title = "DNS 旁路拒绝",
-                    state = ObservatoryState.VERIFIED,
+                    state = if (connectionState == ConnectionState.CONNECTED) ObservatoryState.VERIFIED
+                        else ObservatoryState.NOT_TESTED,
                     detail = "本机规则拒绝应用的明文 53、DoT/DoQ 853、已知公共 DoH 与公共 DNS 地址；自定义浏览器 DoH 仍需手动关闭",
                 ),
             )
@@ -159,8 +161,16 @@ object PrivacyObservatory {
                 PrivacyObservation(
                     id = "kill-switch",
                     title = "系统断网保护",
-                    state = ObservatoryState.ATTENTION,
-                    detail = "请在 Android VPN 设置中同时开启 Always-on 和“阻止无 VPN 连接”；应用不能读取或代替系统开关",
+                    state = when (lockdownEnabled) {
+                        true -> ObservatoryState.VERIFIED
+                        false -> ObservatoryState.ATTENTION
+                        null -> ObservatoryState.UNKNOWN
+                    },
+                    detail = when (lockdownEnabled) {
+                        true -> "系统已确认始终开启 VPN 和阻止无 VPN 连接"
+                        false -> "系统断网保护尚未开启；请在系统 VPN 设置中开启"
+                        null -> "连接后可读取系统断网保护状态；旧版系统需在 VPN 设置中确认"
+                    },
                 ),
             )
             add(
@@ -176,6 +186,16 @@ object PrivacyObservatory {
                 ),
             )
         }
-        return PrivacyObservationReport(now, observations)
+        // Settings are not proof that runtime filtering is active while stopped or recovering.
+        val runtimeEvidence = setOf("dns-leak-guard", "dns-filter", "ipv6", "webrtc")
+        val scoped = observations.map { observation ->
+            if (connectionState != ConnectionState.CONNECTED && observation.id in runtimeEvidence) {
+                observation.copy(
+                    state = ObservatoryState.NOT_TESTED,
+                    detail = "未连接：仅保留配置，尚未验证运行效果",
+                )
+            } else observation
+        }
+        return PrivacyObservationReport(now, scoped)
     }
 }
