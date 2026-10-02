@@ -48,6 +48,19 @@ class CrossProcessSettingsIntegrationTest {
         } finally { executor.shutdownNow() }
     }
 
+    @Test fun legacyAndroidPreferenceFilesAreReadableWithoutMigration() {
+        val name = "app_routes_v1"
+        val legacy = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+        legacy.edit().putString("qa_legacy", "existing XML").putInt("qa_legacy_number", 42).commit()
+        try {
+            val fresh = context.crossProcessPreferences(name)
+            assertEquals("existing XML", fresh.getString("qa_legacy", null))
+            assertEquals(42, fresh.getInt("qa_legacy_number", -1))
+        } finally {
+            context.crossProcessPreferences(name).edit().remove("qa_legacy").remove("qa_legacy_number").commit()
+        }
+    }
+
     @Test fun existingXmlTypesBackupRecoveryAndLargeCiphertextStayCompatible() = withRemote { remote, replies ->
         val name = "encrypted_subscriptions_v1"
         val original = context.crossProcessPreferences(name).all
