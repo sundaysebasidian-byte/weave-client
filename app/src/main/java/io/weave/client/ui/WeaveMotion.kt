@@ -1,8 +1,18 @@
 package io.weave.client.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -36,12 +46,55 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
 import io.weave.client.ui.theme.LocalWeavePalette
+
+/**
+ * The app's motion vocabulary. Motion is reserved for feedback: a state changed, a choice was
+ * made, a group opened or a screen moved. Every spec here is finite; nothing loops in the
+ * background, so an idle screen draws no frames.
+ */
+internal object WeaveMotion {
+    /** Press, toggle and selection feedback. */
+    const val QUICK_MS = 140
+    /** Color and content changes that follow a state transition. */
+    const val STANDARD_MS = 220
+    /** Expanding groups and larger layout changes. */
+    const val EMPHASIZED_MS = 300
+
+    fun <T> quick(): FiniteAnimationSpec<T> = tween(QUICK_MS, easing = FastOutSlowInEasing)
+    fun <T> standard(): FiniteAnimationSpec<T> = tween(STANDARD_MS, easing = FastOutSlowInEasing)
+
+    /** Content swap for a status headline: the new state fades in while the old one leaves fast. */
+    val statusEnter: EnterTransition = fadeIn(tween(STANDARD_MS, easing = LinearOutSlowInEasing))
+    val statusExit: ExitTransition = fadeOut(tween(QUICK_MS))
+
+    /** Disclosure for expandable groups and inline notices. */
+    val expandEnter: EnterTransition =
+        expandVertically(tween<IntSize>(EMPHASIZED_MS, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
+            fadeIn(tween(STANDARD_MS, delayMillis = 60))
+    val expandExit: ExitTransition =
+        shrinkVertically(tween<IntSize>(STANDARD_MS, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
+            fadeOut(tween(QUICK_MS))
+}
+
+/**
+ * Rotation for a disclosure chevron. It animates once per expand/collapse and then rests.
+ */
+@Composable
+internal fun disclosureRotation(expanded: Boolean): Float {
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = WeaveMotion.standard(),
+        label = "disclosure-rotation",
+    )
+    return rotation
+}
 
 /**
  * A gentle press response for tappable glass surfaces. It animates only while a finger is down,
@@ -52,7 +105,8 @@ internal fun Modifier.pressScale(interactionSource: InteractionSource, pressedSc
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) pressedScale else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        // Critically damped: a press confirms the touch without a decorative bounce.
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
         label = "press-scale",
     )
     return graphicsLayer {

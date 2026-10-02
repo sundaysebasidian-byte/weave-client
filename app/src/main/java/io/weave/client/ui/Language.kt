@@ -2095,7 +2095,8 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "双栈模式；未执行外部 IPv6 泄漏测试" to SupplementalTranslation("Dual-stack mode; no external IPv6 leak test was run"),
     "UDP STUN 端口规则已启用；这不等于所有 WebRTC 实现都被禁用" to SupplementalTranslation("UDP STUN port rules are enabled; this does not mean every WebRTC implementation is disabled"),
     "未启用 STUN 阻断，浏览器策略可能继续暴露候选地址" to SupplementalTranslation("STUN blocking is disabled; browser policy may continue exposing candidate addresses"),
-    "全局直连已选择，代理不会接管流量" to SupplementalTranslation("Global direct mode is selected; the proxy will not take over traffic"),
+    // Also shown as the Direct mode description on the Connect tab, so every locale is native.
+    "全局直连已选择，代理不会接管流量" to SupplementalTranslation("Global direct mode is selected; the proxy will not take over traffic", "已選擇全域直連，代理不會接管流量", "グローバル直接接続が選択されています。プロキシは通信を引き継ぎません", "Mode direct global sélectionné ; le proxy ne prend pas en charge le trafic", "Globaler Direktmodus gewählt; der Proxy übernimmt keinen Verkehr"),
     "默认出口为显式直连" to SupplementalTranslation("The default exit is explicitly direct"),
     "至少一个应用规则选择了显式直连" to SupplementalTranslation("At least one app rule explicitly selects direct access"),
     "未发现显式直连；真实旁路仍需外部测试" to SupplementalTranslation("No explicit direct access found; real bypasses still require external testing"),

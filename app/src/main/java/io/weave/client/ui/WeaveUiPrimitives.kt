@@ -122,6 +122,19 @@ internal fun WeaveDivider(modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * A thin hairline used to separate an emphasised region inside a panel (for example the actions
+ * below a status summary) without stacking another card.
+ */
+@Composable
+internal fun WeaveInsetDivider(modifier: Modifier = Modifier) {
+    HorizontalDivider(
+        modifier = modifier,
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+    )
+}
+
 @Composable
 internal fun LiquidGlassPanel(
     modifier: Modifier = Modifier,
@@ -136,7 +149,12 @@ internal fun LiquidGlassPanel(
     val indication = LocalIndication.current
     val pressModifier = if (onClick != null) Modifier.pressScale(interaction) else Modifier
     val clickModifier = if (onClick != null) {
-        Modifier.clickable(interactionSource = interaction, indication = indication, onClick = onClick)
+        Modifier.clickable(
+            interactionSource = interaction,
+            indication = indication,
+            role = androidx.compose.ui.semantics.Role.Button,
+            onClick = onClick,
+        )
     } else {
         Modifier
     }

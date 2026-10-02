@@ -182,6 +182,11 @@ import io.weave.client.routing.LocalRuleType
 import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 @Composable
 internal fun ScreenHeader(
@@ -192,13 +197,14 @@ internal fun ScreenHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = WeaveUiTokens.screenHorizontal),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.semantics { heading() },
             )
             if (eyebrow.isNotBlank()) {
                 Text(
@@ -235,9 +241,195 @@ internal fun HeaderActionButton(
             icon,
             contentDescription = contentDescription,
             modifier = Modifier
-                .padding(11.dp)
-                .size(20.dp),
+                .padding((WeaveUiTokens.headerActionSize - WeaveUiTokens.iconSize) / 2)
+                .size(WeaveUiTokens.iconSize),
         )
+    }
+}
+
+/**
+ * Semantic status levels shared by the overview, notices and list rows. Only [POSITIVE] may be
+ * used for a state the app has actually verified; an established tunnel alone is [PROGRESS].
+ */
+internal enum class WeaveStatusTone { NEUTRAL, PROGRESS, POSITIVE, CAUTION, CRITICAL }
+
+/** Accent for dots, icons and progress. Body text stays on onSurface for legibility. */
+@Composable
+internal fun weaveToneColor(tone: WeaveStatusTone): Color = when (tone) {
+    WeaveStatusTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
+    WeaveStatusTone.PROGRESS -> MaterialTheme.colorScheme.primary
+    WeaveStatusTone.POSITIVE -> MaterialTheme.colorScheme.secondary
+    WeaveStatusTone.CAUTION -> MaterialTheme.colorScheme.tertiary
+    WeaveStatusTone.CRITICAL -> MaterialTheme.colorScheme.error
+}
+
+/**
+ * A quiet tinted container derived from the active palette. Material's default tertiary/error
+ * containers are not themed by Weave, so every theme mixes its own accent into its surface.
+ */
+@Composable
+internal fun weaveToneContainer(tone: WeaveStatusTone): Color {
+    val surface = MaterialTheme.colorScheme.surface
+    return when (tone) {
+        WeaveStatusTone.NEUTRAL -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
+        WeaveStatusTone.PROGRESS -> lerp(surface, MaterialTheme.colorScheme.primary, 0.10f)
+        WeaveStatusTone.POSITIVE -> lerp(surface, MaterialTheme.colorScheme.secondary, 0.14f)
+        WeaveStatusTone.CAUTION -> lerp(surface, MaterialTheme.colorScheme.tertiary, 0.14f)
+        WeaveStatusTone.CRITICAL -> lerp(surface, MaterialTheme.colorScheme.error, 0.12f)
+    }
+}
+
+/** Small section title placed above a panel; announced as a heading by TalkBack. */
+@Composable
+internal fun WeaveSectionHeading(
+    title: String,
+    modifier: Modifier = Modifier,
+    supporting: String? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = WeaveUiTokens.sectionLabelHorizontal),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { heading() },
+        )
+        if (supporting != null) {
+            Text(
+                text = supporting,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun WeaveIconTile(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Box(
+        modifier = modifier
+            .size(WeaveUiTokens.iconTile)
+            .clip(RoundedCornerShape(WeaveUiTokens.iconTileRadius))
+            .background(container),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(WeaveUiTokens.iconSize))
+    }
+}
+
+/**
+ * A compact status label: a tone dot (or a small spinner while work is in progress) plus text.
+ * The dot color animates once per state change; nothing loops while the state is stable.
+ */
+@Composable
+internal fun WeaveStatusPill(
+    text: String,
+    tone: WeaveStatusTone,
+    modifier: Modifier = Modifier,
+    inProgress: Boolean = false,
+    translate: Boolean = true,
+) {
+    val accent by animateColorAsState(weaveToneColor(tone), WeaveMotion.standard(), label = "status-pill-dot")
+    val container by animateColorAsState(weaveToneContainer(tone), WeaveMotion.standard(), label = "status-pill")
+    Surface(modifier = modifier, shape = CircleShape, color = container) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (inProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(10.dp),
+                    strokeWidth = 1.5.dp,
+                    color = accent,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(accent),
+                )
+            }
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                translate = translate,
+            )
+        }
+    }
+}
+
+/**
+ * Inline guidance for a state the user can act on: what happened, then at most two actions.
+ * Text wraps instead of truncating so long translations and large font scales stay readable.
+ */
+@Composable
+internal fun WeaveNotice(
+    icon: ImageVector,
+    message: String,
+    tone: WeaveStatusTone,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    secondaryLabel: String? = null,
+    onSecondary: (() -> Unit)? = null,
+    translateMessage: Boolean = true,
+) {
+    val accent = weaveToneColor(tone)
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(WeaveUiTokens.actionRadius),
+        color = weaveToneContainer(tone),
+        border = BorderStroke(WeaveUiTokens.panelBorderWidth, accent.copy(alpha = 0.28f)),
+    ) {
+        Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(WeaveUiTokens.iconSize))
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    if (title != null) {
+                        Text(title, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Text(
+                        message,
+                        color = if (title != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        translate = translateMessage,
+                    )
+                }
+            }
+            if (actionLabel != null && onAction != null || secondaryLabel != null && onSecondary != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if (secondaryLabel != null && onSecondary != null) {
+                        TextButton(onClick = onSecondary) { Text(secondaryLabel) }
+                    }
+                    if (actionLabel != null && onAction != null) {
+                        TextButton(onClick = onAction) { Text(actionLabel, fontWeight = FontWeight.SemiBold) }
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
+        }
     }
 }
 

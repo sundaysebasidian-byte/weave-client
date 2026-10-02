@@ -169,6 +169,45 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "到期" to SupplementalTranslation("Expires", "到期", "期限", "Expire le", "Läuft ab"),
     "已到期" to SupplementalTranslation("Expired", "已到期", "期限切れ", "Expiré le", "Abgelaufen"),
     "刚刚更新" to SupplementalTranslation("Updated just now", "剛剛更新", "たった今更新", "Mis à jour à l’instant", "Gerade aktualisiert"),
+
+    // Connect tab: status overview, exit guidance, mode descriptions and live data
+    "连接状态" to SupplementalTranslation("Connection status", "連線狀態", "接続状態", "État de la connexion", "Verbindungsstatus"),
+    "连接未建立" to SupplementalTranslation("Connection failed", "連線未建立", "接続できませんでした", "Connexion non établie", "Verbindung nicht hergestellt"),
+    "正在建立隧道并校验配置，请稍候。" to SupplementalTranslation("Setting up the tunnel and validating the configuration. Please wait.", "正在建立通道並驗證設定，請稍候。", "トンネルを確立し、設定を検証しています。しばらくお待ちください。", "Établissement du tunnel et vérification de la configuration. Patientez.", "Tunnel wird aufgebaut und Konfiguration geprüft. Bitte warten."),
+    "连接未能建立。可直接重试，或更换出口后再连接。" to SupplementalTranslation("The connection could not be established. Retry, or change the exit and connect again.", "連線未能建立。可直接重試，或更換出口後再連線。", "接続を確立できませんでした。再試行するか、出口を変更してから接続してください。", "La connexion n’a pas pu être établie. Réessayez ou changez de sortie avant de vous reconnecter.", "Die Verbindung konnte nicht hergestellt werden. Erneut versuchen oder Ausgang wechseln und neu verbinden."),
+    "下一步：在下方选择出口，然后连接。" to SupplementalTranslation("Next: choose an exit below, then connect.", "下一步：在下方選擇出口，然後連線。", "次へ：下で出口を選んでから接続します。", "Étape suivante : choisissez une sortie ci-dessous, puis connectez-vous.", "Nächster Schritt: unten einen Ausgang wählen, dann verbinden."),
+    "重试连接" to SupplementalTranslation("Retry", "重試連線", "再接続", "Réessayer", "Erneut verbinden"),
+    "更换出口" to SupplementalTranslation("Change exit", "更換出口", "出口を変更", "Changer de sortie", "Ausgang wechseln"),
+    "尚未选择出口" to SupplementalTranslation("No exit selected", "尚未選擇出口", "出口が未選択です", "Aucune sortie choisie", "Kein Ausgang gewählt"),
+    "未选择时自动使用第一个可用订阅" to SupplementalTranslation("Until you choose, the first usable subscription is used automatically", "未選擇時自動使用第一個可用訂閱", "未選択の間は、最初に利用可能な購読を自動で使います", "Sans choix, le premier abonnement utilisable est utilisé automatiquement", "Ohne Auswahl wird automatisch das erste nutzbare Abo verwendet"),
+    "直连模式下不使用出口" to SupplementalTranslation("Not used in direct mode", "直連模式下不使用出口", "ダイレクトモードでは出口を使いません", "Non utilisée en mode direct", "Im Direktmodus nicht verwendet"),
+    "应用与域名规则优先，其余流量走默认出口" to SupplementalTranslation("App and domain rules first; other traffic uses the default exit", "應用與網域規則優先，其餘流量走預設出口", "アプリとドメインのルールを優先し、それ以外はデフォルト出口を通ります", "Règles d’app et de domaine d’abord ; le reste passe par la sortie par défaut", "App- und Domainregeln zuerst; übriger Verkehr nutzt den Standardausgang"),
+    "应用分流暂停，流量统一走默认出口" to SupplementalTranslation("App routes paused; all traffic uses the default exit", "應用分流暫停，流量統一走預設出口", "アプリのルートを一時停止し、すべての通信がデフォルト出口を通ります", "Routes d’app suspendues ; tout le trafic passe par la sortie par défaut", "App-Routen pausiert; gesamter Verkehr nutzt den Standardausgang"),
+    "实时数据与检测" to SupplementalTranslation("Live data & checks", "即時資料與檢測", "リアルタイムデータと検査", "Données en direct et vérifications", "Live-Daten & Prüfungen"),
+    "连接后显示" to SupplementalTranslation("Shown once connected", "連線後顯示", "接続後に表示", "Affiché une fois connecté", "Nach dem Verbinden sichtbar"),
+
+    // Settings tiers and expandable groups
+    "常用" to SupplementalTranslation("Everyday", "常用", "よく使う設定", "Essentiel", "Häufig genutzt"),
+    "高级" to SupplementalTranslation("Advanced", "進階", "詳細設定", "Avancé", "Erweitert"),
+    "高级选项默认收起，展开即可查看全部设置" to SupplementalTranslation("Advanced options are collapsed by default; expand a group to see every setting", "進階選項預設收合，展開即可查看全部設定", "詳細設定は折りたたまれています。グループを開くとすべての設定が表示されます", "Les options avancées sont repliées ; dépliez un groupe pour voir tous les réglages", "Erweiterte Optionen sind eingeklappt; eine Gruppe aufklappen, um alle Einstellungen zu sehen"),
+    "外观与语言" to SupplementalTranslation("Appearance & language", "外觀與語言", "外観と言語", "Apparence et langue", "Darstellung & Sprache"),
+    "DNS 与连接" to SupplementalTranslation("DNS & connection", "DNS 與連線", "DNS と接続", "DNS et connexion", "DNS & Verbindung"),
+    "安全保护" to SupplementalTranslation("Protection", "安全保護", "保護", "Protection", "Schutz"),
+    "数据管理" to SupplementalTranslation("Data management", "資料管理", "データ管理", "Gestion des données", "Datenverwaltung"),
+    "连接进阶" to SupplementalTranslation("More connection options", "連線進階", "接続の詳細設定", "Connexion avancée", "Weitere Verbindungsoptionen"),
+    "路由与规则" to SupplementalTranslation("Routing & rules", "路由與規則", "ルーティングとルール", "Routage et règles", "Routing & Regeln"),
+    "已开启" to SupplementalTranslation("On", "已開啟", "オン", "Activé", "An"),
+    "展开" to SupplementalTranslation("Expand", "展開", "展開", "Déplier", "Aufklappen"),
+    "收起" to SupplementalTranslation("Collapse", "收合", "折りたたむ", "Replier", "Einklappen"),
+
+    // Subscriptions: empty state, import options and refresh status
+    "远程订阅" to SupplementalTranslation("remote subscriptions", "遠端訂閱", "リモート購読", "abonnements distants", "Remote-Abos"),
+    "其他导入方式" to SupplementalTranslation("Other ways to import", "其他匯入方式", "その他のインポート方法", "Autres méthodes d’import", "Weitere Importwege"),
+    "从另一台设备接收或发送订阅" to SupplementalTranslation("Receive or send subscriptions with another device", "從另一台裝置接收或傳送訂閱", "別の端末と購読を送受信", "Recevoir ou envoyer des abonnements avec un autre appareil", "Abos mit einem anderen Gerät empfangen oder senden"),
+    "还没有订阅" to SupplementalTranslation("No subscriptions yet", "還沒有訂閱", "購読はまだありません", "Aucun abonnement", "Noch keine Abos"),
+    "添加订阅链接、文件或二维码后，即可在连接页选择出口并连接。" to SupplementalTranslation("Add a subscription link, file or QR code, then choose an exit on the Connect tab and connect.", "新增訂閱連結、檔案或 QR 碼後，即可在連線頁選擇出口並連線。", "購読リンク、ファイル、QR コードを追加すると、接続タブで出口を選んで接続できます。", "Ajoutez un lien, un fichier ou un code QR d’abonnement, puis choisissez une sortie dans l’onglet Connexion et connectez-vous.", "Füge einen Abo-Link, eine Datei oder einen QR-Code hinzu, wähle dann im Tab „Verbindung“ einen Ausgang und verbinde dich."),
+    "已停用" to SupplementalTranslation("Disabled", "已停用", "無効", "Désactivé", "Deaktiviert"),
+    "重试" to SupplementalTranslation("Retry", "重試", "再試行", "Réessayer", "Erneut versuchen"),
 )
 
 private data class CountTemplate(val pattern: String, val translation: SupplementalTranslation)
