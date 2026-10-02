@@ -24,4 +24,8 @@
     <string name="update_review_body">本次更新會影響已固定的出口或未通過安全稽核，請開啟 Weave 預覽後再更新。</string>
     <string name="update_failed_title">訂閱重新整理失敗</string>
     <string name="update_failed_body">%1$d 個訂閱未能重新整理，已保留原版本。</string>
+    <string name="notification_control_title">連線通知</string>
+    <string name="notification_control_enabled">在通知列顯示連線狀態與中斷操作。</string>
+    <string name="notification_control_disabled">通知已關閉。通道仍可執行，但通知列可能無法顯示狀態和中斷操作。</string>
+    <string name="notification_control_action">管理通知</string>
 </resources>

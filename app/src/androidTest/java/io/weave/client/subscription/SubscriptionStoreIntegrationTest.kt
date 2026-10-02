@@ -22,7 +22,9 @@ class SubscriptionStoreIntegrationTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = Files.createTempDirectory(context.cacheDir.toPath(), "store-test-").toFile()
         val wrapper = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
             override fun getNoBackupFilesDir(): File = root
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(context.applicationInfo).apply { dataDir = root.absolutePath }
             override fun getSharedPreferences(name: String, mode: Int) =
                 context.getSharedPreferences(root.name + name, mode)
         }

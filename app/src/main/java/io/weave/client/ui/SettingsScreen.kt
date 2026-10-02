@@ -222,6 +222,9 @@ internal fun SettingsScreen(
     onOpenRuleSets: () -> Unit = {},
     onOpenCustomGroups: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    notificationsEnabled: Boolean = true,
+    onRequestNotifications: () -> Unit = {},
+    onCancelDnsProbe: () -> Unit = {},
 ) {
     var showPalette by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
@@ -249,6 +252,9 @@ internal fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ScreenHeader(eyebrow = "连接与隐私", title = "设置") }
+        item { Box(Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)) {
+            NotificationStatusCard(notificationsEnabled, onRequestNotifications)
+        } }
         item { SettingsSectionLabel("外观") }
         item {
             SettingsGroup {
@@ -581,6 +587,7 @@ internal fun SettingsScreen(
         )
     }
     if (showDnsSettings) {
+        DisposableEffect(Unit) { onDispose { onCancelDnsProbe() } }
         DnsSettingsDialog(
             preferences = preferences,
             probeState = dnsProbeState,

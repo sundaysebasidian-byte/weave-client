@@ -24,4 +24,8 @@
     <string name="update_review_body">Cette mise à jour touche des sorties épinglées ou n’a pas passé l’audit de sécurité. Ouvrez Weave pour la prévisualiser.</string>
     <string name="update_failed_title">Échec de l’actualisation</string>
     <string name="update_failed_body">%1$d abonnement(s) n’ont pas pu être actualisés. Les versions précédentes sont conservées.</string>
+    <string name="notification_control_title">Notification de connexion</string>
+    <string name="notification_control_enabled">Affiche l’état et une action de déconnexion dans les notifications.</string>
+    <string name="notification_control_disabled">Les notifications sont désactivées. Le tunnel peut fonctionner, mais son état et la déconnexion peuvent être masqués.</string>
+    <string name="notification_control_action">Gérer les notifications</string>
 </resources>

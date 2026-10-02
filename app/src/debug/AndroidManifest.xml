@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug-only process used to verify persistence; never establishes a VPN. -->
+        <service android:name=".data.SettingsProbeService" android:process=":qa_settings" android:exported="false" />
+    </application>
+</manifest>

@@ -1,6 +1,11 @@
 package io.weave.client
 
 import android.app.Activity
+import android.app.NotificationManager
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -35,6 +40,10 @@ import io.weave.client.ui.theme.WeaveTheme
 
 @SuppressLint("InvalidFragmentVersionForActivityResult")
 class MainActivity : ComponentActivity() {
+    private var notificationsEnabled by mutableStateOf(true)
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshNotificationStatus()
+    }
     private lateinit var vpnDisclosureStore: VpnDisclosureStore
     private var vpnDisclosureAccepted by mutableStateOf(false)
     private val appViewModel: AppViewModel by viewModels()
@@ -66,6 +75,8 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalWeaveLanguage provides language) {
                     WeaveApp(
                         viewModel = appViewModel,
+                        notificationsEnabled = notificationsEnabled,
+                        onRequestNotifications = ::requestNotifications,
                         onRequestConnection = ::requestVpnPermission,
                         onRequestDisconnection = { WeaveVpnService.stop(this) },
                         onOpenVpnSettings = ::openSystemVpnSettings,
@@ -87,6 +98,34 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshNotificationStatus()
+    }
+
+    private fun refreshNotificationStatus() {
+        val channel = getSystemService(NotificationManager::class.java).getNotificationChannel("proxy_connection")
+        notificationsEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled() &&
+            (channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE)
+    }
+
+    private fun requestNotifications() {
+        val requested = getSharedPreferences("notification_consent_v1", Context.MODE_PRIVATE)
+        val required = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        val granted = !required || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val action = notificationPermissionAction(required, granted, notificationsEnabled,
+            requested.getBoolean("requested", false), required && shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS))
+        when (action) {
+            NotificationPermissionAction.REQUEST -> {
+                requested.edit().putBoolean("requested", true).commit()
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            NotificationPermissionAction.OPEN_SETTINGS -> startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            NotificationPermissionAction.NONE -> Unit
+        }
     }
 
     override fun onStart() {

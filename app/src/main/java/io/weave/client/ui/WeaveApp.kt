@@ -374,6 +374,8 @@ fun WeaveApp(
     vpnDisclosureAccepted: Boolean,
     onAcceptVpnDisclosure: () -> Unit,
     onSensitiveSurfaceChanged: (Boolean) -> Unit,
+    notificationsEnabled: Boolean = true,
+    onRequestNotifications: () -> Unit = {},
 ) {
     val networkPreferences by viewModel.networkPreferences.collectAsStateWithLifecycle()
     val rulesViewModel: RoutingRulesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -499,7 +501,14 @@ fun WeaveApp(
                     lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
             )
         }
-        val observer = LifecycleEventObserver { _, _ -> updateVisibility() }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                viewModel.cancelForegroundDiagnostics()
+                showNetworkPrivacyCenter = false
+                browserProbeRunId = 0
+            }
+            updateVisibility()
+        }
         lifecycleOwner.lifecycle.addObserver(observer)
         updateVisibility()
         onDispose {
@@ -606,6 +615,9 @@ fun WeaveApp(
                 val dnsProbeState by viewModel.dnsProbeState.collectAsStateWithLifecycle()
                 SettingsScreen(
                     preferences = networkPreferences,
+                    notificationsEnabled = notificationsEnabled,
+                    onRequestNotifications = onRequestNotifications,
+                    onCancelDnsProbe = viewModel::cancelDnsProbe,
                     language = language,
                     dnsProbeState = dnsProbeState,
                     contentPadding = innerPadding,

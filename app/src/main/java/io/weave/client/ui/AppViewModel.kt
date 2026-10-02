@@ -341,6 +341,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var installedAppsLoaded = false
     private var installedAppsReleaseJob: Job? = null
     private var privacyProbeJob: Job? = null
+    private var dnsProbeJob: Job? = null
+    private var dnsGeneration = 0L
     private var downloadProbeJob: Job? = null
     private val mutableDownloadState = MutableStateFlow(DownloadProbeState())
     val downloadState = mutableDownloadState.asStateFlow()
@@ -659,41 +661,42 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun probeDnsProviders() {
-        if (mutableDnsProbeState.value.running) return
-        viewModelScope.launch {
-            mutableDnsProbeState.value = DnsProbeState(running = true)
-            val profiles = DnsProfile.entries.filter { profile ->
-                profile != DnsProfile.CUSTOM ||
-                    mutableNetworkPreferences.value.customDnsEndpoint.isNotBlank()
-            }
+        if (dnsProbeJob?.isActive == true) return
+        val generation = ++dnsGeneration
+        val preferences = mutableNetworkPreferences.value
+        mutableDnsProbeState.value = DnsProbeState(running = true)
+        dnsProbeJob = viewModelScope.launch {
+            val profiles = DnsProfile.entries.filter { it != DnsProfile.CUSTOM || preferences.customDnsEndpoint.isNotBlank() }
             var failures = 0
             profiles.chunked(3).forEach { batch ->
                 val results = coroutineScope {
-                    batch.map { profile ->
-                        async {
-                            profile to runCatching {
-                                dnsProviderProbe.probe(profile, mutableNetworkPreferences.value)
-                            }
-                        }
-                    }.awaitAll()
+                    batch.map { profile -> async(Dispatchers.IO) {
+                        profile to probeSafely { dnsProviderProbe.probe(profile, preferences) }
+                    } }.awaitAll()
                 }
+                if (generation != dnsGeneration) return@launch
                 results.forEach { (profile, result) ->
-                    result.onSuccess { probeResult ->
-                        mutableDnsProbeState.update { state ->
-                            state.copy(results = state.results + (profile to probeResult))
-                        }
-                    }.onFailure {
-                        failures += 1
-                    }
+                    result.onSuccess { probeResult -> mutableDnsProbeState.update { state ->
+                        state.copy(results = state.results + (profile to probeResult))
+                    } }.onFailure { failures++ }
                 }
             }
-            mutableDnsProbeState.update {
-                it.copy(
-                    running = false,
-                    error = if (failures == profiles.size) "所有 DNS 端点都无法完成检测" else null,
-                )
+            if (generation == dnsGeneration) mutableDnsProbeState.update {
+                it.copy(running = false, error = if (failures == profiles.size) "所有 DNS 端点都无法完成检测" else null)
             }
-        }
+        }.also { job -> job.invokeOnCompletion { if (dnsProbeJob === job) dnsProbeJob = null } }
+    }
+
+    fun cancelDnsProbe() {
+        dnsGeneration++
+        dnsProbeJob?.cancel()
+        dnsProbeJob = null
+        mutableDnsProbeState.update { it.stopped() }
+    }
+
+    fun cancelForegroundDiagnostics() {
+        clearIpQualityState()
+        cancelDnsProbe()
     }
 
     fun setCustomDnsEndpoint(endpoint: String): Boolean {
@@ -1657,6 +1660,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        cancelForegroundDiagnostics()
         lanTransferServer.stop()
         super.onCleared()
     }

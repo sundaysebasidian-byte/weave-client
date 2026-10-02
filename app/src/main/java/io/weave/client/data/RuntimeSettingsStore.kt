@@ -1,6 +1,7 @@
 package io.weave.client.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.domain.AutomaticStrategy
@@ -37,35 +38,38 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit(commit = true) { putStringSet("favorite_node_ids", ids.take(512).toSet()) }
     }
 
-    fun networkPreferences() = NetworkPreferences(
-        automaticStrategy = enumPreference(
-            KEY_AUTOMATIC_STRATEGY,
-            AutomaticStrategy.LOWEST_LATENCY,
-        ),
-        strategyScope = enumPreference(
-            KEY_STRATEGY_SCOPE,
-            StrategyScope.PER_SUBSCRIPTION,
-        ),
-        dnsTransport = enumPreference(KEY_DNS_TRANSPORT, DnsTransport.DOH),
-        dnsProfile = enumPreference(KEY_DNS_PROFILE, DnsProfile.PRIVACY),
-        // Keep mainland services on the selected domestic resolver while sending overseas
-        // domains (for example, OpenAI endpoints) to the encrypted overseas policy. A single
-        // domestic resolver can return blocked/poisoned answers and make a healthy proxy look
-        // offline. Users who need one resolver for every domain can still choose "统一解析".
-        dnsRoutingMode = enumPreference(KEY_DNS_ROUTING_MODE, DnsRoutingMode.SMART),
-        customDnsEndpoint = readCustomDnsEndpoint(),
-        ipv6Mode = enumPreference(KEY_IPV6_MODE, Ipv6Mode.DUAL_STACK),
-        blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
-        domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
-        weavePalette = weavePalette(),
-        subscriptionAutoUpdateHours = preferences.getInt(KEY_AUTO_UPDATE_HOURS, 0)
-            .takeIf { it in AUTO_UPDATE_CHOICES } ?: 0,
-        subscriptionAutoUpdateUnmeteredOnly = preferences.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true),
-        bypassDirectApps = preferences.getBoolean(KEY_BYPASS_DIRECT_APPS, false),
-        bootstrapDns = enumPreference(KEY_BOOTSTRAP_DNS, BootstrapDns.MAINLAND),
-        systemHttpProxy = preferences.getBoolean(KEY_SYSTEM_HTTP_PROXY, false),
-        lanSharing = preferences.getBoolean(KEY_LAN_SHARING, false),
-    )
+    fun networkPreferences(): NetworkPreferences {
+        val preferences = preferences
+        return NetworkPreferences(
+            automaticStrategy = enumPreference(preferences,
+                KEY_AUTOMATIC_STRATEGY,
+                AutomaticStrategy.LOWEST_LATENCY,
+            ),
+            strategyScope = enumPreference(preferences,
+                KEY_STRATEGY_SCOPE,
+                StrategyScope.PER_SUBSCRIPTION,
+            ),
+            dnsTransport = enumPreference(preferences, KEY_DNS_TRANSPORT, DnsTransport.DOH),
+            dnsProfile = enumPreference(preferences, KEY_DNS_PROFILE, DnsProfile.PRIVACY),
+            // Keep mainland services on the selected domestic resolver while sending overseas
+            // domains (for example, OpenAI endpoints) to the encrypted overseas policy. A single
+            // domestic resolver can return blocked/poisoned answers and make a healthy proxy look
+            // offline. Users who need one resolver for every domain can still choose "统一解析".
+            dnsRoutingMode = enumPreference(preferences, KEY_DNS_ROUTING_MODE, DnsRoutingMode.SMART),
+            customDnsEndpoint = readCustomDnsEndpoint(preferences),
+            ipv6Mode = enumPreference(preferences, KEY_IPV6_MODE, Ipv6Mode.DUAL_STACK),
+            blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
+            domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
+            weavePalette = weavePalette(preferences),
+            subscriptionAutoUpdateHours = preferences.getInt(KEY_AUTO_UPDATE_HOURS, 0)
+                .takeIf { it in AUTO_UPDATE_CHOICES } ?: 0,
+            subscriptionAutoUpdateUnmeteredOnly = preferences.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true),
+            bypassDirectApps = preferences.getBoolean(KEY_BYPASS_DIRECT_APPS, false),
+            bootstrapDns = enumPreference(preferences, KEY_BOOTSTRAP_DNS, BootstrapDns.MAINLAND),
+            systemHttpProxy = preferences.getBoolean(KEY_SYSTEM_HTTP_PROXY, false),
+            lanSharing = preferences.getBoolean(KEY_LAN_SHARING, false),
+        )
+    }
 
     fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
         require(hours in AUTO_UPDATE_CHOICES) { "unsupported interval" }
@@ -192,6 +196,7 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     fun defaultRouteTarget(): RouteTarget? {
+        val preferences = preferences
         val kind = preferences.getString(KEY_DEFAULT_ROUTE_KIND, null)
             ?.let { runCatching { RouteKind.valueOf(it) }.getOrNull() }
             ?: return null
@@ -224,12 +229,12 @@ class RuntimeSettingsStore(context: Context) {
         }
     }
 
-    private inline fun <reified T : Enum<T>> enumPreference(key: String, default: T): T =
+    private inline fun <reified T : Enum<T>> enumPreference(preferences: SharedPreferences, key: String, default: T): T =
         preferences.getString(key, null)
             ?.let { stored -> enumValues<T>().firstOrNull { it.name == stored } }
             ?: default
 
-    private fun weavePalette(): WeavePalette {
+    private fun weavePalette(preferences: SharedPreferences): WeavePalette {
         val stored = preferences.getString(KEY_WEAVE_PALETTE, null)
         // alpha51 exposed a graphite theme that has been retired. Migrate it explicitly instead
         // of silently falling back so existing users receive the replacement white/green theme.
@@ -245,7 +250,7 @@ class RuntimeSettingsStore(context: Context) {
             ?: WeavePalette.MINIMAL_LIGHT
     }
 
-    private fun readCustomDnsEndpoint(): String {
+    private fun readCustomDnsEndpoint(preferences: SharedPreferences): String {
         val encrypted = preferences.getString(KEY_CUSTOM_DNS_ENDPOINT_ENCRYPTED, null)
         if (encrypted != null) {
             return runCatching {

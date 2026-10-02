@@ -45,6 +45,7 @@ class MihomoProviderIntegrationTest {
             override fun getApplicationContext(): Context = this
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(context.applicationInfo).apply { dataDir = root.absolutePath }
             override fun getSharedPreferences(name: String, mode: Int) =
                 context.getSharedPreferences(prefsPrefix + name, mode)
         }
@@ -119,6 +120,7 @@ class MihomoProviderIntegrationTest {
             override fun getApplicationContext(): Context = this
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(context.applicationInfo).apply { dataDir = root.absolutePath }
             override fun getSharedPreferences(name: String, mode: Int) =
                 context.getSharedPreferences(root.name + name, mode)
         }
