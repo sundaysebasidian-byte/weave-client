@@ -16,11 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -223,7 +219,7 @@ internal fun HomeScreen(
     // Traffic counters should not invalidate unchanged overview/route glass surfaces.
     val overviewState = remember(
         state.connectionState, state.coreAvailable, state.networkPathStatus,
-        state.defaultRouteTarget, state.routingMode,
+        state.defaultRouteTarget, state.routingMode, state.statusMessage,
     ) {
         DashboardState(
             connectionState = state.connectionState,
@@ -231,6 +227,7 @@ internal fun HomeScreen(
             networkPathStatus = state.networkPathStatus,
             defaultRouteTarget = state.defaultRouteTarget,
             routingMode = state.routingMode,
+            statusMessage = state.statusMessage,
         )
     }
     val hasAppConnections = state.attributedAppConnections > 0
@@ -483,10 +480,20 @@ private fun ConnectionOverview(
                 modifier = Modifier.padding(top = 10.dp),
             )
 
+            if (connection == ConnectionState.ERROR && !state.statusMessage.isNullOrBlank()) {
+                Text(
+                    text = state.statusMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
             Spacer(Modifier.height(16.dp))
             OverviewActions(
                 connection = connection,
                 readiness = readiness,
+                coreAvailable = state.coreAvailable,
                 onConnect = onConnect,
                 onChooseExit = onChooseExit,
             )
@@ -498,6 +505,7 @@ private fun ConnectionOverview(
 private fun OverviewActions(
     connection: ConnectionState,
     readiness: ExitReadiness,
+    coreAvailable: Boolean,
     onConnect: () -> Unit,
     onChooseExit: () -> Unit,
 ) {
@@ -529,6 +537,7 @@ private fun OverviewActions(
                 OverviewPrimaryButton(
                     label = "重试连接",
                     emphasized = true,
+                    enabled = coreAvailable && readiness != ExitReadiness.INVALID,
                     onClick = connectWithFeedback,
                     modifier = Modifier.weight(1f),
                 )
@@ -546,20 +555,20 @@ private fun OverviewActions(
                         onClick = onChooseExit,
                         modifier = Modifier.weight(1f),
                     )
-                    OverviewSecondaryButton(label = "连接", onClick = connectWithFeedback, modifier = Modifier.weight(1f))
                 }
                 ExitReadiness.MISSING -> {
                     OverviewPrimaryButton(
                         label = "连接",
                         emphasized = true,
+                        enabled = coreAvailable,
                         onClick = connectWithFeedback,
                         modifier = Modifier.weight(1f),
                     )
-                    OverviewSecondaryButton(label = "选择出口", onClick = onChooseExit, modifier = Modifier.weight(1f))
                 }
                 else -> OverviewPrimaryButton(
                     label = "连接",
                     emphasized = true,
+                    enabled = coreAvailable,
                     onClick = connectWithFeedback,
                     modifier = Modifier.weight(1f),
                 )
@@ -741,7 +750,7 @@ private fun CurrentRouteCard(
                     )
                 }
             }
-            if (needsChoice) {
+            if (readiness == ExitReadiness.MISSING) {
                 Spacer(Modifier.height(12.dp))
                 OverviewSecondaryButton(
                     label = "选择出口",

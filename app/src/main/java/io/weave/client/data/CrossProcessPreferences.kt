@@ -134,6 +134,8 @@ private class TransactionalPreferences(context: Context, name: String) : SharedP
             changed.forEach { (key, value) -> if (value == null) current.remove(key) else current[key] = value }
             write(current)
             snapshot = current.toMap()
+            changed.clear()
+            clear = false
             true
         }
         override fun apply() { commit() }

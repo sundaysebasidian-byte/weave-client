@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Local preview build; keep the application ID/signature for a data-preserving update.
-        versionCode = 101
-        versionName = "0.4.0-alpha1"
+        versionCode = 102
+        versionName = "0.4.0-experience-preview1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

@@ -253,6 +253,7 @@ internal fun SettingsScreen(
     LazyColumn(
         state = rememberSmoothLazyListState(),
         modifier = Modifier
+            .testTag("settings-list")
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding()),
         contentPadding = PaddingValues(

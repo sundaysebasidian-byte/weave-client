@@ -26,6 +26,18 @@ class CrossProcessSettingsIntegrationTest {
         fresh.edit().remove("qa_ui").remove("qa_remote").commit()
     }
 
+    @Test fun reusedEditorDoesNotReplayAlreadyCommittedChanges() = withRemote { remote, replies ->
+        val name = "runtime_settings_v1"
+        val editor = context.crossProcessPreferences(name).edit().putInt("qa_reused", 1)
+        editor.commit()
+        request(remote, replies, "write", name, "qa_reused", 2)
+        editor.putInt("qa_second", 3).commit()
+        val fresh = context.crossProcessPreferences(name)
+        assertEquals(2, fresh.getInt("qa_reused", -1))
+        assertEquals(3, fresh.getInt("qa_second", -1))
+        fresh.edit().remove("qa_reused").remove("qa_second").commit()
+    }
+
     @Test fun concurrentProcessEditsDoNotLoseUnrelatedKeys() = withRemote { remote, replies ->
         remote.send(Message.obtain().apply {
             data = Bundle().apply { putString("operation", "many") }
