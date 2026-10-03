@@ -208,12 +208,50 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "添加订阅链接、文件或二维码后，即可在连接页选择出口并连接。" to SupplementalTranslation("Add a subscription link, file or QR code, then choose an exit on the Connect tab and connect.", "新增訂閱連結、檔案或 QR 碼後，即可在連線頁選擇出口並連線。", "購読リンク、ファイル、QR コードを追加すると、接続タブで出口を選んで接続できます。", "Ajoutez un lien, un fichier ou un code QR d’abonnement, puis choisissez une sortie dans l’onglet Connexion et connectez-vous.", "Füge einen Abo-Link, eine Datei oder einen QR-Code hinzu, wähle dann im Tab „Verbindung“ einen Ausgang und verbinde dich."),
     "已停用" to SupplementalTranslation("Disabled", "已停用", "無効", "Désactivé", "Deaktiviert"),
     "重试" to SupplementalTranslation("Retry", "重試", "再試行", "Réessayer", "Erneut versuchen"),
+
+    // Subscription library: search, source filter, per-source update, failed-only retry, expiry
+    "搜索订阅名称" to SupplementalTranslation("Search subscription names", "搜尋訂閱名稱", "購読名を検索", "Rechercher un abonnement", "Abo-Namen suchen"),
+    "清除搜索" to SupplementalTranslation("Clear search", "清除搜尋", "検索をクリア", "Effacer la recherche", "Suche leeren"),
+    "全部来源" to SupplementalTranslation("All sources", "全部來源", "すべてのソース", "Toutes les sources", "Alle Quellen"),
+    "远程来源" to SupplementalTranslation("Remote", "遠端來源", "リモート", "Distantes", "Remote"),
+    "本地来源" to SupplementalTranslation("Local", "本機來源", "ローカル", "Locales", "Lokal"),
+    "没有匹配的订阅" to SupplementalTranslation("No matching subscriptions", "沒有符合的訂閱", "一致する購読はありません", "Aucun abonnement correspondant", "Keine passenden Abos"),
+    "试试其他名称，或清除搜索和筛选" to SupplementalTranslation("Try another name, or clear the search and filters", "試試其他名稱，或清除搜尋和篩選", "別の名前を試すか、検索と絞り込みをクリアしてください", "Essayez un autre nom ou effacez la recherche et les filtres", "Anderen Namen versuchen oder Suche und Filter zurücksetzen"),
+    "清除搜索和筛选" to SupplementalTranslation("Clear search and filters", "清除搜尋和篩選", "検索と絞り込みをクリア", "Effacer recherche et filtres", "Suche und Filter zurücksetzen"),
+    "更新订阅" to SupplementalTranslation("Update subscription", "更新訂閱", "購読を更新", "Mettre à jour l’abonnement", "Abo aktualisieren"),
+    "更新失败" to SupplementalTranslation("Update failed", "更新失敗", "更新に失敗", "Échec de la mise à jour", "Aktualisierung fehlgeschlagen"),
+    "已更新" to SupplementalTranslation("Updated", "已更新", "更新済み", "Mis à jour", "Aktualisiert"),
+    "以下订阅更新失败" to SupplementalTranslation("These subscriptions failed to update", "以下訂閱更新失敗", "次の購読を更新できませんでした", "Ces abonnements n’ont pas pu être mis à jour", "Diese Abos konnten nicht aktualisiert werden"),
+    "仅重试失败项" to SupplementalTranslation("Retry failed only", "僅重試失敗項目", "失敗分のみ再試行", "Réessayer les échecs", "Nur Fehlgeschlagene wiederholen"),
+    "即将到期" to SupplementalTranslation("Expiring soon", "即將到期", "まもなく期限", "Expire bientôt", "Läuft bald ab"),
+
+    // UI refinement: fixed-size connection hero and shorter copy. The hero's supporting lines
+    // must stay short enough for a single line at the narrowest supported width.
+    "准备就绪" to SupplementalTranslation("Ready", "準備就緒", "準備完了", "Prêt", "Bereit"),
+    "正在建立隧道" to SupplementalTranslation("Setting up the tunnel", "正在建立隧道", "トンネルを準備中", "Mise en place du tunnel", "Tunnel wird aufgebaut"),
+    // Plain fact for "tunnel up, no reachability evidence": not a success claim, not a failure and
+    // not a promise that a check is running. Keep these free of "verified"/"secure"/"available".
+    "连通性未检测" to SupplementalTranslation("Internet access not checked", "連通性未檢測", "ネット通信は未確認", "Accès Internet non testé", "Internetzugang ungeprüft"),
+    "出口已失效" to SupplementalTranslation("Exit no longer valid", "出口已失效", "出口が無効です", "Sortie invalide", "Ausgang ungültig"),
+    "请检查出口或网络" to SupplementalTranslation("Check the exit or network", "請檢查出口或網路", "出口とネットワークを確認", "Vérifiez la sortie ou le réseau", "Ausgang oder Netzwerk prüfen"),
+    "实时数据" to SupplementalTranslation("Live data", "即時資料", "リアルタイムデータ", "Données en direct", "Live-Daten"),
+    "未开启" to SupplementalTranslation("Off", "未開啟", "オフ", "Désactivé", "Aus"),
+
+    // UI refinement: settings and subscriptions copy that kept only its essential clause.
+    "需同时开启 Always-on 与阻止无 VPN 连接" to SupplementalTranslation("Turn on both Always-on and “Block connections without VPN”", "需同時開啟 Always-on 與「封鎖無 VPN 的連線」", "Always-on と「VPN なしの接続をブロック」の両方をオンにしてください", "Activez à la fois Always-on et le blocage des connexions sans VPN", "Always-on und „Verbindungen ohne VPN blockieren“ beide aktivieren"),
+    "选为直连的应用不进入隧道；Always-on 阻断时可能无法联网" to SupplementalTranslation("Apps set to Direct skip the tunnel. With Always-on blocking they may lose connectivity.", "選為直連的應用不進入隧道；Always-on 阻斷時可能無法連網", "ダイレクトに設定したアプリはトンネルを通りません。Always-on のブロック時は接続できない場合があります。", "Les apps en direct évitent le tunnel. Avec le blocage Always-on, elles peuvent perdre la connexion.", "Als direkt gesetzte Apps umgehen den Tunnel. Bei Always-on-Sperre kann die Verbindung ausfallen."),
+    "127.0.0.1:7890，本机其他应用也能访问" to SupplementalTranslation("127.0.0.1:7890; other apps on this phone can reach it too", "127.0.0.1:7890；本機其他應用也能存取", "127.0.0.1:7890。この端末の他のアプリもアクセスできます", "127.0.0.1:7890 ; les autres apps du téléphone peuvent aussi y accéder", "127.0.0.1:7890; andere Apps auf dem Telefon erreichen den Port ebenfalls"),
+    "仅内存显示，复制默认脱敏" to SupplementalTranslation("Shown in memory only; copies are redacted", "僅在記憶體顯示，複製預設去識別化", "メモリ内でのみ表示。コピーは匿名化されます", "Affichés en mémoire uniquement ; copies expurgées", "Nur im Speicher; Kopien werden bereinigt"),
+    "开源许可与第三方组件" to SupplementalTranslation("Open-source licenses and third-party components", "開源授權與第三方元件", "オープンソースライセンスとサードパーティコンポーネント", "Licences open source et composants tiers", "Open-Source-Lizenzen und Drittkomponenten"),
+    "添加订阅链接、文件或二维码" to SupplementalTranslation("Add a subscription link, file or QR code", "新增訂閱連結、檔案或 QR Code", "購読リンク、ファイル、QR コードを追加", "Ajoutez un lien, un fichier ou un QR code d’abonnement", "Abo-Link, Datei oder QR-Code hinzufügen"),
+    "订阅地址仅在本机加密保存" to SupplementalTranslation("Subscription URLs are stored encrypted on this device only", "訂閱位址僅在本機加密保存", "購読 URL はこの端末内で暗号化して保存されます", "Les URL d’abonnement sont chiffrées et stockées sur cet appareil uniquement", "Abo-URLs werden nur verschlüsselt auf diesem Gerät gespeichert"),
 )
 
 private data class CountTemplate(val pattern: String, val translation: SupplementalTranslation)
 
 /** `%d` in each translation is replaced by the captured number. */
 private val COUNT_TEMPLATES = listOf(
+    CountTemplate("^检测到 (\\d+) 个兼容客户端$", SupplementalTranslation("%d compatible clients detected", "偵測到 %d 個相容用戶端", "互換クライアントを %d 個検出", "%d clients compatibles détectés", "%d kompatible Clients erkannt")),
     CountTemplate("^每 (\\d+) 小时$", SupplementalTranslation("Every %d h", "每 %d 小時", "%d 時間ごと", "Toutes les %d h", "Alle %d Std.")),
     CountTemplate("^(\\d+) 分钟前更新$", SupplementalTranslation("Updated %d min ago", "%d 分鐘前更新", "%d 分前に更新", "Mis à jour il y a %d min", "Vor %d Min. aktualisiert")),
     CountTemplate("^(\\d+) 小时前更新$", SupplementalTranslation("Updated %d h ago", "%d 小時前更新", "%d 時間前に更新", "Mis à jour il y a %d h", "Vor %d Std. aktualisiert")),
@@ -221,6 +259,9 @@ private val COUNT_TEMPLATES = listOf(
     CountTemplate("^(\\d+) 小时$", SupplementalTranslation("%d h", "%d 小時", "%d 時間", "%d h", "%d Std.")),
     CountTemplate("^(\\d+) 条$", SupplementalTranslation("%d entries", "%d 條", "%d 件", "%d entrées", "%d Einträge")),
     CountTemplate("^(\\d+) 个订阅$", SupplementalTranslation("%d subscription(s)", "%d 個訂閱", "購読 %d 件", "%d abonnement(s)", "%d Abonnement(s)")),
+    // Two numbers: `%d` is the first capture and `%t` the second.
+    CountTemplate("^显示 (\\d+) / (\\d+) 个订阅$", SupplementalTranslation("Showing %d of %t subscription(s)", "顯示 %d / %t 個訂閱", "購読 %t 件中 %d 件を表示", "%d sur %t abonnement(s) affiché(s)", "%d von %t Abonnement(s) angezeigt")),
+    CountTemplate("^另有 (\\d+) 个$", SupplementalTranslation("+%d more", "另有 %d 個", "ほか %d 件", "+%d autres", "+%d weitere")),
     CountTemplate("^(\\d+) 条应用分流$", SupplementalTranslation("%d app route(s)", "%d 條應用分流", "アプリのルート %d 件", "%d route(s) d’app", "%d App-Route(n)")),
     CountTemplate("^(\\d+) 条本地规则$", SupplementalTranslation("%d local rule(s)", "%d 條本機規則", "ローカルルール %d 件", "%d règle(s) locale(s)", "%d lokale Regel(n)")),
     CountTemplate("^(\\d+) 个规则集$", SupplementalTranslation("%d rule set(s)", "%d 個規則集", "ルールセット %d 件", "%d jeu(x) de règles", "%d Regelsatz/-sätze")),
@@ -239,7 +280,9 @@ internal fun translateV2Patterns(text: String, language: WeaveLanguage): String?
     if (language == WeaveLanguage.SIMPLIFIED_CHINESE) return null
     COUNT_REGEXES.forEach { (regex, translation) ->
         regex.matchEntire(text)?.let { match ->
-            return translation.resolve(language).replace("%d", match.groupValues[1])
+            return translation.resolve(language)
+                .replace("%d", match.groupValues[1])
+                .replace("%t", match.groupValues.getOrElse(2) { "" })
         }
     }
     return null

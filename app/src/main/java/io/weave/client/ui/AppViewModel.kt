@@ -155,16 +155,6 @@ data class LocalRouteRuleState(
 )
 
 @Immutable
-data class SubscriptionRefreshState(
-    val running: Boolean = false,
-    val total: Int = 0,
-    val completed: Int = 0,
-    val failed: Int = 0,
-    val currentName: String? = null,
-    val message: String? = null,
-)
-
-@Immutable
 data class IpQualityProbeState(
     val running: Boolean = false,
     val report: IpQualityReport? = null,
@@ -1182,51 +1172,84 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableLanTransferState.update { it.copy(error = null, message = null) }
     }
 
-    fun refreshAllRemoteSubscriptions() {
+    fun refreshAllRemoteSubscriptions() = refreshRemoteSubscriptions(requestedIds = null)
+
+    fun refreshRemoteSubscription(subscriptionId: String) =
+        refreshRemoteSubscriptions(requestedIds = setOf(subscriptionId))
+
+    fun retryFailedRemoteSubscriptions() {
+        val failedIds = mutableSubscriptionRefreshState.value.failedIds
+        // A failure to enumerate sources has no provider IDs; the generic retry can enumerate again.
+        refreshRemoteSubscriptions(requestedIds = failedIds.takeIf { it.isNotEmpty() })
+    }
+
+    private fun refreshRemoteSubscriptions(requestedIds: Set<String>?) {
         if (mutableSubscriptionRefreshState.value.running) return
         mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
             running = true,
             message = "正在检查 HTTPS 远程订阅",
         )
         viewModelScope.launch {
-            val remoteIds = withContext(Dispatchers.IO) {
-                subscriptionRepository.loadRemoteIds()
-            }
-            val remoteSubscriptions = mutableSubscriptions.value.filter { it.id in remoteIds }
-            if (remoteSubscriptions.isEmpty()) {
-                mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
-                    message = "没有可刷新的 HTTPS 远程订阅",
+            try {
+                val remoteIds = withContext(Dispatchers.IO) {
+                    subscriptionRepository.loadRemoteIds()
+                }
+                val targets = SubscriptionRefreshBatch.selectTargets(
+                    mutableSubscriptions.value, remoteIds, requestedIds,
                 )
-                return@launch
-            }
-            mutableSubscriptionRefreshState.update {
-                it.copy(total = remoteSubscriptions.size, message = null)
-            }
-            var completed = 0
-            var failed = 0
-            remoteSubscriptions.forEach { subscription ->
-                mutableSubscriptionRefreshState.update { it.copy(currentName = subscription.name) }
-                runCatching { subscriptionRepository.refreshRemote(subscription.id) }
-                    .onSuccess {
-                        completed++
-                        refreshSubscriptionsAndReferences(subscription.id)
-                    }
-                    .onFailure { failed++ }
+                if (targets.isEmpty()) {
+                    mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
+                        message = "没有可刷新的 HTTPS 远程订阅",
+                    )
+                    return@launch
+                }
                 mutableSubscriptionRefreshState.update {
-                    it.copy(completed = completed, failed = failed)
+                    it.copy(total = targets.size, message = null)
+                }
+                val results = SubscriptionRefreshBatch.run(
+                    targets = targets,
+                    refresh = { subscriptionRepository.refreshRemote(it) },
+                    onUpdated = { refreshSubscriptionsAndReferences(it) },
+                    onProgress = { current, finished ->
+                        mutableSubscriptionRefreshState.update {
+                            it.copy(
+                                currentId = current?.id,
+                                currentName = current?.name,
+                                completed = finished.count { result -> result.succeeded },
+                                failed = finished.count { result -> !result.succeeded },
+                                results = finished,
+                            )
+                        }
+                    },
+                )
+                val completed = results.count { it.succeeded }
+                val failed = results.size - completed
+                mutableSubscriptionRefreshState.update {
+                    it.copy(
+                        running = false,
+                        currentId = null,
+                        currentName = null,
+                        message = if (failed == 0) "已刷新 $completed 个远程订阅" else "已完成 $completed 个，$failed 个失败",
+                    )
+                }
+                mutableDashboard.update {
+                    it.copy(statusMessage = mutableSubscriptionRefreshState.value.message)
+                }
+                if (completed > 0) {
+                    reloadIfConnected("订阅刷新完成，正在安全更新运行配置")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableSubscriptionRefreshState.update {
+                    it.copy(failed = maxOf(1, it.failed), message = "订阅修改失败")
+                }
+            } finally {
+                // Enumeration, reconciliation and cancellation cannot leave every action disabled.
+                mutableSubscriptionRefreshState.update {
+                    it.copy(running = false, currentId = null, currentName = null)
                 }
             }
-            mutableSubscriptionRefreshState.update {
-                it.copy(
-                    running = false,
-                    currentName = null,
-                    message = if (failed == 0) "已刷新 $completed 个远程订阅" else "已完成 $completed 个，$failed 个失败",
-                )
-            }
-            mutableDashboard.update {
-                it.copy(statusMessage = mutableSubscriptionRefreshState.value.message)
-            }
-            reloadIfConnected("订阅刷新完成，正在安全更新运行配置")
         }
     }
 

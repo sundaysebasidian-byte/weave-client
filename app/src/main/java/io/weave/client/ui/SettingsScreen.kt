@@ -262,7 +262,7 @@ internal fun SettingsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(WeaveUiTokens.sectionGap),
     ) {
-        item(key = "header") { ScreenHeader(eyebrow = "连接与隐私", title = "设置") }
+        item(key = "header") { ScreenHeader(eyebrow = "", title = "设置") }
 
         // Everyday settings: always visible, grouped by what people come here to change.
         item(key = "tier-common") { SettingsTierHeading("常用") }
@@ -293,14 +293,11 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Dns,
                     title = "DNS",
-                    subtitle = if (
-                        preferences.dnsProfile == DnsProfile.AD_BLOCK ||
-                        preferences.dnsProfile == DnsProfile.FAMILY
-                    ) {
-                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + 本地规则"
-                    } else {
-                        "${preferences.dnsProfile.label} · ${preferences.dnsTransport.label} · ${preferences.dnsRoutingMode.label} · DNS 旁路保护 + fake-IP"
-                    },
+                    subtitle = listOf(
+                        preferences.dnsProfile.label,
+                        preferences.dnsTransport.label,
+                        preferences.dnsRoutingMode.label,
+                    ).joinToString(" · ") { localizeWeaveText(it, language) },
                     onClick = { showDnsSettings = true },
                 )
                 WeaveDivider()
@@ -314,15 +311,14 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Speed,
                     title = "自动节点策略",
-                    subtitle = listOf(preferences.automaticStrategy.label, preferences.strategyScope.label)
-                        .joinToString(" · ") { localizeWeaveText(it, language) },
+                    subtitle = preferences.automaticStrategy.label,
                     onClick = { showAutomaticStrategy = true },
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Bolt,
                     title = "Always-on 与断网保护",
-                    subtitle = "系统级保护 · 需同时开启 Always-on 与阻止无 VPN 连接",
+                    subtitle = "需同时开启 Always-on 与阻止无 VPN 连接",
                     onClick = onOpenVpnSettings,
                 )
             }
@@ -337,14 +333,14 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Security,
                     title = "安全与隐私",
-                    subtitle = "Keystore 加密 · 明文按会话清理",
+                    subtitle = null,
                     onClick = { showSecurityDetails = true },
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Visibility,
                     title = "网络与隐私检测",
-                    subtitle = "本地证据检查 · 不生成虚假安全百分比",
+                    subtitle = null,
                     onClick = onOpenPrivacyObservatory,
                 )
                 WeaveDivider()
@@ -382,14 +378,14 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Lock,
                     title = "备份与恢复",
-                    subtitle = "导出为带密码的加密文件，可在新设备恢复",
+                    subtitle = null,
                     onClick = onOpenBackup,
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.SyncAlt,
                     title = "局域网互传",
-                    subtitle = "仅在订阅页主动生成后临时开启",
+                    subtitle = null,
                     onClick = { showLanSharingDetails = true },
                 )
             }
@@ -398,13 +394,12 @@ internal fun SettingsScreen(
         // Advanced settings: collapsed by default, but every entry stays one tap away and a
         // collapsed group still reports switches that are currently on.
         item(key = "tier-advanced") {
-            SettingsTierHeading("高级", supporting = "高级选项默认收起，展开即可查看全部设置")
+            SettingsTierHeading("高级")
         }
         item(key = "connection-advanced") {
             ExpandableSettingsGroup(
                 icon = Icons.Rounded.Tune,
                 title = "连接进阶",
-                itemTitles = listOf("策略组范围", "引导 DNS", "直连应用绕过 VPN", "系统 HTTP 代理", "局域网代理共享"),
                 activeTitles = listOfNotNull(
                     "直连应用绕过 VPN".takeIf { preferences.bypassDirectApps },
                     "系统 HTTP 代理".takeIf { preferences.systemHttpProxy },
@@ -416,22 +411,21 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.SwapVert,
                     title = "策略组范围",
-                    subtitle = preferences.strategyScope.description,
+                    subtitle = preferences.strategyScope.label,
                     onClick = { showStrategyScope = true },
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Dns,
                     title = "引导 DNS",
-                    subtitle = listOf(preferences.bootstrapDns.label, "仅用于解析加密 DNS 服务器地址")
-                        .joinToString(" · ") { localizeWeaveText(it, language) },
+                    subtitle = localizeWeaveText(preferences.bootstrapDns.label, language),
                     onClick = { showBootstrapDns = true },
                 )
                 WeaveDivider()
                 ToggleSetting(
                     icon = Icons.Rounded.Apps,
                     title = "直连应用绕过 VPN",
-                    subtitle = "规则模式下选为直连的应用不进入隧道，更省电；Always-on 阻断时可能无法联网",
+                    subtitle = "选为直连的应用不进入隧道；Always-on 阻断时可能无法联网",
                     checked = preferences.bypassDirectApps,
                     onCheckedChange = onBypassDirectAppsChanged,
                 )
@@ -440,7 +434,7 @@ internal fun SettingsScreen(
                     icon = Icons.Rounded.Language,
                     title = "系统 HTTP 代理",
                     // Port text mirrors MihomoConfigAssembler.MIXED_PORT.
-                    subtitle = "浏览器可直接使用本机 127.0.0.1:7890；本机其他应用也能访问此端口",
+                    subtitle = "127.0.0.1:7890，本机其他应用也能访问",
                     checked = preferences.systemHttpProxy,
                     onCheckedChange = onSystemHttpProxyChanged,
                 )
@@ -448,7 +442,7 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Wifi,
                     title = "局域网代理共享",
-                    subtitle = if (preferences.lanSharing) "已开启 · 需要用户名和密码" else "关闭 · 可供热点或同一 Wi‑Fi 的设备使用",
+                    subtitle = if (preferences.lanSharing) "已开启 · 需要用户名和密码" else "未开启",
                     onClick = { showLanProxy = true },
                 )
             }
@@ -457,28 +451,20 @@ internal fun SettingsScreen(
             ExpandableSettingsGroup(
                 icon = Icons.Rounded.Route,
                 title = "路由与规则",
-                itemTitles = listOf(
-                    "高级路由",
-                    "国内智能直连",
-                    "本地域名 / IP 规则",
-                    "远程规则集",
-                    "自定义策略组与链式代理",
-                    "离线策略包",
-                ),
                 expanded = routingExpanded,
                 onExpandedChange = { routingExpanded = it },
             ) {
                 LinkSetting(
                     icon = Icons.Rounded.Tune,
                     title = "高级路由",
-                    subtitle = "应用规则优先 · 修改后安全热重载",
+                    subtitle = null,
                     onClick = { showRoutingDetails = true },
                 )
                 WeaveDivider()
                 ToggleSetting(
                     icon = Icons.Rounded.Language,
                     title = "国内智能直连",
-                    subtitle = "默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先",
+                    subtitle = "未指定应用的 CN 流量直连",
                     checked = preferences.domesticDirect,
                     onCheckedChange = onDomesticDirectChanged,
                 )
@@ -486,28 +472,28 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Tune,
                     title = "本地域名 / IP 规则",
-                    subtitle = "本机加密保存 · 应用规则优先 · 连接前可解释",
+                    subtitle = null,
                     onClick = onOpenLocalRouteRules,
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.CloudDownload,
                     title = "远程规则集",
-                    subtitle = "HTTPS 下载 · 逐条校验 · SHA-256 记录",
+                    subtitle = null,
                     onClick = onOpenRuleSets,
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Route,
                     title = "自定义策略组与链式代理",
-                    subtitle = "跨订阅挑选节点，可经入口节点二跳转发",
+                    subtitle = null,
                     onClick = onOpenCustomGroups,
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Policy,
                     title = "离线策略包",
-                    subtitle = "本地导入、哈希校验、可回滚启停",
+                    subtitle = null,
                     onClick = onOpenPolicyPacks,
                 )
             }
@@ -516,21 +502,20 @@ internal fun SettingsScreen(
             ExpandableSettingsGroup(
                 icon = Icons.Rounded.Info,
                 title = "诊断",
-                itemTitles = listOf("实时连接", "内核日志"),
                 expanded = diagnosticsExpanded,
                 onExpandedChange = { diagnosticsExpanded = it },
             ) {
                 LinkSetting(
                     icon = Icons.Rounded.SwapVert,
                     title = "实时连接",
-                    subtitle = "查看内核当前连接、命中规则与链路，可逐条断开",
+                    subtitle = null,
                     onClick = onOpenConnections,
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Info,
                     title = "内核日志",
-                    subtitle = "临时开启，只在内存中显示；复制内容默认脱敏",
+                    subtitle = "仅内存显示，复制默认脱敏",
                     onClick = onOpenLogs,
                 )
             }
@@ -541,14 +526,14 @@ internal fun SettingsScreen(
                 LinkSetting(
                     icon = Icons.Rounded.Policy,
                     title = "Weave ${BuildConfig.VERSION_NAME}",
-                    subtitle = "开源许可、第三方组件与无担保声明",
+                    subtitle = "开源许可与第三方组件",
                     onClick = { showOpenSourceDetails = true },
                 )
                 WeaveDivider()
                 LinkSetting(
                     icon = Icons.Rounded.Security,
                     title = "VPN 数据路径说明",
-                    subtitle = "查看首次连接前的独立隐私说明",
+                    subtitle = null,
                     onClick = onShowVpnDisclosure,
                 )
             }
@@ -779,7 +764,6 @@ private fun SettingsGroup(
 private fun ExpandableSettingsGroup(
     icon: ImageVector,
     title: String,
-    itemTitles: List<String>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     activeTitles: List<String> = emptyList(),
@@ -811,15 +795,6 @@ private fun ExpandableSettingsGroup(
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(title, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        text = itemTitles.joinToString(" · ") { localizeWeaveText(it, language) },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        maxLines = if (expanded) 1 else 3,
-                        overflow = TextOverflow.Ellipsis,
-                        translate = false,
-                    )
                     if (activeTitles.isNotEmpty()) {
                         Text(
                             text = localizeWeaveText("已开启", language) + " · " +
@@ -864,7 +839,7 @@ private fun SettingRowIcon(icon: ImageVector) {
 private fun LinkSetting(
     icon: ImageVector,
     title: String,
-    subtitle: String,
+    subtitle: String?,
     onClick: (() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -893,12 +868,14 @@ private fun LinkSetting(
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.SemiBold)
-            Text(
-                subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
         }
         if (onClick != null) {
             Spacer(Modifier.width(8.dp))
