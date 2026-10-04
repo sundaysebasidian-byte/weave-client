@@ -72,6 +72,18 @@ class SubscriptionLibraryUiTest {
     }
 
     private fun start() = compose.setContent { Harness() }
+
+    @Test fun reviewRequiredIsNotAnUpdateFailureAndTheRefreshActionRemainsReachable() {
+        refresh.value = SubscriptionRefreshState(total = 1, results = listOf(
+            SubscriptionRefreshResult("a", "Alpha Cloud", false, reviewRequired = true),
+        ))
+        start()
+        scrollTo("subscription-card-a")
+        compose.onNodeWithText(en("需确认更新"), useUnmergedTree = true).assertExists()
+        compose.onNodeWithText(en("更新失败"), useUnmergedTree = true).assertDoesNotExist()
+        inCard("subscription-refresh", "a").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(listOf("a"), rows) }
+    }
     private fun tag(t: String) = compose.onNodeWithTag(t, useUnmergedTree = true)
     private fun en(source: String) = localizeWeaveText(source, WeaveLanguage.ENGLISH)
     private fun textOf(t: String) = tag(t).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString { it.text }

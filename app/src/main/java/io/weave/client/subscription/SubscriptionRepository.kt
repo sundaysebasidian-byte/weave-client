@@ -407,6 +407,14 @@ class SubscriptionRepository(
         replaceRemote(subscriptionId, record.name, source)
     }
 
+    /** Single-source refresh uses the same review transaction as the subscription detail editor.
+     * Its encrypted URL stays in this layer; confirming consumes the exact fetched candidate. */
+    suspend fun previewRemoteRefresh(subscriptionId: String): SubscriptionUpdatePreview = withContext(Dispatchers.IO) {
+        val record = store.get(subscriptionId)
+            ?: throw SubscriptionImportException("订阅不存在")
+        previewRemote(subscriptionId, record.name, store.readUrl(subscriptionId))
+    }
+
     suspend fun replaceFile(
         subscriptionId: String,
         name: String,
@@ -516,7 +524,7 @@ class SubscriptionRepository(
             throw SubscriptionImportException("订阅中没有可用节点")
         }
         val diff = SubscriptionDiffer.compare(previous.nodes, parsed.nodes)
-        require(diff.added == 0 && diff.removed == 0) { "订阅节点有变化，请在详情中预览后更新" }
+        if (diff.added != 0 || diff.removed != 0) throw SubscriptionReviewRequiredException()
         val audit = SubscriptionGuard.audit(
             previous = previous,
             candidate = parsed,

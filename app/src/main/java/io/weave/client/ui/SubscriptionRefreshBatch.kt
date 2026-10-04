@@ -1,6 +1,7 @@
 package io.weave.client.ui
 
 import io.weave.client.domain.Subscription
+import io.weave.client.subscription.SubscriptionReviewRequiredException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -25,16 +26,20 @@ internal object SubscriptionRefreshBatch {
         for (subscription in targets) {
             currentCoroutineContext().ensureActive()
             onProgress(subscription, results.toList())
+            var reviewRequired = false
             val succeeded = try {
                 refresh(subscription.id)
                 onUpdated(subscription.id)
                 true
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (_: SubscriptionReviewRequiredException) {
+                reviewRequired = true
+                false
             } catch (_: Exception) {
                 false
             }
-            results += SubscriptionRefreshResult(subscription.id, subscription.name, succeeded)
+            results += SubscriptionRefreshResult(subscription.id, subscription.name, succeeded, reviewRequired)
             onProgress(null, results.toList())
         }
         return results.toList()

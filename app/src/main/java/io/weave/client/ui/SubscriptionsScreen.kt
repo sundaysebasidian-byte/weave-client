@@ -413,11 +413,12 @@ private fun RefreshStatus(
 ) {
     val language = LocalWeaveLanguage.current
     val modifier = Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)
-    val failedNames = refreshState.results.filterNot { it.succeeded }.map { it.name }
+    val failedNames = refreshState.results.filter { !it.succeeded && !it.reviewRequired }.map { it.name }
+    val reviewNames = refreshState.results.filter { it.reviewRequired }.map { it.name }
     when {
         refreshState.running -> {
             val progress = if (refreshState.total > 0) {
-                (refreshState.completed + refreshState.failed).toFloat() / refreshState.total
+                (refreshState.completed + refreshState.failed + refreshState.reviewCount).toFloat() / refreshState.total
             } else {
                 null
             }
@@ -432,7 +433,7 @@ private fun RefreshStatus(
                             listOf(
                                 localizeWeaveText("正在刷新", language),
                                 refreshState.currentName ?: localizeWeaveText("远程订阅", language),
-                            ).joinToString(" ") + " · ${refreshState.completed + refreshState.failed}/${refreshState.total}"
+                            ).joinToString(" ") + " · ${refreshState.completed + refreshState.failed + refreshState.reviewCount}/${refreshState.total}"
                         } else {
                             localizeWeaveText(refreshState.message ?: "正在刷新", language)
                         },
@@ -459,8 +460,17 @@ private fun RefreshStatus(
             message = listOfNotNull(
                 refreshState.message?.let { localizeWeaveText(it, language) },
                 localizeWeaveText("以下订阅更新失败", language) + ": " + failedNameList(failedNames, language),
+                reviewNames.takeIf { it.isNotEmpty() }?.let {
+                    localizeWeaveText("以下订阅需确认更新", language) + ": " + failedNameList(it, language)
+                },
             ).joinToString("\n"),
             onRetryFailed = onRetryFailed,
+            modifier = modifier,
+        )
+        reviewNames.isNotEmpty() -> WeaveNotice(
+            icon = Icons.Rounded.Info,
+            message = localizeWeaveText("以下订阅需确认更新", language) + ": " + failedNameList(reviewNames, language),
+            tone = WeaveStatusTone.NEUTRAL,
             modifier = modifier,
         )
         // Legacy state without per-source results keeps the original whole-list retry.
@@ -623,7 +633,8 @@ private fun SubscriptionCard(
     val attention = expiry == SubscriptionExpiryStatus.EXPIRED || expiry == SubscriptionExpiryStatus.EXPIRING_SOON
     val showUsage = quota != null && (hasBar || quota.usedBytes > 0)
     val refreshing = refreshState.running && refreshState.currentId == subscription.id
-    val outcome = refreshState.results.lastOrNull { it.subscriptionId == subscription.id }?.succeeded
+    val refreshResult = refreshState.results.lastOrNull { it.subscriptionId == subscription.id }
+    val outcome = refreshResult?.succeeded
 
     LiquidGlassPanel(
         modifier = Modifier
@@ -667,6 +678,13 @@ private fun SubscriptionCard(
                             "正在刷新",
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 12.sp,
+                            modifier = outcomeModifier,
+                        )
+                        refreshResult?.reviewRequired == true -> Text(
+                            "需确认更新",
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                             modifier = outcomeModifier,
                         )
                         outcome == false -> Text(

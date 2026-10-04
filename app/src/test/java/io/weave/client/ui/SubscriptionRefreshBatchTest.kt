@@ -8,6 +8,19 @@ import org.junit.Test
 
 /** Repository operations are fake callbacks. These tests cannot use VPN or a network. */
 class SubscriptionRefreshBatchTest {
+    @Test fun `changed nodes require review without becoming a failure or applying the candidate`() = runBlocking {
+        val applied = mutableListOf<String>()
+        val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB), {
+            if (it == "a") throw io.weave.client.subscription.SubscriptionReviewRequiredException()
+        }, { applied += it }, { _, _ -> })
+        assertEquals(listOf("b"), applied)
+        assertTrue(results[0].reviewRequired)
+        assertFalse(results[0].succeeded)
+        assertTrue(results[1].succeeded)
+        val state = SubscriptionRefreshState(results = results)
+        assertEquals(1, state.reviewCount)
+        assertTrue(state.failedIds.isEmpty())
+    }
     private val remoteA = Subscription("a", "Provider A", 1, remote = true)
     private val remoteB = Subscription("b", "Provider B", 1, remote = true)
     private val local = Subscription("local", "Local file", 1)

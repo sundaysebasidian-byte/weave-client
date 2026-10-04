@@ -8,6 +8,7 @@ data class SubscriptionRefreshResult(
     val subscriptionId: String,
     val name: String,
     val succeeded: Boolean,
+    val reviewRequired: Boolean = false,
 )
 
 @Immutable
@@ -21,5 +22,6 @@ data class SubscriptionRefreshState(
     val currentId: String? = null,
     val results: List<SubscriptionRefreshResult> = emptyList(),
 ) {
-    val failedIds: Set<String> get() = results.filterNot { it.succeeded }.mapTo(linkedSetOf()) { it.subscriptionId }
+    val failedIds: Set<String> get() = results.filter { !it.succeeded && !it.reviewRequired }.mapTo(linkedSetOf()) { it.subscriptionId }
+    val reviewCount: Int get() = results.count { it.reviewRequired }
 }

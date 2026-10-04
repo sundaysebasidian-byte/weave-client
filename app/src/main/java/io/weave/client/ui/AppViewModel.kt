@@ -298,13 +298,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun prepareUpdatePreview(id: String, prepare: suspend () -> io.weave.client.subscription.SubscriptionUpdatePreview) {
+    private fun prepareUpdatePreview(id: String, onComplete: (Boolean) -> Unit = {},
+        prepare: suspend () -> io.weave.client.subscription.SubscriptionUpdatePreview) {
         if (mutableEditorState.value.running) return
         mutableEditorState.update { it.copy(running = true, error = null) }
         viewModelScope.launch {
+            var offered = false
             probeSafely { prepare() }.onSuccess { preview ->
                 if (mutableEditorState.value.subscriptionId == id) {
                     mutableUpdatePreview.value = preview
+                    offered = true
                     launch {
                         delay(300_000)
                         if (mutableUpdatePreview.value?.token == preview.token) discardUpdatePreview()
@@ -312,6 +315,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 } else subscriptionRepository.discardReview()
             }.onFailure { error -> mutableEditorState.update { it.copy(error = error.message) } }
             mutableEditorState.update { it.copy(running = false) }
+            onComplete(offered)
         }
     }
 
@@ -1293,8 +1297,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshAllRemoteSubscriptions() = refreshRemoteSubscriptions(requestedIds = null)
 
-    fun refreshRemoteSubscription(subscriptionId: String) =
-        refreshRemoteSubscriptions(requestedIds = setOf(subscriptionId))
+    fun refreshRemoteSubscription(subscriptionId: String) {
+        if (mutableSubscriptionRefreshState.value.running || mutableEditorState.value.running ||
+            mutableUpdatePreview.value != null) return
+        val subscription = mutableSubscriptions.value.firstOrNull { it.id == subscriptionId } ?: return
+        // Only the opaque ID enters editor state; source credentials stay in the repository.
+        mutableEditorState.value = SubscriptionEditorState(subscriptionId = subscriptionId)
+        mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
+            running = true, total = 1, currentId = subscriptionId, currentName = subscription.name,
+        )
+        prepareUpdatePreview(subscriptionId, onComplete = { offered ->
+            mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
+                total = 1, failed = if (offered) 0 else 1,
+                message = if (offered) "订阅已准备好，请确认更新" else "订阅修改失败",
+                results = listOf(SubscriptionRefreshResult(subscriptionId, subscription.name,
+                    succeeded = false, reviewRequired = offered)),
+            )
+        }) { subscriptionRepository.previewRemoteRefresh(subscriptionId) }
+    }
 
     fun retryFailedRemoteSubscriptions() {
         val failedIds = mutableSubscriptionRefreshState.value.failedIds
@@ -1303,7 +1323,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshRemoteSubscriptions(requestedIds: Set<String>?) {
-        if (mutableSubscriptionRefreshState.value.running) return
+        if (mutableSubscriptionRefreshState.value.running || mutableEditorState.value.running ||
+            mutableUpdatePreview.value != null) return
         mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
             running = true,
             message = "正在检查 HTTPS 远程订阅",
@@ -1335,20 +1356,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 currentId = current?.id,
                                 currentName = current?.name,
                                 completed = finished.count { result -> result.succeeded },
-                                failed = finished.count { result -> !result.succeeded },
+                                failed = finished.count { result -> !result.succeeded && !result.reviewRequired },
                                 results = finished,
                             )
                         }
                     },
                 )
                 val completed = results.count { it.succeeded }
-                val failed = results.size - completed
+                val failed = results.count { !it.succeeded && !it.reviewRequired }
+                val needsReview = results.any { it.reviewRequired }
                 mutableSubscriptionRefreshState.update {
                     it.copy(
                         running = false,
                         currentId = null,
                         currentName = null,
-                        message = if (failed == 0) "已刷新 $completed 个远程订阅" else "已完成 $completed 个，$failed 个失败",
+                        message = when {
+                            failed > 0 -> "已完成 $completed 个，$failed 个失败"
+                            needsReview -> "订阅节点有变化，请在详情中预览后更新"
+                            else -> "已刷新 $completed 个远程订阅"
+                        },
                     )
                 }
                 mutableDashboard.update {
@@ -1555,6 +1581,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { result ->
                     val message = successMessage(result)
                     refreshSubscriptionsAndReferences(subscriptionId)
+                    if (result is SubscriptionUpdate) {
+                        mutableSubscriptionRefreshState.update { state ->
+                            val results = state.results.map { item ->
+                                if (item.subscriptionId == subscriptionId) item.copy(succeeded = true, reviewRequired = false) else item
+                            }
+                            state.copy(results = results, completed = results.count { it.succeeded },
+                                failed = results.count { !it.succeeded && !it.reviewRequired },
+                                message = message)
+                        }
+                    }
                     val editor = subscriptionRepository.loadEditor(subscriptionId)
                     val revision = mutableEditorState.value.revision + 1
                     mutableEditorState.value = SubscriptionEditorState(
