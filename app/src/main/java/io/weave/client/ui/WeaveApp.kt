@@ -384,6 +384,7 @@ fun WeaveApp(
     val destinationState = rememberSaveableStateHolder()
     var showImportDialog by remember { mutableStateOf(false) }
     var showProxyMigration by remember { mutableStateOf(false) }
+    var showConnectionActions by remember { mutableStateOf(false) }
     var showLanTransferDialog by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var editingRoute by remember { mutableStateOf<AppRoute?>(null) }
@@ -538,7 +539,7 @@ fun WeaveApp(
     }
 
     // No native dashboard queries underneath dialogs, during scrolling or outside RESUMED.
-    val dashboardObscured = showImportDialog || showProxyMigration || showLanTransferDialog ||
+    val dashboardObscured = showImportDialog || showProxyMigration || showConnectionActions || showLanTransferDialog ||
         showAppPicker || editingRoute != null || showDefaultRoutePicker || managedSubscriptionId != null ||
         showVpnDisclosure || showRouteLens || showNetworkPrivacyCenter || showRecoveryCenter ||
         showPolicyPacks || showLocalRouteRules || showConnections || showLogs || showRuleSets ||
@@ -624,7 +625,7 @@ fun WeaveApp(
                     onConnect = ::requestConnect,
                     onModeSelected = viewModel::selectMode,
                     onDefaultRouteClick = { showDefaultRoutePicker = true },
-                    onMoreClick = { destination = Destination.SETTINGS },
+                    onMoreClick = { showConnectionActions = true },
                     onIpQuality = { openNetworkPrivacyCenter(runFullCheck = true) },
                     contentPadding = innerPadding,
                 )
@@ -722,6 +723,7 @@ fun WeaveApp(
                         viewModel.discardBackupState()
                         showBackup = true
                     },
+                    onOpenLanTransfer = { showLanTransferDialog = true },
                     onOpenQuickStart = { quickStart = quickStart.open() },
                     quickStartReducedMotion = quickStartReducedMotion,
                     onQuickStartMotionChanged = ::changeQuickStartMotion,
@@ -987,23 +989,42 @@ fun WeaveApp(
         )
     }
 
+    if (showConnectionActions) {
+        val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        ConnectionActionsDialog(
+            state = dashboard.connectionState, onDismiss = { showConnectionActions = false },
+            onChooseExit = { showConnectionActions = false; showDefaultRoutePicker = true },
+            onDiagnostics = { showConnectionActions = false; openNetworkPrivacyCenter(runFullCheck = false) },
+            onConnections = { showConnectionActions = false; showConnections = true },
+            onLogs = { showConnectionActions = false; showLogs = true },
+            onRecovery = { showConnectionActions = false; viewModel.refreshRecoveryState(); showRecoveryCenter = true },
+        )
+    }
+
     if (showProxyMigration) {
         val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
-        val importState by viewModel.importState.collectAsStateWithLifecycle()
-        ProxyMigrationDialog(
+        val importState by viewModel.clientImportState.collectAsStateWithLifecycle()
+        ClientExportImportDialog(
             onRescan = { viewModel.ensureInstalledAppsLoaded(forceRefresh = true) },
             clients = installedApps.filter(InstalledApp::migrationCandidate),
             state = importState,
             onDismiss = {
                 if (!importState.running) {
                     showProxyMigration = false
-                    viewModel.resetImportState()
+                    viewModel.resetClientImport()
                 }
             },
-            onImportFile = viewModel::importSubscriptionFile,
-            onPasteOrScan = {
+            onPreviewFile = viewModel::previewClientImportFile,
+            onPreviewText = viewModel::previewClientImportText,
+            onConfirm = viewModel::applyClientImport,
+            onReset = viewModel::resetClientImport,
+            onPreviewQrImage = viewModel::previewClientImportQrImage,
+            onOpenSubscription = { id ->
                 showProxyMigration = false
-                showImportDialog = true
+                viewModel.resetClientImport()
+                destination = Destination.SUBSCRIPTIONS
+                managedSubscriptionId = id
+                viewModel.openSubscriptionEditor(id)
             },
         )
     }

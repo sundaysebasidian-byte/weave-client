@@ -330,120 +330,6 @@ internal fun ImportSubscriptionDialog(
 }
 
 @Composable
-internal fun ProxyMigrationDialog(
-    onRescan: () -> Unit,
-    clients: List<InstalledApp>,
-    state: SubscriptionImportState,
-    onDismiss: () -> Unit,
-    onImportFile: (name: String, uri: Uri) -> Unit,
-    onPasteOrScan: () -> Unit,
-) {
-    val context = LocalContext.current
-    var selectedPackage by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(clients) {
-        if (clients.none { it.packageName == selectedPackage }) selectedPackage = clients.firstOrNull()?.packageName
-    }
-    val filePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        uri?.let { onImportFile("", it) }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Rounded.SyncAlt, contentDescription = null) },
-        title = { Text("从其他客户端迁移", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("支持 CMFA、Clash、Karing、FlClash、Clash Mi、Hiddify、v2rayNG、NekoBox、SagerNet 与 sing-box 的兼容订阅导出。", fontSize = 12.sp)
-                TextButton(onClick = onRescan, enabled = !state.running) { Text("重新检测客户端") }
-                if (clients.isEmpty()) Text("未检测到可见客户端，仍可直接导入文件、链接或二维码。", fontSize = 12.sp)
-                Text("识别依据为应用包名或名称，不代表安全认证；其他设备的兼容配置也可导入。", fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "Android 不允许 Weave 读取其他应用的私有数据。请选择来源并确认，然后在系统窗口中选择该客户端主动导出的 YAML、JSON 或文本文件。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                )
-                clients.forEach { client ->
-                    val selected = selectedPackage == client.packageName
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { selectedPackage = client.packageName }
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primaryContainer
-                                else Color.Transparent,
-                            )
-                            .padding(horizontal = 12.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(client.monogram, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(12.dp))
-                        Text(client.label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                        if (selected) {
-                            Icon(
-                                Icons.Rounded.CheckCircle,
-                                contentDescription = localizedContentDescription("已选择"),
-                                tint = MaterialTheme.colorScheme.secondary,
-                            )
-                        }
-                    }
-                }
-                if (selectedPackage != null) TextButton(onClick = {
-                    selectedPackage?.let { selected ->
-                        context.packageManager.getLaunchIntentForPackage(selected)?.let { intent ->
-                            runCatching { context.startActivity(intent) }
-                        }
-                    }
-                }) { Text("打开所选客户端") }
-                TextButton(onClick = onPasteOrScan, enabled = !state.running) {
-                    Icon(Icons.Rounded.QrCodeScanner, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("粘贴链接或扫描二维码")
-                }
-                state.error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
-                Text(
-                    "文件只会在本机解析、校验并加密保存；不会上传，也不会修改来源客户端。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !state.running,
-                onClick = {
-                    filePicker.launch(
-                        arrayOf(
-                            "text/*",
-                            "application/json",
-                            "application/yaml",
-                            "application/x-yaml",
-                            "application/octet-stream",
-                        ),
-                    )
-                },
-            ) {
-                if (state.running) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(if (state.running) "正在导入" else "确认并选择文件")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !state.running) { Text("取消") }
-        },
-    )
-}
-
-@Composable
 internal fun LanTransferDialog(
     state: LanTransferState,
     subscriptions: List<Subscription>,
@@ -1025,30 +911,31 @@ internal fun SubscriptionManagerDialog(
                                 }
                             }
                             WeaveDivider()
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    "节点  ${nodes.size}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                TextButton(
-                                    onClick = onCheckHealth,
-                                    enabled = vpnConnected && !health.running && !state.running,
-                                ) {
-                                    if (health.running) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                        )
-                                        Spacer(Modifier.width(7.dp))
+                            AdaptiveHeadingAction(
+                                heading = { headingModifier ->
+                                    Text(
+                                        "节点  ${nodes.size}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        modifier = headingModifier,
+                                    )
+                                },
+                                action = {
+                                    TextButton(
+                                        onClick = onCheckHealth,
+                                        enabled = vpnConnected && !health.running && !state.running,
+                                    ) {
+                                        if (health.running) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                            Spacer(Modifier.width(7.dp))
+                                        }
+                                        Text(if (health.running) "测速中" else "多次测速并排序")
                                     }
-                                    Text(if (health.running) "测速中" else "多次测速并排序")
-                                }
-                            }
+                                },
+                            )
                             Text(
                                 "HTTP 探测结果，不等同于 ICMP/UDP 丢包率；少量样本仅供参考。",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1172,52 +1059,50 @@ private fun SubscriptionNodeRow(
     health: io.weave.client.core.engine.NodeHealthSnapshot?,
     checked: Boolean,
 ) {
-    Row(
+    // Same structure as the route picker: header Row (badge + weighted name/protocol), with the
+    // health evidence underneath at full width instead of a trailing unweighted Text.
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(10.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                node.protocol.uppercase().take(4),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                translate = false,
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text(
+                    node.protocol.uppercase().take(4),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    translate = false,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    NodeDisplayName.core(node.name),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    translate = false,
+                )
+                Text(
+                    node.protocol,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    translate = false,
+                )
+            }
         }
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                NodeDisplayName.core(node.name),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                translate = false,
-            )
-            Text(
-                node.protocol,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                translate = false,
-            )
-        }
-        Text(
-            text = nodeProbeResultText(health, checked, LocalWeaveLanguage.current),
-            translate = false,
-            color = when {
-                health?.latencyMs != null && health.packetLossPercent > 0 ->
-                    MaterialTheme.colorScheme.tertiary
-                health?.latencyMs != null -> MaterialTheme.colorScheme.secondary
-                health != null && checked -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
+        NodeHealthEvidence(
+            health = health,
+            checked = checked,
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
@@ -1229,27 +1114,27 @@ private fun QualityMatrixEntry(row: io.weave.client.core.engine.QualityMatrixRow
         shape = RoundedCornerShape(13.dp),
     ) {
         Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    NodeDisplayName.core(row.name),
-                    translate = false,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    row.stabilityScore?.let { "$it · ${row.stabilityLabel}" } ?: "未完成",
-                    color = when {
-                        row.stabilityScore == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                        row.stabilityScore >= 85 -> MaterialTheme.colorScheme.secondary
-                        row.stabilityScore >= 65 -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.error
-                    },
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            // The stability label is a trailing node status too; it now sits under the full-width
+            // name rather than competing with it for the Row.
+            Text(
+                NodeDisplayName.core(row.name),
+                translate = false,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                row.stabilityScore?.let { "$it · ${row.stabilityLabel}" } ?: "未完成",
+                color = when {
+                    row.stabilityScore == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    row.stabilityScore >= 85 -> MaterialTheme.colorScheme.secondary
+                    row.stabilityScore >= 65 -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.error
+                },
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 buildString {
                     append(row.protocol)

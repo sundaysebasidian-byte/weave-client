@@ -31,6 +31,41 @@ class SubscriptionRepository(
         val name: String, val source: String, val prepared: PreparedSubscription, val diff: SubscriptionDiff,
         val expiresAtNanos: Long, val fetched: SubscriptionFetchResult? = null)
     @Volatile private var pendingUpdate: PendingUpdate? = null
+    private val migrationPreview = MigrationPreviewSession()
+
+    suspend fun previewMigrationFile(name: String, uri: Uri): MigrationPreview = withContext(Dispatchers.IO) {
+        migrationPreview.clear()
+        val payload = contentResolver.openInputStream(uri)?.use(localReader::read)
+            ?: throw SubscriptionImportException("无法读取所选订阅文件")
+        migrationPreview.prepare(importedSubscriptionName(name, displayName(uri)), LOCAL_IMPORT_SOURCE,
+            prepareRuntimePayload(payload, LOCAL_IMPORT_SOURCE))
+    }
+
+    suspend fun previewMigrationText(name: String, input: String): MigrationPreview = withContext(Dispatchers.IO) {
+        migrationPreview.clear()
+        val value = input.trim()
+        require(value.toByteArray(Charsets.UTF_8).size <= MAX_INLINE_BYTES) { "粘贴内容超过 5 MiB 限制" }
+        if (qrDecoder.isRemoteLink(value)) {
+            val link = qrDecoder.decode(value) as QrSubscriptionInput.RemoteUrl
+            val fetched = safeFetcher.fetch(link.url)
+            val source = SubscriptionRequestCompatibility.adapt(java.net.URI(link.url)).toString()
+            migrationPreview.prepare(importedSubscriptionName(name, null), source,
+                prepareRuntimePayload(fetched.body, fetched.finalUri.toString()), fetched)
+        } else {
+            migrationPreview.prepare(importedSubscriptionName(name, null), INLINE_IMPORT_SOURCE,
+                prepareRuntimePayload(value, INLINE_IMPORT_SOURCE))
+        }
+    }
+
+    fun discardMigrationPreview() = migrationPreview.clear()
+
+    suspend fun applyMigrationPreview(token: String): Subscription = withContext(Dispatchers.IO) {
+        val pending = migrationPreview.consume(token)
+        val saved = store.save(pending.preview.name, pending.source, pending.prepared.first,
+            pending.prepared.second, counts = pending.prepared.counts)
+        pending.fetched?.let { store.recordRemoteMetadata(saved.id, it.usage, it.updateIntervalHours) }
+        toDomain(store.get(saved.id) ?: saved)
+    }
 
     suspend fun previewRemote(id: String, name: String, rawUrl: String): SubscriptionUpdatePreview = withContext(Dispatchers.IO) {
         pendingUpdate = null

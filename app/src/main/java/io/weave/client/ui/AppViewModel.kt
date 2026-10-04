@@ -110,6 +110,14 @@ data class SubscriptionImportState(
 )
 
 @Immutable
+data class ClientImportState(
+    val running: Boolean = false,
+    val preview: io.weave.client.subscription.MigrationPreview? = null,
+    val error: String? = null,
+    val completed: Subscription? = null,
+)
+
+@Immutable
 data class SubscriptionEditorState(
     val subscriptionId: String? = null,
     val loading: Boolean = false,
@@ -266,6 +274,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val mutableImportState = MutableStateFlow(SubscriptionImportState())
     val importState = mutableImportState.asStateFlow()
+    private val mutableClientImportState = MutableStateFlow(ClientImportState())
+    val clientImportState = mutableClientImportState.asStateFlow()
 
     private val mutableEditorState = MutableStateFlow(SubscriptionEditorState())
     val editorState = mutableEditorState.asStateFlow()
@@ -841,6 +851,56 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runSubscriptionImport {
             subscriptionRepository.importFile(name, uri)
         }
+    }
+
+    fun previewClientImportFile(name: String, uri: Uri) = runClientImportPreview {
+        subscriptionRepository.previewMigrationFile(name, uri)
+    }
+
+    fun previewClientImportText(name: String, text: String) = runClientImportPreview {
+        subscriptionRepository.previewMigrationText(name, text)
+    }
+
+    fun previewClientImportQrImage(name: String, uri: Uri) = runClientImportPreview {
+        subscriptionRepository.previewMigrationText(name, qrCodeImageReader.read(uri))
+    }
+
+    private fun runClientImportPreview(read: suspend () -> io.weave.client.subscription.MigrationPreview) {
+        if (mutableClientImportState.value.running) return
+        mutableClientImportState.value = ClientImportState(running = true)
+        viewModelScope.launch {
+            startupJob.join()
+            try {
+                mutableClientImportState.value = ClientImportState(preview = read())
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败")
+            }
+        }
+    }
+
+    fun applyClientImport(token: String) {
+        val state = mutableClientImportState.value
+        if (state.running || state.preview?.token != token) return
+        mutableClientImportState.value = state.copy(running = true, error = null)
+        viewModelScope.launch {
+            try {
+                val subscription = subscriptionRepository.applyMigrationPreview(token)
+                mutableSubscriptions.update { (it + subscription).distinctBy(Subscription::id) }
+                mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
+                mutableClientImportState.value = ClientImportState(completed = subscription)
+                reloadIfConnected("订阅已导入，正在安全更新运行配置")
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败")
+            }
+        }
+    }
+
+    fun resetClientImport() {
+        if (mutableClientImportState.value.running) return
+        subscriptionRepository.discardMigrationPreview()
+        mutableClientImportState.value = ClientImportState()
     }
 
     fun importSubscriptionQr(name: String, rawValue: String) {

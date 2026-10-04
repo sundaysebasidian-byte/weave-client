@@ -17,4 +17,7 @@ class ReleaseArtifactPolicyTest(unittest.TestCase):
     def test_universal_and_wrong_architecture_are_rejected(self):
         for abis in [['arm64-v8a','x86_64'],['x86_64'],[]]:self.assertIn('Expected exactly one ARM64 ABI',check.violations(self.metadata(abis=abis),'candidate','0.4.0-rc1',107))
     def test_added_permission_requires_review(self):self.assertIn('Unexpected Android permission',check.violations(self.metadata(permissions=['android.permission.QUERY_ALL_PACKAGES']),'candidate','0.4.0-rc1',107))
+    def test_production_candidate_requires_exact_previous_certificate_when_requested(self):
+        self.assertIn('Production signer does not match the confirmed certificate',check.violations(self.metadata(),'candidate','0.4.0-rc1',107,'a'*64))
+        self.assertEqual([],check.violations(self.metadata(signer_sha256=['a'*64],debug_signer_dn=False),'candidate','0.4.0-rc1',107,'a'*64))
 if __name__=='__main__':unittest.main()

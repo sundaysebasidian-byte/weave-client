@@ -23,7 +23,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,6 +42,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -66,7 +70,6 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Policy
-import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -122,6 +125,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -519,15 +523,17 @@ private fun ConditionalTargetDialog(
                     }
                 } else {
                     item {
-                        OutlinedTextField(
-                            value = nodeSearch,
-                            onValueChange = { nodeSearch = it.take(100) },
-                            label = { Text("搜索节点") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
-                            Text(if (favoritesOnly) "显示全部节点" else "只看收藏")
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = nodeSearch,
+                                onValueChange = { nodeSearch = it.take(100) },
+                                label = { Text("搜索节点") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
+                                Text(if (favoritesOnly) "显示全部节点" else "只看收藏")
+                            }
                         }
                     }
                     item { TargetSectionLabel("出口") }
@@ -550,53 +556,58 @@ private fun ConditionalTargetDialog(
                         )
                     }
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "手动选择节点",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                letterSpacing = 0.8.sp,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(
-                                onClick = { onCheckHealth(selectedSubscription.id) },
-                                enabled = vpnConnected && selectedHealth?.running != true,
-                            ) {
-                                if (selectedHealth?.running == true) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(15.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                }
+                        AdaptiveHeadingAction(
+                            heading = { headingModifier ->
                                 Text(
-                                    when {
-                                        selectedHealth?.running == true -> "测速中"
-                                        !vpnConnected -> "连接后测速"
-                                        else -> "测速并排序"
-                                    },
+                                    "手动选择节点",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 0.8.sp,
+                                    modifier = headingModifier,
                                 )
-                            }
-                        }
+                            },
+                            action = {
+                                TextButton(
+                                    onClick = { onCheckHealth(selectedSubscription.id) },
+                                    enabled = vpnConnected && selectedHealth?.running != true,
+                                ) {
+                                    if (selectedHealth?.running == true) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(15.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                    }
+                                    Text(
+                                        when {
+                                            selectedHealth?.running == true -> "测速中"
+                                            !vpnConnected -> "连接后测速"
+                                            else -> "测速并排序"
+                                        },
+                                    )
+                                }
+                            },
+                        )
                     }
-                    item {
-                        selectedHealth?.error?.let { error ->
-                            Text(
-                                error,
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp,
-                            )
-                        }
-                        selectedHealth?.checkedAtMillis?.let { time ->
-                            Text("检测时间", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
-                                translate = false, fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (selectedHealth?.error != null || selectedHealth?.checkedAtMillis != null) {
+                        item {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                selectedHealth?.error?.let { error ->
+                                    Text(
+                                        error,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 11.sp,
+                                        lineHeight = 16.sp,
+                                    )
+                                }
+                                selectedHealth?.checkedAtMillis?.let { time ->
+                                    Text("检测时间", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
+                                        translate = false, fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
                     }
                     items(
@@ -630,10 +641,7 @@ private fun ConditionalTargetDialog(
         },
         confirmButton = {},
         dismissButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            TargetDialogFooter {
                 if (onDelete != null) {
                     TextButton(onClick = onDelete) {
                         Icon(
@@ -645,7 +653,6 @@ private fun ConditionalTargetDialog(
                         Spacer(Modifier.width(6.dp))
                         Text("删除规则", color = MaterialTheme.colorScheme.error)
                     }
-                    Spacer(Modifier.weight(1f))
                 }
                 if (selectedSubscription != null) {
                     TextButton(onClick = { selectedSubscriptionId = null }) {
@@ -658,8 +665,14 @@ private fun ConditionalTargetDialog(
     )
 }
 
+/**
+ * One node in the picker. The whole row is a full-width Column: the header Row holds only the
+ * favorite button, the decorative globe and the weighted name/protocol block, while the health
+ * evidence sits underneath at full width so it can wrap. A trailing unweighted status Text used to
+ * claim most of the Row on narrow screens and squeezed the protocol into one character per line.
+ */
 @Composable
-private fun SelectableNodeOptionRow(
+internal fun SelectableNodeOptionRow(
     favorite: Boolean,
     onFavorite: () -> Unit,
     node: ProxyNode,
@@ -668,7 +681,7 @@ private fun SelectableNodeOptionRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
@@ -677,48 +690,138 @@ private fun SelectableNodeOptionRow(
                 if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
-            Icon(if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                contentDescription = localizedContentDescription(if (favorite) "取消收藏" else "收藏节点"),
-                tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
+                Icon(if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    contentDescription = localizedContentDescription(if (favorite) "取消收藏" else "收藏节点"),
+                    tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            WeaveGlobeGlyph(size = 22.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                // User-supplied names may be long; wrap a little instead of cutting them to one
+                // line, then ellipsize as a last resort.
+                Text(
+                    NodeDisplayName.core(node.name),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    translate = false,
+                    modifier = Modifier.testTag("picker-name-${node.id}"),
+                )
+                Text(
+                    node.protocol,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    translate = false,
+                    modifier = Modifier.testTag("picker-protocol-${node.id}"),
+                )
+            }
         }
-        Icon(
-            Icons.Rounded.Language,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+        NodeHealthEvidence(
+            health = health,
+            checked = checked,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp),
         )
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                NodeDisplayName.core(node.name),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                translate = false,
-            )
-            Text(
-                node.protocol,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                translate = false,
-            )
-        }
+    }
+}
+
+/**
+ * Real probe evidence for one node, shown at full width beneath the node header. Both lines of
+ * [nodeProbeResultText] (status, then failure rate and success counts) are kept verbatim and may
+ * wrap; nothing is shortened, hidden or rewritten as a success.
+ */
+@Composable
+internal fun NodeHealthEvidence(
+    health: io.weave.client.core.engine.NodeHealthSnapshot?,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val language = LocalWeaveLanguage.current
+    val text = remember(health, checked, language) { nodeProbeResultText(health, checked, language) }
+    val color = nodeHealthColor(health, checked)
+    val status = text.substringBefore('\n')
+    val detail = text.substringAfter('\n', missingDelimiterValue = "")
+    Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            nodeProbeResultText(health, checked, LocalWeaveLanguage.current),
+            status,
             translate = false,
-            color = when {
-                health?.latencyMs != null && health.packetLossPercent > 0 ->
-                    MaterialTheme.colorScheme.tertiary
-                health?.latencyMs != null -> MaterialTheme.colorScheme.secondary
-                health != null && checked -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            color = color,
             fontSize = 11.sp,
+            lineHeight = 16.sp,
             fontWeight = FontWeight.SemiBold,
         )
+        if (detail.isNotEmpty()) {
+            Text(
+                detail,
+                translate = false,
+                color = color,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun nodeHealthColor(
+    health: io.weave.client.core.engine.NodeHealthSnapshot?,
+    checked: Boolean,
+): Color = when {
+    health?.latencyMs != null && health.packetLossPercent > 0 -> MaterialTheme.colorScheme.tertiary
+    health?.latencyMs != null -> MaterialTheme.colorScheme.secondary
+    health != null && checked -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/**
+ * Section heading with a trailing action. Wide dialogs keep them on one line, but the action is
+ * capped at 60% of the width so a long translated label wraps instead of crushing the heading.
+ * Narrow dialogs and large system fonts stack the action beneath the heading.
+ */
+@Composable
+internal fun AdaptiveHeadingAction(
+    heading: @Composable (Modifier) -> Unit,
+    action: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val largeFont = LocalDensity.current.fontScale >= 1.3f
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val actionMaxWidth = maxWidth * 0.6f
+        if (maxWidth < 300.dp || largeFont) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                heading(Modifier.fillMaxWidth())
+                action()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                heading(Modifier.weight(1f))
+                Box(modifier = Modifier.widthIn(max = actionMaxWidth)) { action() }
+            }
+        }
+    }
+}
+
+/**
+ * Dialog footer buttons. They flow onto further lines when the translated labels or the font scale
+ * do not fit on one, instead of overflowing the dialog or shrinking a label to a sliver.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TargetDialogFooter(content: @Composable () -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+    ) {
+        content()
     }
 }
 
@@ -764,7 +867,7 @@ private fun TargetOptionRow(
                     subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

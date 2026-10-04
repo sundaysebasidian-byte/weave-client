@@ -34,6 +34,8 @@ def violations(metadata, channel, expected_version, expected_code, production_ce
     if set(metadata['permissions']) - ALLOWED_PERMISSIONS:errors.append('Unexpected Android permission')
     if channel == 'candidate':
         if not re.fullmatch(r'\d+\.\d+\.\d+-rc\d+', expected_version):errors.append('Candidate must carry an RC version')
+        if production_certificate and metadata['signer_sha256'] != [production_certificate.lower()]:
+            errors.append('Production signer does not match the confirmed certificate')
     else:
         if not re.fullmatch(r'\d+\.\d+\.\d+', expected_version):errors.append('Stable version must not contain a prerelease suffix')
         if not production_certificate or not re.fullmatch(r'[0-9a-fA-F]{64}', production_certificate):errors.append('Confirmed production certificate SHA256 is required')

@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Release candidate. Keep the app ID; production signing needs a separate release gate.
-        versionCode = 107
-        versionName = "0.4.0-rc1"
+        versionCode = 108
+        versionName = "0.4.0-rc2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

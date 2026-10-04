@@ -38,10 +38,10 @@ class QuickStartUiTest {
     @Composable private fun Harness() {
         val device = LocalDensity.current
         val pixels = LocalConfiguration.current.screenWidthDp * device.density
-        activeDensity = pixels / width.value
+        activeDensity = device.density
         CompositionLocalProvider(
             LocalWeaveLanguage provides language.value,
-            LocalDensity provides Density(activeDensity, scale.value),
+            LocalDensity provides Density(pixels / width.value, scale.value),
         ) {
             WeaveTheme(palette = palette.value) {
                 QuickStartDialog(step.value, hasNodes.value, hasProxy.value, connected.value,
@@ -93,7 +93,7 @@ class QuickStartUiTest {
                     val button=primary().performScrollTo().assertIsDisplayed().assertIsEnabled().fetchSemanticsNode()
                     val surface=compose.onNodeWithTag("quick-start").fetchSemanticsNode()
                     assertTrue("Primary clipped at $theme/$widthDp/$fontScale/$locale/$page",button.boundsInRoot.left>=surface.boundsInRoot.left && button.boundsInRoot.right<=surface.boundsInRoot.right)
-                    assertTrue("Touch target below 48dp",button.size.height / activeDensity >= 48f)
+                    assertTrue("Touch target below 48dp at $theme/$widthDp/$fontScale/$locale/$page: size=${button.size}, density=$activeDensity",button.size.height / activeDensity >= 48f)
                 }
             }
         }

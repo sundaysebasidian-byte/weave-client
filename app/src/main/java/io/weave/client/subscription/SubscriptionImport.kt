@@ -65,7 +65,12 @@ class SubscriptionPayloadParser {
             .map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
             .mapNotNull { value ->
-                val scheme = proxyScheme(value) ?: return@mapNotNull null
+                val scheme = proxyScheme(value) ?: run {
+                    if (runCatching { URI(value).scheme }.getOrNull() != null) {
+                        throw SubscriptionImportException("订阅包含暂不支持的节点协议，未导入任何节点")
+                    }
+                    return@mapNotNull null
+                }
                 ParsedNode(
                     name = runCatching { URI(value).rawFragment }
                         .getOrNull()
@@ -576,11 +581,24 @@ class SubscriptionPayloadParser {
         }
         val settings = extractJsonObject(outbound, "settings")
             ?: throw SubscriptionImportException("$name 缺少 V2Ray settings")
-        val serverObject = when (protocol) {
-            "vmess", "vless" -> extractJsonArray(settings, "vnext")?.let(::extractJsonObjects)?.firstOrNull()
-            "trojan", "shadowsocks", "socks", "http" -> extractJsonArray(settings, "servers")?.let(::extractJsonObjects)?.firstOrNull()
+        val servers = when (protocol) {
+            "vmess", "vless" -> extractJsonArray(settings, "vnext")?.let(::extractJsonObjects)
+            "trojan", "shadowsocks", "socks", "http" -> extractJsonArray(settings, "servers")?.let(::extractJsonObjects)
             else -> null
-        } ?: throw SubscriptionImportException("$name 缺少服务器列表")
+        }.orEmpty()
+        if (servers.size > 1) throw SubscriptionImportException("V2Ray 配置含多个服务器或用户，请分别导出节点链接")
+        val serverObject = servers.singleOrNull() ?: throw SubscriptionImportException("$name 缺少服务器列表")
+        val users = extractJsonArray(serverObject, "users")?.let(::extractJsonObjects).orEmpty()
+        if (users.size > 1) throw SubscriptionImportException("V2Ray 配置含多个服务器或用户，请分别导出节点链接")
+        val stream = extractJsonObject(outbound, "streamSettings")
+        val network = jsonString(stream.orEmpty(), "network")
+        val security = jsonString(stream.orEmpty(), "security")
+        val tcpHeader = extractJsonObject(stream.orEmpty(), "tcpSettings")?.let { extractJsonObject(it, "header") }
+        if (network != null && network !in setOf("tcp", "ws", "grpc") ||
+            security != null && security !in setOf("none", "tls", "reality") ||
+            tcpHeader != null && jsonString(tcpHeader, "type") !in setOf(null, "none")) {
+            throw SubscriptionImportException("该 V2Ray 传输方式暂不支持，请导出 Clash YAML 或节点链接")
+        }
         val host = jsonString(serverObject, "address")?.takeIf(String::isNotBlank)
             ?: throw SubscriptionImportException("$name 缺少服务器地址")
         val port = jsonInt(serverObject, "port")?.takeIf { it > 0 }
@@ -588,8 +606,8 @@ class SubscriptionPayloadParser {
         return ProxySpec(name, mappedType).apply {
             fields["server"] = YamlScalar(host)
             fields["port"] = YamlScalar(port.toString(), quoted = false)
-            val user = extractJsonArray(serverObject, "users")?.let(::extractJsonObjects)?.firstOrNull()
-            val passwordUser = extractJsonArray(serverObject, "users")?.let(::extractJsonObjects)?.firstOrNull()
+            val user = users.singleOrNull()
+            val passwordUser = user
             when (mappedType) {
             "vmess", "vless" -> {
                     val uuid = jsonString(user.orEmpty(), "id").orEmpty()
@@ -604,7 +622,7 @@ class SubscriptionPayloadParser {
                     }
                 }
                 "trojan" -> {
-                    val password = jsonString(passwordUser.orEmpty(), "password").orEmpty()
+                    val password = (jsonString(serverObject, "password") ?: jsonString(passwordUser.orEmpty(), "password")).orEmpty()
                     if (password.isBlank()) throw SubscriptionImportException("$name 缺少密码")
                     fields["password"] = YamlScalar(password)
                 }
@@ -620,19 +638,19 @@ class SubscriptionPayloadParser {
                     jsonString(passwordUser.orEmpty(), "pass")?.let { fields["password"] = YamlScalar(it) }
                 }
             }
-            val stream = extractJsonObject(outbound, "streamSettings")
-            val network = jsonString(stream.orEmpty(), "network")
             network?.let { fields["network"] = YamlScalar(it) }
-            val security = jsonString(stream.orEmpty(), "security")
             if (security == "tls" || security == "reality") {
                 fields["tls"] = YamlScalar("true", quoted = false)
                 val tls = extractJsonObject(stream.orEmpty(), "tlsSettings")
                 jsonString(tls.orEmpty(), "serverName")?.let { fields["servername"] = YamlScalar(it) }
+                jsonString(tls.orEmpty(), "fingerprint")?.let { fields["client-fingerprint"] = YamlScalar(it) }
                 if (jsonBoolean(tls.orEmpty(), "allowInsecure") == true) {
                     fields["skip-cert-verify"] = YamlScalar("true", quoted = false)
                 }
                 if (security == "reality") {
                     val reality = extractJsonObject(stream.orEmpty(), "realitySettings")
+                    jsonString(reality.orEmpty(), "serverName")?.let { fields["servername"] = YamlScalar(it) }
+                    jsonString(reality.orEmpty(), "fingerprint")?.let { fields["client-fingerprint"] = YamlScalar(it) }
                     val realityOpts = nested.getOrPut("reality-opts") { linkedMapOf() }
                     jsonString(reality.orEmpty(), "publicKey")?.let { realityOpts["public-key"] = YamlScalar(it) }
                     jsonString(reality.orEmpty(), "shortId")?.let { realityOpts["short-id"] = YamlScalar(it) }
@@ -661,6 +679,8 @@ class SubscriptionPayloadParser {
             "vless", "vmess", "trojan", "tuic", "socks", "http" -> if (type == "socks") "socks5" else type
             else -> throw SubscriptionImportException("sing-box $type 出站暂不支持安全转换")
         }
+        fun required(field: String): String = jsonString(outbound, field)?.takeIf(String::isNotBlank)
+            ?: throw SubscriptionImportException("JSON 出站缺少必要的认证字段，未导入任何节点")
         return ProxySpec(name, mappedType).apply {
             val host = jsonString(outbound, "server")?.takeIf(String::isNotBlank)
                 ?: throw SubscriptionImportException("$name 缺少服务器地址")
@@ -669,18 +689,18 @@ class SubscriptionPayloadParser {
             fields["server"] = YamlScalar(host)
             fields["port"] = YamlScalar(port.toString(), quoted = false)
             when (mappedType) {
-                "vless", "vmess" -> fields["uuid"] = YamlScalar(jsonString(outbound, "uuid").orEmpty())
-                "trojan" -> fields["password"] = YamlScalar(jsonString(outbound, "password").orEmpty())
+                "vless", "vmess" -> fields["uuid"] = YamlScalar(required("uuid"))
+                "trojan" -> fields["password"] = YamlScalar(required("password"))
                 "tuic" -> {
-                    fields["uuid"] = YamlScalar(jsonString(outbound, "uuid").orEmpty())
-                    fields["password"] = YamlScalar(jsonString(outbound, "password").orEmpty())
+                    fields["uuid"] = YamlScalar(required("uuid"))
+                    fields["password"] = YamlScalar(required("password"))
                 }
                 "ss" -> {
-                    fields["cipher"] = YamlScalar(jsonString(outbound, "method").orEmpty())
-                    fields["password"] = YamlScalar(jsonString(outbound, "password").orEmpty())
+                    fields["cipher"] = YamlScalar(required("method"))
+                    fields["password"] = YamlScalar(required("password"))
                 }
-                "hysteria2" -> fields["password"] = YamlScalar(jsonString(outbound, "password").orEmpty())
-                "socks", "http" -> {
+                "hysteria2" -> fields["password"] = YamlScalar(required("password"))
+                "socks5", "http" -> {
                     jsonString(outbound, "username")?.takeIf(String::isNotBlank)?.let { fields["username"] = YamlScalar(it) }
                     jsonString(outbound, "password")?.takeIf(String::isNotBlank)?.let { fields["password"] = YamlScalar(it) }
                 }
@@ -701,6 +721,9 @@ class SubscriptionPayloadParser {
                 }
             }
             val transport = extractJsonObject(outbound, "transport")
+            if (transport != null && jsonString(transport, "type") !in setOf("ws", "grpc")) {
+                throw SubscriptionImportException("该 sing-box 传输方式暂不支持，请导出 Clash YAML 或节点链接")
+            }
             if (transport?.let { jsonString(it, "type") } == "ws") {
                 fields["network"] = YamlScalar("ws")
                 val ws = linkedMapOf<String, YamlScalar>()
@@ -825,6 +848,7 @@ class SubscriptionPayloadParser {
             "wireguard",
         )
         val SUPPORTED_STRUCTURED_TYPES = SUPPORTED_URI_SCHEMES + setOf(
+            "shadowsocks",
             "socks5",
             "http",
             "anytls",

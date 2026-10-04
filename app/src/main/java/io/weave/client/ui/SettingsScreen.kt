@@ -228,6 +228,7 @@ internal fun SettingsScreen(
     onOpenRuleSets: () -> Unit = {},
     onOpenCustomGroups: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenLanTransfer: () -> Unit = {},
     notificationsEnabled: Boolean = true,
     onRequestNotifications: () -> Unit = {},
     onCancelDnsProbe: () -> Unit = {},
@@ -244,7 +245,6 @@ internal fun SettingsScreen(
     var showSecurityDetails by remember { mutableStateOf(false) }
     var showOpenSourceDetails by remember { mutableStateOf(false) }
     var showRoutingDetails by remember { mutableStateOf(false) }
-    var showLanSharingDetails by remember { mutableStateOf(false) }
     var showAutoUpdate by remember { mutableStateOf(false) }
     var showBootstrapDns by remember { mutableStateOf(false) }
     var showLanProxy by remember { mutableStateOf(false) }
@@ -407,7 +407,7 @@ internal fun SettingsScreen(
                     icon = Icons.Rounded.SyncAlt,
                     title = "局域网互传",
                     subtitle = null,
-                    onClick = { showLanSharingDetails = true },
+                    onClick = onOpenLanTransfer,
                 )
             }
         }
@@ -717,17 +717,6 @@ internal fun SettingsScreen(
                 "变更安全" to "候选配置先由内核解析验证；失败时保留上一份可用配置。",
             ),
             onDismiss = { showRoutingDetails = false },
-        )
-    }
-    if (showLanSharingDetails) {
-        InformationDialog(
-            title = "局域网互传",
-            sections = listOf(
-                "如何使用" to "前往订阅页，点击互传按钮，选择生成二维码/链接或扫描导入。",
-                "默认关闭" to "只有你主动生成时才监听局域网；成功读取一次或 5 分钟后自动失效。",
-                "加密" to "HTTP 只承载 AES-256-GCM 密文，密钥保存在 weave:// 链接的 fragment 中，不随 HTTP 请求发送。",
-            ),
-            onDismiss = { showLanSharingDetails = false },
         )
     }
 }

@@ -53,7 +53,8 @@ object ExternalImportParser {
         // Share sheets often prepend a title before the link; accept the first bare link line.
         value.lineSequence()
             .map(String::trim)
-            .firstOrNull { line -> LINK_SCHEMES.any { line.startsWith("$it://", ignoreCase = true) } }
+            .firstOrNull { line -> line.startsWith("https://", ignoreCase = true) ||
+                LINK_SCHEMES.any { line.startsWith("$it://", ignoreCase = true) } }
             ?.let(::fromLink)
             ?.let { return it }
         return ExternalImport.Inline(value)

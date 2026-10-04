@@ -273,7 +273,7 @@ internal fun HomeScreen(
                 action = {
                     HeaderActionButton(
                         icon = Icons.Rounded.MoreHoriz,
-                        contentDescription = localizedContentDescription("更多"),
+                        contentDescription = localizedContentDescription("连接操作"),
                         onClick = onMoreClick,
                     )
                 },
