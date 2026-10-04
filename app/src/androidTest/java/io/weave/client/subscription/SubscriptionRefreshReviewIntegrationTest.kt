@@ -73,8 +73,11 @@ class SubscriptionRefreshReviewIntegrationTest {
         val updated = f.repo.applyReview(preview.token, false)
         assertEquals(1, f.requests)
         assertEquals(f.old.id, updated.subscription.id)
-        assertEquals(oldNodes.dropLast(1).map { it.id }, f.repo.loadNodes().dropLast(1).map { it.id })
-        assertEquals("fixture-72-renamed", f.repo.loadNodes().last().name)
+        val retained = oldNodes.filter { it.name != "fixture-72" }.associate { it.name to it.id }
+        val updatedNodes = f.repo.loadNodes()
+        assertEquals(retained, updatedNodes.filter { it.name != "fixture-72-renamed" }.associate { it.name to it.id })
+        assertEquals(1, updatedNodes.count { it.name == "fixture-72-renamed" })
+        assertFalse(updatedNodes.any { it.name == "fixture-72" })
         assertTrue(runCatching { f.repo.applyReview(preview.token, false) }.isFailure)
     } }
     @Test fun cancelHttpFailureAndInvalidResponseNeverReplaceTheOldPayload() = isolated { f -> runBlocking {
