@@ -115,6 +115,9 @@ data class ClientImportState(
     val preview: io.weave.client.subscription.MigrationPreview? = null,
     val error: String? = null,
     val completed: Subscription? = null,
+    val catalogue: io.weave.client.subscription.ClientSourceCatalogue? = null,
+    val batchPreview: io.weave.client.subscription.MigrationBatchPreview? = null,
+    val completedSubscriptions: List<Subscription> = emptyList(),
 )
 
 @Immutable
@@ -855,6 +858,59 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun previewClientImportFile(name: String, uri: Uri) = runClientImportPreview {
         subscriptionRepository.previewMigrationFile(name, uri)
+    }
+
+    fun listCmfaSubscriptions(packageName: String, tree: Uri) {
+        if (mutableClientImportState.value.running) return
+        if (io.weave.client.subscription.ClientSourceCapabilities.cmfaAuthority(packageName) != tree.authority) {
+            mutableClientImportState.value = ClientImportState(error = "请选择 CMFA 的配置目录")
+            return
+        }
+        mutableClientImportState.value = ClientImportState(running = true)
+        viewModelScope.launch {
+            startupJob.join()
+            try { mutableClientImportState.value = ClientImportState(catalogue = subscriptionRepository.listCmfaSubscriptions(tree)) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败") }
+        }
+    }
+
+    fun listKaringSubscriptions(uri: Uri) {
+        if (mutableClientImportState.value.running) return
+        mutableClientImportState.value = ClientImportState(running = true)
+        viewModelScope.launch {
+            startupJob.join()
+            try { mutableClientImportState.value = ClientImportState(catalogue = subscriptionRepository.listKaringSubscriptions(uri)) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败") }
+        }
+    }
+
+    fun previewClientSourceSelection(token: String, ids: Set<String>) {
+        val state = mutableClientImportState.value
+        if (state.running || state.catalogue?.token != token) return
+        mutableClientImportState.value = state.copy(running = true, error = null, batchPreview = null)
+        viewModelScope.launch {
+            try { mutableClientImportState.value = state.copy(batchPreview = subscriptionRepository.previewClientSourceSelection(token, ids), error = null) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableClientImportState.value = state.copy(error = error.message ?: "订阅导入失败", batchPreview = null) }
+        }
+    }
+
+    fun applyClientSourceSelection(token: String) {
+        val state = mutableClientImportState.value
+        if (state.running || state.batchPreview?.token != token) return
+        mutableClientImportState.value = state.copy(running = true, error = null)
+        viewModelScope.launch {
+            try {
+                val subscriptions = subscriptionRepository.applyClientSourceSelection(token)
+                mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
+                mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
+                mutableClientImportState.value = ClientImportState(completedSubscriptions = subscriptions)
+                reloadIfConnected("订阅已导入，正在安全更新运行配置")
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableClientImportState.value = state.copy(error = error.message ?: "订阅导入失败", batchPreview = null) }
+        }
     }
 
     fun previewClientImportText(name: String, text: String) = runClientImportPreview {

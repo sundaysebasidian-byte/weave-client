@@ -63,4 +63,26 @@ class ClientImportIntegrationTest {
         assertTrue(runCatching { repo.previewMigrationText("fixture", json) }.isFailure)
         assertTrue(repo.loadMetadata().isEmpty())
     } }
+    @Test fun officialKaringBackupCataloguePreviewsAndSavesOnlySelectedRealGroup() = isolated { context, root -> runBlocking {
+        val file = File(root, "official-synthetic.backup.zip")
+        InstrumentationRegistry.getInstrumentation().context.assets.open("karing-official-1.2.25.2802-synthetic.backup.zip").use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+        val repository = SubscriptionRepository(context)
+        val list = repository.listKaringSubscriptions(Uri.fromFile(file))
+        assertEquals("Karing", list.sourceName)
+        assertEquals(2, list.entries.size)
+        assertFalse(list.entries.first().available)
+        assertTrue(repository.loadMetadata().isEmpty())
+        val chosen = list.entries.last()
+        val preview = repository.previewClientSourceSelection(list.token, setOf(chosen.id))
+        assertEquals(chosen.name, preview.entries.single().name)
+        assertEquals(1, preview.entries.single().counts.imported)
+        assertTrue(repository.loadMetadata().isEmpty())
+        file.writeText("Source changed after review")
+        val saved = repository.applyClientSourceSelection(preview.token)
+        assertEquals(listOf(chosen.name), saved.map { it.name })
+        assertEquals("Synthetic-A", repository.loadNodes().single().name)
+        assertEquals(repository.loadNodes(), SubscriptionRepository(context).loadNodes())
+        assertTrue(runCatching { repository.applyClientSourceSelection(preview.token) }.isFailure)
+    } }
+
 }

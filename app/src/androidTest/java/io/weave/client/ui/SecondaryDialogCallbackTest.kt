@@ -82,7 +82,7 @@ class SecondaryDialogCallbackTest {
         compose.onNodeWithText("Fixture policy error").assertIsDisplayed()
         assertEquals(0, imports)
         capture("policy-empty-error.png")
-        compose.onNodeWithText("关闭").performClick()
+        compose.onNodeWithText("完成").performClick()
         assertEquals(1, dismissed)
     }
 }

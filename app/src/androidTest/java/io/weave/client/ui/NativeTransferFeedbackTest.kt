@@ -60,11 +60,11 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
     @get:Rule(order = 1) val compose = createComposeRule()
     private fun scrollToText(text: String): SemanticsNodeInteraction {
         compose.onNodeWithTag("lan-transfer-list", useUnmergedTree = true).performScrollToNode(hasText(text))
-        return compose.onNodeWithText(text)
+        return compose.onNodeWithText(text).performScrollTo()
     }
     private fun scrollToTag(tag: String): SemanticsNodeInteraction {
         compose.onNodeWithTag("lan-transfer-list", useUnmergedTree = true).performScrollToNode(hasTestTag(tag))
-        return compose.onNodeWithTag(tag)
+        return compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
     }
     private fun capture(name: String) {
         compose.mainClock.advanceTimeBy(1000)

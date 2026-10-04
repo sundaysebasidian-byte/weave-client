@@ -38,6 +38,10 @@ class CompleteLanguageCoverageTest {
             .map { "src/main/java/io/weave/client/ui/${it.name}" } +
             listOf(
         "src/main/java/io/weave/client/domain/Models.kt",
+        "src/main/java/io/weave/client/subscription/ClientSourceCatalogue.kt",
+        "src/main/java/io/weave/client/subscription/CmfaDocumentsSource.kt",
+        "src/main/java/io/weave/client/subscription/CmfaProfileCatalogue.kt",
+        "src/main/java/io/weave/client/subscription/KaringBackupSource.kt",
         "src/main/java/io/weave/client/core/vpn/RuntimeFailure.kt",
         "src/main/java/io/weave/client/routing/RemoteRuleSet.kt",
         "src/main/java/io/weave/client/routing/CustomProxyGroup.kt",

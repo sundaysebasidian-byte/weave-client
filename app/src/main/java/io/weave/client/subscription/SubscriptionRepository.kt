@@ -32,9 +32,52 @@ class SubscriptionRepository(
         val expiresAtNanos: Long, val fetched: SubscriptionFetchResult? = null)
     @Volatile private var pendingUpdate: PendingUpdate? = null
     private val migrationPreview = MigrationPreviewSession()
+    private val clientSources = ClientSourceSession()
+    private val migrationBatch = MigrationBatchSession()
+    private val cmfaSource = CmfaDocumentsSource(contentResolver, localReader)
+
+    suspend fun listCmfaSubscriptions(tree: Uri): ClientSourceCatalogue = withContext(Dispatchers.IO) {
+        discardClientSources()
+        try { clientSources.prepare("CMFA", cmfaSource.catalogue(tree)) }
+        catch (error: SecurityException) { throw SubscriptionImportException("无法读取所选订阅文件") }
+    }
+
+    suspend fun listKaringSubscriptions(uri: Uri): ClientSourceCatalogue = withContext(Dispatchers.IO) {
+        discardClientSources()
+        try {
+            val records = contentResolver.openInputStream(uri)?.use { KaringBackupSource().catalogue(it) }
+                ?: throw SubscriptionImportException("无法读取所选订阅文件")
+            clientSources.prepare("Karing", records)
+        } catch (error: SecurityException) { throw SubscriptionImportException("无法读取所选订阅文件") }
+    }
+
+    suspend fun previewClientSourceSelection(token: String, selected: Set<String>): MigrationBatchPreview = withContext(Dispatchers.IO) {
+        migrationBatch.clear()
+        val records = clientSources.select(token, selected)
+        var bytes = 0L
+        val prepared = records.map { record ->
+            val payload = record.read()
+            bytes += payload.toByteArray(Charsets.UTF_8).size
+            require(bytes <= 20L * 1024 * 1024) { "订阅内容超过大小限制" }
+            val normalized = prepareRuntimePayload(payload, record.source)
+            require(record.expectedNodes == null || record.expectedNodes == normalized.counts.imported) { "订阅规范化前后节点不一致，已停止保存" }
+            PreparedSourceMigration(record.entry.name, record.source, normalized)
+        }
+        migrationBatch.prepare(prepared)
+    }
+
+    suspend fun applyClientSourceSelection(token: String): List<Subscription> = withContext(Dispatchers.IO) {
+        val records = migrationBatch.consume(token)
+        val saved = store.saveNewBatch(records.map { NewSubscriptionBatchEntry(it.name, it.source,
+            it.prepared.first, it.prepared.second, it.prepared.counts) })
+        clientSources.clear()
+        saved.map(::toDomain)
+    }
+
+    fun discardClientSources() { clientSources.clear(); migrationBatch.clear(); migrationPreview.clear() }
 
     suspend fun previewMigrationFile(name: String, uri: Uri): MigrationPreview = withContext(Dispatchers.IO) {
-        migrationPreview.clear()
+        discardClientSources()
         val payload = contentResolver.openInputStream(uri)?.use(localReader::read)
             ?: throw SubscriptionImportException("无法读取所选订阅文件")
         migrationPreview.prepare(importedSubscriptionName(name, displayName(uri)), LOCAL_IMPORT_SOURCE,
@@ -42,7 +85,7 @@ class SubscriptionRepository(
     }
 
     suspend fun previewMigrationText(name: String, input: String): MigrationPreview = withContext(Dispatchers.IO) {
-        migrationPreview.clear()
+        discardClientSources()
         val value = input.trim()
         require(value.toByteArray(Charsets.UTF_8).size <= MAX_INLINE_BYTES) { "粘贴内容超过 5 MiB 限制" }
         if (qrDecoder.isRemoteLink(value)) {
@@ -57,7 +100,7 @@ class SubscriptionRepository(
         }
     }
 
-    fun discardMigrationPreview() = migrationPreview.clear()
+    fun discardMigrationPreview() = discardClientSources()
 
     suspend fun applyMigrationPreview(token: String): Subscription = withContext(Dispatchers.IO) {
         val pending = migrationPreview.consume(token)

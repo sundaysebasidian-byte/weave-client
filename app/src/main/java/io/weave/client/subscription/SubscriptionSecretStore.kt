@@ -30,6 +30,9 @@ data class StoredNode(
     val protocol: String,
 )
 
+internal data class NewSubscriptionBatchEntry(val name: String, val source: String, val payload: String,
+    val parsed: ParsedSubscription, val counts: SubscriptionImportCounts)
+
 class SubscriptionSecretStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
@@ -148,6 +151,52 @@ class SubscriptionSecretStore(
                 nodes = nodes,
                 hasPayload = true,
             )
+        }
+    }
+
+    /** Stages every encrypted file first, then publishes every new record in one index commit. */
+    internal fun saveNewBatch(entries: List<NewSubscriptionBatchEntry>): List<StoredSubscription> = locked {
+        require(entries.isNotEmpty() && entries.size <= 20)
+        val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
+        val files = mutableListOf<File>()
+        val editor = preferences.edit()
+        val results = mutableListOf<StoredSubscription>()
+        try {
+            entries.forEach { entry ->
+                require(entry.parsed.nodeCount > 0)
+                val id = UUID.randomUUID().toString()
+                check(ids.add(id))
+                val name = normalizeName(entry.name)
+                val source = secretBox.encrypt(entry.source.toByteArray(Charsets.UTF_8), id.toByteArray(Charsets.UTF_8))
+                val payload = secretBox.encrypt(entry.payload.toByteArray(Charsets.UTF_8), "$id:payload".toByteArray(Charsets.UTF_8))
+                val occurrences = mutableMapOf<String, Int>()
+                val nodes = entry.parsed.nodes.map { node ->
+                    val key = nodeKey(node.name, node.protocol)
+                    val occurrence = occurrences.getOrDefault(key, 0)
+                    occurrences[key] = occurrence + 1
+                    StoredNode(nodeId(node.name, node.protocol, occurrence), node.name, node.protocol)
+                }
+                val encryptedNodes = encryptNodeMetadata(id, nodes)
+                val generation = UUID.randomUUID().toString().replace("-", "")
+                files += writePayloadCandidate(id, generation, payload)
+                editor.putString(key(id, "name"), name)
+                    .putString(key(id, "url"), source)
+                    .putInt(key(id, "nodes"), entry.parsed.nodeCount)
+                    .putString(key(id, "import_counts"), "${entry.counts.root},${entry.counts.providers},${entry.counts.collections},${entry.counts.imported}")
+                    .putString(key(id, "format"), entry.parsed.format.name)
+                    .putString(key(id, "node_metadata_encrypted"), encryptedNodes)
+                    .putInt(key(id, "node_index_version"), NODE_INDEX_VERSION)
+                    .putString(key(id, "payload_generation"), generation)
+                    .putLong(key(id, "updated_at"), System.currentTimeMillis())
+                results += StoredSubscription(id, name, entry.parsed.nodeCount, entry.parsed.format, nodes, true)
+            }
+            check(editor.putStringSet(KEY_IDS, ids).commit()) { "Unable to persist encrypted subscription batch" }
+            results
+        } catch (error: Exception) {
+            // TransactionalPreferences publishes only after AtomicFile.finishWrite succeeds.
+            // A failed transaction retains the old complete index.
+            files.forEach(File::delete)
+            throw error
         }
     }
 
@@ -279,9 +328,14 @@ class SubscriptionSecretStore(
     ): File {
         val destination = File(payloadDirectory, payloadFileName(id, generation))
         val pending = File(payloadDirectory, "$id.$generation.pending")
-        pending.writeText(encryptedPayload, Charsets.UTF_8)
-        check(pending.renameTo(destination)) { "Unable to persist encrypted subscription payload" }
-        return destination
+        try {
+            pending.writeText(encryptedPayload, Charsets.UTF_8)
+            check(pending.renameTo(destination)) { "Unable to persist encrypted subscription payload" }
+            return destination
+        } catch (error: Exception) {
+            pending.delete()
+            throw error
+        }
     }
 
     private fun payloadFile(id: String): File {

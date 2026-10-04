@@ -908,6 +908,44 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
+    // Client source import counts; the number is always the real list or preview size.
+    translationRegex("^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+        val count = match.groupValues[2]
+        return when (match.groupValues[1]) {
+            "预览所选" -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "預覽所選 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "Preview $count selected subscription(s)"
+                WeaveLanguage.JAPANESE -> "選択した購読 $count 件をプレビュー"
+                WeaveLanguage.FRENCH -> "Prévisualiser $count abonnement(s) sélectionné(s)"
+                WeaveLanguage.GERMAN -> "$count ausgewählte(s) Abo(s) prüfen"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+            "确认导入" -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "確認匯入 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "Import $count subscription(s)"
+                WeaveLanguage.JAPANESE -> "購読 $count 件を取り込む"
+                WeaveLanguage.FRENCH -> "Importer $count abonnement(s)"
+                WeaveLanguage.GERMAN -> "$count Abo(s) importieren"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+            "将导入" -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "將匯入 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "$count subscription(s) to import"
+                WeaveLanguage.JAPANESE -> "取り込む購読 $count 件"
+                WeaveLanguage.FRENCH -> "$count abonnement(s) à importer"
+                WeaveLanguage.GERMAN -> "$count Abo(s) zum Import"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+            else -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "已匯入 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "$count subscription(s) imported"
+                WeaveLanguage.JAPANESE -> "購読 $count 件を取り込みました"
+                WeaveLanguage.FRENCH -> "$count abonnement(s) importé(s)"
+                WeaveLanguage.GERMAN -> "$count Abo(s) importiert"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+        }
+    }
     translationRegex("^确认短码：(.*)$").matchEntire(text)?.let { match ->
         val code = match.groupValues[1]
         return when (language) {
@@ -1294,6 +1332,80 @@ private val RC109_UI_TRANSLATIONS = mapOf(
     "正在等待内核日志…" to SupplementalTranslation("Waiting for core log…", "正在等待核心日誌…", "コアログを待機中…", "En attente du journal du moteur…", "Warte auf Kern-Protokoll…"),
     "日志已暂停" to SupplementalTranslation("Log paused", "日誌已暫停", "ログを一時停止中", "Journal en pause", "Protokoll pausiert"),
     "规则类型" to SupplementalTranslation("Rule type", "規則類型", "ルールの種類", "Type de règle", "Regeltyp"),
+    // Client source import (CMFA directory grant, Karing backup, x2ray limitation)
+    "从客户端导入订阅" to SupplementalTranslation("Import subscriptions from a client", "從用戶端匯入訂閱", "クライアントから購読を読み込む", "Importer des abonnements depuis un client", "Abos aus einem Client importieren"),
+    "已安装" to SupplementalTranslation("Installed", "已安裝", "インストール済み", "Installé", "Installiert"),
+    "未检测到" to SupplementalTranslation("Not detected", "未偵測到", "未検出", "Non détecté", "Nicht erkannt"),
+    "授权配置目录" to SupplementalTranslation("Authorize config folder", "授權設定目錄", "設定フォルダーを許可", "Autoriser le dossier de configuration", "Konfigurationsordner freigeben"),
+    "无法打开系统目录选择器" to SupplementalTranslation("Could not open the system folder picker", "無法開啟系統目錄選擇器", "システムのフォルダー選択を開けません", "Impossible d’ouvrir le sélecteur de dossier du système", "Systemordnerauswahl konnte nicht geöffnet werden"),
+    "在系统窗口中选择 CMFA 的配置目录并授权一次，之后可在 Weave 内勾选一个或多个订阅。" to SupplementalTranslation(
+        "Choose CMFA’s config folder in the system window and grant access once. Then select one or more subscriptions in Weave.",
+        "在系統視窗中選擇 CMFA 的設定目錄並授權一次，之後可在 Weave 內勾選一個或多個訂閱。",
+        "システムの画面で CMFA の設定フォルダーを選び、一度だけ許可します。その後 Weave で購読を 1 つ以上選べます。",
+        "Choisissez le dossier de configuration de CMFA dans la fenêtre système et autorisez-le une fois. Sélectionnez ensuite un ou plusieurs abonnements dans Weave.",
+        "Wähle im Systemfenster den Konfigurationsordner von CMFA und erteile einmal Zugriff. Danach wählst du in Weave ein oder mehrere Abos aus.",
+    ),
+    "导入的是本地快照：CMFA 不提供原始订阅地址，因此不会自动远程更新；原有 DNS、分流和策略组不会迁移。" to SupplementalTranslation(
+        "Imports are local snapshots: CMFA does not expose the original subscription URL, so they will not update remotely. Existing DNS, routing and groups are not migrated.",
+        "匯入的是本機快照：CMFA 不提供原始訂閱位址，因此不會自動遠端更新；原有 DNS、分流和策略組不會移轉。",
+        "取り込まれるのはローカルのスナップショットです。CMFA は元の購読 URL を提供しないため、リモートで自動更新されません。既存の DNS、ルーティング、グループは移行されません。",
+        "Les imports sont des instantanés locaux : CMFA ne fournit pas l’URL d’origine, ils ne se mettent donc pas à jour à distance. Le DNS, le routage et les groupes existants ne sont pas migrés.",
+        "Importiert werden lokale Momentaufnahmen: CMFA gibt die ursprüngliche Abo-URL nicht preis, daher gibt es keine automatischen Remote-Updates. Bestehendes DNS, Routing und Gruppen werden nicht übernommen.",
+    ),
+    "先在 Karing 中导出一次官方备份，再选择该备份文件，即可在 Weave 内勾选要导入的订阅。" to SupplementalTranslation(
+        "First export an official backup in Karing, then choose that backup file to select subscriptions in Weave.",
+        "先在 Karing 中匯出一次官方備份，再選擇該備份檔案，即可在 Weave 內勾選要匯入的訂閱。",
+        "まず Karing で公式バックアップを書き出し、そのファイルを選ぶと Weave で取り込む購読を選べます。",
+        "Exportez d’abord une sauvegarde officielle dans Karing, puis choisissez ce fichier pour sélectionner les abonnements dans Weave.",
+        "Exportiere zuerst ein offizielles Backup in Karing und wähle dann diese Datei, um in Weave Abos auszuwählen.",
+    ),
+    "选择 Karing 备份文件" to SupplementalTranslation("Choose Karing backup file", "選擇 Karing 備份檔案", "Karing のバックアップを選択", "Choisir la sauvegarde Karing", "Karing-Backup wählen"),
+    "Karing 没有公开的订阅列表接口，其备份格式仍在核实，暂不支持直接选择订阅。可先用下方的其他导入方式。" to SupplementalTranslation(
+        "Karing has no public subscription list, and its backup format is still being verified, so direct selection is not supported yet. Use the other import options below for now.",
+        "Karing 沒有公開的訂閱清單介面，其備份格式仍在核實，暫不支援直接選擇訂閱。可先用下方的其他匯入方式。",
+        "Karing には公開された購読一覧がなく、バックアップ形式も確認中のため、直接の選択にはまだ対応していません。下のほかの取り込み方法をお使いください。",
+        "Karing n’offre pas de liste publique d’abonnements et son format de sauvegarde est encore en vérification : la sélection directe n’est pas encore prise en charge. Utilisez les autres méthodes ci-dessous.",
+        "Karing bietet keine öffentliche Aboliste, und das Backup-Format wird noch geprüft. Direkte Auswahl wird daher noch nicht unterstützt. Nutze vorerst die anderen Importwege unten.",
+    ),
+    "x2ray 暂无经核实的公开接口，Weave 不会读取它的数据。可在 x2ray 中分享节点链接后，用下方的其他导入方式导入。" to SupplementalTranslation(
+        "x2ray has no verified public interface, so Weave does not read its data. Share node links from x2ray, then import them with the other options below.",
+        "x2ray 暫無經核實的公開介面，Weave 不會讀取它的資料。可在 x2ray 中分享節點連結後，用下方的其他匯入方式匯入。",
+        "x2ray には確認済みの公開インターフェースがないため、Weave はそのデータを読み取りません。x2ray でノードリンクを共有し、下のほかの方法で取り込んでください。",
+        "x2ray n’a pas d’interface publique vérifiée ; Weave ne lit donc pas ses données. Partagez les liens de nœuds depuis x2ray, puis importez-les avec les méthodes ci-dessous.",
+        "x2ray hat keine geprüfte öffentliche Schnittstelle, daher liest Weave seine Daten nicht. Teile Knotenlinks in x2ray und importiere sie mit den anderen Wegen unten.",
+    ),
+    "选择要导入的订阅" to SupplementalTranslation("Choose subscriptions to import", "選擇要匯入的訂閱", "取り込む購読を選択", "Choisir les abonnements à importer", "Zu importierende Abos wählen"),
+    "没有找到可导入的订阅" to SupplementalTranslation("No importable subscriptions found", "沒有找到可匯入的訂閱", "取り込める購読が見つかりません", "Aucun abonnement importable trouvé", "Keine importierbaren Abos gefunden"),
+    "每次最多选择 20 个订阅" to SupplementalTranslation("Select up to 20 subscriptions at a time", "每次最多選擇 20 個訂閱", "一度に選べる購読は最大 20 件です", "Jusqu’à 20 abonnements à la fois", "Bis zu 20 Abos auf einmal"),
+    "暂不可导入" to SupplementalTranslation("Cannot be imported right now", "暫不可匯入", "現在は取り込めません", "Import impossible pour le moment", "Derzeit nicht importierbar"),
+    "本地快照" to SupplementalTranslation("Local snapshot", "本機快照", "ローカルスナップショット", "Instantané local", "Lokale Momentaufnahme"),
+    "确认后所选订阅一并加密保存；任一订阅出错时不会保存任何一个。" to SupplementalTranslation(
+        "On confirmation, all selected subscriptions are saved encrypted together. If any one fails, none are saved.",
+        "確認後所選訂閱一併加密儲存；任一訂閱出錯時不會儲存任何一個。",
+        "確定すると、選んだ購読をまとめて暗号化保存します。1 つでも失敗した場合は、どれも保存されません。",
+        "Après confirmation, tous les abonnements sélectionnés sont enregistrés chiffrés ensemble. Si l’un échoue, aucun n’est enregistré.",
+        "Nach der Bestätigung werden alle ausgewählten Abos gemeinsam verschlüsselt gespeichert. Schlägt eines fehl, wird keines gespeichert.",
+    ),
+    "导入内容为本地快照，不会自动从原订阅地址更新。" to SupplementalTranslation(
+        "Imported content is a local snapshot and does not update automatically from the original subscription URL.",
+        "匯入內容為本機快照，不會自動從原訂閱位址更新。",
+        "取り込んだ内容はローカルのスナップショットで、元の購読 URL から自動更新されません。",
+        "Le contenu importé est un instantané local et ne se met pas à jour depuis l’URL d’origine.",
+        "Importierte Inhalte sind lokale Momentaufnahmen und werden nicht automatisch von der ursprünglichen Abo-URL aktualisiert.",
+    ),
+    "重新选择来源" to SupplementalTranslation("Choose another source", "重新選擇來源", "取り込み元を選び直す", "Choisir une autre source", "Andere Quelle wählen"),
+    // Messages from the client-source backend that this dialog displays verbatim.
+    "请选择 Karing 官方备份文件" to SupplementalTranslation("Choose an official Karing backup", "請選擇 Karing 官方備份檔案", "Karing の公式バックアップを選んでください", "Choisissez une sauvegarde officielle Karing", "Wähle ein offizielles Karing-Backup"),
+    "Karing 节点含未支持选项，请导出兼容配置" to SupplementalTranslation("Karing nodes include unsupported options. Export a compatible configuration.", "Karing 節點含未支援選項，請匯出相容設定", "Karing ノードに未対応の設定があります。互換設定をエクスポートしてください", "Les nœuds Karing incluent des options non prises en charge. Exportez une configuration compatible.", "Karing-Knoten enthalten nicht unterstützte Optionen. Exportiere eine kompatible Konfiguration."),
+    "节点集合文件路径不安全" to SupplementalTranslation("Unsafe node collection file path", "節點集合檔案路徑不安全", "ノード集合のファイルパスが安全ではありません", "Chemin du fichier de nœuds non sécurisé", "Unsicherer Dateipfad der Knotensammlung"),
+    "不支持循环或多层节点集合" to SupplementalTranslation("Recursive or nested node collections are unsupported", "不支援循環或多層節點集合", "循環または多層のノード集合には未対応です", "Les collections de nœuds récursives ou imbriquées ne sont pas prises en charge", "Rekursive oder verschachtelte Knotensammlungen werden nicht unterstützt"),
+    "订阅引用的节点集合过多" to SupplementalTranslation("The subscription references too many node collections", "訂閱引用的節點集合過多", "購読が参照するノード集合が多すぎます", "L’abonnement référence trop de collections de nœuds", "Das Abo verweist auf zu viele Knotensammlungen"),
+    "订阅节点集合格式无效" to SupplementalTranslation("Invalid subscription node collection format", "訂閱節點集合格式無效", "購読のノード集合形式が無効です", "Format de collection de nœuds d’abonnement invalide", "Ungültiges Format der Abo-Knotensammlung"),
+    "x2ray 尚未确认对应应用和公开接口，当前不提供订阅列表迁移。" to SupplementalTranslation("The exact x2ray app and public interface are unverified. Subscription-list migration is currently unavailable.", "x2ray 尚未確認對應應用程式和公開介面，目前不提供訂閱列表遷移。", "x2ray の該当アプリと公開インターフェースは未確認です。購読一覧の移行には現在未対応です。", "L’application x2ray exacte et son interface publique ne sont pas vérifiées. La migration de sa liste d’abonnements est actuellement indisponible.", "Die genaue x2ray-App und ihre öffentliche Schnittstelle sind nicht bestätigt. Die Migration ihrer Abo-Liste ist derzeit nicht verfügbar."),
+    "请选择 CMFA 的配置目录" to SupplementalTranslation("Choose CMFA’s config folder", "請選擇 CMFA 的設定目錄", "CMFA の設定フォルダーを選んでください", "Choisissez le dossier de configuration de CMFA", "Wähle den Konfigurationsordner von CMFA"),
+    "请选择有效的订阅，最多 20 个" to SupplementalTranslation("Select valid subscriptions, up to 20", "請選擇有效的訂閱，最多 20 個", "有効な購読を最大 20 件選んでください", "Sélectionnez des abonnements valides, 20 au maximum", "Wähle gültige Abos, höchstens 20"),
+    "订阅文件格式无效" to SupplementalTranslation("Invalid subscription file format", "訂閱檔案格式無效", "購読ファイルの形式が無効です", "Format de fichier d’abonnement invalide", "Ungültiges Abo-Dateiformat"),
+    "订阅内容超过大小限制" to SupplementalTranslation("Subscription content exceeds the size limit", "訂閱內容超過大小限制", "購読の内容がサイズ上限を超えています", "Le contenu de l’abonnement dépasse la taille limite", "Abo-Inhalt überschreitet die Größenbegrenzung"),
 )
 
 private val DEVICE_FEEDBACK_TRANSLATIONS = mapOf(
@@ -2939,7 +3051,7 @@ private fun translationTable(language: WeaveLanguage): Map<String, String> {
         "正在校验" to "Wird geprüft",
         "取消" to "Abbrechen",
         "关闭" to "Schließen",
-        "局域网互传" to "LAN-Übertragung",
+        "局域网互传" to "LAN-Transfer",
         "复制链接" to "Link kopieren",
         "立即失效" to "Jetzt ablaufen lassen",
         "从链接导入" to "Aus Link importieren",

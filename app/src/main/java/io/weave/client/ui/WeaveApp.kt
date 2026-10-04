@@ -1019,6 +1019,11 @@ fun WeaveApp(
             onConfirm = viewModel::applyClientImport,
             onReset = viewModel::resetClientImport,
             onPreviewQrImage = viewModel::previewClientImportQrImage,
+            onListCmfaSubscriptions = viewModel::listCmfaSubscriptions,
+            onListKaringSubscriptions = viewModel::listKaringSubscriptions,
+            karingBackupSupported = true,
+            onPreviewSourceSelection = viewModel::previewClientSourceSelection,
+            onConfirmSourceSelection = viewModel::applyClientSourceSelection,
             onOpenSubscription = { id ->
                 showProxyMigration = false
                 viewModel.resetClientImport()

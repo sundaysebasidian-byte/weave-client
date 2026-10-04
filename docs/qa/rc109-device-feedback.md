@@ -22,15 +22,21 @@ The continuation completed the main patch. A narrow follow-up refined the remain
 
 ## Other-client subscription selection
 
-The actual source client and version remain required to implement a truthful adapter. The inspected screenshots contain only Weave and the system installer. Detecting an installed app does not grant access to its private subscription store. The intended flow is a supported export/share operation, an actual subscription list, multi-selection, preview and selected import. No mock list or private-database extraction is included.
+The user's named source families are CMFA, Karing and x2ray. The verified capability boundary is:
 
-Pinned public-source research found:
+| Source | Official Android identity/interface | RC109 behavior | Limit |
+| --- | --- | --- | --- |
+| CMFA | `com.github.metacubex.clash`, `.meta`, `.alpha`; exported permission-protected `<package>.files` DocumentsProvider | User selects CMFA's config directory through the system picker; Weave lists the real UUID config documents and selects one/many (max20), previews and atomically saves encrypted records | Official provider exposes config snapshots, not original subscription URLs. Imports are local snapshots; no automatic URL updates or routing/DNS/group migration. Read grant is required; no private-store fallback. |
+| Karing | `com.nebula.karing`; non-exported FileProvider with share URI grants; official Backup and Sync ZIP | Verified v1.2.25.2802 official backup ZIP -> real group catalogue -> select one/many -> preview -> encrypted snapshot import | No public list provider established. One official backup export/share is required first. Only compatible node options are imported; unknown options disable the group. Source subscription URLs/routing/settings are not copied. |
+| x2ray | The name does not uniquely establish the user's Android package/project. One public listing is HexaSoftware `dev.hexasoftware.xmaster`; it does not establish the user's app | No native subscription list support claimed | Not substituted with v2rayNG. No verified migration interface/schema for the user's app. |
 
-- v2rayNG's examined backup implementation calls `MMKV.backupAllToDirectory` and zips the result; this is a binary MMKV backup, not plain subscription JSON. Its FileProvider grants only shared files. The existing node/config parser is not presented as a v2rayNG backup reader.
-- FlClash's examined backup implementation writes config JSON, a database snapshot and `profiles/<id>.yaml`. A selected, user-exported archive could support a real subscription picker once the actual client/version and schema are confirmed.
-- The examined Hiddify repository interface manages private profile metadata and profile files. No public cross-app subscription-list API was established from that interface.
+The CMFA adapter uses document IDs that match the pinned upstream `FilesProvider` and `document/Picker`, and copies only safe granted `providers/...` cache files. Unknown paths and nested providers fail validation. An unreadable profile is visible but disabled. Only selected config contents are opened. Entire selected batches are normalized before any store write; encrypted files are staged and one AtomicFile-backed preference transaction publishes their indexes. Source handles and reviewed payloads expire after five minutes and confirmation is single-use.
 
-The public source hashes and exact paths are retained in the candidate evidence. Android's app sandbox is documented at https://source.android.com/docs/security/app-sandbox. The source-client question does not block the independently authorized UI work.
+CMFA's pinned public source is `94ebfd648abae76d32ae2191cfc413482d654c66`; Karing main is `9d28b22fbbcca5818d147629aae151d49d4dcb7b`. Karing official Android release `v1.2.25.2802` was downloaded from its public GitHub release and verified against SHA-256 `b02cd70ce575942967467b56df20c8cb084bb7519f64a67567d87ff2e39458a3`. Only synthetic localhost fixtures are used on the isolated emulator; no source-app private files or real subscriptions are read. Legacy backup helpers identify `karing_subscribe.json`; the actual serialized items/groupid/remark/servers structure was confirmed through the official sharesheet on the isolated emulator. The sanitized official-shape fixture is included in JVM and Android integration tests. The release also uses the non-exported `com.nebula.karing.flutter.share_provider` for explicit share URI grants.
+
+Official sources: [CMFA](https://github.com/MetaCubeX/ClashMetaForAndroid), [Karing](https://github.com/KaringX/karing), [Karing backup documentation](https://karing.app/en/tutorial/backup-sync), [Android sandbox](https://source.android.com/docs/security/app-sandbox), [X2Ray VPN publisher listing](https://play.google.com/store/apps/details?id=dev.hexasoftware.xmaster).
+
+The additional official Opus 5.5 high run completed the source chooser, real catalogue checkboxes, selection cap/count, batch preview, explicit confirmation, individual saved-subscription open actions and capability notes, with six-language copy. Root wired the CMFA callbacks and owns backend validation. Manual compatible file/text/QR input remains a clearly identified secondary import method.
 
 ## Validation scope
 
@@ -38,4 +44,4 @@ Instrumentation uses the explicitly addressed isolated ARM64 emulator, with a `r
 
 The native node matrix covers 320/360/411dp × font1/1.3/1.5/2 × six languages. The LAN matrix covers actual 360dp/font1 and 320dp/font2 × six languages, including selected IDs, independent confirmation, running-state controls, all six exported code digits and passive mode switches. Before/after LAN comparisons share 360dp/font1 English and 320dp/font2 German. LocalDensity-only legacy cases remain explicitly distinguished from actual Android configuration.
 
-No test starts VPN, opens real source-client data, contacts real subscriptions or transfers data to a LAN peer. Owner phone acceptance, actual source-client export acceptance, live LAN peer exchange, app-registration acceptance and Windows10/11 VPN rollback remain outside these Mac/emulator results. Final test counts and screenshot paths are recorded only after integration and execution.
+No test starts VPN, opens real source-client data, contacts real subscriptions or transfers data to a LAN peer. Karing official export acceptance was checked with synthetic localhost data on the isolated emulator. Owner phone acceptance, actual CMFA provider/SAF acceptance, live LAN peer exchange, app-registration acceptance and Windows10/11 VPN rollback remain outside these Mac/emulator results. Final test counts and screenshot paths are recorded only after integration and execution.
