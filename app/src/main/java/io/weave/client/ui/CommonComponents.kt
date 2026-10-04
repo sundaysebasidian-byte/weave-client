@@ -443,17 +443,32 @@ internal fun InformationDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
+            // Information pages stay plain explanations: headed sections with a quiet accent rule,
+            // no status colours, metrics or actions that would imply a live check.
             LazyColumn(
                 modifier = Modifier.heightIn(max = 520.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(
                     items = sections,
                     key = { it.first },
                     contentType = { "information-section" },
-                ) { (heading, body) ->
+                ) { (sectionTitle, body) ->
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(heading, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(width = 3.dp, height = 14.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                sectionTitle,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                        }
                         Text(
                             body,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

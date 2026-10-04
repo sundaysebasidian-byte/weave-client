@@ -71,15 +71,30 @@ internal fun ClientExportImportDialog(
                         Text("订阅已加密保存，可在订阅详情中核对并选择出口。")
                     }
                     state.preview != null -> {
+                        // Integration seam: this preview renders exactly one MigrationPreview. A
+                        // verified multi-subscription adapter should supply its own list here; no
+                        // guessed client format or installed-app data is read by this dialog.
                         val preview = state.preview
                         Text("解析预览", style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.testTag("client-import-preview"))
-                        Text(preview.name, translate = false)
-                        Text(preview.format.name.replace('_', ' '), translate = false)
-                        Text("${preview.counts.imported} 个节点")
-                        Text(preview.protocols.sorted().joinToString(" · "), translate = false)
-                        Text("此时尚未保存。确认后仅导入节点，原客户端的分流、DNS 和策略组不会迁移。")
-                        Text("解析成功不代表出口可达；连接后再进行检测。")
+                        WeaveToolSection {
+                            Text(preview.name, fontWeight = FontWeight.SemiBold, translate = false)
+                            WeaveMetricGrid(
+                                metrics = listOf(
+                                    WeaveMetric("格式", preview.format.name.replace('_', ' ')),
+                                    WeaveMetric("节点", "${preview.counts.imported}"),
+                                ),
+                                columns = 2,
+                            )
+                            if (preview.protocols.isNotEmpty()) {
+                                Text(preview.protocols.sorted().joinToString(" · "), translate = false,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text("此时尚未保存。确认后仅导入节点，原客户端的分流、DNS 和策略组不会迁移。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("解析成功不代表出口可达；连接后再进行检测。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = onReset, enabled = !state.running,
                             modifier = Modifier.testTag("client-import-edit")) { Text("重新选择内容") }
                     }
@@ -89,11 +104,14 @@ internal fun ClientExportImportDialog(
                         if (clients.isNotEmpty()) {
                             Text("可见来源客户端", style = MaterialTheme.typography.labelLarge)
                             clients.forEach { client ->
-                                TextButton(onClick = { selectedPackage = client.packageName; launcherError = false },
-                                    enabled = !state.running, modifier = Modifier.fillMaxWidth()) {
-                                    Text(client.label, translate = false, modifier = Modifier.weight(1f))
-                                    if (selectedPackage == client.packageName) Icon(Icons.Rounded.CheckCircle, null)
-                                }
+                                // Selecting only chooses which client to open for its own export.
+                                WeaveChoiceRow(
+                                    title = client.label,
+                                    selected = selectedPackage == client.packageName,
+                                    onClick = { selectedPackage = client.packageName; launcherError = false },
+                                    enabled = !state.running,
+                                    translateTitle = false,
+                                )
                             }
                             selected?.let { client ->
                                 val uriPreferred = client.packageName in setOf("com.v2ray.ang", "moe.nb4a", "io.nekohasekai.sagernet")

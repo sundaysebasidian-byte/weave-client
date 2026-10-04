@@ -28,6 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.SyncAlt
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -229,6 +233,8 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    // Until the first core answer arrives the list is unknown, not empty.
+    var loaded by remember { mutableStateOf(false) }
     val labels = remember { mutableStateMapOf<Int, String>() }
     LaunchedEffect(paused) {
         while (!paused) {
@@ -242,6 +248,7 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
                     }
                 }
                 .onFailure { error = true }
+            loaded = true
             delay(2_000)
         }
     }
@@ -273,22 +280,36 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         )
-        if (error) {
-            Text(
-                "无法读取内核连接；请确认 VPN 已连接。",
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 12.sp,
+        if (error && connections.isNotEmpty()) {
+            // Keep the last real rows visible but say plainly that they are no longer refreshing.
+            WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = "无法读取内核连接；请确认 VPN 已连接。",
+                tone = WeaveStatusTone.CRITICAL,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (visible.isEmpty() && !error) {
-                item {
-                    Text("当前没有活动连接", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
+            if (visible.isEmpty()) {
+                item(key = "state", contentType = "state") {
+                    when {
+                        error -> WeaveStateBlock(
+                            title = "无法读取内核连接；请确认 VPN 已连接。",
+                            icon = Icons.Rounded.Warning,
+                            tone = WeaveStatusTone.CRITICAL,
+                        )
+                        // Never claim "no connections" before the core has answered once.
+                        !loaded -> WeaveStateBlock(title = "正在读取内核连接…", loading = !paused)
+                        connections.isNotEmpty() -> WeaveStateBlock(
+                            title = "没有匹配的连接",
+                            icon = Icons.Rounded.FilterList,
+                        )
+                        else -> WeaveStateBlock(title = "当前没有活动连接", icon = Icons.Rounded.SyncAlt)
+                    }
                 }
             }
             items(visible, key = { it.id }, contentType = { "connection" }) { connection ->
@@ -356,6 +377,7 @@ private fun appLabel(context: Context, uid: Int): String = runCatching {
 /**
  * Temporary core log viewer. Nothing is written to disk; copying always uses the redacted form.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun LogsScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -394,22 +416,35 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
             IconButton(onClick = { lines.clear() }) { Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("清除")) }
         },
     ) {
-        Row(
+        // Level chips wrap instead of overflowing at narrow widths or large font scales.
+        androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
             CoreApi.LEVELS.forEach { option ->
                 FilterChip(selected = level == option, onClick = { level = option }, label = { Text(option, translate = false) })
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget).padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text("隐藏 IP 地址", modifier = Modifier.weight(1f), fontSize = 13.sp)
             Switch(checked = redacted, onCheckedChange = { redacted = it })
         }
         if (error) {
-            Text("无法读取内核日志；请确认 VPN 已连接。", color = MaterialTheme.colorScheme.error, fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 20.dp))
+            WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = "无法读取内核日志；请确认 VPN 已连接。",
+                tone = WeaveStatusTone.CRITICAL,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        } else if (lines.isEmpty()) {
+            WeaveStateBlock(
+                title = if (running) "正在等待内核日志…" else "日志已暂停",
+                icon = Icons.Rounded.Info,
+                loading = running,
+            )
         }
         LazyColumn(
             state = listState,

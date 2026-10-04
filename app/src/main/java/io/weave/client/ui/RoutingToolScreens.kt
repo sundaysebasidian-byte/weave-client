@@ -22,6 +22,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -96,7 +103,12 @@ internal fun RuleSetsScreen(
             }
         }
         state.error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+            WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = it,
+                tone = WeaveStatusTone.CRITICAL,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -150,6 +162,7 @@ internal fun RuleSetsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RuleSetEditorDialog(
     initial: RemoteRuleSet?,
@@ -172,13 +185,13 @@ private fun RuleSetEditorDialog(
                 OutlinedTextField(value = url, onValueChange = { url = it.trim().take(2048) }, label = { Text("HTTPS 地址") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("格式", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     RuleSetBehavior.entries.forEach { option ->
                         FilterChip(selected = behavior == option, onClick = { behavior = option }, label = { Text(option.label) })
                     }
                 }
                 Text("命中后", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LocalRuleAction.entries.forEach { option ->
                         FilterChip(selected = action == option, onClick = { action = option }, label = { Text(option.label) })
                     }
@@ -235,7 +248,14 @@ internal fun CustomGroupsScreen(
             }
         },
     ) {
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
+        error?.let {
+            WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = it,
+                tone = WeaveStatusTone.CRITICAL,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
@@ -287,6 +307,7 @@ internal fun CustomGroupsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CustomGroupEditor(
     initial: CustomProxyGroup?,
@@ -340,7 +361,7 @@ private fun CustomGroupEditor(
                     singleLine = true, modifier = Modifier.fillMaxWidth())
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CustomGroupStrategy.entries.forEach { option ->
                         FilterChip(selected = strategy == option, onClick = { strategy = option }, label = { Text(option.label) })
                     }
@@ -479,13 +500,15 @@ internal fun BackupScreen(
         onDismiss = onDismiss,
         secure = true,
     ) {
+        // Scrollable so the password form, notes and restore preview remain reachable at 2.0 font.
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("备份密码", fontWeight = FontWeight.SemiBold)
+            WeaveToolSection(title = "备份密码", icon = Icons.Rounded.Lock) {
                     OutlinedTextField(
                         value = passphrase,
                         onValueChange = { passphrase = it.take(128) },
@@ -514,7 +537,6 @@ internal fun BackupScreen(
                             modifier = Modifier.weight(1f),
                         ) { Text("读取备份") }
                     }
-                }
             }
             Text(
                 "包含订阅、应用分流、默认出口、DNS 与路由设置、本地规则、远程规则集和自定义策略组。不包含离线策略包、系统 HTTP 代理和局域网共享设置。",
@@ -523,8 +545,12 @@ internal fun BackupScreen(
                 lineHeight = 18.sp,
             )
             if (state.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-            state.message?.let { Text(it, color = MaterialTheme.colorScheme.secondary, fontSize = 13.sp) }
+            state.error?.let {
+                WeaveNotice(icon = Icons.Rounded.Warning, message = it, tone = WeaveStatusTone.CRITICAL)
+            }
+            state.message?.let {
+                WeaveNotice(icon = Icons.Rounded.CheckCircle, message = it, tone = WeaveStatusTone.POSITIVE)
+            }
             state.preview?.let { preview ->
                 val language = LocalWeaveLanguage.current
                 LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
@@ -559,20 +585,12 @@ internal fun BackupScreen(
     }
 }
 
+/** Kept for existing call sites; renders through the shared secondary-page state block. */
 @Composable
-internal fun EmptyState(title: String, body: String) {
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 32.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(title, fontWeight = FontWeight.SemiBold)
-        Text(
-            body,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-    }
+internal fun EmptyState(
+    title: String,
+    body: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Rounded.Add,
+) {
+    WeaveStateBlock(title = title, message = body, icon = icon)
 }

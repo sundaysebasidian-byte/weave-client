@@ -39,6 +39,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.QrCode
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -376,65 +383,113 @@ internal fun LanTransferDialog(
         })
     }
 
+    // Export and import are separate modes so only one primary action is visible at a time.
+    // Switching modes never starts or stops anything: an active export keeps running until the
+    // user taps 修改分享范围 / 立即失效 or closes the dialog, exactly as before.
+    var mode by rememberSaveable {
+        mutableStateOf(if (state.pendingLink.isNotBlank()) LanTransferMode.IMPORT else LanTransferMode.EXPORT)
+    }
+    LaunchedEffect(state.pendingLink) {
+        if (state.pendingLink.isNotBlank()) mode = LanTransferMode.IMPORT
+    }
+    val exporting = state.exportLink.isNotEmpty()
+    val allSelected = availableIds.isNotEmpty() && selectedIds.containsAll(availableIds)
+    val statusText = state.error ?: scannerError ?: state.message
+    val statusIsError = state.error != null || scannerError != null
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("局域网互传", fontWeight = FontWeight.Bold) },
+        title = {
+            Text("局域网互传", fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    lineBreak = androidx.compose.ui.text.style.LineBreak.Heading,
+                ))
+        },
         text = {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 560.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .heightIn(max = 560.dp)
+                    .testTag("lan-transfer-list"),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item {
-                    Text(
-                        "二维码和链接只传输端到端加密密文；成功导入一次或 5 分钟后自动失效。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp,
+                item(key = "mode", contentType = "lan-transfer-mode") {
+                    WeaveSegmentedTabs(
+                        options = listOf("导出", "导入"),
+                        selectedIndex = mode.ordinal,
+                        onSelect = { mode = LanTransferMode.entries[it] },
+                        enabled = !state.running,
+                        testTags = listOf("lan-transfer-tab-export", "lan-transfer-tab-import"),
                     )
                 }
-                item { TargetSectionLabel("导出到另一台设备") }
-                if (state.exportLink.isEmpty()) {
-                    item {
-                        Text("只分享勾选的订阅，未勾选的不会包含在二维码或链接中。", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row {
-                            TextButton(onClick = { selectedIds = availableIds }, enabled = !state.running) { Text("全选") }
-                            TextButton(onClick = { selectedIds = emptySet() }, enabled = !state.running) { Text("全不选") }
-                        }
-                    }
-                    item {
-                        Text(
-                            "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
+                if (mode == LanTransferMode.EXPORT && !exporting) {
+                    item(key = "export-heading", contentType = "lan-transfer-heading") {
+                        AdaptiveHeadingAction(
+                            heading = { headingModifier ->
+                                Column(modifier = headingModifier) {
+                                    Text("导出到另一台设备", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "只分享勾选的订阅，未勾选的不会包含在二维码或链接中。",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        lineHeight = 17.sp,
+                                    )
+                                }
+                            },
+                            action = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    WeaveCountBadge(
+                                        "已选 ${selectedIds.size}/${subscriptions.size}",
+                                        active = selectedIds.isNotEmpty(),
+                                        modifier = Modifier.testTag("lan-transfer-selected-count"),
+                                    )
+                                    TextButton(
+                                        onClick = { selectedIds = if (allSelected) emptySet() else availableIds },
+                                        enabled = !state.running && availableIds.isNotEmpty(),
+                                    ) { Text(if (allSelected) "全不选" else "全选") }
+                                }
+                            },
                         )
+                    }
+                    if (subscriptions.isEmpty()) {
+                        item(key = "export-empty", contentType = "lan-transfer-empty") {
+                            WeaveStateBlock(title = "还没有订阅", icon = Icons.Rounded.Dns)
+                        }
                     }
                     items(
                         items = subscriptions,
                         key = { it.id },
                         contentType = { "lan-transfer-subscription" },
                     ) { subscription ->
+                        val checked = subscription.id in selectedIds
                         Row(
-                            modifier = Modifier.fillMaxWidth().toggleable(
-                                value = subscription.id in selectedIds,
-                                enabled = !state.running,
-                                role = Role.Checkbox,
-                                onValueChange = { checked ->
-                                    selectedIds = if (checked) selectedIds + subscription.id else selectedIds - subscription.id
-                                },
-                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = WeaveUiTokens.minTouchTarget)
+                                .weaveSelectionSurface(false)
+                                .toggleable(
+                                    value = checked,
+                                    enabled = !state.running,
+                                    role = Role.Checkbox,
+                                    onValueChange = { value ->
+                                        selectedIds = if (value) selectedIds + subscription.id else selectedIds - subscription.id
+                                    },
+                                )
+                                .padding(end = 10.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(
-                                checked = subscription.id in selectedIds,
+                                checked = checked,
                                 enabled = !state.running,
                                 onCheckedChange = null,
+                                modifier = Modifier.padding(horizontal = 12.dp),
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     subscription.name,
                                     fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
                                     translate = false,
                                 )
                                 Text(
@@ -445,138 +500,139 @@ internal fun LanTransferDialog(
                             }
                         }
                     }
-                    item {
-                        Button(
-                            onClick = { onStartExport(selectedIds) },
-                            enabled = selectedIds.isNotEmpty() && !state.running,
-                        ) {
-                            Text("导出所选 ${selectedIds.size} 个订阅")
-                        }
-                    }
-                } else {
-                    item {
-                        Text("本次分享的订阅", fontWeight = FontWeight.SemiBold)
-                        state.sharedNames.forEach { Text(it, translate = false, fontSize = 12.sp) }
-                        TextButton(onClick = onStopExport) { Text("修改分享范围") }
-                    }
-                    qrBitmap?.let { bitmap ->
-                        item {
-                            Image(
-                                bitmap = bitmap,
-                                contentDescription = localizedContentDescription("一次性传输二维码"),
+                    item(key = "export-action", contentType = "lan-transfer-action") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Button(
+                                onClick = { onStartExport(selectedIds) },
+                                enabled = selectedIds.isNotEmpty() && !state.running,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(240.dp),
+                                    .heightIn(min = WeaveUiTokens.minTouchTarget)
+                                    .testTag("lan-transfer-export"),
+                            ) {
+                                Icon(Icons.Rounded.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("导出所选 ${selectedIds.size} 个订阅")
+                            }
+                            Text(
+                                "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
                             )
                         }
                     }
-                    item {
-                        Text(
-                            "确认短码：${state.confirmationCode}",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.secondary,
+                }
+                if (mode == LanTransferMode.EXPORT && exporting) {
+                    item(key = "export-active", contentType = "lan-transfer-active") {
+                        LanExportActiveSection(
+                            state = state,
+                            qrBitmap = qrBitmap,
+                            onCopy = {
+                                copySensitiveText(
+                                    context = context,
+                                    label = "Weave 一次性局域网链接",
+                                    value = state.exportLink,
+                                )
+                            },
+                            onStopExport = onStopExport,
                         )
                     }
-                    item {
-                        Text(
-                            state.exportLink,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                }
+                if (mode == LanTransferMode.IMPORT) {
+                    val effectiveImportLink = importLink.ifBlank { state.pendingLink }
+                    // The sender's code must be typed out-of-band. Never reuse this device's own
+                    // export code, even while this device is still sharing in the other tab.
+                    val effectiveConfirmationCode = confirmationCode
+                    item(key = "import-heading", contentType = "lan-transfer-heading") {
+                        Text("从另一台设备导入", fontWeight = FontWeight.SemiBold)
                     }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(
+                    item(key = "import-link", contentType = "lan-transfer-field") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = effectiveImportLink,
+                                onValueChange = { importLink = it.take(2_048) },
+                                label = { Text("weave://lan/…") },
+                                singleLine = true,
+                                enabled = !state.running,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                ),
+                                modifier = Modifier.fillMaxWidth().testTag("lan-transfer-link"),
+                            )
+                            androidx.compose.material3.OutlinedButton(
                                 onClick = {
-                                    copySensitiveText(
-                                        context = context,
-                                        label = "Weave 一次性局域网链接",
-                                        value = state.exportLink,
-                                    )
+                                    scannerError = null
+                                    launchCamera()
                                 },
+                                enabled = !state.running,
+                                modifier = Modifier.heightIn(min = WeaveUiTokens.minTouchTarget),
                             ) {
-                                Text("复制链接")
-                            }
-                            TextButton(onClick = onStopExport) {
-                                Text("立即失效", color = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("扫描二维码")
                             }
                         }
                     }
-                }
-                item { WeaveDivider() }
-                item { TargetSectionLabel("从另一台设备导入") }
-                val effectiveImportLink = importLink.ifBlank { state.pendingLink }
-                // The sender's code must be typed out-of-band. Never reuse this device's own
-                // export code when it is also displaying an export and an import form together.
-                val effectiveConfirmationCode = confirmationCode
-                item {
-                    OutlinedTextField(
-                        value = effectiveImportLink,
-                        onValueChange = { importLink = it.take(2_048) },
-                        label = { Text("weave://lan/…") },
-                        singleLine = true,
-                        enabled = !state.running,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.pendingLink.isNotBlank()) {
+                        item(key = "import-pending", contentType = "lan-transfer-notice") {
+                            WeaveNotice(
+                                icon = Icons.Rounded.QrCodeScanner,
+                                message = "二维码已读入，请核对短码后再次点击导入",
+                                tone = WeaveStatusTone.PROGRESS,
+                            )
+                        }
+                    }
+                    item(key = "import-code", contentType = "lan-transfer-field") {
+                        OutlinedTextField(
+                            value = effectiveConfirmationCode,
+                            onValueChange = { confirmationCode = it.filter(Char::isDigit).take(6) },
+                            label = {
+                                Text("确认短码", maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.testTag("lan-transfer-code-label"))
+                            },
+                            singleLine = true,
+                            enabled = !state.running,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+                            ),
+                            textStyle = MaterialTheme.typography.titleMedium.merge(TabularNumbers).copy(letterSpacing = 3.sp),
+                            supportingText = {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("发送设备显示的 6 位确认短码", fontSize = 11.sp, lineHeight = 16.sp,
+                                        modifier = Modifier.testTag("lan-transfer-code-guidance"))
+                                    Text("${effectiveConfirmationCode.length}/6", translate = false)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("lan-transfer-code-input"),
+                        )
+                    }
+                    item(key = "import-action", contentType = "lan-transfer-action") {
                         Button(
                             onClick = { onImport(effectiveImportLink, effectiveConfirmationCode) },
                             enabled = effectiveImportLink.isNotBlank() &&
                                 effectiveConfirmationCode.length == 6 && !state.running,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = WeaveUiTokens.minTouchTarget)
+                                .testTag("lan-transfer-import"),
                         ) {
                             Text("从链接导入")
                         }
-                        TextButton(
-                            onClick = {
-                                scannerError = null
-                                launchCamera()
-                            },
-                            enabled = !state.running,
-                        ) {
-                            Icon(Icons.Rounded.QrCodeScanner, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("扫描二维码")
-                        }
                     }
                 }
-                item {
-                    OutlinedTextField(
-                        value = effectiveConfirmationCode,
-                        onValueChange = { confirmationCode = it.filter(Char::isDigit).take(6) },
-                        label = { Text("发送设备显示的 6 位确认短码") },
-                        singleLine = true,
-                        enabled = !state.running,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                if (state.pendingLink.isNotBlank()) {
-                    item {
-                        Text(
-                            "二维码已读入，请核对短码后再次点击导入",
-                            color = MaterialTheme.colorScheme.secondary,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-                (state.error ?: scannerError ?: state.message)?.let { status ->
-                    item {
-                        Text(
-                            status,
-                            color = if (state.error != null || scannerError != null) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            fontSize = 12.sp,
+                statusText?.let { status ->
+                    item(key = "status", contentType = "lan-transfer-notice") {
+                        WeaveNotice(
+                            icon = if (statusIsError) Icons.Rounded.Warning else Icons.Rounded.Info,
+                            message = status,
+                            tone = if (statusIsError) WeaveStatusTone.CRITICAL else WeaveStatusTone.NEUTRAL,
                         )
                     }
                 }
                 if (state.running) {
-                    item {
+                    item(key = "running", contentType = "lan-transfer-progress") {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.Center,
@@ -588,6 +644,23 @@ internal fun LanTransferDialog(
                         }
                     }
                 }
+                item(key = "security-note", contentType = "lan-transfer-note") {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(
+                            Icons.Rounded.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp).size(14.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "二维码和链接只传输端到端加密密文；成功导入一次或 5 分钟后自动失效。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -596,6 +669,97 @@ internal fun LanTransferDialog(
             }
         },
     )
+}
+
+private enum class LanTransferMode { EXPORT, IMPORT }
+
+/**
+ * The live one-time share: QR on a white quiet zone for scanners, the confirmation code in
+ * grouped tabular digits, and the link in monospace. Copy is the single filled action; both
+ * existing stop paths keep calling [onStopExport].
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LanExportActiveSection(
+    state: LanTransferState,
+    qrBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    onCopy: () -> Unit,
+    onStopExport: () -> Unit,
+) {
+    WeaveToolSection(title = "本次分享的订阅") {
+        WeaveStatusPill(text = "分享中", tone = WeaveStatusTone.PROGRESS)
+        if (state.sharedNames.isNotEmpty()) {
+            Text(
+                state.sharedNames.joinToString(" · "),
+                translate = false,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        qrBitmap?.let { bitmap ->
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = localizedContentDescription("一次性传输二维码"),
+                    modifier = Modifier
+                        .widthIn(max = 240.dp)
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .padding(8.dp),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(weaveToneContainer(WeaveStatusTone.POSITIVE))
+                .semantics(mergeDescendants = true) {}
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text("确认短码", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text(
+                state.confirmationCode.let { code -> if (code.length == 6) code.chunked(3).joinToString(" ") else code },
+                fontSize = 26.sp,
+                lineHeight = 32.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 2.sp,
+                style = MaterialTheme.typography.headlineSmall.merge(TabularNumbers),
+                translate = false,
+                modifier = Modifier.testTag("lan-transfer-code"),
+            )
+        }
+        Text(
+            state.exportLink,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            translate = false,
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Button(onClick = onCopy, modifier = Modifier.heightIn(min = WeaveUiTokens.minTouchTarget)) {
+                Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("复制链接")
+            }
+            TextButton(onClick = onStopExport, modifier = Modifier.heightIn(min = WeaveUiTokens.minTouchTarget)) {
+                Text("修改分享范围")
+            }
+            TextButton(onClick = onStopExport, modifier = Modifier.heightIn(min = WeaveUiTokens.minTouchTarget)) {
+                Text("立即失效", color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
 }
 
 /** Marks one-time transfer keys as sensitive and removes our copy after a short grace period. */
@@ -955,12 +1119,26 @@ internal fun SubscriptionManagerDialog(
                                 val available = health.nodes.count { it.successfulSamples > 0 }
                                 val median = measured.getOrNull(measured.size / 2)
                                 val worstP95 = health.nodes.mapNotNull { it.p95LatencyMs }.maxOrNull()
-                                Text(
-                                    "${localizeWeaveText("可用", LocalWeaveLanguage.current)} $available/${health.nodes.size} · ${localizeWeaveText("中位", LocalWeaveLanguage.current)} ${median ?: "—"} ms · P95 ${worstP95 ?: "—"} ms",
-                                    translate = false,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp,
+                                val language = LocalWeaveLanguage.current
+                                // The same three measured values as before, as compact tiles.
+                                // A missing value stays "—"; no tile is invented for DNS/TLS.
+                                WeaveMetricGrid(
+                                    metrics = listOf(
+                                        WeaveMetric(
+                                            label = localizeWeaveText("可用", language),
+                                            value = "$available/${health.nodes.size}",
+                                            tone = when {
+                                                available == 0 -> WeaveStatusTone.CRITICAL
+                                                available < health.nodes.size -> WeaveStatusTone.CAUTION
+                                                else -> WeaveStatusTone.POSITIVE
+                                            },
+                                        ),
+                                        WeaveMetric(
+                                            label = localizeWeaveText("中位延迟", language),
+                                            value = median?.let { "$it ms" } ?: "—",
+                                        ),
+                                        WeaveMetric(label = "P95", value = worstP95?.let { "$it ms" } ?: "—"),
+                                    ),
                                 )
                                 Text(
                                     probeResultText(health.nodes.sumOf { it.samples }, health.nodes.sumOf { it.successfulSamples }, LocalWeaveLanguage.current),
@@ -1059,61 +1237,51 @@ private fun SubscriptionNodeRow(
     health: io.weave.client.core.engine.NodeHealthSnapshot?,
     checked: Boolean,
 ) {
-    // Same structure as the route picker: header Row (badge + weighted name/protocol), with the
-    // health evidence underneath at full width instead of a trailing unweighted Text.
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 9.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    // Same structure as the route picker: full-width name, then one wrapping line with the
+    // protocol and exact probe evidence. The old four-letter badge only repeated the protocol.
+    // One root layout: a lazy item stacks multiple roots on top of each other.
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(10.dp),
-            ) {
-                Text(
-                    node.protocol.uppercase().take(4),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    translate = false,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    NodeDisplayName.core(node.name),
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    translate = false,
-                )
-                Text(
-                    node.protocol,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    translate = false,
-                )
-            }
+            Text(
+                NodeDisplayName.core(node.name),
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 19.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                translate = false,
+            )
+            NodeHealthEvidence(
+                protocol = node.protocol,
+                health = health,
+                checked = checked,
+            )
         }
-        NodeHealthEvidence(
-            health = health,
-            checked = checked,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+        WeaveInsetDivider()
     }
 }
 
 @Composable
 private fun QualityMatrixEntry(row: io.weave.client.core.engine.QualityMatrixRow) {
+    val scoreColor = when {
+        row.stabilityScore == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        row.stabilityScore >= 85 -> MaterialTheme.colorScheme.secondary
+        row.stabilityScore >= 65 -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.error
+    }
     LiquidGlassPanel(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(13.dp),
+        elevation = 0.dp,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             // The stability label is a trailing node status too; it now sits under the full-width
             // name rather than competing with it for the Row.
             Text(
@@ -1124,17 +1292,25 @@ private fun QualityMatrixEntry(row: io.weave.client.core.engine.QualityMatrixRow
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
-                row.stabilityScore?.let { "$it · ${row.stabilityLabel}" } ?: "未完成",
-                color = when {
-                    row.stabilityScore == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                    row.stabilityScore >= 85 -> MaterialTheme.colorScheme.secondary
-                    row.stabilityScore >= 65 -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.error
-                },
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The ranking score is already a 0–100 value; the bar draws exactly that value
+                // and is omitted when the core produced no score.
+                row.stabilityScore?.let { score ->
+                    WeaveMeterBar(
+                        fraction = score / 100f,
+                        color = scoreColor,
+                        modifier = Modifier.width(44.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    row.stabilityScore?.let { "$it · ${row.stabilityLabel}" } ?: "未完成",
+                    color = scoreColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
+                )
+            }
             Text(
                 buildString {
                     append(row.protocol)

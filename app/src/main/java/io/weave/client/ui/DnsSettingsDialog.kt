@@ -221,66 +221,36 @@ internal fun DnsSettingsDialog(
                     state = probeState,
                     onProbe = onProbeProviders,
                 )
-                choosingTransport -> Column {
-                    DnsTransport.entries.forEachIndexed { index, transport ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onTransportSelected(transport)
-                                    choosingTransport = false
-                                }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(transport.label, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    transport.description,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                )
-                            }
-                            if (transport == preferences.dnsTransport) {
-                                Icon(
-                                    Icons.Rounded.CheckCircle,
-                                    contentDescription = localizedContentDescription("已选择"),
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        }
-                        if (index != DnsTransport.entries.lastIndex) WeaveDivider()
+                choosingTransport -> Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    DnsTransport.entries.forEach { transport ->
+                        WeaveChoiceRow(
+                            title = transport.label,
+                            supporting = transport.description,
+                            selected = transport == preferences.dnsTransport,
+                            onClick = {
+                                onTransportSelected(transport)
+                                choosingTransport = false
+                            },
+                        )
                     }
                 }
-                choosingRouting -> Column {
-                    DnsRoutingMode.entries.forEachIndexed { index, mode ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onRoutingModeSelected(mode)
-                                    choosingRouting = false
-                                }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(mode.label, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    mode.description,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                )
-                            }
-                            if (mode == preferences.dnsRoutingMode) {
-                                Icon(
-                                    Icons.Rounded.CheckCircle,
-                                    contentDescription = localizedContentDescription("已选择"),
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        }
-                        if (index != DnsRoutingMode.entries.lastIndex) WeaveDivider()
+                choosingRouting -> Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    DnsRoutingMode.entries.forEach { mode ->
+                        WeaveChoiceRow(
+                            title = mode.label,
+                            supporting = mode.description,
+                            selected = mode == preferences.dnsRoutingMode,
+                            onClick = {
+                                onRoutingModeSelected(mode)
+                                choosingRouting = false
+                            },
+                        )
                     }
                 }
                 editingCustom -> Column {
@@ -310,39 +280,21 @@ internal fun DnsSettingsDialog(
                         .heightIn(max = 520.dp)
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    DnsProfile.entries.forEachIndexed { index, profile ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (profile == DnsProfile.CUSTOM) {
-                                        editingCustom = true
-                                    } else {
-                                        onProfileSelected(profile)
-                                        onDismiss()
-                                    }
+                    DnsProfile.entries.forEach { profile ->
+                        WeaveChoiceRow(
+                            title = profile.label,
+                            supporting = profile.description,
+                            selected = profile == preferences.dnsProfile,
+                            onClick = {
+                                if (profile == DnsProfile.CUSTOM) {
+                                    editingCustom = true
+                                } else {
+                                    onProfileSelected(profile)
+                                    onDismiss()
                                 }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(profile.label, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    profile.description,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                    lineHeight = 17.sp,
-                                )
-                            }
-                            if (profile == preferences.dnsProfile) {
-                                Icon(
-                                    Icons.Rounded.CheckCircle,
-                                    contentDescription = localizedContentDescription("已选择"),
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        }
-                        if (index != DnsProfile.entries.lastIndex) WeaveDivider()
+                            },
+                            modifier = Modifier.padding(vertical = 1.dp),
+                        )
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(
@@ -470,34 +422,48 @@ private fun DnsProbePanel(
             Spacer(Modifier.height(8.dp))
             Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
+        // Bars compare only endpoints measured in this same run; the exact RTT stays as text.
+        val slowestMs = state.results.values.filter { it.available }.mapNotNull { it.latencyMs }.maxOrNull()
         DnsProfile.entries
             .filter { it != DnsProfile.CUSTOM || state.results.containsKey(it) }
             .forEach { profile ->
                 val result = state.results[profile]
                 WeaveDivider()
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(profile.label, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            result?.detail ?: "尚未检测",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(profile.label, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                result?.detail ?: "尚未检测",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        result?.let {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (it.available) "${it.latencyMs ?: "—"} ms" else "不可达",
+                                color = if (it.available) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium.merge(TabularNumbers),
+                            )
+                        }
                     }
-                    result?.let {
-                        Text(
-                            if (it.available) "${it.latencyMs ?: "—"} ms" else "不可达",
-                            color = if (it.available) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
-                            fontWeight = FontWeight.SemiBold,
+                    val latency = result?.takeIf { it.available }?.latencyMs
+                    if (latency != null && slowestMs != null && slowestMs > 0) {
+                        WeaveMeterBar(
+                            fraction = latency.toFloat() / slowestMs,
+                            modifier = Modifier.fillMaxWidth(),
+                            height = 3.dp,
                         )
                     }
                 }

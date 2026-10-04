@@ -18,6 +18,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -455,6 +456,7 @@ private fun ConditionalTargetDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (selectedSubscription == null) {
                     item { TargetSectionLabel("选择订阅") }
@@ -531,9 +533,19 @@ private fun ConditionalTargetDialog(
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
-                                Text(if (favoritesOnly) "显示全部节点" else "只看收藏")
-                            }
+                            androidx.compose.material3.FilterChip(
+                                selected = favoritesOnly,
+                                onClick = { favoritesOnly = !favoritesOnly },
+                                label = { Text("只看收藏") },
+                                leadingIcon = {
+                                    Icon(
+                                        if (favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
                         }
                     }
                     item { TargetSectionLabel("出口") }
@@ -602,10 +614,13 @@ private fun ConditionalTargetDialog(
                                     )
                                 }
                                 selectedHealth?.checkedAtMillis?.let { time ->
-                                    Text("检测时间", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
+                                    val language = LocalWeaveLanguage.current
+                                    Text(
+                                        localizeWeaveText("检测时间", language) + " · " +
+                                            java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
                                         translate = false, fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                         }
@@ -666,10 +681,11 @@ private fun ConditionalTargetDialog(
 }
 
 /**
- * One node in the picker. The whole row is a full-width Column: the header Row holds only the
- * favorite button, the decorative globe and the weighted name/protocol block, while the health
- * evidence sits underneath at full width so it can wrap. A trailing unweighted status Text used to
- * claim most of the Row on narrow screens and squeezed the protocol into one character per line.
+ * One node in the picker: favorite (48dp target) beside a weighted column. The column holds the
+ * name with the selection check, then one wrapping line of protocol and probe evidence. Nothing
+ * textual sits beside the weighted column, so the protocol always gets the full column width (the
+ * old trailing status Text squeezed it into one glyph per line). An unchecked node costs one short
+ * inline label instead of its own line; checked nodes show the exact status and success counts.
  */
 @Composable
 internal fun SelectableNodeOptionRow(
@@ -681,102 +697,169 @@ internal fun SelectableNodeOptionRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .heightIn(min = WeaveUiTokens.rowMinHeight)
+            .weaveSelectionSurface(selected)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(start = 0.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+        IconButton(onClick = onFavorite, modifier = Modifier.size(WeaveUiTokens.minTouchTarget)) {
+            Icon(if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                contentDescription = localizedContentDescription(if (favorite) "取消收藏" else "收藏节点"),
+                tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(WeaveUiTokens.iconSize))
+        }
+        Spacer(Modifier.width(2.dp))
+        Column(
+            modifier = Modifier.weight(1f).padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            IconButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
-                Icon(if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                    contentDescription = localizedContentDescription(if (favorite) "取消收藏" else "收藏节点"),
-                    tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            WeaveGlobeGlyph(size = 22.dp)
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Top) {
                 // User-supplied names may be long; wrap a little instead of cutting them to one
                 // line, then ellipsize as a last resort.
                 Text(
                     NodeDisplayName.core(node.name),
                     fontWeight = FontWeight.SemiBold,
+                    lineHeight = 19.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     translate = false,
-                    modifier = Modifier.testTag("picker-name-${node.id}"),
+                    modifier = Modifier.weight(1f).testTag("picker-name-${node.id}"),
                 )
-                Text(
-                    node.protocol,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    translate = false,
-                    modifier = Modifier.testTag("picker-protocol-${node.id}"),
-                )
+                if (selected) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = localizedContentDescription("当前选择"),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
-        }
-        NodeHealthEvidence(
-            health = health,
-            checked = checked,
-            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp),
-        )
-    }
-}
-
-/**
- * Real probe evidence for one node, shown at full width beneath the node header. Both lines of
- * [nodeProbeResultText] (status, then failure rate and success counts) are kept verbatim and may
- * wrap; nothing is shortened, hidden or rewritten as a success.
- */
-@Composable
-internal fun NodeHealthEvidence(
-    health: io.weave.client.core.engine.NodeHealthSnapshot?,
-    checked: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val language = LocalWeaveLanguage.current
-    val text = remember(health, checked, language) { nodeProbeResultText(health, checked, language) }
-    val color = nodeHealthColor(health, checked)
-    val status = text.substringBefore('\n')
-    val detail = text.substringAfter('\n', missingDelimiterValue = "")
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            status,
-            translate = false,
-            color = color,
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (detail.isNotEmpty()) {
-            Text(
-                detail,
-                translate = false,
-                color = color,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+            NodeHealthEvidence(
+                protocol = node.protocol,
+                health = health,
+                checked = checked,
+                protocolModifier = Modifier.testTag("picker-protocol-${node.id}"),
             )
         }
     }
 }
 
+/**
+ * Protocol plus real probe evidence for one node, in one wrapping line. Both parts of
+ * [nodeProbeResultText] are kept verbatim as their own text: the status (latency, 超时 or 未检测)
+ * and, for a checked node, the failure rate with success counts. The small sample meter repeats
+ * only those counts; nothing is shortened, estimated or rewritten as a success.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun nodeHealthColor(
+internal fun NodeHealthEvidence(
+    protocol: String,
     health: io.weave.client.core.engine.NodeHealthSnapshot?,
     checked: Boolean,
-): Color = when {
-    health?.latencyMs != null && health.packetLossPercent > 0 -> MaterialTheme.colorScheme.tertiary
-    health?.latencyMs != null -> MaterialTheme.colorScheme.secondary
-    health != null && checked -> MaterialTheme.colorScheme.error
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
+    modifier: Modifier = Modifier,
+    protocolModifier: Modifier = Modifier,
+) {
+    val language = LocalWeaveLanguage.current
+    val text = remember(health, checked, language) { nodeProbeResultText(health, checked, language) }
+    val tone = nodeHealthTone(health, checked)
+    val status = text.substringBefore('\n')
+    val detail = text.substringAfter('\n', missingDelimiterValue = "")
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                .padding(horizontal = 6.dp, vertical = 1.dp),
+        ) {
+            Text(
+                protocol,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                translate = false,
+                modifier = protocolModifier,
+            )
+        }
+        NodeStatusLabel(status, tone, Modifier.align(Alignment.CenterVertically))
+        if (detail.isNotEmpty() && health != null) {
+            Row(
+                modifier = Modifier.align(Alignment.CenterVertically),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WeaveSampleMeter(successes = health.successfulSamples, attempts = health.samples)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    detail,
+                    translate = false,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Measured and failed states get a tinted pill with a tone dot; an unchecked node is plain muted
+ * text so a never-tested list stays quiet.
+ */
+@Composable
+private fun NodeStatusLabel(status: String, tone: WeaveStatusTone, modifier: Modifier) {
+    if (tone == WeaveStatusTone.NEUTRAL) {
+        Text(
+            status,
+            translate = false,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            modifier = modifier,
+        )
+        return
+    }
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(weaveToneContainer(tone))
+            .padding(horizontal = 7.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(weaveToneColor(tone)))
+        Spacer(Modifier.width(5.dp))
+        Text(
+            status,
+            translate = false,
+            color = if (tone == WeaveStatusTone.CRITICAL) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
+        )
+    }
+}
+
+/** Same thresholds as before: loss with a delay is caution, no delay after a check is a failure. */
+internal fun nodeHealthTone(
+    health: io.weave.client.core.engine.NodeHealthSnapshot?,
+    checked: Boolean,
+): WeaveStatusTone = when {
+    health?.latencyMs != null && health.packetLossPercent > 0 -> WeaveStatusTone.CAUTION
+    health?.latencyMs != null -> WeaveStatusTone.POSITIVE
+    health != null && checked -> WeaveStatusTone.CRITICAL
+    else -> WeaveStatusTone.NEUTRAL
 }
 
 /**
@@ -846,38 +929,14 @@ private fun TargetOptionRow(
     translateTitle: Boolean = true,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
-                else Color.Transparent,
-            )
-            .padding(horizontal = 10.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(21.dp))
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold, translate = translateTitle)
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (selected) {
-            Icon(
-                Icons.Rounded.CheckCircle,
-                contentDescription = localizedContentDescription("当前选择"),
-                modifier = Modifier.size(19.dp),
-            )
-        }
-    }
+    // Same selected treatment as node rows and settings choices: a light wash, edge and check.
+    WeaveChoiceRow(
+        title = title,
+        supporting = subtitle,
+        selected = selected,
+        onClick = onClick,
+        icon = icon,
+        translateTitle = translateTitle,
+        selectedDescription = "当前选择",
+    )
 }

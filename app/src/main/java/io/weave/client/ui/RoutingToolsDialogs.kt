@@ -183,6 +183,7 @@ import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun LocalRouteRulesDialog(
     state: LocalRouteRuleState,
@@ -221,17 +222,29 @@ internal fun LocalRouteRulesDialog(
                     )
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            type = LocalRuleType.entries[
-                                (LocalRuleType.entries.indexOf(type) + 1) % LocalRuleType.entries.size
-                            ]
-                        }) { Text(type.label) }
-                        TextButton(onClick = {
-                            action = LocalRuleAction.entries[
-                                (LocalRuleAction.entries.indexOf(action) + 1) % LocalRuleAction.entries.size
-                            ]
-                        }) { Text(action.label) }
+                    // Every option is visible as a chip; the old buttons cycled blindly through
+                    // values. Selection still only changes the local form state.
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("规则类型", style = MaterialTheme.typography.labelLarge)
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LocalRuleType.entries.forEach { option ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = type == option,
+                                    onClick = { type = option },
+                                    label = { Text(option.label) },
+                                )
+                            }
+                        }
+                        Text("命中后", style = MaterialTheme.typography.labelLarge)
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LocalRuleAction.entries.forEach { option ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = action == option,
+                                    onClick = { action = option },
+                                    label = { Text(option.label) },
+                                )
+                            }
+                        }
                     }
                 }
                 item {
@@ -269,15 +282,14 @@ internal fun LocalRouteRulesDialog(
                 }
                 state.error?.let { message ->
                     item {
-                        Text(message, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        WeaveNotice(icon = Icons.Rounded.Warning, message = message, tone = WeaveStatusTone.CRITICAL)
                     }
                 }
                 if (state.rules.isEmpty()) {
                     item {
-                        Text(
-                            "还没有本地规则。你可以先添加广告域名、家庭过滤域名或需要直连的企业网段。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
+                        WeaveStateBlock(
+                            title = "还没有本地规则。你可以先添加广告域名、家庭过滤域名或需要直连的企业网段。",
+                            icon = Icons.Rounded.Policy,
                         )
                     }
                 }
@@ -446,36 +458,34 @@ internal fun RouteLensDialog(
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget),
                     ) {
-                        Icon(Icons.Rounded.Visibility, contentDescription = null)
+                        Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text("解释这条连接")
+                        Text("解释这条连接", textAlign = TextAlign.Center)
                     }
                 }
                 error?.let { message ->
-                    item { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    item(key = "lens-error", contentType = "lens-error") {
+                        WeaveNotice(icon = Icons.Rounded.Warning, message = message, tone = WeaveStatusTone.CRITICAL)
+                    }
                 }
                 result?.let { explanation ->
-                    item {
-                        LiquidGlassPanel(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
-                                Text(
-                                    "${explanation.query.domain}:${explanation.query.port} · ${explanation.query.protocol}",
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    "${explanation.matchedRule} → ${explanation.target}",
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    fontSize = 13.sp,
-                                )
-                            }
+                    // Local simulation result only (RouteLens.evaluate); the checks below are its
+                    // own evidence list, rendered by LensCheckRow / WeaveEvidenceRow.
+                    item(key = "lens-result", contentType = "lens-result") {
+                        WeaveToolSection(icon = Icons.Rounded.Route, title = "路由解释") {
+                            Text(
+                                "${explanation.query.domain}:${explanation.query.port} · ${explanation.query.protocol}",
+                                fontWeight = FontWeight.Bold,
+                                translate = false,
+                            )
+                            Text(
+                                "${explanation.matchedRule} → ${explanation.target}",
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
                         }
                     }
                     items(
@@ -499,19 +509,11 @@ private fun LensCheckRow(check: io.weave.client.core.diagnostics.RouteLensCheck)
         LensState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
         LensState.NOT_TESTED -> Triple(Icons.Rounded.MoreHoriz, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(9.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(check.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Spacer(Modifier.width(7.dp))
-                Text(label, color = color, fontSize = 11.sp)
-            }
-            Text(check.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-        }
-    }
+    WeaveEvidenceRow(
+        icon = icon,
+        color = color,
+        stateLabel = label,
+        title = check.title,
+        detail = check.detail,
+    )
 }

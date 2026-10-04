@@ -963,42 +963,20 @@ private fun <T> SettingChoiceDialog(
                     .verticalScroll(rememberScrollState())
                     .selectableGroup(),
             ) {
-                options.forEachIndexed { index, option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = WeaveUiTokens.minTouchTarget)
-                            .clip(RoundedCornerShape(12.dp))
-                            .selectable(
-                                selected = option == selected,
-                                role = Role.RadioButton,
-                                onClick = { onSelect(option) },
-                            )
-                            .padding(horizontal = 4.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(label(option), fontWeight = FontWeight.SemiBold)
-                            Text(
-                                description(option),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp,
-                            )
-                        }
-                        if (option is WeavePalette) {
-                            PaletteSwatch(option)
-                        }
-                        if (option == selected) {
-                            Spacer(Modifier.width(12.dp))
-                            Icon(
-                                Icons.Rounded.CheckCircle,
-                                contentDescription = localizedContentDescription("已选择"),
-                                tint = MaterialTheme.colorScheme.secondary,
-                            )
-                        }
-                    }
-                    if (index != options.lastIndex) WeaveDivider()
+                options.forEach { option ->
+                    // Shared choice row: same selected wash, edge and check as the pickers.
+                    WeaveChoiceRow(
+                        title = label(option),
+                        supporting = description(option),
+                        selected = option == selected,
+                        onClick = { onSelect(option) },
+                        modifier = Modifier.padding(vertical = 1.dp),
+                        trailing = if (option is WeavePalette) {
+                            { PaletteSwatch(option) }
+                        } else {
+                            null
+                        },
+                    )
                 }
             }
         },

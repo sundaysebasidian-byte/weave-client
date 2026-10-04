@@ -896,6 +896,18 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
+    translationRegex("^已选 (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+        val selected = match.groupValues[1]
+        val total = match.groupValues[2]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "已選 $selected/$total"
+            WeaveLanguage.ENGLISH -> "$selected/$total selected"
+            WeaveLanguage.JAPANESE -> "$selected/$total 件選択"
+            WeaveLanguage.FRENCH -> "$selected/$total sélectionnés"
+            WeaveLanguage.GERMAN -> "$selected/$total ausgewählt"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
     translationRegex("^确认短码：(.*)$").matchEntire(text)?.let { match ->
         val code = match.groupValues[1]
         return when (language) {
@@ -1268,7 +1280,21 @@ internal data class SupplementalTranslation(
 }
 
 private fun supplementalUiTranslations(language: WeaveLanguage): Map<String, String> =
-    (SUPPLEMENTAL_TRANSLATIONS + V2_TRANSLATIONS + DEVICE_FEEDBACK_TRANSLATIONS).mapValues { (_, value) -> value.resolve(language) }
+    (SUPPLEMENTAL_TRANSLATIONS + V2_TRANSLATIONS + DEVICE_FEEDBACK_TRANSLATIONS + RC109_UI_TRANSLATIONS)
+        .mapValues { (_, value) -> value.resolve(language) }
+
+/** Short labels added with the RC109 secondary-page refinement (LAN modes, states, metrics). */
+private val RC109_UI_TRANSLATIONS = mapOf(
+    "导出" to SupplementalTranslation("Export", "匯出", "エクスポート", "Exporter", "Exportieren"),
+    "确认短码" to SupplementalTranslation("Confirmation code", "確認短碼", "確認コード", "Code de confirmation", "Bestätigungscode"),
+    "分享中" to SupplementalTranslation("Sharing", "分享中", "共有中", "Partage en cours", "Wird geteilt"),
+    "中位延迟" to SupplementalTranslation("Median latency", "中位延遲", "遅延の中央値", "Latence médiane", "Median-Latenz"),
+    "正在读取内核连接…" to SupplementalTranslation("Reading core connections…", "正在讀取核心連線…", "コアの接続を読み取り中…", "Lecture des connexions du moteur…", "Kernverbindungen werden gelesen…"),
+    "没有匹配的连接" to SupplementalTranslation("No matching connections", "沒有符合的連線", "一致する接続はありません", "Aucune connexion correspondante", "Keine passenden Verbindungen"),
+    "正在等待内核日志…" to SupplementalTranslation("Waiting for core log…", "正在等待核心日誌…", "コアログを待機中…", "En attente du journal du moteur…", "Warte auf Kern-Protokoll…"),
+    "日志已暂停" to SupplementalTranslation("Log paused", "日誌已暫停", "ログを一時停止中", "Journal en pause", "Protokoll pausiert"),
+    "规则类型" to SupplementalTranslation("Rule type", "規則類型", "ルールの種類", "Type de règle", "Regeltyp"),
+)
 
 private val DEVICE_FEEDBACK_TRANSLATIONS = mapOf(
     "V2Ray 配置含多个服务器或用户，请分别导出节点链接" to SupplementalTranslation("This V2Ray configuration has multiple servers or users. Export separate node links.", "V2Ray 設定含多個伺服器或使用者，請分別匯出節點連結", "V2Ray 設定に複数のサーバーまたはユーザーがあります。ノードリンクを個別にエクスポートしてください", "Cette configuration V2Ray contient plusieurs serveurs ou utilisateurs. Exportez des liens de nœuds séparés.", "Diese V2Ray-Konfiguration enthält mehrere Server oder Benutzer. Exportiere einzelne Knotenlinks."),

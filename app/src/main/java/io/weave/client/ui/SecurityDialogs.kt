@@ -280,20 +280,16 @@ private fun ObservatoryRow(observation: PrivacyObservation) {
         io.weave.client.core.diagnostics.ObservatoryState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
         io.weave.client.core.diagnostics.ObservatoryState.NOT_TESTED -> Triple(Icons.Rounded.MoreHoriz, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
     }
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(19.dp))
-        Spacer(Modifier.width(9.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(observation.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Spacer(Modifier.width(7.dp))
-                Text(label, color = color, fontSize = 11.sp)
-            }
-            Text(observation.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-        }
-    }
+    WeaveEvidenceRow(
+        icon = icon,
+        color = color,
+        stateLabel = label,
+        title = observation.title,
+        detail = observation.detail,
+    )
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun RecoveryCenterDialog(
     state: RecoveryState,
@@ -307,54 +303,71 @@ internal fun RecoveryCenterDialog(
         onDismissRequest = onDismiss,
         title = { Text("恢复中心", fontWeight = FontWeight.Bold) },
         text = {
+            // One bounded scroll: current state first, then the recorded facts, then the local
+            // diagnostic copy. Every value shown comes from RecoveryState; nothing is estimated.
             Column(
                 modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(11.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    if (state.safeMode) "安全模式已启用" else "运行状态可恢复",
-                    color = if (state.safeMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    if (state.safeMode) {
+                WeaveNotice(
+                    icon = if (state.safeMode) Icons.Rounded.Warning else Icons.Rounded.CheckCircle,
+                    title = if (state.safeMode) "安全模式已启用" else "运行状态可恢复",
+                    message = if (state.safeMode) {
                         state.safeModeReason ?: "最近一次候选配置与旧配置均未能启动"
                     } else {
                         "失败的候选配置不会覆盖上一份可用配置；运行快照只保留在应用私有缓存中。"
                     },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
+                    tone = if (state.safeMode) WeaveStatusTone.CRITICAL else WeaveStatusTone.POSITIVE,
                 )
-                Text("连续失败：${state.failureCount} 次", fontSize = 13.sp)
-                state.lastFailure?.let {
-                    Text("最近失败：$it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                WeaveToolSection {
+                    Text(
+                        "连续失败：${state.failureCount} 次",
+                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.bodyMedium.merge(TabularNumbers),
+                    )
+                    state.lastFailure?.let {
+                        Text("最近失败：$it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                    state.lastHealthyRevision?.let {
+                        Text("最近可用快照：$it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                    Text(
+                        "恢复中心不保存订阅 URL、节点凭据或明文配置；解除安全模式后需要你主动重新连接。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                    )
                 }
-                state.lastHealthyRevision?.let {
-                    Text("最近可用快照：$it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                WeaveToolSection {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            copyStatus = if (runCatching {
+                                val summary = io.weave.client.data.SupportDiagnostics.build(
+                                    BuildConfig.VERSION_NAME, Build.VERSION.SDK_INT, state,
+                                )
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Weave diagnostics", summary))
+                            }.isSuccess) "诊断摘要已复制" else "无法访问剪贴板"
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget),
+                    ) { Text("复制诊断摘要", textAlign = TextAlign.Center) }
+                    Text("仅包含版本、系统 API、恢复状态和错误代码；不包含原始日志、地址或订阅数据。",
+                        fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(
-                    "恢复中心不保存订阅 URL、节点凭据或明文配置；解除安全模式后需要你主动重新连接。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
-                )
-                TextButton(onClick = {
-                    copyStatus = if (runCatching {
-                        val summary = io.weave.client.data.SupportDiagnostics.build(
-                            BuildConfig.VERSION_NAME, Build.VERSION.SDK_INT, state,
-                        )
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Weave diagnostics", summary))
-                    }.isSuccess) "诊断摘要已复制" else "无法访问剪贴板"
-                }) { Text("复制诊断摘要") }
-                Text("仅包含版本、系统 API、恢复状态和错误代码；不包含原始日志、地址或订阅数据。",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                copyStatus?.let { Text(it, fontSize = 12.sp) }
+                copyStatus?.let { status ->
+                    WeaveNotice(
+                        icon = if (status == "诊断摘要已复制") Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
+                        message = status,
+                        tone = if (status == "诊断摘要已复制") WeaveStatusTone.POSITIVE else WeaveStatusTone.CRITICAL,
+                    )
+                }
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Wraps at large font instead of pushing 解除安全模式 off the dialog edge.
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+            ) {
                 TextButton(onClick = onRefresh) { Text("刷新") }
                 if (state.safeMode) {
                     TextButton(onClick = onClearSafeMode) { Text("解除安全模式") }
@@ -393,22 +406,34 @@ internal fun PolicyPackDialog(
                 modifier = Modifier.heightIn(max = 560.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                item {
-                    Button(onClick = {
-                        filePicker.launch(arrayOf("application/json", "text/*", "application/octet-stream"))
-                    }) {
-                        Icon(Icons.Rounded.CloudDownload, contentDescription = null)
+                item(key = "import", contentType = "policy-import") {
+                    Button(
+                        onClick = {
+                            filePicker.launch(arrayOf("application/json", "text/*", "application/octet-stream"))
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget),
+                    ) {
+                        Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text("导入 .weave-policy JSON")
+                        Text("导入 .weave-policy JSON", textAlign = TextAlign.Center)
+                    }
+                }
+                // Result of the last import/toggle/delete, shown above the list so it is seen
+                // without scrolling past every pack.
+                (state.message ?: state.error)?.let { message ->
+                    item(key = "status", contentType = "policy-status") {
+                        WeaveNotice(
+                            icon = if (state.error != null) Icons.Rounded.Warning else Icons.Rounded.CheckCircle,
+                            message = message,
+                            tone = if (state.error != null) WeaveStatusTone.CRITICAL else WeaveStatusTone.POSITIVE,
+                        )
                     }
                 }
                 if (state.packs.isEmpty()) {
-                    item {
-                        Text(
-                            "尚未导入策略包。策略包必须包含格式、版本、规则和 SHA-256；无签名包会标记为需复核。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
+                    item(key = "empty", contentType = "policy-empty") {
+                        WeaveStateBlock(
+                            title = "尚未导入策略包。策略包必须包含格式、版本、规则和 SHA-256；无签名包会标记为需复核。",
+                            icon = Icons.Rounded.Policy,
                         )
                     }
                 }
@@ -418,15 +443,6 @@ internal fun PolicyPackDialog(
                     contentType = { "policy-pack" },
                 ) { pack ->
                     PolicyPackRow(pack, onToggle, onDelete)
-                }
-                (state.message ?: state.error)?.let { message ->
-                    item {
-                        Text(
-                            message,
-                            color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                            fontSize = 12.sp,
-                        )
-                    }
                 }
             }
         },
@@ -446,11 +462,20 @@ private fun PolicyPackRow(
         PolicyPackIntegrity.UNSIGNED_REVIEW -> "无签名·需复核"
         PolicyPackIntegrity.INVALID -> "无效"
     }
+    val integrityColor = when (pack.integrity) {
+        PolicyPackIntegrity.VERIFIED_SIGNATURE, PolicyPackIntegrity.VERIFIED_HASH -> MaterialTheme.colorScheme.secondary
+        PolicyPackIntegrity.UNSIGNED_REVIEW -> MaterialTheme.colorScheme.tertiary
+        PolicyPackIntegrity.INVALID -> MaterialTheme.colorScheme.error
+    }
     LiquidGlassPanel(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
+        elevation = 0.dp,
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Same integrity label as the metadata line, as a tinted tag so review/invalid packs
+            // stand out; the value comes straight from PolicyPack.integrity.
+            WeaveStateTag(integrityLabel, integrityColor)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(pack.name, fontWeight = FontWeight.SemiBold, translate = false)
@@ -471,15 +496,19 @@ private fun PolicyPackRow(
                     translate = false,
                 )
             }
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     pack.sha256.take(16) + "…",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     modifier = Modifier.weight(1f),
                     translate = false,
                 )
-                TextButton(onClick = { onDelete(pack.id) }) {
+                TextButton(
+                    onClick = { onDelete(pack.id) },
+                    modifier = Modifier.heightIn(min = WeaveUiTokens.minTouchTarget),
+                ) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             }
