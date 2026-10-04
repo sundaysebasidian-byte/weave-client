@@ -2087,7 +2087,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "连续 3 轮探测，按中位延迟、抖动与丢包综合排序" to SupplementalTranslation("Three probe rounds; sort by median latency, jitter and packet loss"),
     "选择协议" to SupplementalTranslation("Choose protocol", "選擇協定", "プロトコルを選択", "Choisir le protocole", "Protokoll wählen"),
     "选择文件替换" to SupplementalTranslation("Choose a replacement file", "選擇檔案替換", "置換ファイルを選択", "Choisir un fichier de remplacement", "Ersatzdatei wählen"),
-    "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。" to SupplementalTranslation("Choose subscriptions to sync; each source is audited and updated in place without duplicate copies."),
+    "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。" to SupplementalTranslation("Choose subscriptions to sync; each source is audited and updated in place without duplicate copies.", "選擇要同步的訂閱；同一訂閱會先經過安全審查，再原位更新，不會重複堆疊副本。", "同期する購読を選んでください。同じ購読は確認後に上書きされ、複製は増えません。", "Choisissez les abonnements à synchroniser. Chaque source est vérifiée puis mise à jour sur place, sans créer de doublons.", "Wähle die Abos zum Synchronisieren. Jede Quelle wird geprüft und ohne zusätzliche Kopien aktualisiert."),
     "选择解析策略" to SupplementalTranslation("Choose resolution strategy", "選擇解析策略", "名前解決戦略を選択", "Choisir la stratégie de résolution", "Auflösungsstrategie wählen"),
     "选择订阅" to SupplementalTranslation("Choose subscription", "選擇訂閱", "購読を選択", "Choisir un abonnement", "Abonnement wählen"),
     "遥测" to SupplementalTranslation("Telemetry", "遙測", "テレメトリ", "Télémétrie", "Telemetrie"),
