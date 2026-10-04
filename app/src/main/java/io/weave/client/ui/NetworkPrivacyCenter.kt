@@ -568,6 +568,7 @@ private fun DiagnosticProgress(label: String) {
 private fun NetworkObservationRow(observation: PrivacyObservation) {
     val (icon, color, label) = when (observation.state) {
         ObservatoryState.VERIFIED -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, "已确认")
+        ObservatoryState.CONFIGURED -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "已配置")
         ObservatoryState.ATTENTION -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "注意")
         ObservatoryState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
         ObservatoryState.NOT_TESTED -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")

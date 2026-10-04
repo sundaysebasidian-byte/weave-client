@@ -602,6 +602,19 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         val suffix = localizeWeaveText(match.groupValues[4], language)
         return "$profile · $transport · $routing · $bypass + $suffix"
     }
+    translationRegex("^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$").matchEntire(text)?.let { match ->
+        val confirmed = match.groupValues[1]
+        val configured = match.groupValues[2]
+        val pending = match.groupValues[3]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "$confirmed 項本機狀態已確認 · $configured 項已設定 · $pending 項待核驗"
+            WeaveLanguage.ENGLISH -> "$confirmed local states confirmed · $configured configured · $pending awaiting verification"
+            WeaveLanguage.JAPANESE -> "$confirmed 件の端末状態を確認 · $configured 件を設定済み · $pending 件は未検証"
+            WeaveLanguage.FRENCH -> "$confirmed états locaux confirmés · $configured configurés · $pending à vérifier"
+            WeaveLanguage.GERMAN -> "$confirmed lokale Zustände bestätigt · $configured konfiguriert · $pending noch zu prüfen"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
     translationRegex("^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$").matchEntire(text)?.let { match ->
         val verified = match.groupValues[1]
         val external = match.groupValues[2]
@@ -796,6 +809,12 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.GERMAN -> "$address erkannt; widerspricht der Einstellung Nur IPv4"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
+    }
+    translationRegex("^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$").matchEntire(text)?.let { match ->
+        val transport = localizeWeaveText(match.groupValues[1], language)
+        val profile = localizeWeaveText(match.groupValues[2], language)
+        val explanation = localizeWeaveText("解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验", language)
+        return "$transport · $profile · $explanation"
     }
     translationRegex("^(.+) · (.+)；这是配置证据，不是外部泄漏测试$").matchEntire(text)?.let { match ->
         val transport = localizeWeaveText(match.groupValues[1], language)

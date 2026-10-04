@@ -231,6 +231,9 @@ internal fun SettingsScreen(
     notificationsEnabled: Boolean = true,
     onRequestNotifications: () -> Unit = {},
     onCancelDnsProbe: () -> Unit = {},
+    onOpenQuickStart: () -> Unit = {},
+    quickStartReducedMotion: Boolean = false,
+    onQuickStartMotionChanged: (Boolean) -> Unit = {},
 ) {
     var showPalette by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
@@ -266,6 +269,24 @@ internal fun SettingsScreen(
 
         // Everyday settings: always visible, grouped by what people come here to change.
         item(key = "tier-common") { SettingsTierHeading("常用") }
+        item(key = "quick-start") {
+            SettingsGroup(title = "开始使用") {
+                LinkSetting(
+                    icon = Icons.Rounded.AutoAwesome,
+                    title = "新手引导",
+                    subtitle = "导入、选节点，再连接",
+                    onClick = onOpenQuickStart,
+                )
+                WeaveDivider()
+                ToggleSetting(
+                    icon = Icons.Rounded.AutoAwesome,
+                    title = "减弱引导动画",
+                    subtitle = "引导页面使用即时转场",
+                    checked = quickStartReducedMotion,
+                    onCheckedChange = onQuickStartMotionChanged,
+                )
+            }
+        }
         item(key = "appearance") {
             SettingsGroup(title = "外观与语言") {
                 LinkSetting(

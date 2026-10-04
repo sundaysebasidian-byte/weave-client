@@ -6,10 +6,11 @@
 | --- | --- | --- | --- |
 | Android 本地内核观测 | 应用私有 cache 下 `core-observation/api.sock`（Unix socket，非 TCP） | 用户点击“读取实际命中”，或选择“链路终端”外观并停留在已连接的首页 | 父目录显式 0700；手动视图最多展示 40 条、两分钟清除；极客首页可见时每 3 秒读取并仅展示前 8 条，离开页面或退到后台即停。不保留响应中的源/目标地址、域名和规则匹配值，不向第三方发送快照 |
 | 短时下载测速 | `https://speed.cloudflare.com/__down?bytes=1048576` | 用户在检测中心单独点击下载测速且 VPN 已连接 | 经当前应用路由读取最多 1 MiB 响应体，拒绝重定向，不保存正文；仅内存展示字节数、连接和下载总耗时及平均吞吐，不表示线路峰值 |
-| 订阅 | 用户粘贴或扫描的 `https://` URL | 用户导入或手动更新订阅 | 由订阅 URL 决定；请求使用 HTTPS，响应只在本机解析、审计和加密保存 |
+| 订阅 | 用户粘贴或扫描的 `https://` URL | 用户导入、手动更新；启用自动更新后按所选周期在后台更新（默认关闭） | 由订阅 URL 决定；请求使用 HTTPS，响应只在本机解析、审计和加密保存 |
 | 订阅节点集合 | 导入配置中明确列出的 HTTPS `proxy-providers` 地址 | 导入或更新该订阅时，一次最多 16 个集合；重复 URL 只取一次 | 同样执行 HTTPS、重定向、私网地址和大小检查；只展开节点，不下载 rule-providers。任何子集合失败都不覆盖旧订阅；启动 VPN 不重新下载这些文件 |
 | 代理/目标 | 用户订阅中的服务器和用户访问的目标服务 | VPN 连接和应用流量 | 由第三方协议和目标服务决定；Weave 不承诺第三方不记录 |
 | 加密 DNS | 用户选择的 DoH/DoT 端点（内置预设或自定义） | VPN 运行期间的 DNS 查询 | 加密 DNS 查询；自定义端点不会写入日志或诊断包。内置 DoH：`dns.alidns.com/dns-query`、`doh.pub/dns-query`、`cloudflare-dns.com/dns-query`、`dns.google/dns-query`、`dns.quad9.net/dns-query`、`dns.mullvad.net/dns-query`、`dns.adguard-dns.com/dns-query`、`family.adguard-dns.com/dns-query`；DoT 使用相同主机名（`doh.pub` 对应 `dot.pub`） |
+| 引导 DNS | 默认 `223.5.5.5`、`119.29.29.29`；可选 `1.1.1.1`、`9.9.9.9` | 内核需要解析加密 DNS 服务器主机名时 | 明文 DNS 查询；不把它当作普通网站的加密解析器，也不宣称零泄漏 |
 | 自动节点健康探测 | `http://www.gstatic.com/generate_204` | VPN 运行期间按自动策略的间隔探测 | 仅发送内核健康检查请求，读取 HTTP 状态和 RTT；不经过 Weave 云端 |
 | 可达性 | `https://www.gstatic.com/generate_204` | 用户主动执行内核可用性测试；IP 质量检测也会测量该端点 | HTTPS 请求和响应状态/RTT |
 | IPv4 出口 | `https://api4.ipify.org` | 用户点击 IP 质量检测 | 当前请求视角的 IPv4 |

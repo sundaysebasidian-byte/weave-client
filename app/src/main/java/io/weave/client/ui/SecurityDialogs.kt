@@ -259,7 +259,7 @@ private fun PrivacyObservatoryDialog(
                 }
                 item {
                     Text(
-                        "已确认表示来自本机状态或已写入的规则；未知/未测试必须用外部 DNS、IPv6、WebRTC 和 QUIC 测试站复核。",
+                        "已确认仅表示本机连接或系统状态；已配置表示保存的设置。实际防护效果仍需独立核验。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
@@ -275,6 +275,7 @@ private fun PrivacyObservatoryDialog(
 private fun ObservatoryRow(observation: PrivacyObservation) {
     val (icon, color, label) = when (observation.state) {
         io.weave.client.core.diagnostics.ObservatoryState.VERIFIED -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, "已确认")
+        io.weave.client.core.diagnostics.ObservatoryState.CONFIGURED -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "已配置")
         io.weave.client.core.diagnostics.ObservatoryState.ATTENTION -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "注意")
         io.weave.client.core.diagnostics.ObservatoryState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
         io.weave.client.core.diagnostics.ObservatoryState.NOT_TESTED -> Triple(Icons.Rounded.MoreHoriz, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")

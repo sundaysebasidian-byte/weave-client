@@ -11,9 +11,9 @@ android {
         applicationId = "io.weave.client"
         minSdk = 26
         targetSdk = 36
-        // Local preview build; keep the application ID/signature for a data-preserving update.
-        versionCode = 106
-        versionName = "0.4.0-experience-preview5"
+        // Release candidate. Keep the app ID; production signing needs a separate release gate.
+        versionCode = 107
+        versionName = "0.4.0-rc1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -48,6 +48,7 @@ android {
 
     buildTypes {
         release {
+            isDebuggable = false
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true

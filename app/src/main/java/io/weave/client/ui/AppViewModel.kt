@@ -351,6 +351,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Local data is loaded and the `:vpn` state mirror has synced (or timed out), so a request
      * from a shortcut or tile sees the real connection state instead of the defaults.
      */
+    /** Read only after awaitReady: failed reads must not look like a fresh installation. */
+    fun hasLoadedLocalSubscriptions(): Boolean = subscriptionsLoaded
+
     suspend fun awaitReady() {
         readiness.await()
         CoreClient.awaitConnected()

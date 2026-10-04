@@ -405,6 +405,55 @@ fun WeaveApp(
     var showBackup by remember { mutableStateOf(false) }
     var externalImport by remember { mutableStateOf<io.weave.client.subscription.ExternalImport?>(null) }
     var resumeRevision by remember { mutableStateOf(0) }
+    val quickStartStore = remember(LocalContext.current.applicationContext) {
+        io.weave.client.data.QuickStartStore(viewModel.getApplication())
+    }
+    val quickStartSaver = remember {
+        androidx.compose.runtime.saveable.Saver<QuickStartState, List<String>>(
+            save = { listOf(it.visible.toString(), it.step.name) },
+            restore = { saved -> QuickStartState(
+                visible = saved.getOrNull(0) == "true",
+                step = QuickStartStep.entries.firstOrNull { it.name == saved.getOrNull(1) }
+                    ?: QuickStartStep.IMPORT,
+            ) },
+        )
+    }
+    var quickStart by rememberSaveable(stateSaver = quickStartSaver) { mutableStateOf(QuickStartState()) }
+    var quickStartAutoChecked by rememberSaveable { mutableStateOf(false) }
+    var quickStartExternalLaunch by rememberSaveable { mutableStateOf(false) }
+    var quickStartReducedMotion by remember { mutableStateOf(quickStartStore.reducedMotion()) }
+    var quickStartConnectRevision by remember { mutableStateOf(0L) }
+    var quickStartConnectResume by remember { mutableStateOf(0) }
+
+    fun usableGuideNodes(): List<ProxyNode> {
+        val enabledIds = viewModel.subscriptions.value.filter { it.enabled }.map { it.id }.toSet()
+        return viewModel.nodes.value.filter { it.subscriptionId in enabledIds }
+    }
+    fun closeQuickStart() {
+        quickStart = quickStart.dismiss()
+        quickStartStore.markSeen()
+    }
+    fun changeQuickStartMotion(enabled: Boolean) {
+        quickStartReducedMotion = enabled
+        quickStartStore.setReducedMotion(enabled)
+    }
+    LaunchedEffect(Unit) {
+        if (!quickStartAutoChecked) {
+            viewModel.awaitReady()
+            val loaded = viewModel.hasLoadedLocalSubscriptions()
+            val shouldOffer = QuickStartPolicy.shouldOfferAutomatically(
+                seen = quickStartStore.wasSeen(), dataLoaded = loaded,
+                upgradedInstall = quickStartStore.isUpgradedInstall(),
+                hasSubscriptions = viewModel.subscriptions.value.isNotEmpty(),
+                hasRoutes = viewModel.routes.value.isNotEmpty(),
+                hasSavedTarget = viewModel.dashboard.value.defaultRouteTarget != null,
+                disclosureAccepted = vpnDisclosureAccepted, externalLaunch = quickStartExternalLaunch,
+            )
+            quickStartAutoChecked = true
+            if (shouldOffer) quickStart = quickStart.open()
+            else if (loaded) quickStartStore.markSeen()
+        }
+    }
 
     /** Same consent path as the connect button: the VPN disclosure precedes the system prompt. */
     fun requestConnect() {
@@ -426,7 +475,10 @@ fun WeaveApp(
 
     val externalRequest by viewModel.externalRequest.collectAsStateWithLifecycle()
     LaunchedEffect(externalRequest) {
-        when (val request = externalRequest ?: return@LaunchedEffect) {
+        val request = externalRequest ?: return@LaunchedEffect
+        quickStartExternalLaunch = true
+        if (quickStart.visible) closeQuickStart()
+        when (request) {
             ExternalRequest.Connect -> {
                 destination = Destination.HOME
                 viewModel.awaitReady()
@@ -490,7 +542,7 @@ fun WeaveApp(
         showAppPicker || editingRoute != null || showDefaultRoutePicker || managedSubscriptionId != null ||
         showVpnDisclosure || showRouteLens || showNetworkPrivacyCenter || showRecoveryCenter ||
         showPolicyPacks || showLocalRouteRules || showConnections || showLogs || showRuleSets ||
-        showCustomGroups || showBackup || externalImport != null
+        showCustomGroups || showBackup || externalImport != null || quickStart.visible
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, destination, dashboardObscured) {
         fun updateVisibility() {
@@ -524,6 +576,7 @@ fun WeaveApp(
             showImportDialog = false
             showProxyMigration = false
             externalImport = null
+            quickStart = quickStart.imported(usableGuideNodes().isNotEmpty())
         },
     )
 
@@ -669,6 +722,9 @@ fun WeaveApp(
                         viewModel.discardBackupState()
                         showBackup = true
                     },
+                    onOpenQuickStart = { quickStart = quickStart.open() },
+                    quickStartReducedMotion = quickStartReducedMotion,
+                    onQuickStartMotionChanged = ::changeQuickStartMotion,
                 )
             }
             }
@@ -678,10 +734,86 @@ fun WeaveApp(
 
     }
 
+    if (quickStart.visible) {
+        val guideDashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+        val guideRuntime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
+        val guideNodes by viewModel.nodes.collectAsStateWithLifecycle()
+        val guideSubscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+        val enabledGuideIds = guideSubscriptions.filter { it.enabled }.map { it.id }.toSet()
+        val usableNodes = guideNodes.filter { it.subscriptionId in enabledGuideIds }
+        val guideGroups by viewModel.customGroups.collectAsStateWithLifecycle()
+        val renderedGuideStep = quickStart.step
+        val hasProxyTarget = QuickStartPolicy.hasProxyTarget(guideDashboard.defaultRouteTarget, usableNodes, guideGroups)
+        LaunchedEffect(guideRuntime, resumeRevision) {
+            if (quickStart.action == QuickStartAction.CONNECT &&
+                (guideRuntime.revision != quickStartConnectRevision || resumeRevision > quickStartConnectResume)
+            ) quickStart = quickStart.cancelAction()
+        }
+        val childVisible = showImportDialog || showDefaultRoutePicker || showVpnDisclosure
+        if (!childVisible) {
+            QuickStartDialog(
+                step = quickStart.step, hasNodes = usableNodes.isNotEmpty(), hasProxyTarget = hasProxyTarget,
+                connected = guideDashboard.connectionState == ConnectionState.CONNECTED,
+                connecting = guideDashboard.connectionState == ConnectionState.CONNECTING ||
+                    quickStart.action == QuickStartAction.CONNECT,
+                connectionError = guideDashboard.connectionState == ConnectionState.ERROR || !guideDashboard.coreAvailable,
+                reducedMotion = quickStartReducedMotion,
+                onReducedMotionChange = ::changeQuickStartMotion,
+                onDismiss = ::closeQuickStart,
+                onBack = {
+                    quickStart = quickStart.back()
+                    if (!quickStart.visible) quickStartStore.markSeen()
+                },
+                onNext = {
+                    if (quickStart.step == renderedGuideStep) {
+                        quickStart = quickStart.next(usableNodes.isNotEmpty(), hasProxyTarget)
+                    }
+                },
+                onPrimaryAction = {
+                    if (quickStart.visible && quickStart.step == renderedGuideStep && quickStart.action == QuickStartAction.NONE) {
+                        when (quickStart.step) {
+                            QuickStartStep.IMPORT -> {
+                                quickStart = quickStart.beginAction(QuickStartAction.IMPORT)
+                                viewModel.resetImportState()
+                                destination = Destination.SUBSCRIPTIONS
+                                showImportDialog = true
+                            }
+                            QuickStartStep.NODE -> if (usableNodes.isNotEmpty()) {
+                                quickStart = quickStart.beginAction(QuickStartAction.NODE)
+                                showDefaultRoutePicker = true
+                            } else {
+                                quickStart = quickStart.copy(step = QuickStartStep.IMPORT)
+                            }
+                            QuickStartStep.CONNECT -> {
+                                if (guideDashboard.connectionState == ConnectionState.CONNECTED) closeQuickStart()
+                                else if (guideDashboard.connectionState != ConnectionState.CONNECTING && hasProxyTarget) {
+                                    quickStartConnectRevision = io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision
+                                    quickStartConnectResume = resumeRevision
+                                    quickStart = quickStart.beginAction(QuickStartAction.CONNECT)
+                                    destination = Destination.HOME
+                                    if (guideDashboard.coreAvailable) requestConnect()
+                                    else {
+                                        quickStart = quickStart.cancelAction()
+                                        viewModel.connect()
+                                    }
+                                } else if (!hasProxyTarget) {
+                                    quickStart = quickStart.copy(step = QuickStartStep.NODE)
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
     if (showVpnDisclosure) {
         VpnDisclosureDialog(
             accepted = vpnDisclosureAccepted,
-            onDismiss = { showVpnDisclosure = false },
+            onDismiss = {
+                showVpnDisclosure = false
+                quickStart = quickStart.cancelAction()
+            },
             onAcceptAndContinue = {
                 onAcceptVpnDisclosure()
                 showVpnDisclosure = false
@@ -844,6 +976,7 @@ fun WeaveApp(
             onDismiss = {
                 if (!importState.running) {
                     showImportDialog = false
+                    quickStart = quickStart.cancelAction()
                     viewModel.resetImportState()
                 }
             },
@@ -956,10 +1089,14 @@ fun WeaveApp(
             health = subscriptionHealth,
             vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
             onCheckHealth = viewModel::checkSubscriptionHealth,
-            onDismiss = { showDefaultRoutePicker = false },
+            onDismiss = {
+                showDefaultRoutePicker = false
+                quickStart = quickStart.cancelAction()
+            },
             onSelect = { target ->
                 viewModel.setDefaultRouteTarget(target)
                 showDefaultRoutePicker = false
+                quickStart = quickStart.selected(QuickStartPolicy.hasProxyTarget(target, usableGuideNodes(), viewModel.customGroups.value))
             },
             customGroups = customGroups,
         )
