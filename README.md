@@ -45,18 +45,18 @@ RC4 新增可跳过、可从设置重开的三步引导；手动更新单个订�
 
 ### RC4 真实界面
 
-以下四张来自 **0.4.0-rc4 / Build 110 的原生产签名 APK**，在独立 Android 模拟器的空数据环境中截取，图片未修改。展示英文界面，不含真实订阅、节点凭据或 IP，也不代表已连接 VPN。
+以下四张来自 **0.4.0-rc4 / Build 110 的原生产签名 APK**，在独立 Android 模拟器的空数据环境中截取，图片未修改。展示简体中文界面，不含真实订阅、节点凭据或 IP，也不代表已连接 VPN。
 
 <table>
   <tr><th>连接页</th><th>订阅管理 · 空状态</th></tr>
   <tr>
-    <td><a href="docs/media/rc4-home.png"><img src="docs/media/rc4-home.png" width="220" alt="RC4 连接首页，未连接且未选择出口"></a></td>
-    <td><a href="docs/media/rc4-subscriptions.png"><img src="docs/media/rc4-subscriptions.png" width="220" alt="RC4 订阅管理空状态，包含添加、迁移和局域网互传入口"></a></td>
+    <td><a href="docs/media/rc4-home-zh.png"><img src="docs/media/rc4-home-zh.png" width="220" alt="RC4 连接首页，未连接且未选择出口"></a></td>
+    <td><a href="docs/media/rc4-subscriptions-zh.png"><img src="docs/media/rc4-subscriptions-zh.png" width="220" alt="RC4 订阅管理空状态，包含添加、迁移和局域网互传入口"></a></td>
   </tr>
   <tr><th>设置</th><th>外观选择</th></tr>
   <tr>
-    <td><a href="docs/media/rc4-settings.png"><img src="docs/media/rc4-settings.png" width="220" alt="RC4 设置页，展示引导、外观、语言和连接选项"></a></td>
-    <td><a href="docs/media/rc4-appearance.png"><img src="docs/media/rc4-appearance.png" width="220" alt="RC4 外观选择，展示浅色、深色、素纸和艺术主题选项，当前选择浅色"></a></td>
+    <td><a href="docs/media/rc4-settings-zh.png"><img src="docs/media/rc4-settings-zh.png" width="220" alt="RC4 设置页，展示引导、外观、语言和连接选项"></a></td>
+    <td><a href="docs/media/rc4-appearance-zh.png"><img src="docs/media/rc4-appearance-zh.png" width="220" alt="RC4 外观选择，展示浅色、深色、素纸和艺术主题选项，当前选择浅色"></a></td>
   </tr>
 </table>
 
