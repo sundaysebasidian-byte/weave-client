@@ -41,6 +41,33 @@ RC4 新增可跳过、可从设置重开的三步引导；手动更新单个订�
 
 支持简体中文、繁體中文、English、日本語、Français、Deutsch。
 
+## 界面与宣传片
+
+### RC4 真实界面
+
+以下四张来自 **0.4.0-rc4 / Build 110 的原生产签名 APK**，在独立 Android 模拟器的空数据环境中截取，图片未修改。展示英文界面，不含真实订阅、节点凭据或 IP，也不代表已连接 VPN。
+
+<table>
+  <tr><th>连接页</th><th>订阅管理 · 空状态</th></tr>
+  <tr>
+    <td><a href="docs/media/rc4-home.png"><img src="docs/media/rc4-home.png" width="220" alt="RC4 连接首页，未连接且未选择出口"></a></td>
+    <td><a href="docs/media/rc4-subscriptions.png"><img src="docs/media/rc4-subscriptions.png" width="220" alt="RC4 订阅管理空状态，包含添加、迁移和局域网互传入口"></a></td>
+  </tr>
+  <tr><th>设置</th><th>外观选择</th></tr>
+  <tr>
+    <td><a href="docs/media/rc4-settings.png"><img src="docs/media/rc4-settings.png" width="220" alt="RC4 设置页，展示引导、外观、语言和连接选项"></a></td>
+    <td><a href="docs/media/rc4-appearance.png"><img src="docs/media/rc4-appearance.png" width="220" alt="RC4 外观选择，展示浅色、深色、素纸和艺术主题选项，当前选择浅色"></a></td>
+  </tr>
+</table>
+
+### 原宣传片 · 20 秒
+
+[![Weave 原宣传片封面](docs/media/weave-original-cg-poster.png)](https://github.com/sundaysebasidian-byte/weave-client/blob/main/docs/media/weave-original-cg.mp4)
+
+[查看视频文件](docs/media/weave-original-cg.mp4) · [下载原 MP4](https://raw.githubusercontent.com/sundaysebasidian-byte/weave-client/main/docs/media/weave-original-cg.mp4)
+
+保留已确认原片的画面、节奏和音轨，1920 × 1080、30 fps。它是历史品牌宣传素材，包含风格示意，当前 RC4 实际界面见上方截图。[素材版本与校验值](docs/media/PROVENANCE.json)。
+
 ## 开始使用
 
 1. 从 [RC4 Release](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4) 下载生产签名的 **ARM64** APK，核对附件校验和后安装。

@@ -1,0 +1,100 @@
+{
+  "published_media_date": "2026-10-05",
+  "application": {
+    "id": "io.weave.client",
+    "version_name": "0.4.0-rc4",
+    "version_code": 110,
+    "source_commit": "908fbc16465a0495c5b28ece9b38b39e7ff0e3e8",
+    "production_apk_sha256": "6a4ef48f99480bf99a7f23e36ef6727224e20d666d78b4b33a691857d695f989"
+  },
+  "screenshots": [
+    {
+      "file": "rc4-home.png",
+      "scene": "Disconnected connection page",
+      "sha256": "1deb28e59d4fd3f11c25d2be5a232bc457bf1a0c8f8f59dc0125ed8af5ed29bc",
+      "bytes": 119342,
+      "capture_date": "2026-10-05",
+      "capture_platform": "isolated Android API 36 ARM64 emulator",
+      "capture_method": "adb exec-out screencap -p",
+      "width": 480,
+      "height": 1080,
+      "language": "English",
+      "fresh_empty_app_data": true,
+      "image_bytes_unedited": true,
+      "user_subscriptions_or_credentials_present": false,
+      "live_vpn_or_real_phone_evidence": false
+    },
+    {
+      "file": "rc4-subscriptions.png",
+      "scene": "Subscription management empty state",
+      "sha256": "5cf874e040c332acd9237cd141b979387f7aac924014e3f0d378d77cc7417c0b",
+      "bytes": 73598,
+      "capture_date": "2026-10-05",
+      "capture_platform": "isolated Android API 36 ARM64 emulator",
+      "capture_method": "adb exec-out screencap -p",
+      "width": 480,
+      "height": 1080,
+      "language": "English",
+      "fresh_empty_app_data": true,
+      "image_bytes_unedited": true,
+      "user_subscriptions_or_credentials_present": false,
+      "live_vpn_or_real_phone_evidence": false
+    },
+    {
+      "file": "rc4-settings.png",
+      "scene": "Settings",
+      "sha256": "0855ae8705f62a17f05b7f560497eff4adf156f5dfc7beb50d1fe3b63d144c4d",
+      "bytes": 121837,
+      "capture_date": "2026-10-05",
+      "capture_platform": "isolated Android API 36 ARM64 emulator",
+      "capture_method": "adb exec-out screencap -p",
+      "width": 480,
+      "height": 1080,
+      "language": "English",
+      "fresh_empty_app_data": true,
+      "image_bytes_unedited": true,
+      "user_subscriptions_or_credentials_present": false,
+      "live_vpn_or_real_phone_evidence": false
+    },
+    {
+      "file": "rc4-appearance.png",
+      "scene": "Appearance chooser, Light mode selected",
+      "sha256": "9207cf036d1f15cce08b00aea2331595faf4187f32d4d85b71cda353e946fc28",
+      "bytes": 81462,
+      "capture_date": "2026-10-05",
+      "capture_platform": "isolated Android API 36 ARM64 emulator",
+      "capture_method": "adb exec-out screencap -p",
+      "width": 480,
+      "height": 1080,
+      "language": "English",
+      "fresh_empty_app_data": true,
+      "image_bytes_unedited": true,
+      "user_subscriptions_or_credentials_present": false,
+      "live_vpn_or_real_phone_evidence": false
+    }
+  ],
+  "video": {
+    "file": "weave-original-cg.mp4",
+    "sha256": "442ef08d1520b81e087538276c3f9ebbf0a9bf35ae4a6d32d30146629723d4db",
+    "bytes": 4075079,
+    "duration_seconds": 20,
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "video_codec": "H264",
+    "audio_codec": "AAC",
+    "original_bytes_preserved": true,
+    "classification": "Historical brand film, not a recording of the current RC4 app",
+    "original_editable_project_or_generation_session_recovered": false,
+    "privacy_review": "Original film contains brand graphics and illustrative diagrams, not personal subscriptions or credentials"
+  },
+  "poster": {
+    "file": "weave-original-cg-poster.png",
+    "sha256": "b6dae107dd5b699593613164e93efb9bc2d9dc99d5bd41ab11646b457562a05d",
+    "bytes": 94256,
+    "source": "weave-original-cg.mp4",
+    "frame_time_seconds": 4,
+    "width": 960,
+    "height": 540
+  }
+}
