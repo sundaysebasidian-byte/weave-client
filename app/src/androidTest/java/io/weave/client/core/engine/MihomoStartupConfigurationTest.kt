@@ -24,6 +24,7 @@ class MihomoStartupConfigurationTest {
             override fun getApplicationContext(): Context = this
             override fun getCacheDir() = File(root, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir() = File(root, "private").apply { mkdirs() }
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(app.applicationInfo).apply { dataDir = root.absolutePath }
             override fun getSharedPreferences(name: String, mode: Int) =
                 app.getSharedPreferences(root.name + name, mode)
         }

@@ -45,6 +45,7 @@ fun localizeWeaveText(text: String, language: WeaveLanguage): String {
 }
 
 private fun translateCommonPatterns(text: String, language: WeaveLanguage): String? {
+    translateV2Patterns(text, language)?.let { return it }
     if (text.startsWith("安全拦截 · ")) {
         return localizeWeaveText("安全拦截", language) + " · " + text.substringAfter(" · ")
     }
@@ -601,6 +602,19 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         val suffix = localizeWeaveText(match.groupValues[4], language)
         return "$profile · $transport · $routing · $bypass + $suffix"
     }
+    translationRegex("^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$").matchEntire(text)?.let { match ->
+        val confirmed = match.groupValues[1]
+        val configured = match.groupValues[2]
+        val pending = match.groupValues[3]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "$confirmed 項本機狀態已確認 · $configured 項已設定 · $pending 項待核驗"
+            WeaveLanguage.ENGLISH -> "$confirmed local states confirmed · $configured configured · $pending awaiting verification"
+            WeaveLanguage.JAPANESE -> "$confirmed 件の端末状態を確認 · $configured 件を設定済み · $pending 件は未検証"
+            WeaveLanguage.FRENCH -> "$confirmed états locaux confirmés · $configured configurés · $pending à vérifier"
+            WeaveLanguage.GERMAN -> "$confirmed lokale Zustände bestätigt · $configured konfiguriert · $pending noch zu prüfen"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
     translationRegex("^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$").matchEntire(text)?.let { match ->
         val verified = match.groupValues[1]
         val external = match.groupValues[2]
@@ -796,6 +810,12 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
+    translationRegex("^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$").matchEntire(text)?.let { match ->
+        val transport = localizeWeaveText(match.groupValues[1], language)
+        val profile = localizeWeaveText(match.groupValues[2], language)
+        val explanation = localizeWeaveText("解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验", language)
+        return "$transport · $profile · $explanation"
+    }
     translationRegex("^(.+) · (.+)；这是配置证据，不是外部泄漏测试$").matchEntire(text)?.let { match ->
         val transport = localizeWeaveText(match.groupValues[1], language)
         val profile = localizeWeaveText(match.groupValues[2], language)
@@ -874,6 +894,56 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.FRENCH -> "Nœud périphérique  $edge"
             WeaveLanguage.GERMAN -> "Edge  $edge"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    translationRegex("^已选 (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+        val selected = match.groupValues[1]
+        val total = match.groupValues[2]
+        return when (language) {
+            WeaveLanguage.TRADITIONAL_CHINESE -> "已選 $selected/$total"
+            WeaveLanguage.ENGLISH -> "$selected/$total selected"
+            WeaveLanguage.JAPANESE -> "$selected/$total 件選択"
+            WeaveLanguage.FRENCH -> "$selected/$total sélectionnés"
+            WeaveLanguage.GERMAN -> "$selected/$total ausgewählt"
+            WeaveLanguage.SIMPLIFIED_CHINESE -> text
+        }
+    }
+    // Client source import counts; the number is always the real list or preview size.
+    translationRegex("^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+        val count = match.groupValues[2]
+        return when (match.groupValues[1]) {
+            "预览所选" -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "預覽所選 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "Preview $count selected subscription(s)"
+                WeaveLanguage.JAPANESE -> "選択した購読 $count 件をプレビュー"
+                WeaveLanguage.FRENCH -> "Prévisualiser $count abonnement(s) sélectionné(s)"
+                WeaveLanguage.GERMAN -> "$count ausgewählte(s) Abo(s) prüfen"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+            "确认导入" -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "確認匯入 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "Import $count subscription(s)"
+                WeaveLanguage.JAPANESE -> "購読 $count 件を取り込む"
+                WeaveLanguage.FRENCH -> "Importer $count abonnement(s)"
+                WeaveLanguage.GERMAN -> "$count Abo(s) importieren"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+            "将导入" -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "將匯入 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "$count subscription(s) to import"
+                WeaveLanguage.JAPANESE -> "取り込む購読 $count 件"
+                WeaveLanguage.FRENCH -> "$count abonnement(s) à importer"
+                WeaveLanguage.GERMAN -> "$count Abo(s) zum Import"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
+            else -> when (language) {
+                WeaveLanguage.TRADITIONAL_CHINESE -> "已匯入 $count 個訂閱"
+                WeaveLanguage.ENGLISH -> "$count subscription(s) imported"
+                WeaveLanguage.JAPANESE -> "購読 $count 件を取り込みました"
+                WeaveLanguage.FRENCH -> "$count abonnement(s) importé(s)"
+                WeaveLanguage.GERMAN -> "$count Abo(s) importiert"
+                WeaveLanguage.SIMPLIFIED_CHINESE -> text
+            }
         }
     }
     translationRegex("^确认短码：(.*)$").matchEntire(text)?.let { match ->
@@ -1230,7 +1300,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
  * leaves a visible Chinese fragment behind. The English value is a deliberate last-resort
  * fallback for long legal/technical copy; high-frequency controls provide native translations.
  */
-private data class SupplementalTranslation(
+internal data class SupplementalTranslation(
     val english: String,
     val traditional: String = english,
     val japanese: String = english,
@@ -1248,7 +1318,125 @@ private data class SupplementalTranslation(
 }
 
 private fun supplementalUiTranslations(language: WeaveLanguage): Map<String, String> =
-    SUPPLEMENTAL_TRANSLATIONS.mapValues { (_, value) -> value.resolve(language) }
+    (SUPPLEMENTAL_TRANSLATIONS + V2_TRANSLATIONS + DEVICE_FEEDBACK_TRANSLATIONS + RC109_UI_TRANSLATIONS)
+        .mapValues { (_, value) -> value.resolve(language) }
+
+/** Short labels added with the RC109 secondary-page refinement (LAN modes, states, metrics). */
+private val RC109_UI_TRANSLATIONS = mapOf(
+    "导出" to SupplementalTranslation("Export", "匯出", "エクスポート", "Exporter", "Exportieren"),
+    "确认短码" to SupplementalTranslation("Confirmation code", "確認短碼", "確認コード", "Code de confirmation", "Bestätigungscode"),
+    "分享中" to SupplementalTranslation("Sharing", "分享中", "共有中", "Partage en cours", "Wird geteilt"),
+    "中位延迟" to SupplementalTranslation("Median latency", "中位延遲", "遅延の中央値", "Latence médiane", "Median-Latenz"),
+    "正在读取内核连接…" to SupplementalTranslation("Reading core connections…", "正在讀取核心連線…", "コアの接続を読み取り中…", "Lecture des connexions du moteur…", "Kernverbindungen werden gelesen…"),
+    "没有匹配的连接" to SupplementalTranslation("No matching connections", "沒有符合的連線", "一致する接続はありません", "Aucune connexion correspondante", "Keine passenden Verbindungen"),
+    "正在等待内核日志…" to SupplementalTranslation("Waiting for core log…", "正在等待核心日誌…", "コアログを待機中…", "En attente du journal du moteur…", "Warte auf Kern-Protokoll…"),
+    "日志已暂停" to SupplementalTranslation("Log paused", "日誌已暫停", "ログを一時停止中", "Journal en pause", "Protokoll pausiert"),
+    "规则类型" to SupplementalTranslation("Rule type", "規則類型", "ルールの種類", "Type de règle", "Regeltyp"),
+    // Client source import (CMFA directory grant, Karing backup, x2ray limitation)
+    "从客户端导入订阅" to SupplementalTranslation("Import subscriptions from a client", "從用戶端匯入訂閱", "クライアントから購読を読み込む", "Importer des abonnements depuis un client", "Abos aus einem Client importieren"),
+    "已安装" to SupplementalTranslation("Installed", "已安裝", "インストール済み", "Installé", "Installiert"),
+    "未检测到" to SupplementalTranslation("Not detected", "未偵測到", "未検出", "Non détecté", "Nicht erkannt"),
+    "授权配置目录" to SupplementalTranslation("Authorize config folder", "授權設定目錄", "設定フォルダーを許可", "Autoriser le dossier de configuration", "Konfigurationsordner freigeben"),
+    "无法打开系统目录选择器" to SupplementalTranslation("Could not open the system folder picker", "無法開啟系統目錄選擇器", "システムのフォルダー選択を開けません", "Impossible d’ouvrir le sélecteur de dossier du système", "Systemordnerauswahl konnte nicht geöffnet werden"),
+    "在系统窗口中选择 CMFA 的配置目录并授权一次，之后可在 Weave 内勾选一个或多个订阅。" to SupplementalTranslation(
+        "Choose CMFA’s config folder in the system window and grant access once. Then select one or more subscriptions in Weave.",
+        "在系統視窗中選擇 CMFA 的設定目錄並授權一次，之後可在 Weave 內勾選一個或多個訂閱。",
+        "システムの画面で CMFA の設定フォルダーを選び、一度だけ許可します。その後 Weave で購読を 1 つ以上選べます。",
+        "Choisissez le dossier de configuration de CMFA dans la fenêtre système et autorisez-le une fois. Sélectionnez ensuite un ou plusieurs abonnements dans Weave.",
+        "Wähle im Systemfenster den Konfigurationsordner von CMFA und erteile einmal Zugriff. Danach wählst du in Weave ein oder mehrere Abos aus.",
+    ),
+    "导入的是本地快照：CMFA 不提供原始订阅地址，因此不会自动远程更新；原有 DNS、分流和策略组不会迁移。" to SupplementalTranslation(
+        "Imports are local snapshots: CMFA does not expose the original subscription URL, so they will not update remotely. Existing DNS, routing and groups are not migrated.",
+        "匯入的是本機快照：CMFA 不提供原始訂閱位址，因此不會自動遠端更新；原有 DNS、分流和策略組不會移轉。",
+        "取り込まれるのはローカルのスナップショットです。CMFA は元の購読 URL を提供しないため、リモートで自動更新されません。既存の DNS、ルーティング、グループは移行されません。",
+        "Les imports sont des instantanés locaux : CMFA ne fournit pas l’URL d’origine, ils ne se mettent donc pas à jour à distance. Le DNS, le routage et les groupes existants ne sont pas migrés.",
+        "Importiert werden lokale Momentaufnahmen: CMFA gibt die ursprüngliche Abo-URL nicht preis, daher gibt es keine automatischen Remote-Updates. Bestehendes DNS, Routing und Gruppen werden nicht übernommen.",
+    ),
+    "先在 Karing 中导出一次官方备份，再选择该备份文件，即可在 Weave 内勾选要导入的订阅。" to SupplementalTranslation(
+        "First export an official backup in Karing, then choose that backup file to select subscriptions in Weave.",
+        "先在 Karing 中匯出一次官方備份，再選擇該備份檔案，即可在 Weave 內勾選要匯入的訂閱。",
+        "まず Karing で公式バックアップを書き出し、そのファイルを選ぶと Weave で取り込む購読を選べます。",
+        "Exportez d’abord une sauvegarde officielle dans Karing, puis choisissez ce fichier pour sélectionner les abonnements dans Weave.",
+        "Exportiere zuerst ein offizielles Backup in Karing und wähle dann diese Datei, um in Weave Abos auszuwählen.",
+    ),
+    "选择 Karing 备份文件" to SupplementalTranslation("Choose Karing backup file", "選擇 Karing 備份檔案", "Karing のバックアップを選択", "Choisir la sauvegarde Karing", "Karing-Backup wählen"),
+    "Karing 没有公开的订阅列表接口，其备份格式仍在核实，暂不支持直接选择订阅。可先用下方的其他导入方式。" to SupplementalTranslation(
+        "Karing has no public subscription list, and its backup format is still being verified, so direct selection is not supported yet. Use the other import options below for now.",
+        "Karing 沒有公開的訂閱清單介面，其備份格式仍在核實，暫不支援直接選擇訂閱。可先用下方的其他匯入方式。",
+        "Karing には公開された購読一覧がなく、バックアップ形式も確認中のため、直接の選択にはまだ対応していません。下のほかの取り込み方法をお使いください。",
+        "Karing n’offre pas de liste publique d’abonnements et son format de sauvegarde est encore en vérification : la sélection directe n’est pas encore prise en charge. Utilisez les autres méthodes ci-dessous.",
+        "Karing bietet keine öffentliche Aboliste, und das Backup-Format wird noch geprüft. Direkte Auswahl wird daher noch nicht unterstützt. Nutze vorerst die anderen Importwege unten.",
+    ),
+    "x2ray 暂无经核实的公开接口，Weave 不会读取它的数据。可在 x2ray 中分享节点链接后，用下方的其他导入方式导入。" to SupplementalTranslation(
+        "x2ray has no verified public interface, so Weave does not read its data. Share node links from x2ray, then import them with the other options below.",
+        "x2ray 暫無經核實的公開介面，Weave 不會讀取它的資料。可在 x2ray 中分享節點連結後，用下方的其他匯入方式匯入。",
+        "x2ray には確認済みの公開インターフェースがないため、Weave はそのデータを読み取りません。x2ray でノードリンクを共有し、下のほかの方法で取り込んでください。",
+        "x2ray n’a pas d’interface publique vérifiée ; Weave ne lit donc pas ses données. Partagez les liens de nœuds depuis x2ray, puis importez-les avec les méthodes ci-dessous.",
+        "x2ray hat keine geprüfte öffentliche Schnittstelle, daher liest Weave seine Daten nicht. Teile Knotenlinks in x2ray und importiere sie mit den anderen Wegen unten.",
+    ),
+    "选择要导入的订阅" to SupplementalTranslation("Choose subscriptions to import", "選擇要匯入的訂閱", "取り込む購読を選択", "Choisir les abonnements à importer", "Zu importierende Abos wählen"),
+    "没有找到可导入的订阅" to SupplementalTranslation("No importable subscriptions found", "沒有找到可匯入的訂閱", "取り込める購読が見つかりません", "Aucun abonnement importable trouvé", "Keine importierbaren Abos gefunden"),
+    "每次最多选择 20 个订阅" to SupplementalTranslation("Select up to 20 subscriptions at a time", "每次最多選擇 20 個訂閱", "一度に選べる購読は最大 20 件です", "Jusqu’à 20 abonnements à la fois", "Bis zu 20 Abos auf einmal"),
+    "暂不可导入" to SupplementalTranslation("Cannot be imported right now", "暫不可匯入", "現在は取り込めません", "Import impossible pour le moment", "Derzeit nicht importierbar"),
+    "本地快照" to SupplementalTranslation("Local snapshot", "本機快照", "ローカルスナップショット", "Instantané local", "Lokale Momentaufnahme"),
+    "确认后所选订阅一并加密保存；任一订阅出错时不会保存任何一个。" to SupplementalTranslation(
+        "On confirmation, all selected subscriptions are saved encrypted together. If any one fails, none are saved.",
+        "確認後所選訂閱一併加密儲存；任一訂閱出錯時不會儲存任何一個。",
+        "確定すると、選んだ購読をまとめて暗号化保存します。1 つでも失敗した場合は、どれも保存されません。",
+        "Après confirmation, tous les abonnements sélectionnés sont enregistrés chiffrés ensemble. Si l’un échoue, aucun n’est enregistré.",
+        "Nach der Bestätigung werden alle ausgewählten Abos gemeinsam verschlüsselt gespeichert. Schlägt eines fehl, wird keines gespeichert.",
+    ),
+    "导入内容为本地快照，不会自动从原订阅地址更新。" to SupplementalTranslation(
+        "Imported content is a local snapshot and does not update automatically from the original subscription URL.",
+        "匯入內容為本機快照，不會自動從原訂閱位址更新。",
+        "取り込んだ内容はローカルのスナップショットで、元の購読 URL から自動更新されません。",
+        "Le contenu importé est un instantané local et ne se met pas à jour depuis l’URL d’origine.",
+        "Importierte Inhalte sind lokale Momentaufnahmen und werden nicht automatisch von der ursprünglichen Abo-URL aktualisiert.",
+    ),
+    "重新选择来源" to SupplementalTranslation("Choose another source", "重新選擇來源", "取り込み元を選び直す", "Choisir une autre source", "Andere Quelle wählen"),
+    // Messages from the client-source backend that this dialog displays verbatim.
+    "请选择 Karing 官方备份文件" to SupplementalTranslation("Choose an official Karing backup", "請選擇 Karing 官方備份檔案", "Karing の公式バックアップを選んでください", "Choisissez une sauvegarde officielle Karing", "Wähle ein offizielles Karing-Backup"),
+    "Karing 节点含未支持选项，请导出兼容配置" to SupplementalTranslation("Karing nodes include unsupported options. Export a compatible configuration.", "Karing 節點含未支援選項，請匯出相容設定", "Karing ノードに未対応の設定があります。互換設定をエクスポートしてください", "Les nœuds Karing incluent des options non prises en charge. Exportez une configuration compatible.", "Karing-Knoten enthalten nicht unterstützte Optionen. Exportiere eine kompatible Konfiguration."),
+    "节点集合文件路径不安全" to SupplementalTranslation("Unsafe node collection file path", "節點集合檔案路徑不安全", "ノード集合のファイルパスが安全ではありません", "Chemin du fichier de nœuds non sécurisé", "Unsicherer Dateipfad der Knotensammlung"),
+    "不支持循环或多层节点集合" to SupplementalTranslation("Recursive or nested node collections are unsupported", "不支援循環或多層節點集合", "循環または多層のノード集合には未対応です", "Les collections de nœuds récursives ou imbriquées ne sont pas prises en charge", "Rekursive oder verschachtelte Knotensammlungen werden nicht unterstützt"),
+    "订阅引用的节点集合过多" to SupplementalTranslation("The subscription references too many node collections", "訂閱引用的節點集合過多", "購読が参照するノード集合が多すぎます", "L’abonnement référence trop de collections de nœuds", "Das Abo verweist auf zu viele Knotensammlungen"),
+    "订阅节点集合格式无效" to SupplementalTranslation("Invalid subscription node collection format", "訂閱節點集合格式無效", "購読のノード集合形式が無効です", "Format de collection de nœuds d’abonnement invalide", "Ungültiges Format der Abo-Knotensammlung"),
+    "x2ray 尚未确认对应应用和公开接口，当前不提供订阅列表迁移。" to SupplementalTranslation("The exact x2ray app and public interface are unverified. Subscription-list migration is currently unavailable.", "x2ray 尚未確認對應應用程式和公開介面，目前不提供訂閱列表遷移。", "x2ray の該当アプリと公開インターフェースは未確認です。購読一覧の移行には現在未対応です。", "L’application x2ray exacte et son interface publique ne sont pas vérifiées. La migration de sa liste d’abonnements est actuellement indisponible.", "Die genaue x2ray-App und ihre öffentliche Schnittstelle sind nicht bestätigt. Die Migration ihrer Abo-Liste ist derzeit nicht verfügbar."),
+    "请选择 CMFA 的配置目录" to SupplementalTranslation("Choose CMFA’s config folder", "請選擇 CMFA 的設定目錄", "CMFA の設定フォルダーを選んでください", "Choisissez le dossier de configuration de CMFA", "Wähle den Konfigurationsordner von CMFA"),
+    "请选择有效的订阅，最多 20 个" to SupplementalTranslation("Select valid subscriptions, up to 20", "請選擇有效的訂閱，最多 20 個", "有効な購読を最大 20 件選んでください", "Sélectionnez des abonnements valides, 20 au maximum", "Wähle gültige Abos, höchstens 20"),
+    "订阅文件格式无效" to SupplementalTranslation("Invalid subscription file format", "訂閱檔案格式無效", "購読ファイルの形式が無効です", "Format de fichier d’abonnement invalide", "Ungültiges Abo-Dateiformat"),
+    "订阅内容超过大小限制" to SupplementalTranslation("Subscription content exceeds the size limit", "訂閱內容超過大小限制", "購読の内容がサイズ上限を超えています", "Le contenu de l’abonnement dépasse la taille limite", "Abo-Inhalt überschreitet die Größenbegrenzung"),
+)
+
+private val DEVICE_FEEDBACK_TRANSLATIONS = mapOf(
+    "V2Ray 配置含多个服务器或用户，请分别导出节点链接" to SupplementalTranslation("This V2Ray configuration has multiple servers or users. Export separate node links.", "V2Ray 設定含多個伺服器或使用者，請分別匯出節點連結", "V2Ray 設定に複数のサーバーまたはユーザーがあります。ノードリンクを個別にエクスポートしてください", "Cette configuration V2Ray contient plusieurs serveurs ou utilisateurs. Exportez des liens de nœuds séparés.", "Diese V2Ray-Konfiguration enthält mehrere Server oder Benutzer. Exportiere einzelne Knotenlinks."),
+    "该 V2Ray 传输方式暂不支持，请导出 Clash YAML 或节点链接" to SupplementalTranslation("This V2Ray transport is not supported. Export Clash YAML or node links instead.", "此 V2Ray 傳輸方式暫不支援，請匯出 Clash YAML 或節點連結", "この V2Ray トランスポートには未対応です。Clash YAML またはノードリンクをエクスポートしてください", "Ce transport V2Ray n’est pas pris en charge. Exportez du Clash YAML ou des liens de nœuds.", "Dieser V2Ray-Transport wird nicht unterstützt. Exportiere Clash YAML oder Knotenlinks."),
+    "活跃连接" to SupplementalTranslation("Active connections", "活躍連線", "現在の接続", "Connexions actives", "Aktive Verbindungen"),
+    "JSON 出站缺少必要的认证字段，未导入任何节点" to SupplementalTranslation("A JSON outbound is missing required authentication fields. No nodes were imported.", "JSON 出站缺少必要的驗證欄位，未匯入任何節點", "JSON 出力に必要な認証項目がありません。ノードは取り込まれていません", "Il manque des champs d’authentification dans une sortie JSON. Aucun nœud n’a été importé.", "Einem JSON-Ausgang fehlen erforderliche Authentifizierungsfelder. Keine Knoten wurden importiert."),
+    "该 sing-box 传输方式暂不支持，请导出 Clash YAML 或节点链接" to SupplementalTranslation("This sing-box transport is not supported. Export Clash YAML or node links instead.", "此 sing-box 傳輸方式暫不支援，請匯出 Clash YAML 或節點連結", "この sing-box トランスポートには未対応です。Clash YAML またはノードリンクをエクスポートしてください", "Ce transport sing-box n’est pas pris en charge. Exportez du Clash YAML ou des liens de nœuds.", "Dieser sing-box-Transport wird nicht unterstützt. Exportiere Clash YAML oder Knotenlinks."),
+    "未获得相机权限，可选择二维码图片" to SupplementalTranslation("Camera permission was not granted; choose a QR image instead", "未取得相機權限，可選擇 QR Code 圖片", "カメラ権限がありません。QR コード画像を選択できます", "Autorisation caméra non accordée ; choisissez une image QR", "Keine Kameraberechtigung; wähle stattdessen ein QR-Bild"),
+    "连接操作" to SupplementalTranslation("Connection actions", "連線操作", "接続操作", "Actions de connexion", "Verbindungsaktionen"),
+    "连接后可查看当前活跃连接。" to SupplementalTranslation("Connect to view active connections.", "連線後可查看目前活躍連線。", "接続後に現在の接続を確認できます。", "Connectez-vous pour voir les connexions actives.", "Nach dem Verbinden sind aktive Verbindungen sichtbar."),
+    "导入客户端导出内容" to SupplementalTranslation("Import a client export", "匯入用戶端匯出內容", "クライアントのエクスポートを読み込む", "Importer un export de client", "Client-Export importieren"),
+    "节点已导入" to SupplementalTranslation("Nodes imported", "節點已匯入", "ノードをインポートしました", "Nœuds importés", "Knoten importiert"),
+    "订阅已加密保存，可在订阅详情中核对并选择出口。" to SupplementalTranslation("The subscription is saved encrypted. Review it and choose an exit in its details.", "訂閱已加密儲存，可在訂閱詳情中核對並選擇出口。", "購読を暗号化して保存しました。詳細を確認し、出口を選択してください。", "L’abonnement est enregistré chiffré. Vérifiez-le et choisissez une sortie dans ses détails.", "Das Abonnement wurde verschlüsselt gespeichert. Prüfe es und wähle einen Ausgang in den Details."),
+    "解析预览" to SupplementalTranslation("Import preview", "解析預覽", "解析プレビュー", "Aperçu de l’import", "Importvorschau"),
+    "此时尚未保存。确认后仅导入节点，原客户端的分流、DNS 和策略组不会迁移。" to SupplementalTranslation("Nothing is saved yet. Confirmation imports nodes only; the source client’s routing, DNS and groups are not transferred.", "此時尚未儲存。確認後僅匯入節點，原用戶端的分流、DNS 和策略組不會移轉。", "まだ保存されていません。確認後はノードのみを取り込み、元のルーティング、DNS、グループは移行しません。", "Rien n’est encore enregistré. Seuls les nœuds seront importés, sans routage, DNS ni groupes du client source.", "Noch nichts gespeichert. Nach Bestätigung werden nur Knoten importiert; Routing, DNS und Gruppen des Quellclients werden nicht übertragen."),
+    "解析成功不代表出口可达；连接后再进行检测。" to SupplementalTranslation("Parsing does not prove reachability. Test the exit after connecting.", "解析成功不代表出口可達；連線後再進行檢測。", "解析成功は到達性の証明ではありません。接続後に出口をテストしてください。", "L’analyse ne prouve pas la connectivité. Testez la sortie après connexion.", "Erfolgreiches Einlesen belegt keine Erreichbarkeit. Prüfe den Ausgang nach dem Verbinden."),
+    "重新选择内容" to SupplementalTranslation("Choose different content", "重新選擇內容", "内容を選び直す", "Choisir un autre contenu", "Anderen Inhalt wählen"),
+    "先在来源客户端导出或分享，再由 Weave 解析。无需让 Weave 读取其他应用的私有数据。" to SupplementalTranslation("Export or share from the source client first, then let Weave parse it. Weave does not need access to other apps’ private data.", "先在來源用戶端匯出或分享，再由 Weave 解析。無需讓 Weave 讀取其他應用程式的私有資料。", "先に元のクライアントからエクスポートまたは共有し、Weave で解析します。他のアプリの非公開データへのアクセスは不要です。", "Exportez ou partagez d’abord depuis le client source, puis analysez dans Weave. L’accès aux données privées d’autres apps est inutile.", "Exportiere oder teile zuerst im Quellclient und lies den Inhalt dann mit Weave ein. Kein Zugriff auf private Daten anderer Apps nötig."),
+    "可用格式：Clash YAML、sing-box JSON、V2Ray JSON、节点 URI 与 Base64。完整应用备份、数据库和策略包不适用于此入口。" to SupplementalTranslation("Formats: Clash YAML, sing-box JSON, V2Ray JSON, node URIs and Base64. Full app backups, databases and policy packs belong outside this importer.", "可用格式：Clash YAML、sing-box JSON、V2Ray JSON、節點 URI 與 Base64。完整應用程式備份、資料庫和策略包不適用於此入口。", "対応形式：Clash YAML、sing-box JSON、V2Ray JSON、ノード URI、Base64。アプリ全体のバックアップ、データベース、ポリシーパックには対応していません。", "Formats : Clash YAML, sing-box JSON, V2Ray JSON, URI de nœuds et Base64. Les sauvegardes complètes, bases de données et packs de règles ne conviennent pas à cet import.", "Formate: Clash YAML, sing-box JSON, V2Ray JSON, Knoten-URIs und Base64. Vollständige App-Backups, Datenbanken und Richtlinienpakete sind hier nicht unterstützt."),
+    "可见来源客户端" to SupplementalTranslation("Visible source clients", "可見來源用戶端", "検出できるクライアント", "Clients sources visibles", "Sichtbare Quellclients"),
+    "建议分享节点链接或导出 URI 文本；不要选择客户端数据库备份。" to SupplementalTranslation("Share node links or export URI text. Do not select a client database backup.", "建議分享節點連結或匯出 URI 文字；不要選擇用戶端資料庫備份。", "ノードリンクの共有または URI テキストのエクスポートを推奨します。データベースのバックアップは選ばないでください。", "Partagez les liens des nœuds ou exportez du texte URI. Ne sélectionnez pas une sauvegarde de base de données.", "Teile Knotenlinks oder exportiere URI-Text. Wähle kein Datenbank-Backup des Clients."),
+    "建议导出兼容配置或复制 HTTPS 订阅链接；Weave 会按内容自动识别格式。" to SupplementalTranslation("Export a compatible configuration or copy its HTTPS subscription link. Weave detects the format from the content.", "建議匯出相容設定或複製 HTTPS 訂閱連結；Weave 會按內容自動識別格式。", "互換設定のエクスポートまたは HTTPS 購読リンクのコピーを推奨します。Weave は内容から形式を識別します。", "Exportez une configuration compatible ou copiez son lien HTTPS. Weave identifie le format à partir du contenu.", "Exportiere eine kompatible Konfiguration oder kopiere den HTTPS-Abonnementlink. Weave erkennt das Format anhand des Inhalts."),
+    "无法打开此客户端，请自行打开后导出或分享。" to SupplementalTranslation("Could not open this client. Open it yourself, then export or share.", "無法開啟此用戶端，請自行開啟後匯出或分享。", "このクライアントを開けません。手動で開き、エクスポートまたは共有してください。", "Impossible d’ouvrir ce client. Ouvrez-le vous-même, puis exportez ou partagez.", "Dieser Client lässt sich nicht öffnen. Öffne ihn selbst und exportiere oder teile den Inhalt."),
+    "解析粘贴内容" to SupplementalTranslation("Preview pasted content", "解析貼上內容", "貼り付けた内容を解析", "Analyser le contenu collé", "Eingefügten Inhalt prüfen"),
+    "选择已导出的文件" to SupplementalTranslation("Choose an exported file", "選擇已匯出的檔案", "エクスポート済みファイルを選択", "Choisir un fichier exporté", "Exportierte Datei wählen"),
+    "确认导入节点" to SupplementalTranslation("Confirm node import", "確認匯入節點", "ノードのインポートを確定", "Confirmer l’import des nœuds", "Knotenimport bestätigen"),
+    "查看订阅" to SupplementalTranslation("View subscription", "查看訂閱", "購読を表示", "Voir l’abonnement", "Abonnement ansehen"),
+    "客户端链接未包含有效 HTTPS 订阅地址" to SupplementalTranslation("The client link has no valid HTTPS subscription URL", "用戶端連結未包含有效 HTTPS 訂閱位址", "クライアントリンクに有効な HTTPS 購読 URL がありません", "Le lien du client ne contient pas d’URL HTTPS valide", "Der Clientlink enthält keine gültige HTTPS-Abonnement-URL"),
+    "订阅包含暂不支持的节点协议，未导入任何节点" to SupplementalTranslation("This subscription includes an unsupported node protocol. No nodes were imported.", "訂閱包含暫不支援的節點協定，未匯入任何節點", "未対応のノードプロトコルが含まれているため、ノードは取り込まれていません", "Un protocole de nœud n’est pas pris en charge. Aucun nœud n’a été importé.", "Das Abonnement enthält ein nicht unterstütztes Knotenprotokoll. Keine Knoten wurden importiert."),
+)
 
 private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "需复核" to SupplementalTranslation("Review needed", "需複核", "要確認", "À vérifier", "Prüfung nötig"),
@@ -1344,7 +1532,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "记录已开启；访问目标应用后返回并刷新" to SupplementalTranslation("Recording is on. Use the target app, then return and refresh.", "記錄已開啟；使用目標應用後返回並重新整理", "記録中です。対象アプリを使用してから戻り、更新してください。", "Enregistrement actif. Utilisez l’application cible, puis revenez et actualisez.", "Aufzeichnung aktiv. Ziel-App nutzen, dann zurückkehren und aktualisieren."),
     "规则优先级" to SupplementalTranslation("Rule priority", "規則優先順序", "ルールの優先順位", "Priorité des règles", "Regelpriorität"),
     "安全拦截" to SupplementalTranslation("Security block", "安全攔截", "セキュリティ遮断", "Blocage de sécurité", "Sicherheitssperre"),
-    "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认" to SupplementalTranslation("Security blocks > app rules > offline packs > local domain/IP rules > mainland direct > default exit. Geo rules and final matches require core confirmation.", "安全攔截 > 應用規則 > 離線規則包 > 本機網域/IP 規則 > 國內直連 > 預設出口；地域規則及最終命中需由核心確認", "安全遮断 > アプリルール > オフラインルール > ローカルドメイン/IP > 中国本土への直接接続 > 既定の出口。地域ルールと最終一致はコアによる確認が必要です。", "Sécurité > applications > règles hors ligne > domaines/IP locaux > accès direct en Chine > sortie par défaut. Les règles géographiques et finales nécessitent la confirmation du moteur.", "Sperren > App-Regeln > Offline-Pakete > lokale Domain/IP-Regeln > Festland-Direktzugriff > Standardausgang. Geo-Regeln und endgültige Treffer müssen vom Kern bestätigt werden."),
+    "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 远程规则集 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认" to SupplementalTranslation("Security blocks > app rules > offline packs > local domain/IP rules > remote rule sets > mainland direct > default exit. Geo rules and final matches require core confirmation.", "安全攔截 > 應用規則 > 離線規則包 > 本機網域/IP 規則 > 遠端規則集 > 國內直連 > 預設出口；地域規則及最終命中需由核心確認", "安全遮断 > アプリルール > オフラインルール > ローカルドメイン/IP > リモートルールセット > 中国本土への直接接続 > 既定の出口。地域ルールと最終一致はコアによる確認が必要です。", "Sécurité > applications > règles hors ligne > domaines/IP locaux > jeux de règles distants > accès direct en Chine > sortie par défaut. Les règles géographiques et finales nécessitent la confirmation du moteur.", "Sperren > App-Regeln > Offline-Pakete > lokale Domain/IP-Regeln > Remote-Regelsätze > Festland-Direktzugriff > Standardausgang. Geo-Regeln und endgültige Treffer müssen vom Kern bestätigt werden."),
     "大陆直连 · 海外代理" to SupplementalTranslation("Mainland direct · overseas proxy", "大陸直連 · 海外代理", "中国本土は直接・海外はプロキシ", "Chine en direct · étranger via proxy", "Festland direkt · Ausland über Proxy"),
     "全部代理" to SupplementalTranslation("Proxy all traffic", "全部代理", "すべてプロキシ", "Tout via proxy", "Alles über Proxy"),
     "订阅节点结构无法读取；原订阅已保留，请更新或重新导入这份订阅" to SupplementalTranslation("Cannot read the subscription node structure. The original is retained; update or reimport this subscription.", "無法讀取訂閱節點結構；原訂閱已保留，請更新或重新匯入此訂閱", "購読のノード構造を読み取れません。元の購読は保持されています。更新または再インポートしてください。", "Structure des nœuds illisible. L’abonnement original est conservé ; mettez-le à jour ou réimportez-le.", "Knotenstruktur nicht lesbar. Das Original bleibt erhalten; Abonnement aktualisieren oder erneut importieren."),
@@ -1899,7 +2087,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "连续 3 轮探测，按中位延迟、抖动与丢包综合排序" to SupplementalTranslation("Three probe rounds; sort by median latency, jitter and packet loss"),
     "选择协议" to SupplementalTranslation("Choose protocol", "選擇協定", "プロトコルを選択", "Choisir le protocole", "Protokoll wählen"),
     "选择文件替换" to SupplementalTranslation("Choose a replacement file", "選擇檔案替換", "置換ファイルを選択", "Choisir un fichier de remplacement", "Ersatzdatei wählen"),
-    "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。" to SupplementalTranslation("Choose subscriptions to sync; each source is audited and updated in place without duplicate copies."),
+    "选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。" to SupplementalTranslation("Choose subscriptions to sync; each source is audited and updated in place without duplicate copies.", "選擇要同步的訂閱；同一訂閱會先經過安全審查，再原位更新，不會重複堆疊副本。", "同期する購読を選んでください。同じ購読は確認後に上書きされ、複製は増えません。", "Choisissez les abonnements à synchroniser. Chaque source est vérifiée puis mise à jour sur place, sans créer de doublons.", "Wähle die Abos zum Synchronisieren. Jede Quelle wird geprüft und ohne zusätzliche Kopien aktualisiert."),
     "选择解析策略" to SupplementalTranslation("Choose resolution strategy", "選擇解析策略", "名前解決戦略を選択", "Choisir la stratégie de résolution", "Auflösungsstrategie wählen"),
     "选择订阅" to SupplementalTranslation("Choose subscription", "選擇訂閱", "購読を選択", "Choisir un abonnement", "Abonnement wählen"),
     "遥测" to SupplementalTranslation("Telemetry", "遙測", "テレメトリ", "Télémétrie", "Telemetrie"),
@@ -2094,7 +2282,8 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "双栈模式；未执行外部 IPv6 泄漏测试" to SupplementalTranslation("Dual-stack mode; no external IPv6 leak test was run"),
     "UDP STUN 端口规则已启用；这不等于所有 WebRTC 实现都被禁用" to SupplementalTranslation("UDP STUN port rules are enabled; this does not mean every WebRTC implementation is disabled"),
     "未启用 STUN 阻断，浏览器策略可能继续暴露候选地址" to SupplementalTranslation("STUN blocking is disabled; browser policy may continue exposing candidate addresses"),
-    "全局直连已选择，代理不会接管流量" to SupplementalTranslation("Global direct mode is selected; the proxy will not take over traffic"),
+    // Also shown as the Direct mode description on the Connect tab, so every locale is native.
+    "全局直连已选择，代理不会接管流量" to SupplementalTranslation("Global direct mode is selected; the proxy will not take over traffic", "已選擇全域直連，代理不會接管流量", "グローバル直接接続が選択されています。プロキシは通信を引き継ぎません", "Mode direct global sélectionné ; le proxy ne prend pas en charge le trafic", "Globaler Direktmodus gewählt; der Proxy übernimmt keinen Verkehr"),
     "默认出口为显式直连" to SupplementalTranslation("The default exit is explicitly direct"),
     "至少一个应用规则选择了显式直连" to SupplementalTranslation("At least one app rule explicitly selects direct access"),
     "未发现显式直连；真实旁路仍需外部测试" to SupplementalTranslation("No explicit direct access found; real bypasses still require external testing"),
@@ -2366,7 +2555,13 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "系统拒绝建立 VPN" to SupplementalTranslation("The system refused to establish the VPN"),
     "系统拒绝建立 VPN，请重新授权后再试" to SupplementalTranslation("The system refused to establish the VPN; grant permission again and retry"),
     "系统拒绝建立 VPN TUN 接口" to SupplementalTranslation("The system refused to establish the VPN TUN interface"),
-    "系统或其他 VPN 已接管连接；请关闭 Pixel VPN 或其他代理后重试" to SupplementalTranslation("The system or another VPN owns the connection; disable Pixel VPN or another proxy and retry"),
+    "系统或其他 VPN 已接管连接；请关闭其他 VPN 或代理应用后重试" to SupplementalTranslation(
+        "The system or another VPN took over the connection. Turn off the other VPN or proxy app and retry.",
+        "系統或其他 VPN 已接管連線；請關閉其他 VPN 或代理應用程式後重試",
+        "システムまたは別の VPN が接続を引き継ぎました。他の VPN やプロキシアプリをオフにして再試行してください。",
+        "Le système ou un autre VPN a pris le contrôle de la connexion. Désactivez l’autre VPN ou proxy, puis réessayez.",
+        "Das System oder ein anderes VPN hat die Verbindung übernommen. Anderes VPN oder Proxy beenden und erneut versuchen.",
+    ),
     "所选订阅已不存在，请重新选择出口" to SupplementalTranslation("The selected subscription no longer exists; choose an exit again"),
     "订阅节点未成功载入，请重新选择出口或更新订阅" to SupplementalTranslation("Subscription nodes could not be loaded; choose another exit or refresh the subscription", "訂閱節點未成功載入，請重新選擇出口或更新訂閱", "購読のノードを読み込めません。出口を選び直すか、購読を更新してください", "Impossible de charger les nœuds ; choisissez une autre sortie ou actualisez l’abonnement", "Die Knoten konnten nicht geladen werden; bitte einen anderen Ausgang wählen oder das Abonnement aktualisieren"),
     "新配置已安全生效" to SupplementalTranslation("The new configuration is active safely"),
@@ -2856,7 +3051,7 @@ private fun translationTable(language: WeaveLanguage): Map<String, String> {
         "正在校验" to "Wird geprüft",
         "取消" to "Abbrechen",
         "关闭" to "Schließen",
-        "局域网互传" to "LAN-Übertragung",
+        "局域网互传" to "LAN-Transfer",
         "复制链接" to "Link kopieren",
         "立即失效" to "Jetzt ablaufen lassen",
         "从链接导入" to "Aus Link importieren",

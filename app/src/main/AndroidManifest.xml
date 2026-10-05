@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Keeps the optional scheduled subscription refresh across reboots (JobInfo.setPersisted). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -42,19 +44,59 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Weave"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:localeConfig="@xml/locales_config"
         android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Subscription links from browsers and other clients. Nothing is fetched until the
+                 user confirms the import inside Weave. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="clash" />
+                <data android:scheme="clashmeta" />
+                <data android:scheme="flclash" />
+                <data android:scheme="sing-box" />
+                <data android:scheme="hiddify" />
+                <data android:scheme="weave" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/yaml" />
+                <data android:mimeType="application/x-yaml" />
+                <data android:mimeType="text/yaml" />
+                <data android:mimeType="text/x-yaml" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/yaml" />
+                <data android:mimeType="application/x-yaml" />
+                <data android:mimeType="text/yaml" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- The tunnel and native core run apart from the UI so a UI crash or reclaim does not
+             drop the VPN. Both services below must stay in the same process. -->
         <service
             android:name=".core.vpn.WeaveVpnService"
+            android:process=":vpn"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
@@ -68,6 +110,31 @@
                 android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
                 android:value="true" />
         </service>
+
+        <service
+            android:name=".core.ipc.CoreControlService"
+            android:process=":vpn"
+            android:exported="false" />
+
+        <service
+            android:name=".core.vpn.WeaveTileService"
+            android:process=":vpn"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_weave"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".subscription.SubscriptionUpdateJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 
 </manifest>

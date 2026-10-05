@@ -113,7 +113,7 @@ object RouteLens {
             add(RouteLensCheck(
                 title = "规则优先级",
                 state = LensState.UNKNOWN,
-                detail = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
+                detail = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 远程规则集 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
             ))
             add(dnsCheck(preferences))
             add(udpCheck(query, preferences))
@@ -229,5 +229,6 @@ object RouteLens {
         RouteKind.FIXED -> "固定节点"
         RouteKind.DIRECT -> "直连"
         RouteKind.BLOCK -> "阻止"
+        RouteKind.GROUP -> "自定义策略组"
     }
 }

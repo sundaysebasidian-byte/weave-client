@@ -33,5 +33,7 @@ not regenerated. Preserve this exact bundle and corresponding source with redist
 binaries. Coverage is Android ARM64, not all platforms or proof every class survives R8;
 this is not legal or security certification.
 
-`main` retains the alpha83 code line; the binary's corresponding Weave source is
-the immutable `v0.4.0-rc4` tag at `908fbc16465a0495c5b28ece9b38b39e7ff0e3e8`.
+`main` now integrates the RC4 code and tests while preserving its existing fixes
+and reviewed documentation. The published binary's fixed corresponding Weave source
+remains the immutable `v0.4.0-rc4` tag at
+`908fbc16465a0495c5b28ece9b38b39e7ff0e3e8`.

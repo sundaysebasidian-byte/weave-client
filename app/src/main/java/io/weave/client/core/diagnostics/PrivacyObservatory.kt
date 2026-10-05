@@ -11,6 +11,7 @@ import io.weave.client.domain.RoutingMode
 
 enum class ObservatoryState {
     VERIFIED,
+    CONFIGURED,
     UNKNOWN,
     NOT_TESTED,
     ATTENTION,
@@ -29,8 +30,9 @@ data class PrivacyObservationReport(
 ) {
     val verifiedCount: Int get() = observations.count { it.state == ObservatoryState.VERIFIED }
     val attentionCount: Int get() = observations.count { it.state == ObservatoryState.ATTENTION }
+    val configuredCount: Int get() = observations.count { it.state == ObservatoryState.CONFIGURED }
     val summary: String
-        get() = "$verifiedCount 项已从本地配置确认 · ${observations.size - verifiedCount} 项需要外部验证"
+        get() = "$verifiedCount 项本机状态已确认 · $configuredCount 项已配置 · ${observations.size - verifiedCount - configuredCount} 项待核验"
 }
 
 /**
@@ -72,13 +74,13 @@ object PrivacyObservatory {
                     title = "加密 DNS 配置",
                     state = if (preferences.dnsProfile == DnsProfile.CUSTOM &&
                         preferences.customDnsEndpoint.isBlank()
-                    ) ObservatoryState.ATTENTION else ObservatoryState.VERIFIED,
+                    ) ObservatoryState.ATTENTION else ObservatoryState.CONFIGURED,
                     detail = if (preferences.dnsProfile == DnsProfile.CUSTOM &&
                         preferences.customDnsEndpoint.isBlank()
                     ) {
                         "自定义配置为空"
                     } else {
-                        "${preferences.dnsTransport.label} · ${preferences.dnsProfile.label}；这是配置证据，不是外部泄漏测试"
+                        "${preferences.dnsTransport.label} · ${preferences.dnsProfile.label}；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验"
                     },
                 ),
             )
@@ -86,9 +88,9 @@ object PrivacyObservatory {
                 PrivacyObservation(
                     id = "dns-leak-guard",
                     title = "DNS 旁路拒绝",
-                    state = if (connectionState == ConnectionState.CONNECTED) ObservatoryState.VERIFIED
+                    state = if (connectionState == ConnectionState.CONNECTED) ObservatoryState.CONFIGURED
                         else ObservatoryState.NOT_TESTED,
-                    detail = "本机规则拒绝应用的明文 53、DoT/DoQ 853、已知公共 DoH 与公共 DNS 地址；自定义浏览器 DoH 仍需手动关闭",
+                    detail = "已配置 DNS 旁路拒绝规则；实际阻断仍需核验，自定义浏览器 DoH 需单独检查",
                 ),
             )
             add(
@@ -97,11 +99,11 @@ object PrivacyObservatory {
                     title = "广告 / 家庭过滤",
                     state = if (preferences.dnsProfile == DnsProfile.AD_BLOCK ||
                         preferences.dnsProfile == DnsProfile.FAMILY
-                    ) ObservatoryState.VERIFIED else ObservatoryState.NOT_TESTED,
+                    ) ObservatoryState.CONFIGURED else ObservatoryState.NOT_TESTED,
                     detail = if (preferences.dnsProfile == DnsProfile.AD_BLOCK ||
                         preferences.dnsProfile == DnsProfile.FAMILY
                     ) {
-                        "本地拒绝规则已启用；应用自带 DoH/DoT 仍需单独验证"
+                        "已选择本地广告或家庭过滤；实际过滤效果仍需核验"
                     } else {
                         "当前配置未启用本地过滤规则"
                     },
@@ -112,12 +114,12 @@ object PrivacyObservatory {
                     id = "ipv6",
                     title = "IPv6 旁路",
                     state = if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
-                        ObservatoryState.VERIFIED
+                        ObservatoryState.CONFIGURED
                     } else {
                         ObservatoryState.UNKNOWN
                     },
                     detail = if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
-                        "运行规则拒绝 IPv6；仍建议在真实网络中复测"
+                        "已选择仅 IPv4；IPv6 实际阻断情况仍需核验"
                     } else {
                         "双栈模式；未执行外部 IPv6 泄漏测试"
                     },
@@ -128,12 +130,12 @@ object PrivacyObservatory {
                     id = "webrtc",
                     title = "WebRTC / STUN",
                     state = if (preferences.blockUdpStun) {
-                        ObservatoryState.VERIFIED
+                        ObservatoryState.CONFIGURED
                     } else {
                         ObservatoryState.UNKNOWN
                     },
                     detail = if (preferences.blockUdpStun) {
-                        "UDP STUN 端口规则已启用；这不等于所有 WebRTC 实现都被禁用"
+                        "已配置 STUN 端口拒绝规则；不代表禁用所有 WebRTC 连接"
                     } else {
                         "未启用 STUN 阻断，浏览器策略可能继续暴露候选地址"
                     },
@@ -142,18 +144,24 @@ object PrivacyObservatory {
             add(
                 PrivacyObservation(
                     id = "direct",
-                    title = "隐式直连",
+                    title = "直连出口",
                     state = when {
                         routingMode == RoutingMode.DIRECT -> ObservatoryState.ATTENTION
                         defaultTarget?.kind == RouteKind.DIRECT -> ObservatoryState.ATTENTION
-                        routes.any { it.target.kind == RouteKind.DIRECT } -> ObservatoryState.ATTENTION
+                        routingMode == RoutingMode.RULE && routes.any { it.target.kind == RouteKind.DIRECT } -> ObservatoryState.ATTENTION
+                        routingMode == RoutingMode.RULE && preferences.domesticDirect -> ObservatoryState.ATTENTION
                         else -> ObservatoryState.UNKNOWN
                     },
                     detail = when {
-                        routingMode == RoutingMode.DIRECT -> "全局直连已选择，代理不会接管流量"
+                        routingMode == RoutingMode.DIRECT -> "已选择直连模式，连接不经过代理节点"
                         defaultTarget?.kind == RouteKind.DIRECT -> "默认出口为显式直连"
-                        routes.any { it.target.kind == RouteKind.DIRECT } -> "至少一个应用规则选择了显式直连"
-                        else -> "未发现显式直连；真实旁路仍需外部测试"
+                        routingMode == RoutingMode.RULE && routes.any { it.target.kind == RouteKind.DIRECT } ->
+                            "规则模式下，至少一个应用选择了直连；匹配的连接不经过代理节点"
+                        routingMode == RoutingMode.RULE && preferences.domesticDirect ->
+                            "中国大陆直连已开启；匹配的国内与局域网连接不经过代理节点"
+                        routingMode == RoutingMode.GLOBAL ->
+                            "全局模式忽略已保存的应用规则与国内直连；出口由默认路由决定，其他策略规则仍需核验"
+                        else -> "当前模式下未发现默认或应用直连出口；其他路由规则和真实旁路仍需核验"
                     },
                 ),
             )

@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave 快速开始 · 交互设计预览</title>
+<style>
+/* Local study only: no network, fonts, scripts or assets are loaded from outside this file.
+   Colors are the app's Minimal Light / Minimal Dark Material schemes (Theme.kt); sizes are the
+   WeaveUiTokens values, with 1dp drawn as 1px. */
+:root{
+  --chrome-bg:#e9e6e0;--chrome-ink:#26231f;--chrome-muted:#6b655c;--chrome-line:#c9c3b8;--chrome-card:#f6f3ee;
+}
+.viewport[data-theme=light]{
+  --bg:#F4F6F8;--surface:#FBFCFD;--surface-variant:#E9EDF1;
+  --primary:#2F4858;--on-primary:#FFFFFF;
+  --secondary:#4C6A61;--on-secondary:#FFFFFF;--secondary-container:#DCEAE4;--on-secondary-container:#1C3831;
+  --tertiary:#8B5B4E;
+  --on-bg:#1D252D;--muted:#56616E;--outline:#6F7D89;--outline-variant:#D1D8DE;
+  --shadow:0 1.5px 3px rgba(29,37,45,.08);
+}
+.viewport[data-theme=dark]{
+  --bg:#0B0E13;--surface:#171C23;--surface-variant:#232A34;
+  --primary:#C5DCEB;--on-primary:#0B0E13;
+  --secondary:#8CCCB3;--on-secondary:#0B0E13;--secondary-container:#233832;--on-secondary-container:#F1F3F6;
+  --tertiary:#DFAFA6;
+  --on-bg:#F1F3F6;--muted:#ADB6C2;--outline:#626D7B;--outline-variant:#333C48;
+  --shadow:0 1.5px 3px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--chrome-bg);color:var(--chrome-ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+  line-height:1.5;padding:20px 16px 48px}
+.wrap{max-width:1040px;margin:0 auto}
+
+/* ---------- preview chrome (not part of the design) ---------- */
+.banner{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;border:1px dashed var(--chrome-line);
+  background:var(--chrome-card);border-radius:14px;padding:12px 16px;margin-bottom:14px}
+.banner b{font-size:16px}
+.banner span{font-size:13px;color:var(--chrome-muted)}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:14px}
+.ctl{background:var(--chrome-card);border:1px solid var(--chrome-line);border-radius:14px;padding:10px 12px}
+.ctl h2{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--chrome-muted);letter-spacing:.02em}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button,.act{font:inherit;font-size:13px;min-height:36px;padding:6px 12px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--chrome-line);background:#fff;color:var(--chrome-ink)}
+.seg button[aria-pressed=true]{background:var(--chrome-ink);border-color:var(--chrome-ink);color:#fff}
+.act:hover,.seg button:hover{border-color:var(--chrome-ink)}
+.status{font-size:13px;color:var(--chrome-muted);margin:0 0 12px;min-height:20px}
+.status code{background:#fff;border:1px solid var(--chrome-line);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--chrome-ink)}
+.stage{display:flex;justify-content:center;align-items:flex-start;overflow-x:auto;padding:4px 0 12px}
+
+/* ---------- the design ---------- */
+.viewport{position:relative;height:680px;flex:none;overflow:hidden;border-radius:30px;
+  border:6px solid #2b2a28;background:var(--bg);color:var(--on-bg);--fs:1;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+.viewport button{font-family:inherit}
+.viewport.w320{width:332px}.viewport.w360{width:372px}.viewport.wtab{width:860px;height:640px}
+.scrim{position:absolute;inset:0;display:none;background:rgba(0,0,0,.4)}
+.wtab .scrim{display:block}
+.card{position:absolute;inset:0;background:var(--bg);overflow:hidden;
+  background-image:radial-gradient(120% 60% at 90% -10%,color-mix(in srgb,var(--secondary) 10%,transparent),transparent 60%),
+                   radial-gradient(90% 50% at -10% 110%,color-mix(in srgb,var(--tertiary) 8%,transparent),transparent 60%)}
+.wtab .card{inset:24px auto 24px 50%;width:560px;transform:translateX(-50%);border-radius:30px;border:.5px solid var(--outline-variant)}
+.guide{display:flex;flex-direction:column;height:100%;max-width:560px;margin:0 auto}
+.guide[hidden]{display:none}
+
+.topbar{display:flex;align-items:center;min-height:48px;padding:4px 8px}
+.topbar .sp{flex:1}
+.iconbtn{width:48px;height:48px;border:0;border-radius:50%;background:transparent;color:var(--on-bg);display:grid;place-items:center;cursor:pointer}
+.textbtn{min-height:48px;min-width:48px;padding:0 12px;border:0;border-radius:20px;background:transparent;color:var(--muted);cursor:pointer;
+  font-size:calc(15px*var(--fs));line-height:calc(21px*var(--fs));font-weight:600}
+.iconbtn:hover,.textbtn:hover{background:color-mix(in srgb,var(--on-bg) 8%,transparent)}
+.viewport :focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+.host{position:relative;flex:1;min-height:0;overflow:hidden}
+.page{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden}
+.page-in{min-height:100%;display:flex;flex-direction:column;padding:0 20px}
+.spacer{flex:1}
+.host.busy{pointer-events:none}
+.page.enter-fwd{animation:in-fwd .22s cubic-bezier(.4,0,.2,1) both}
+.page.enter-back{animation:in-back .22s cubic-bezier(.4,0,.2,1) both}
+.page.leave-fwd{animation:out-fwd .22s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
+.page.leave-back{animation:out-back .22s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
+@keyframes in-fwd{from{opacity:0;transform:translateX(10%)}to{opacity:1;transform:none}}
+@keyframes in-back{from{opacity:0;transform:translateX(-10%)}to{opacity:1;transform:none}}
+@keyframes out-fwd{from{opacity:1;transform:none}to{opacity:0;transform:translateX(-10%)}}
+@keyframes out-back{from{opacity:1;transform:none}to{opacity:0;transform:translateX(10%)}}
+
+/* progress path */
+.path{display:flex}
+.path .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.path .lbl{font-size:calc(12px*var(--fs));line-height:calc(18px*var(--fs));font-weight:600;color:var(--muted);text-align:center;overflow-wrap:anywhere}
+.path .lbl.cur{color:var(--on-bg)}
+.pm{position:relative;height:24px;width:100%}
+.pm .ln{position:absolute;top:11px;height:2px;background:var(--outline-variant)}
+.pm .ln.l{left:0;right:50%}.pm .ln.r{left:50%;right:0}
+.pm .ln.on{background:var(--secondary)}
+.pm .dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%}
+.dot.done{width:18px;height:18px;background:var(--secondary);display:grid;place-items:center}
+.dot.cur{width:12px;height:12px;background:var(--primary);box-shadow:0 0 0 6px color-mix(in srgb,var(--primary) 18%,transparent)}
+.dot.todo{width:12px;height:12px;background:var(--bg);border:1.5px solid var(--outline)}
+
+/* panels */
+.vig{margin-top:16px;border-radius:26px;background:var(--surface);border:.5px solid var(--outline-variant);box-shadow:var(--shadow);padding:0 16px}
+.vig svg{display:block;width:100%;height:88px}
+.eyebrow{margin:24px 0 6px;font-size:calc(12px*var(--fs));line-height:calc(18px*var(--fs));font-weight:600;letter-spacing:1px;
+  color:var(--secondary);font-variant-numeric:tabular-nums}
+h1{margin:0 0 10px;font-size:calc(29px*var(--fs));line-height:calc(35px*var(--fs));font-weight:600;letter-spacing:-.45px;overflow-wrap:anywhere}
+.desc{margin:0 0 20px;font-size:calc(15px*var(--fs));line-height:calc(23px*var(--fs));color:var(--muted)}
+.label{margin:0 0 8px 4px;font-size:calc(12px*var(--fs));line-height:calc(18px*var(--fs));font-weight:600;color:var(--muted)}
+.panel{border-radius:19px;background:var(--surface);border:.5px solid var(--outline-variant);box-shadow:var(--shadow)}
+.row{display:flex;gap:14px;align-items:flex-start;min-height:56px;padding:12px 16px}
+.row+.row{border-top:.5px solid var(--outline-variant);margin:0 0;}
+.row .tile{flex:none;width:36px;height:36px;border-radius:11px;background:var(--secondary-container);color:var(--on-secondary-container);display:grid;place-items:center}
+.row .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row .t{font-size:calc(15px*var(--fs));line-height:calc(21px*var(--fs));font-weight:600;overflow-wrap:anywhere}
+.row .b{font-size:calc(14px*var(--fs));line-height:calc(21px*var(--fs));color:var(--muted)}
+.gap{height:16px}
+.notice{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:19px}
+.notice .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.notice .t{font-size:calc(15px*var(--fs));line-height:calc(21px*var(--fs));font-weight:600}
+.notice .b{font-size:calc(14px*var(--fs));line-height:calc(21px*var(--fs))}
+.notice.pos{background:var(--secondary-container);color:var(--on-secondary-container)}
+.notice.neu{background:var(--surface-variant);color:var(--muted)}
+.notice.gen{background:color-mix(in srgb,var(--tertiary) 14%,transparent);color:var(--on-bg)}
+.notice.gen svg{color:var(--tertiary)}
+.notice svg,.row svg{flex:none}
+.notice>svg{margin-top:0}
+
+/* footer */
+.footer{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+.btn{width:100%;min-height:52px;padding:12px 20px;border-radius:16px;border:0;cursor:pointer;display:flex;gap:10px;align-items:center;justify-content:center;
+  text-align:center;font-size:calc(15px*var(--fs));line-height:calc(21px*var(--fs));font-weight:600;
+  background:var(--primary);color:var(--on-primary);transition:transform .14s cubic-bezier(.4,0,.2,1)}
+.btn.out{background:transparent;color:var(--primary);border:1px solid var(--outline)}
+.btn:active:not(:disabled){transform:scale(.975)}
+.btn:disabled{cursor:default;background:color-mix(in srgb,var(--on-bg) 12%,transparent);color:color-mix(in srgb,var(--on-bg) 38%,transparent)}
+.link{width:100%;min-height:48px;padding:8px 16px;border:0;border-radius:24px;background:transparent;color:var(--primary);cursor:pointer;
+  text-align:center;font-size:calc(15px*var(--fs));line-height:calc(23px*var(--fs));font-weight:600}
+.link:hover{background:color-mix(in srgb,var(--primary) 8%,transparent)}
+.spin{width:18px;height:18px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.motion{display:flex;align-items:center;gap:12px;min-height:48px;margin-top:6px;padding:4px;border-radius:11px;cursor:pointer;
+  background:none;border:0;width:100%;text-align:left;color:var(--muted);font-size:calc(14px*var(--fs));line-height:calc(21px*var(--fs))}
+.motion .tx{flex:1;min-width:0}
+.motion:hover{background:color-mix(in srgb,var(--on-bg) 6%,transparent)}
+.sw{position:relative;flex:none;width:52px;height:32px;border-radius:16px;border:2px solid var(--outline);background:var(--surface-variant);transition:background .2s,border-color .2s}
+.sw i{position:absolute;top:50%;left:6px;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:var(--outline);transition:left .2s,width .2s,height .2s,margin-top .2s,background .2s}
+.sw.on{background:var(--primary);border-color:var(--primary)}
+.sw.on i{left:24px;width:24px;height:24px;margin-top:-12px;background:var(--on-primary)}
+.bottom{height:22px;flex:none}
+
+/* reduced motion: every authored animation and press scaling is off */
+.reduced .page,.reduced .btn,.reduced .sw,.reduced .sw i{animation:none!important;transition:none!important}
+.reduced .btn:active:not(:disabled){transform:none}
+
+/* mock child dialogs and closed state (preview only) */
+.child,.closed{position:absolute;inset:0;display:grid;place-items:center;padding:20px;background:color-mix(in srgb,var(--bg) 92%,#000)}
+.child[hidden],.closed[hidden]{display:none}
+.mock{width:100%;max-width:340px;border:1.5px dashed var(--outline);border-radius:22px;background:var(--surface);padding:18px;box-shadow:var(--shadow)}
+.mock .tag{font-size:calc(11px*var(--fs));color:var(--muted);letter-spacing:.04em;margin-bottom:8px}
+.mock h3{margin:0 0 8px;font-size:calc(18px*var(--fs));line-height:calc(24px*var(--fs))}
+.mock p{margin:0 0 14px;font-size:calc(14px*var(--fs));line-height:calc(21px*var(--fs));color:var(--muted)}
+.mock .err{color:var(--on-bg);background:color-mix(in srgb,var(--tertiary) 14%,transparent);border-radius:12px;padding:10px 12px;margin-bottom:14px;font-size:calc(14px*var(--fs));line-height:calc(21px*var(--fs))}
+.mock .actions{display:flex;flex-direction:column;gap:8px}
+.mock .btn{min-height:48px}
+.closed .mock{text-align:center}
+.import-strip{display:flex;gap:8px;padding:12px}.import-strip>div{flex:1;min-width:0;text-align:center;display:flex;align-items:center;flex-direction:column;gap:6px}.import-strip svg{width:32px;height:32px;padding:6px;border-radius:10px;background:var(--secondary-container);color:var(--on-secondary-container)}.import-strip span{font-size:calc(14px*var(--fs));line-height:1.4;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="banner">
+    <b>交互设计预览 · 非实机截图</b>
+    <span id="bannerSub">Interaction design preview · not a device screenshot. Every action only changes local mock state; nothing is requested, saved or sent.</span>
+  </header>
+
+  <section class="controls" id="controls" aria-label="preview controls"></section>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <div class="stage">
+    <div class="viewport w360" id="viewport" data-theme="light">
+      <div class="scrim" id="scrim"></div>
+      <div class="card" id="card" data-testtag="quick-start">
+        <div class="guide" id="guide" role="dialog" aria-modal="true">
+          <div class="topbar" id="topbar"></div>
+          <div class="host" id="host"></div>
+        </div>
+      </div>
+      <div class="child" id="child" hidden></div>
+      <div class="closed" id="closed" hidden></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- copy: zh is the stable key, en mirrors OnboardingCopy.json ---------- */
+  var EN = {
+    '返回':'Back','跳过':'Skip','减少动效':'Reduce motion','导入':'Import','节点':'Node','连接':'Connect',
+    '快速开始进度：第 1 步，共 3 步':'Quick start progress: step 1 of 3',
+    '快速开始进度：第 2 步，共 3 步':'Quick start progress: step 2 of 3',
+    '快速开始进度：第 3 步，共 3 步':'Quick start progress: step 3 of 3',
+    '订阅已准备好':'Your subscription is ready','导入你的订阅':'Import your subscription',
+    '已找到可用节点。可以继续下一步，也可以再导入其他订阅。':'Usable nodes found. Continue, or import another subscription.',
+    'Weave 不提供节点，订阅需要由你自己提供。选一种方式导入就行。':"Weave doesn't provide nodes, so the subscription comes from you. Import it whichever way is easiest.",
+    '已有可用节点':'Usable nodes available','可用的导入方式':'Ways to import',
+    '链接':'Link','粘贴收到的订阅链接':'Paste the subscription link you received',
+    '二维码':'QR code','扫描订阅二维码':'Scan a subscription QR code',
+    '文件':'File','选择本地订阅文件':'Choose a subscription file from your device',
+    '选择一个节点':'Choose a node',
+    '节点决定代理流量走哪条线路。选好后，随时可以更换。':'A node decides which route your traffic takes. Pick one that suits you; you can change it any time.',
+    '已选好节点':'Node selected','还没有选择节点':'No node selected yet',
+    '节点列表单独打开':'The list opens separately','选好节点或直接返回，都会回到这里。':"Choose a node or just go back, and you'll land here again.",
+    '随时可以更换':'Change it any time','之后可以在应用里重新选择。':'You can pick a different one later in the app.',
+    '一切就绪':'All set','准备连接':'Ready to connect',
+    '已连接，现在可以开始使用。需要时可以随时断开。':"You're connected and ready to go. You can disconnect whenever you like.",
+    '点击“连接”后才会开始。如果还没有授权，Weave 会先说明用途，再请求系统的 VPN 授权。':"Nothing starts until you tap Connect. If permission is still needed, Weave explains what it's for first, then asks for the system's VPN permission.",
+    '已连接':'Connected','正在连接…':'Connecting…','这次没有连上':"Couldn't connect this time",
+    '可以重试、返回更换节点，或稍后再连接。':'The network may be unstable, or this node may be unavailable for now. Try again, or go back and choose another node.',
+    'VPN 授权':'VPN permission','只在需要时出现，由系统弹窗确认，你也可以拒绝。':'Shown only when needed and confirmed in a system prompt. You can decline.',
+    '相机':'Camera','只有选择扫码导入时才会用到。':'Only used if you choose to scan a QR code.',
+    '通知':'Notifications','与连接分开，完全可选。':'Separate from connecting, and entirely optional.',
+    '下一步':'Next','导入其他订阅':'Import another subscription','导入订阅':'Import subscription',
+    '选择节点':'Choose node','开始使用':'Get started'
+  };
+
+  /* preview-only strings (chrome and mock windows) */
+  var PV = {
+    '主题':'Theme','浅色':'Light','深色':'Dark','语言':'Language','字号':'Text size','宽度':'Width','平板':'Tablet',
+    '连接结果（模拟）':'Connection result (mock)','先失败再成功':'Fail once, then succeed','总是成功':'Always succeed','总是失败':'Always fail',
+    '已有节点':'Has nodes','已选节点':'Has proxy target','动效':'Motion','减少动效':'Reduce motion',
+    '操作':'Actions','系统返回键':'System back','重置':'Reset','从设置打开引导':'Open from Settings',
+    '模拟窗口 · 非引导界面':'Mock window · not part of the guide',
+    '导入订阅（模拟）':'Import subscription (mock)','这里是应用自己的导入窗口，引导已被隐藏。':"This stands in for the app's own import dialog; the guide is hidden meanwhile.",
+    '取消':'Cancel','模拟导入失败':'Simulate import failure','模拟导入成功':'Simulate import success',
+    '导入失败':'Import failed','没有读取到可用节点。可以再试一次，或取消回到引导。':'No usable nodes were read. Try again, or cancel to return to the guide.',
+    '再试一次（模拟成功）':'Try again (simulate success)',
+    '选择节点（模拟）':'Choose node (mock)','这里是应用自己的节点列表，引导已被隐藏。':"This stands in for the app's own node list; the guide is hidden meanwhile.",
+    '模拟选定一个节点':'Simulate choosing a node',
+    '应用说明（模拟）':'App disclosure (mock)','连接时，Weave 会先在这里说明用途，然后由系统询问是否允许 VPN。':'On connect, Weave explains its purpose here first, then the system asks whether to allow the VPN.',
+    '继续（模拟授权）':'Continue (simulate permission)',
+    '引导已关闭':'Guide closed','真实应用中会回到主界面，之后可在设置里再次打开。':'The real app returns to its main screen; the guide can be reopened from Settings.',
+    '最近操作：':'Last action: ','暂无操作':'No action yet'
+  };
+
+  var S = {
+    step: 0, hasNodes: false, hasProxy: false, connected: false, connecting: false, error: false,
+    reduced: false, theme: 'light', lang: 'zh', big: 1, width: '360',
+    child: null, childErr: false, dismissed: false, outcome: 'once', failedOnce: false, vpnOk: false,
+    log: ''
+  };
+  var timer = null;
+  var uid = 0;
+  var lastStep = 0;
+  var lastRendered = null;
+
+  var GUIDE_COPY = {"跳过": {"en": "Skip", "zh": "跳过", "zhHant": "略過", "ja": "スキップ", "fr": "Passer", "de": "Überspringen"}, "减少动效": {"en": "Reduce motion", "zh": "减少动效", "zhHant": "減少動態效果", "ja": "アニメーションを減らす", "fr": "Réduire les animations", "de": "Animationen reduzieren"}, "导入": {"en": "Import", "zh": "导入", "zhHant": "匯入", "ja": "取り込み", "fr": "Importer", "de": "Import"}, "节点": {"en": "Node", "zh": "节点", "zhHant": "節點", "ja": "ノード", "fr": "Nœud", "de": "Knoten"}, "连接": {"en": "Connect", "zh": "连接", "zhHant": "連線", "ja": "接続", "fr": "Se connecter", "de": "Verbinden"}, "快速开始进度：第 1 步，共 3 步": {"en": "Quick start progress: step 1 of 3", "zh": "快速开始进度：第 1 步，共 3 步", "zhHant": "快速開始進度：第 1 步，共 3 步", "ja": "クイックスタートの進行状況：3 ステップ中 1 ステップ目", "fr": "Progression du guide : étape 1 sur 3", "de": "Fortschritt der Kurzanleitung: Schritt 1 von 3"}, "快速开始进度：第 2 步，共 3 步": {"en": "Quick start progress: step 2 of 3", "zh": "快速开始进度：第 2 步，共 3 步", "zhHant": "快速開始進度：第 2 步，共 3 步", "ja": "クイックスタートの進行状況：3 ステップ中 2 ステップ目", "fr": "Progression du guide : étape 2 sur 3", "de": "Fortschritt der Kurzanleitung: Schritt 2 von 3"}, "快速开始进度：第 3 步，共 3 步": {"en": "Quick start progress: step 3 of 3", "zh": "快速开始进度：第 3 步，共 3 步", "zhHant": "快速開始進度：第 3 步，共 3 步", "ja": "クイックスタートの進行状況：3 ステップ中 3 ステップ目", "fr": "Progression du guide : étape 3 sur 3", "de": "Fortschritt der Kurzanleitung: Schritt 3 von 3"}, "订阅已准备好": {"en": "Your subscription is ready", "zh": "订阅已准备好", "zhHant": "訂閱已準備好", "ja": "サブスクリプションの準備ができました", "fr": "Votre abonnement est prêt", "de": "Dein Abonnement ist bereit"}, "导入你的订阅": {"en": "Import your subscription", "zh": "导入你的订阅", "zhHant": "匯入你的訂閱", "ja": "サブスクリプションを取り込む", "fr": "Importez votre abonnement", "de": "Abonnement importieren"}, "已找到可用节点。可以继续下一步，也可以再导入其他订阅。": {"en": "Usable nodes found. Continue, or import another subscription.", "zh": "已找到可用节点。可以继续下一步，也可以再导入其他订阅。", "zhHant": "已找到可用節點。可以繼續下一步，也可以再匯入其他訂閱。", "ja": "利用できるノードが見つかりました。次へ進むか、別のサブスクリプションを取り込めます。", "fr": "Des nœuds utilisables ont été trouvés. Continuez, ou importez un autre abonnement.", "de": "Nutzbare Knoten gefunden. Mach weiter oder importiere ein weiteres Abonnement."}, "Weave 不提供节点，订阅需要由你自己提供。选一种方式导入就行。": {"en": "Weave doesn't provide nodes, so the subscription comes from you. Import it whichever way is easiest.", "zh": "Weave 不提供节点，订阅需要由你自己提供。选一种方式导入就行。", "zhHant": "Weave 不提供節點，訂閱需要由你自行提供。選一種方式匯入就行。", "ja": "Weave はノードを提供しません。サブスクリプションはご自身で用意してください。やりやすい方法で取り込めます。", "fr": "Weave ne fournit pas de nœuds : l'abonnement vient de vous. Importez-le de la façon qui vous convient.", "de": "Weave stellt keine Knoten bereit – das Abonnement bringst du selbst mit. Importiere es auf dem Weg, der dir am besten passt."}, "已有可用节点": {"en": "Usable nodes available", "zh": "已有可用节点", "zhHant": "已有可用節點", "ja": "利用できるノードがあります", "fr": "Des nœuds utilisables sont disponibles", "de": "Nutzbare Knoten vorhanden"}, "可用的导入方式": {"en": "Ways to import", "zh": "可用的导入方式", "zhHant": "可用的匯入方式", "ja": "取り込み方法", "fr": "Façons d'importer", "de": "Importmöglichkeiten"}, "链接": {"en": "Link", "zh": "链接", "zhHant": "連結", "ja": "リンク", "fr": "Lien", "de": "Link"}, "粘贴收到的订阅链接": {"en": "Paste the subscription link you received", "zh": "粘贴收到的订阅链接", "zhHant": "貼上收到的訂閱連結", "ja": "受け取ったサブスクリプションのリンクを貼り付けます", "fr": "Collez le lien d'abonnement reçu", "de": "Den erhaltenen Abo-Link einfügen"}, "二维码": {"en": "QR code", "zh": "二维码", "zhHant": "QR Code", "ja": "QR コード", "fr": "Code QR", "de": "QR-Code"}, "扫描订阅二维码": {"en": "Scan a subscription QR code", "zh": "扫描订阅二维码", "zhHant": "掃描訂閱 QR Code", "ja": "サブスクリプションの QR コードを読み取ります", "fr": "Scannez un code QR d'abonnement", "de": "Einen Abo-QR-Code scannen"}, "文件": {"en": "File", "zh": "文件", "zhHant": "檔案", "ja": "ファイル", "fr": "Fichier", "de": "Datei"}, "选择本地订阅文件": {"en": "Choose a subscription file from your device", "zh": "选择本地订阅文件", "zhHant": "選擇本機的訂閱檔案", "ja": "端末内のサブスクリプションファイルを選びます", "fr": "Choisissez un fichier d'abonnement sur l'appareil", "de": "Eine Abo-Datei vom Gerät auswählen"}, "选择一个节点": {"en": "Choose a node", "zh": "选择一个节点", "zhHant": "選擇一個節點", "ja": "ノードを選ぶ", "fr": "Choisissez un nœud", "de": "Knoten auswählen"}, "节点决定代理流量走哪条线路。选好后，随时可以更换。": {"en": "Choose a route for proxied traffic. You can change it anytime.", "zh": "节点决定代理流量走哪条线路。选好后，随时可以更换。", "zhHant": "節點決定代理流量走哪條線路。選好後，隨時可以更換。", "ja": "プロキシ通信の経路を選びます。後からいつでも変更できます。", "fr": "Choisissez le trajet du trafic via proxy. Vous pouvez le changer à tout moment.", "de": "Wähle einen Weg für den Proxy-Verkehr. Du kannst ihn jederzeit ändern."}, "已选好节点": {"en": "Node selected", "zh": "已选好节点", "zhHant": "已選好節點", "ja": "ノードを選択済み", "fr": "Nœud sélectionné", "de": "Knoten ausgewählt"}, "还没有选择节点": {"en": "No node selected yet", "zh": "还没有选择节点", "zhHant": "還沒有選擇節點", "ja": "ノードはまだ選択されていません", "fr": "Aucun nœud sélectionné pour l'instant", "de": "Noch kein Knoten ausgewählt"}, "节点列表单独打开": {"en": "The list opens separately", "zh": "节点列表单独打开", "zhHant": "節點清單會單獨開啟", "ja": "一覧は別の画面で開きます", "fr": "La liste s'ouvre séparément", "de": "Die Liste öffnet sich separat"}, "选好节点或直接返回，都会回到这里。": {"en": "Choose a node or just go back, and you'll land here again.", "zh": "选好节点或直接返回，都会回到这里。", "zhHant": "選好節點或直接返回，都會回到這裡。", "ja": "ノードを選んでも、そのまま戻っても、ここに戻ります。", "fr": "Que vous choisissiez un nœud ou reveniez en arrière, vous retrouverez ce guide.", "de": "Ob du einen Knoten wählst oder einfach zurückgehst – du landest wieder hier."}, "随时可以更换": {"en": "Change it any time", "zh": "随时可以更换", "zhHant": "隨時可以更換", "ja": "いつでも変更できます", "fr": "Modifiable à tout moment", "de": "Jederzeit änderbar"}, "之后可以在应用里重新选择。": {"en": "You can pick a different one later in the app.", "zh": "之后可以在应用里重新选择。", "zhHant": "之後可以在應用程式裡重新選擇。", "ja": "あとからアプリ内で選び直せます。", "fr": "Vous pourrez en choisir un autre plus tard dans l'application.", "de": "Du kannst später in der App einen anderen auswählen."}, "一切就绪": {"en": "All set", "zh": "一切就绪", "zhHant": "一切就緒", "ja": "準備完了", "fr": "Tout est prêt", "de": "Alles bereit"}, "准备连接": {"en": "Ready to connect", "zh": "准备连接", "zhHant": "準備連線", "ja": "接続の準備", "fr": "Prêt à se connecter", "de": "Bereit zum Verbinden"}, "已连接，现在可以开始使用。需要时可以随时断开。": {"en": "You're connected and ready to go. You can disconnect whenever you like.", "zh": "已连接，现在可以开始使用。需要时可以随时断开。", "zhHant": "已連線，現在可以開始使用。需要時可以隨時中斷。", "ja": "接続されました。すぐに使い始められます。必要なときはいつでも切断できます。", "fr": "Vous êtes connecté et pouvez commencer. Vous pouvez vous déconnecter à tout moment.", "de": "Du bist verbunden und kannst loslegen. Du kannst die Verbindung jederzeit trennen."}, "点击“连接”后才会开始。如果还没有授权，Weave 会先说明用途，再请求系统的 VPN 授权。": {"en": "Nothing starts until you tap Connect. If permission is still needed, Weave explains what it's for first, then asks for the system's VPN permission.", "zh": "点击“连接”后才会开始。如果还没有授权，Weave 会先说明用途，再请求系统的 VPN 授权。", "zhHant": "點擊「連線」後才會開始。如果還沒有授權，Weave 會先說明用途，再請求系統的 VPN 授權。", "ja": "「接続」をタップするまで何も始まりません。まだ許可が必要な場合は、Weave が用途を説明してから、システムの VPN 許可を求めます。", "fr": "Rien ne démarre tant que vous n'appuyez pas sur Se connecter. Si une autorisation est encore nécessaire, Weave en explique d'abord l'usage, puis demande l'autorisation VPN du système.", "de": "Es startet erst, wenn du auf „Verbinden“ tippst. Falls noch eine Berechtigung nötig ist, erklärt Weave zuerst den Zweck und fragt dann die VPN-Berechtigung des Systems an."}, "已连接": {"en": "Connected", "zh": "已连接", "zhHant": "已連線", "ja": "接続済み", "fr": "Connecté", "de": "Verbunden"}, "正在连接…": {"en": "Connecting…", "zh": "正在连接…", "zhHant": "正在連線…", "ja": "接続しています…", "fr": "Connexion en cours…", "de": "Verbindung wird hergestellt…"}, "这次没有连上": {"en": "Couldn't connect this time", "zh": "这次没有连上", "zhHant": "這次沒有連上", "ja": "今回は接続できませんでした", "fr": "Connexion impossible cette fois", "de": "Diesmal hat es nicht geklappt"}, "可以重试、返回更换节点，或稍后再连接。": {"en": "Try again, go back to choose another node, or connect later.", "zh": "可以重试、返回更换节点，或稍后再连接。", "zhHant": "可以重試、返回更換節點，或稍後再連線。", "ja": "再試行するか、戻って別のノードを選ぶか、後で接続できます。", "fr": "Réessayez, revenez choisir un autre nœud ou connectez-vous plus tard.", "de": "Versuche es erneut, wähle einen anderen Knoten oder verbinde dich später."}, "VPN 授权": {"en": "VPN permission", "zh": "VPN 授权", "zhHant": "VPN 授權", "ja": "VPN の許可", "fr": "Autorisation VPN", "de": "VPN-Berechtigung"}, "只在需要时出现，由系统弹窗确认，你也可以拒绝。": {"en": "Shown only when needed and confirmed in a system prompt. You can decline.", "zh": "只在需要时出现，由系统弹窗确认，你也可以拒绝。", "zhHant": "只在需要時出現，由系統彈窗確認，你也可以拒絕。", "ja": "必要なときだけ表示され、システムのダイアログで確認します。拒否することもできます。", "fr": "Demandée uniquement si nécessaire, via une boîte de dialogue du système. Vous pouvez refuser.", "de": "Erscheint nur bei Bedarf und wird in einem Systemdialog bestätigt. Du kannst ablehnen."}, "相机": {"en": "Camera", "zh": "相机", "zhHant": "相機", "ja": "カメラ", "fr": "Appareil photo", "de": "Kamera"}, "只有选择扫码导入时才会用到。": {"en": "Only used if you choose to scan a QR code.", "zh": "只有选择扫码导入时才会用到。", "zhHant": "只有選擇掃碼匯入時才會用到。", "ja": "QR コードの読み取りを選んだときだけ使います。", "fr": "Utilisé uniquement si vous choisissez de scanner un code QR.", "de": "Wird nur verwendet, wenn du einen QR-Code scannen möchtest."}, "通知": {"en": "Notifications", "zh": "通知", "zhHant": "通知", "ja": "通知", "fr": "Notifications", "de": "Benachrichtigungen"}, "与连接分开，完全可选。": {"en": "Separate from connecting, and entirely optional.", "zh": "与连接分开，完全可选。", "zhHant": "與連線分開，完全可選。", "ja": "接続とは別で、完全に任意です。", "fr": "Indépendantes de la connexion, et entièrement facultatives.", "de": "Unabhängig vom Verbinden und völlig optional."}, "下一步": {"en": "Next", "zh": "下一步", "zhHant": "下一步", "ja": "次へ", "fr": "Suivant", "de": "Weiter"}, "导入其他订阅": {"en": "Import another subscription", "zh": "导入其他订阅", "zhHant": "匯入其他訂閱", "ja": "別のサブスクリプションを取り込む", "fr": "Importer un autre abonnement", "de": "Weiteres Abonnement importieren"}, "导入订阅": {"en": "Import subscription", "zh": "导入订阅", "zhHant": "匯入訂閱", "ja": "サブスクリプションを取り込む", "fr": "Importer l'abonnement", "de": "Abonnement importieren"}, "选择节点": {"en": "Choose node", "zh": "选择节点", "zhHant": "選擇節點", "ja": "ノードを選ぶ", "fr": "Choisir un nœud", "de": "Knoten auswählen"}, "开始使用": {"en": "Get started", "zh": "开始使用", "zhHant": "開始使用", "ja": "はじめる", "fr": "Commencer", "de": "Loslegen"}, "新手引导": {"en": "Quick start guide", "zh": "新手引导", "zhHant": "新手引導", "ja": "はじめてのガイド", "fr": "Guide de démarrage", "de": "Schnellstart"}, "导入、选节点，再连接": {"en": "Import, choose a node, then connect", "zh": "导入、选节点，再连接", "zhHant": "匯入、選節點，再連線", "ja": "読み込み、ノード選択、接続の3ステップ", "fr": "Importer, choisir un nœud, puis se connecter", "de": "Importieren, Knoten wählen, verbinden"}, "减弱引导动画": {"en": "Reduce guide motion", "zh": "减弱引导动画", "zhHant": "減弱引導動畫", "ja": "ガイドの動きを減らす", "fr": "Réduire les animations du guide", "de": "Bewegung im Guide reduzieren"}, "引导页面使用即时转场": {"en": "Use instant transitions in the guide", "zh": "引导页面使用即时转场", "zhHant": "引導頁面使用即時轉場", "ja": "ガイド画面を即座に切り替える", "fr": "Transitions instantanées dans le guide", "de": "Guide-Seiten sofort wechseln"}, "已有可用节点，可以继续。": {"en": "Usable nodes are ready. Continue when you like.", "zh": "已有可用节点，可以继续。", "zhHant": "已有可用節點，可以繼續。", "ja": "利用可能なノードがあります。次に進めます。", "fr": "Des nœuds sont prêts. Vous pouvez continuer.", "de": "Knoten sind bereit. Du kannst fortfahren."}, "订阅由你提供，支持链接、二维码或文件。": {"en": "Bring your subscription as a link, QR code or file.", "zh": "订阅由你提供，支持链接、二维码或文件。", "zhHant": "訂閱由你提供，支援連結、QR 碼或檔案。", "ja": "お持ちのサブスクリプションをリンク、QR コード、ファイルで読み込みます。", "fr": "Importez votre abonnement par lien, code QR ou fichier.", "de": "Importiere dein Abo per Link, QR-Code oder Datei."}, "选一条代理线路，之后随时可以更换。": {"en": "Choose a proxy route. You can change it anytime.", "zh": "选一条代理线路，之后随时可以更换。", "zhHant": "選一條代理線路，之後隨時可以更換。", "ja": "プロキシ経路を選びます。後からいつでも変更できます。", "fr": "Choisissez une route proxy, modifiable à tout moment.", "de": "Wähle eine Proxy-Verbindung. Du kannst sie jederzeit ändern."}, "不确定选哪个？": {"en": "Not sure which one?", "zh": "不确定选哪个？", "zhHant": "不確定選哪個？", "ja": "どれを選べばいい？", "fr": "Vous hésitez ?", "de": "Unsicher bei der Wahl?"}, "也可以使用自动选择。": {"en": "Automatic selection works too.", "zh": "也可以使用自动选择。", "zhHant": "也可以使用自動選擇。", "ja": "自動選択も使えます。", "fr": "La sélection automatique est aussi possible.", "de": "Du kannst auch automatisch wählen lassen."}, "点击连接时，按需确认系统 VPN 授权。": {"en": "Tap Connect to confirm system VPN access when needed.", "zh": "点击连接时，按需确认系统 VPN 授权。", "zhHant": "點選連線時，按需確認系統 VPN 授權。", "ja": "接続を押すと、必要に応じてシステムの VPN 許可を確認します。", "fr": "Touchez Connexion pour confirmer l’accès VPN si nécessaire.", "de": "Tippe auf Verbinden, um bei Bedarf den VPN-Zugriff zu erlauben."}, "权限在使用时确认": {"en": "Permissions when needed", "zh": "权限在使用时确认", "zhHant": "權限在使用時確認", "ja": "必要なときに許可を確認", "fr": "Autorisations au bon moment", "de": "Berechtigungen bei Bedarf"}, "VPN 用于连接；相机仅扫码；通知可稍后设置。": {"en": "VPN for connections; camera only for scanning. Notifications can wait.", "zh": "VPN 用于连接；相机仅扫码；通知可稍后设置。", "zhHant": "VPN 用於連線；相機僅掃碼；通知可稍後設定。", "ja": "VPN は接続、カメラはスキャン時のみ。通知は後で設定できます。", "fr": "VPN pour la connexion, caméra pour scanner. Les notifications peuvent attendre.", "de": "VPN zum Verbinden, Kamera nur zum Scannen. Benachrichtigungen kannst du später einstellen."}, "返回": {"zh": "返回", "en": "Back", "zhHant": "返回", "ja": "戻る", "fr": "Retour", "de": "Zurück"}};
+  function t(s) { return GUIDE_COPY[s] && GUIDE_COPY[s][S.lang] ? GUIDE_COPY[s][S.lang] : s; }
+  function p(s) { return S.lang !== 'zh' && PV[s] ? PV[s] : s; }
+  function $(id) { return document.getElementById(id); }
+
+  /* ---------- icons ---------- */
+  function svgIcon(d, size, extra) {
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" ' + (extra || '') + '><path d="' + d + '"/></svg>';
+  }
+  var I = {
+    back: 'M20 11H7.83l4.88-4.88a1 1 0 0 0-1.42-1.41l-6.59 6.59a1 1 0 0 0 0 1.41l6.59 6.59a1 1 0 0 0 1.41-1.41L7.83 13H20a1 1 0 0 0 0-2z',
+    check: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.3 14.3-3-3a1 1 0 1 1 1.4-1.4l2.3 2.29 5.3-5.29a1 1 0 0 1 1.4 1.4l-6 6a1 1 0 0 1-1.4 0z',
+    info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z',
+    warn: 'M12 3 1.5 21h21L12 3zm1 14h-2v-2h2v2zm0-4h-2V9h2v4z',
+    lock: 'M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM9 6a3 3 0 0 1 6 0v2H9V6zm3 11a2 2 0 1 1 0-4 2 2 0 0 1 0 4z',
+    bell: 'M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z',
+    refresh: 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'
+  };
+  var G = {
+    link: '<g transform="rotate(-45 10 10)"><rect x="1.5" y="7" width="10" height="6" rx="3"/><rect x="8.5" y="7" width="10" height="6" rx="3"/></g>',
+    qr: '<rect x="1.5" y="1.5" width="6.5" height="6.5" rx="1.2"/><rect x="12" y="1.5" width="6.5" height="6.5" rx="1.2"/><rect x="1.5" y="12" width="6.5" height="6.5" rx="1.2"/>' +
+        '<g fill="currentColor" stroke="none"><rect x="3.6" y="3.6" width="2.3" height="2.3"/><rect x="14.1" y="3.6" width="2.3" height="2.3"/><rect x="3.6" y="14.1" width="2.3" height="2.3"/>' +
+        '<rect x="12.5" y="12.5" width="2.5" height="2.5"/><rect x="16" y="16" width="2.5" height="2.5"/></g>',
+    file: '<path d="M4.5 2H11L16 7V17.5H4.5Z"/><path d="M11 2V7H16"/><path d="M7.5 11.5H13M7.5 14.5H11"/>'
+  };
+  function glyph(name) {
+    return '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + G[name] + '</svg>';
+  }
+
+  /* ---------- building blocks (mirror the Compose composables) ---------- */
+  function tag(name) { return 'data-testtag="' + name + '"'; }
+
+  function pathHTML(cur) {
+    var labels = ['导入', '节点', '连接'];
+    var desc = t('快速开始进度：第 ' + (cur + 1) + ' 步，共 3 步');
+    var cols = labels.map(function (l, i) {
+      var dot = i < cur
+        ? '<span class="dot done"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--on-secondary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 6.2 5 8.8 9.6 3.6"/></svg></span>'
+        : i === cur ? '<span class="dot cur"></span>' : '<span class="dot todo"></span>';
+      var left = i > 0 ? '<span class="ln l' + (i <= cur ? ' on' : '') + '"></span>' : '';
+      var right = i < 2 ? '<span class="ln r' + (i < cur ? ' on' : '') + '"></span>' : '';
+      return '<div class="col"><div class="pm">' + left + right + dot + '</div><div class="lbl' + (i === cur ? ' cur' : '') + '">' + t(l) + '</div></div>';
+    }).join('');
+    return '<div class="path" role="img" aria-label="' + desc + '">' + cols + '</div>';
+  }
+
+  function vignetteHTML() { return '<div class="vig"><svg data-thread></svg></div>'; }
+
+  function drawThread(svg, step, complete) {
+    var w = svg.clientWidth || 300, H = 88, mid = 44;
+    var start = w * 0.02, half = w * 0.16, end = start + half * 6, amp = H * 0.27;
+    var id = 'c' + (++uid);
+    function d(sign) {
+      var out = '';
+      for (var i = 0; i <= 120; i++) {
+        var x = start + (end - start) * i / 120;
+        var y = mid + sign * amp * Math.sin(Math.PI * (x - start) / half);
+        out += (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+      }
+      return out;
+    }
+    var up = d(1), lo = d(-1);
+    var knots = [w * 0.18, w * 0.5, w * 0.82];
+    var reach = complete ? end : knots[Math.max(0, Math.min(2, step))];
+    var thread = 'fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"';
+    var html = '<defs><clipPath id="' + id + '"><rect x="0" y="0" width="' + reach.toFixed(2) + '" height="' + H + '"/></clipPath>' +
+      '<radialGradient id="g' + id + '"><stop offset="0" style="stop-color:var(--tertiary);stop-opacity:.3"/><stop offset="1" style="stop-color:var(--tertiary);stop-opacity:0"/></radialGradient></defs>' +
+      '<path d="' + up + '" ' + thread + ' style="stroke:var(--outline-variant)"/>' +
+      '<path d="' + lo + '" ' + thread + ' style="stroke:var(--outline-variant)"/>' +
+      '<g clip-path="url(#' + id + ')"><path d="' + lo + '" ' + thread + ' style="stroke:var(--secondary)"/><path d="' + up + '" ' + thread + ' style="stroke:var(--primary)"/></g>';
+    knots.forEach(function (x, i) {
+      var finished = complete || i < step, current = !finished && i === step;
+      if (current) html += '<circle cx="' + x + '" cy="' + mid + '" r="36" fill="url(#g' + id + ')"/>';
+      html += '<circle cx="' + x + '" cy="' + mid + '" r="13" style="fill:var(--surface)"/>';
+      if (finished) {
+        var r = 9;
+        html += '<circle cx="' + x + '" cy="' + mid + '" r="9" style="fill:var(--secondary)"/>' +
+          '<path d="M' + (x - r * .42) + ' ' + (mid + r * .02) + 'L' + (x - r * .12) + ' ' + (mid + r * .34) + 'L' + (x + r * .46) + ' ' + (mid - r * .3) +
+          '" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--on-secondary)"/>';
+      } else if (current) {
+        html += '<circle cx="' + x + '" cy="' + mid + '" r="9" style="fill:var(--primary)"/><circle cx="' + x + '" cy="' + mid + '" r="3" style="fill:var(--on-primary)"/>';
+      } else {
+        html += '<circle cx="' + x + '" cy="' + mid + '" r="8" fill="none" stroke-width="1.5" style="stroke:var(--outline)"/>';
+      }
+    });
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + H);
+    svg.innerHTML = html;
+  }
+
+  function heading(step, title, desc) {
+    return '<div class="eyebrow">0' + (step + 1) + ' / 03</div><h1>' + t(title) + '</h1><p class="desc">' + t(desc) + '</p>';
+  }
+  function row(icon, title, body) {
+    return '<div class="row"><div class="tile">' + icon + '</div><div class="tx"><div class="t">' + t(title) + '</div><div class="b">' + t(body) + '</div></div></div>';
+  }
+  function notice(tone, icon, title, detail, live) {
+    return '<div class="notice ' + tone + '"' + (live ? ' aria-live="polite"' : '') + '>' + svgIcon(icon, 20) +
+      '<div class="tx"><div class="t">' + t(title) + '</div>' + (detail ? '<div class="b">' + t(detail) + '</div>' : '') + '</div></div>';
+  }
+  function btn(label, act, tagName, opts) {
+    opts = opts || {};
+    var spin = opts.busy && !S.reduced ? '<span class="spin"></span>' : '';
+    return '<button class="btn' + (opts.out ? ' out' : '') + '" data-act="' + act + '" ' + tag(tagName) + (opts.disabled ? ' disabled' : '') + '>' + spin + '<span>' + t(label) + '</span></button>';
+  }
+
+  function bodyHTML(step) {
+    var h = '';
+    if (step === 0) {
+      h += heading(0, S.hasNodes ? '订阅已准备好' : '导入你的订阅',
+        S.hasNodes ? '已有可用节点，可以继续。' : '订阅由你提供，支持链接、二维码或文件。');
+      if (S.hasNodes) h += notice('pos', I.check, '已有可用节点') + '<div class="gap"></div>';
+      h += '<div class="panel import-strip">'+[['link','链接'],['qr','二维码'],['file','文件']].map(function(x){return '<div>'+glyph(x[0])+'<span>'+t(x[1])+'</span></div>';}).join('')+'</div>';
+    } else if (step === 1) {
+      h += heading(1, '选择一个节点', '选一条代理线路，之后随时可以更换。');
+      h += S.hasProxy ? notice('pos', I.check, '已选好节点', '', true) : notice('neu', I.info, '还没有选择节点', '', true);
+      h += '<div class="gap"></div><div class="panel">'+row(svgIcon(I.refresh,20),'不确定选哪个？','也可以使用自动选择。')+'</div>';
+    } else {
+      h += heading(2, S.connected ? '一切就绪' : '准备连接',
+        S.connected ? '已连接，现在可以开始使用。需要时可以随时断开。' : '点击连接时，按需确认系统 VPN 授权。');
+      if (S.connected) h += notice('pos', I.check, '已连接', '', true) + '<div class="gap"></div>';
+      else if (S.connecting) h += notice('neu', I.info, '正在连接…', '', true) + '<div class="gap"></div>';
+      else if (S.error) h += notice('gen', I.warn, '这次没有连上', '可以重试、返回更换节点，或稍后再连接。', true) + '<div class="gap"></div>';
+      h += notice('neu',I.lock,'权限在使用时确认','VPN 用于连接；相机仅扫码；通知可稍后设置。');
+    }
+    return h;
+  }
+
+  function footerHTML(step) {
+    var f = '';
+    if (step === 0) {
+      if (S.hasNodes) {
+        f += btn('下一步', 'next', 'quick-start-primary') +
+          '<button class="link" data-act="primary" ' + tag('quick-start-secondary') + '>' + t('导入其他订阅') + '</button>';
+      } else f += btn('导入订阅', 'primary', 'quick-start-primary');
+    } else if (step === 1) {
+      if (S.hasProxy) f += btn('下一步', 'next', 'quick-start-next') + btn('选择节点', 'primary', 'quick-start-primary', { out: true });
+      else f += btn('选择节点', 'primary', 'quick-start-primary');
+    } else {
+      if (S.connected) f += btn('开始使用', 'dismiss', 'quick-start-primary');
+      else if (S.connecting) f += btn('正在连接…', 'noop', 'quick-start-primary', { disabled: true, busy: true });
+      else f += btn('连接', 'primary', 'quick-start-primary');
+    }
+    return '<div class="footer">' + f + '</div>' +
+      '<button class="motion" role="switch" aria-checked="' + S.reduced + '" data-act="motion" ' + tag('quick-start-motion') + '>' +
+      '<span class="tx">' + t('减少动效') + '</span><span class="sw' + (S.reduced ? ' on' : '') + '"><i></i></span></button>';
+  }
+
+  function pageHTML(step) {
+    return '<div class="page-in">' + pathHTML(step) + vignetteHTML() + bodyHTML(step) + '<div class="spacer"></div>' + footerHTML(step) + '<div class="bottom"></div></div>';
+  }
+
+  /* ---------- render ---------- */
+  function renderGuide() {
+    var host = $('host');
+    var back = S.step > 0
+      ? '<button class="iconbtn" data-act="back" ' + tag('quick-start-back') + ' aria-label="' + t('返回') + '">' + svgIcon(I.back, 24) + '</button>' : '';
+    $('topbar').innerHTML = back + '<span class="sp"></span><button class="textbtn" data-act="skip" ' + tag('quick-start-skip') + '>' + t('跳过') + '</button>';
+
+    var changed = lastRendered !== null && lastRendered !== S.step;
+    var forward = S.step >= lastStep;
+    var old = host.querySelector('.page:not(.leaving)');
+    var page = document.createElement('div');
+    page.className = 'page';
+    page.innerHTML = pageHTML(S.step);
+
+    if (changed && !S.reduced && old) {
+      old.classList.add('leaving', forward ? 'leave-fwd' : 'leave-back');
+      page.classList.add(forward ? 'enter-fwd' : 'enter-back');
+      host.classList.add('busy');
+      host.appendChild(page);
+      setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); host.classList.remove('busy'); }, 230);
+    } else {
+      host.innerHTML = '';
+      host.appendChild(page);
+    }
+    lastRendered = S.step;
+    lastStep = S.step;
+    var svg = page.querySelector('[data-thread]');
+    if (svg) drawThread(svg, S.step, S.step === 2 && S.connected);
+  }
+
+  function seg(label, key, options) {
+    var btns = options.map(function (o) {
+      return '<button data-set="' + key + '" data-val="' + o[0] + '" aria-pressed="' + (String(S[key]) === String(o[0])) + '">' + o[1] + '</button>';
+    }).join('');
+    return '<div class="ctl"><h2>' + label + '</h2><div class="seg">' + btns + '</div></div>';
+  }
+  function toggles() {
+    function tg(key, label) { return '<button data-flip="' + key + '" aria-pressed="' + S[key] + '">' + label + '</button>'; }
+    return '<div class="ctl"><h2>' + p('已有节点') + ' / ' + p('已选节点') + ' / ' + p('动效') + '</h2><div class="seg">' +
+      tg('hasNodes', p('已有节点')) + tg('hasProxy', p('已选节点')) + tg('reduced', p('减少动效')) + '</div></div>';
+  }
+  function renderControls() {
+    $('controls').innerHTML =
+      seg(p('主题'), 'theme', [['light', p('浅色')], ['dark', p('深色')]]) +
+      seg(p('语言'), 'lang', [['zh', '简体'], ['zhHant', '繁體'], ['en', 'English'], ['ja', '日本語'], ['fr', 'Français'], ['de', 'Deutsch']]) +
+      seg(p('字号'), 'big', [['1', '100%'], ['2', '200%']]) +
+      seg(p('宽度'), 'width', [['320', '320dp'], ['360', '360dp'], ['tab', p('平板')]]) +
+      seg(p('连接结果（模拟）'), 'outcome', [['once', p('先失败再成功')], ['ok', p('总是成功')], ['fail', p('总是失败')]]) +
+      toggles() +
+      '<div class="ctl"><h2>' + p('操作') + '</h2><div class="seg"><button class="act" data-do="sysback">' + p('系统返回键') + '</button>' +
+      '<button class="act" data-do="reopen">' + p('从设置打开引导') + '</button><button class="act" data-do="reset">' + p('重置') + '</button></div></div>';
+    $('bannerSub').textContent = S.lang !== 'zh'
+      ? 'Interaction design preview · not a device screenshot. Every action only changes local mock state; nothing is requested, saved or sent.'
+      : 'Interaction design preview · not a device screenshot。所有操作只改变本页的模拟状态，不会请求权限、联网或保存任何内容。';
+    $('status').innerHTML = p('最近操作：') + '<code>' + (S.log || p('暂无操作')) + '</code>';
+  }
+
+  function mockChild() {
+    var c = $('child'), h = '';
+    if (!S.child) { c.hidden = true; c.innerHTML = ''; return; }
+    var head = '<div class="mock"><div class="tag">' + p('模拟窗口 · 非引导界面') + '</div>';
+    if (S.child === 'import') {
+      h = head + '<h3>' + p('导入订阅（模拟）') + '</h3>';
+      if (S.childErr) h += '<div class="err" role="alert"><b>' + p('导入失败') + '</b><br>' + p('没有读取到可用节点。可以再试一次，或取消回到引导。') + '</div>' +
+        '<div class="actions"><button class="btn" data-child="import-ok">' + p('再试一次（模拟成功）') + '</button><button class="btn out" data-child="cancel">' + p('取消') + '</button></div></div>';
+      else h += '<p>' + p('这里是应用自己的导入窗口，引导已被隐藏。') + '</p>' +
+        '<div class="actions"><button class="btn" data-child="import-ok">' + p('模拟导入成功') + '</button><button class="btn out" data-child="import-fail">' + p('模拟导入失败') + '</button><button class="btn out" data-child="cancel">' + p('取消') + '</button></div></div>';
+    } else if (S.child === 'node') {
+      h = head + '<h3>' + p('选择节点（模拟）') + '</h3><p>' + p('这里是应用自己的节点列表，引导已被隐藏。') + '</p>' +
+        '<div class="actions"><button class="btn" data-child="node-ok">' + p('模拟选定一个节点') + '</button><button class="btn out" data-child="cancel">' + p('取消') + '</button></div></div>';
+    } else {
+      h = head + '<h3>' + p('应用说明（模拟）') + '</h3><p>' + p('连接时，Weave 会先在这里说明用途，然后由系统询问是否允许 VPN。') + '</p>' +
+        '<div class="actions"><button class="btn" data-child="vpn-ok">' + p('继续（模拟授权）') + '</button><button class="btn out" data-child="cancel">' + p('取消') + '</button></div></div>';
+    }
+    c.innerHTML = h; c.hidden = false;
+  }
+  function mockClosed() {
+    var c = $('closed');
+    if (!S.dismissed) { c.hidden = true; c.innerHTML = ''; return; }
+    c.innerHTML = '<div class="mock"><div class="tag">' + p('模拟窗口 · 非引导界面') + '</div><h3>' + p('引导已关闭') + '</h3><p>' + p('真实应用中会回到主界面，之后可在设置里再次打开。') +
+      '</p><div class="actions"><button class="btn" data-do="reopen">' + p('从设置打开引导') + '</button></div></div>';
+    c.hidden = false;
+  }
+
+  function render() {
+    var vp = $('viewport');
+    vp.setAttribute('data-theme', S.theme);
+    vp.style.setProperty('--fs', S.big);
+    vp.className = 'viewport ' + (S.width === 'tab' ? 'wtab' : 'w' + S.width) + (S.reduced ? ' reduced' : '');
+    document.documentElement.lang = S.lang === 'en' ? 'en' : 'zh-CN';
+    $('guide').hidden = !!S.child || S.dismissed;
+    renderGuide();
+    mockChild();
+    mockClosed();
+    renderControls();
+  }
+
+  /* ---------- simulated state transitions (no network, no permissions) ---------- */
+  function say(zh, en) { S.log = S.lang === 'en' ? en : zh; }
+
+  function startConnect() {
+    clearTimeout(timer);
+    S.connecting = true; S.error = false; S.connected = false;
+    timer = setTimeout(function () {
+      var fail = S.outcome === 'fail' || (S.outcome === 'once' && !S.failedOnce);
+      if (S.outcome === 'once') S.failedOnce = true;
+      S.connecting = false;
+      if (fail) { S.error = true; say('模拟连接失败，显示温和的重试说明', 'mock connection failed; gentle retry note shown'); }
+      else { S.connected = true; say('模拟连接成功', 'mock connection succeeded'); }
+      render();
+    }, 1400);
+  }
+
+  function reset() {
+    clearTimeout(timer);
+    var keep = { theme: S.theme, lang: S.lang, big: S.big, width: S.width, outcome: S.outcome, reduced: S.reduced };
+    S = { step: 0, hasNodes: false, hasProxy: false, connected: false, connecting: false, error: false, child: null, childErr: false,
+      dismissed: false, failedOnce: false, vpnOk: false, log: '' };
+    for (var k in keep) S[k] = keep[k];
+    lastRendered = null; lastStep = 0;
+  }
+
+  function act(name) {
+    if (name === 'primary') {
+      if (S.step === 0) { S.child = 'import'; S.childErr = false; say('点击导入入口，打开导入窗口', 'opened the import dialog'); }
+      else if (S.step === 1) { S.child = 'node'; say('点击“选择节点”，打开节点列表', 'opened the node list'); }
+      else if (!S.vpnOk) { S.child = 'vpn'; say('点击“连接”，先显示应用说明', 'tapped Connect; app disclosure shown first'); }
+      else { say('点击“连接”（重试）', 'tapped Connect (retry)'); startConnect(); }
+    } else if (name === 'next') {
+      S.step = Math.min(2, S.step + 1); say('点击“下一步”', 'tapped Next');
+    } else if (name === 'back') {
+      S.step = Math.max(0, S.step - 1); say('返回上一步', 'went back one step');
+    } else if (name === 'skip' || name === 'dismiss') {
+      S.dismissed = true; say(name === 'skip' ? '跳过，关闭引导（未请求任何权限）' : '点击“开始使用”，关闭引导', name === 'skip' ? 'skipped; guide closed (no permission requested)' : 'tapped Get started; guide closed');
+    } else if (name === 'motion') {
+      S.reduced = !S.reduced; say(S.reduced ? '开启减少动效' : '关闭减少动效', S.reduced ? 'reduced motion on' : 'reduced motion off');
+    }
+    render();
+  }
+
+  function childAct(name) {
+    var wasStep = S.step;
+    if (name === 'cancel') {
+      S.child = null; S.childErr = false; say('取消子窗口，回到引导，状态不变', 'cancelled; back in the guide, nothing changed');
+    } else if (name === 'import-fail') {
+      S.childErr = true; say('模拟导入失败（仍在导入窗口内）', 'mock import failure (still inside the import dialog)');
+    } else if (name === 'import-ok') {
+      S.child = null; S.childErr = false; S.hasNodes = true;
+      if (wasStep === 0) S.step = 1;
+      say('导入成功，出现可用节点，进入下一步', 'import succeeded; usable nodes exist, moved on');
+    } else if (name === 'node-ok') {
+      S.child = null; S.hasProxy = true;
+      if (wasStep === 1) S.step = 2;
+      say('选定节点，进入连接步骤', 'node chosen; moved to Connect');
+    } else if (name === 'vpn-ok') {
+      S.child = null; S.vpnOk = true; say('模拟授权通过，开始连接', 'mock permission granted; connecting'); startConnect();
+    }
+    render();
+  }
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act],[data-child],[data-set],[data-flip],[data-do]');
+    if (!el) return;
+    if (el.dataset.act) { if (el.dataset.act !== 'noop') act(el.dataset.act); return; }
+    if (el.dataset.child) { childAct(el.dataset.child); return; }
+    if (el.dataset.set) {
+      var k = el.dataset.set, v = el.dataset.val;
+      S[k] = (k === 'big') ? Number(v) : v;
+      render(); return;
+    }
+    if (el.dataset.flip) {
+      var f = el.dataset.flip; S[f] = !S[f];
+      if (f === 'hasNodes' && !S.hasNodes) S.hasProxy = false;
+      render(); return;
+    }
+    if (el.dataset.do === 'sysback') { systemBack(); }
+    else if (el.dataset.do === 'reopen') { S.dismissed = false; S.child = null; S.step = 0; lastRendered = null; say('从设置重新打开引导（不含任何凭据）', 'reopened from Settings (carries no credentials)'); render(); }
+    else if (el.dataset.do === 'reset') { reset(); render(); }
+  });
+
+  function systemBack() {
+    if (S.dismissed) return;
+    if (S.child) { childAct('cancel'); return; }
+    if (S.step === 0) act('skip'); else act('back');
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') systemBack(); });
+  window.addEventListener('resize', function () { var svg = document.querySelector('[data-thread]'); if (svg) drawThread(svg, S.step, S.step === 2 && S.connected); });
+
+  $('scrim').addEventListener('click', function () { if (S.width === 'tab') act('skip'); });
+  render();
+})();
+</script>
+</body>
+</html>

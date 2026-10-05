@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import io.weave.client.core.diagnostics.AppConnectionTrace
+import io.weave.client.core.ipc.CoreClient
 import io.weave.client.domain.AppRoute
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
@@ -57,7 +58,7 @@ internal fun ConnectionTracePanel(routes: List<AppRoute>, mode: RoutingMode,
         }
         names = routesByUid.mapValues { it.value.appName }
     }
-    DisposableEffect(Unit) { onDispose { AppConnectionTrace.stop() } }
+    DisposableEffect(Unit) { onDispose { CoreClient.stopTrace() } }
     Column {
         Text(l("内核实际命中"), style = MaterialTheme.typography.titleSmall)
         Text(l("仅手动读取当前活跃连接；不保存域名或地址，结果两分钟后清除。链路按内核返回顺序显示。"), fontSize = 12.sp)
@@ -87,13 +88,13 @@ internal fun ConnectionTracePanel(routes: List<AppRoute>, mode: RoutingMode,
         Row {
             TextButton(onClick = {
                 capturing = !capturing
-                if (capturing) AppConnectionTrace.start() else AppConnectionTrace.stop()
+                if (capturing) CoreClient.startTrace() else CoreClient.stopTrace()
                 records = emptyList()
             }) { Text(l(if (capturing) "停止记录" else "开始记录")) }
-            TextButton(enabled = capturing, onClick = { records = AppConnectionTrace.snapshot() }) {
+            TextButton(enabled = capturing, onClick = { scope.launch { records = CoreClient.traceSnapshot() } }) {
                 Text(l("刷新记录"))
             }
-            TextButton(onClick = { AppConnectionTrace.clear(); records = emptyList() }) { Text(l("清除记录")) }
+            TextButton(onClick = { CoreClient.clearTrace(); records = emptyList() }) { Text(l("清除记录")) }
         }
         records.take(12).forEach { entry ->
             val protocol = if (entry.protocol == 6) "TCP" else if (entry.protocol == 17) "UDP" else entry.protocol.toString()

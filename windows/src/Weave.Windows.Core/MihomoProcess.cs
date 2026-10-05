@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.NetworkInformation;
 
 namespace Weave.Windows.Core;
 
@@ -10,6 +11,10 @@ public sealed class MihomoProcess : IAsyncDisposable
     private readonly object _gate = new();
     private Process? _process;
     private CancellationTokenSource? _logCancellation;
+    private ChildProcessLifetime? _childLifetime;
+    private MihomoController? _controller;
+    private volatile bool _ready;
+    public bool IsReady => _ready && IsRunning;
 
     public MihomoProcess(string executablePath)
     {
@@ -33,23 +38,25 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public async Task StartAsync(RuntimeBundle bundle, CancellationToken cancellationToken = default)
     {
+        _ready = false;
+        LastDiagnostics = string.Empty;
         lock (_gate)
         {
             if (_process is { HasExited: false })
             {
-                throw new InvalidOperationException("Mihomo 已经在运行");
+                throw new InvalidOperationException(L.T("Mihomo 已经在运行"));
             }
         }
 
         if (!File.Exists(_executablePath))
         {
-            throw new FileNotFoundException("未找到 Mihomo Windows 核心", _executablePath);
+            throw new FileNotFoundException(L.T("未找到 Mihomo Windows 核心"), _executablePath);
         }
 
         var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
-            Arguments = $"-d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)} --no-color",
+            Arguments = $"-d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)}",
             WorkingDirectory = bundle.Directory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -59,20 +66,14 @@ public sealed class MihomoProcess : IAsyncDisposable
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.Exited += (_, _) =>
         {
-            lock (_gate)
-            {
-                if (ReferenceEquals(_process, process))
-                {
-                    _process = null;
-                }
-            }
-
+            _ready = false;
+            // Retain the exited handle until StopAsync disposes it and its log readers.
             Exited?.Invoke(this, EventArgs.Empty);
         };
         if (!process.Start())
         {
             process.Dispose();
-            throw new InvalidOperationException("无法启动 Mihomo");
+            throw new InvalidOperationException(L.T("无法启动 Mihomo"));
         }
 
         CancellationTokenSource logCancellation;
@@ -87,7 +88,11 @@ public sealed class MihomoProcess : IAsyncDisposable
 
         try
         {
-            await WaitForPortAsync(bundle.MixedPort, process, cancellationToken).ConfigureAwait(false);
+            if (OperatingSystem.IsWindows()) _childLifetime = new ChildProcessLifetime(process);
+            _controller = new MihomoController(bundle);
+            await WaitForReadyAsync(bundle, process, cancellationToken).ConfigureAwait(false);
+            if (process.HasExited) throw new InvalidOperationException(L.T("内核已退出"));
+            _ready = true;
         }
         catch
         {
@@ -103,7 +108,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
-            Arguments = $"-t -d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)} --no-color",
+            Arguments = $"-t -d {Quote(bundle.Directory)} -f {Quote(bundle.ConfigPath)}",
             WorkingDirectory = bundle.Directory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -113,11 +118,14 @@ public sealed class MihomoProcess : IAsyncDisposable
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
         {
-            return (false, "无法启动 Mihomo 配置检查");
+            return (false, L.T("无法启动 Mihomo 配置检查"));
         }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        // Drain both pipes before waiting; a full diagnostic pipe otherwise deadlocks validation.
+        var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
         try
         {
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
@@ -125,16 +133,19 @@ public sealed class MihomoProcess : IAsyncDisposable
         catch (OperationCanceledException)
         {
             try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            return (false, "Mihomo 配置检查超时");
+            try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            cancellationToken.ThrowIfCancellationRequested();
+            return (false, L.T("Mihomo 配置检查超时"));
         }
 
-        var output = (await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false) +
-                      await process.StandardError.ReadToEndAsync().ConfigureAwait(false)).Trim();
-        return (process.ExitCode == 0, output);
+        var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
+        return (process.ExitCode == 0, process.ExitCode == 0 ? L.T("配置校验通过") : SafeDiagnostic(output));
     }
 
     public async Task StopAsync()
     {
+        _ready = false;
         Process? process;
         CancellationTokenSource? cancellation;
         lock (_gate)
@@ -148,6 +159,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         cancellation?.Cancel();
         if (process is null)
         {
+            cancellation?.Dispose();
             return;
         }
 
@@ -155,8 +167,15 @@ public sealed class MihomoProcess : IAsyncDisposable
         {
             if (!process.HasExited)
             {
+                if (_controller is not null)
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    try { await _controller.DisableTunAsync(timeout.Token).ConfigureAwait(false); }
+                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
+                }
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync(exitTimeout.Token).ConfigureAwait(false);
             }
         }
         catch (InvalidOperationException)
@@ -167,33 +186,40 @@ public sealed class MihomoProcess : IAsyncDisposable
         {
             process.Dispose();
             cancellation?.Dispose();
+            _controller?.Dispose();
+            _controller = null;
+            _childLifetime?.Dispose();
+            _childLifetime = null;
         }
     }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
-    private async Task WaitForPortAsync(int port, Process process, CancellationToken cancellationToken)
+    private async Task WaitForReadyAsync(RuntimeBundle bundle, Process process, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(12));
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
         while (true)
         {
             timeout.Token.ThrowIfCancellationRequested();
             if (process.HasExited)
             {
-                throw new InvalidOperationException($"Mihomo 启动失败：{LastDiagnostics}");
+                throw new InvalidOperationException(L.F($"Mihomo 启动失败：{LastDiagnostics}"));
             }
 
-            using var client = new TcpClient();
             try
             {
-                await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token).ConfigureAwait(false);
-                return;
+                var tunReady = !bundle.RequiresTun || (OperatingSystem.IsWindows() &&
+                    NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
+                        adapter.Name.Equals(bundle.TunDevice, StringComparison.OrdinalIgnoreCase) &&
+                        adapter.OperationalStatus == OperationalStatus.Up));
+                if (tunReady && await _controller!.IsReadyAsync(bundle, timeout.Token).ConfigureAwait(false)) return;
             }
-            catch (SocketException)
+            catch (Exception error) when (error is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException or NetworkInformationException)
             {
-                await Task.Delay(100, timeout.Token).ConfigureAwait(false);
+                timeout.Token.ThrowIfCancellationRequested();
             }
+            await Task.Delay(250, timeout.Token).ConfigureAwait(false);
         }
     }
 
@@ -209,14 +235,24 @@ public sealed class MihomoProcess : IAsyncDisposable
                     return;
                 }
 
-                LastDiagnostics = line.Length > 500 ? line[..500] : line;
+                LastDiagnostics = SafeDiagnostic(line);
             }
         }
         catch (OperationCanceledException)
         {
             // Shutdown is expected to cancel log readers.
         }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
     }
 
     private static string Quote(string path) => $"\"{path.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+
+    private static string SafeDiagnostic(string message)
+    {
+        if (message.Contains("address already in use", StringComparison.OrdinalIgnoreCase)) return L.T("本地端口被占用");
+        if (message.Contains("permission", StringComparison.OrdinalIgnoreCase) || message.Contains("access is denied", StringComparison.OrdinalIgnoreCase)) return L.T("系统拒绝权限，请检查管理员权限");
+        if (message.Contains("tun", StringComparison.OrdinalIgnoreCase)) return L.T("TUN 适配器或路由未就绪");
+        return L.T("内核配置或运行错误，请检查订阅与网络设置（原始日志不展示，以避免泄露凭据）");
+    }
 }

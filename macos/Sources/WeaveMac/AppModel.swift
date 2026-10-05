@@ -6,6 +6,8 @@ import Security
 
 @MainActor
 final class AppModel: ObservableObject {
+    private static let tunEnabledKey = "weave.macos.tun-enabled"
+
     let vault = SubscriptionVault()
     let core = MihomoController()
 
@@ -17,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published var transferBusy = false
     @Published var selectedSubscriptionID: UUID?
     @Published var selectedNodeName: String?
+    @Published var tunEnabled: Bool
     @Published var directImportBusy = false
     @Published var directImportMessage = ""
     @Published var editingSubscriptionID: UUID?
@@ -30,6 +33,7 @@ final class AppModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
+        tunEnabled = UserDefaults.standard.object(forKey: Self.tunEnabledKey) as? Bool ?? true
         subscriptions = vault.subscriptions
         selectedSubscriptionID = subscriptions.first?.id
         vault.$subscriptions
@@ -58,17 +62,21 @@ final class AppModel: ObservableObject {
         selectedNodes = id.flatMap { nodeCache[$0] } ?? []
     }
 
+    func setTunEnabled(_ enabled: Bool) {
+        tunEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.tunEnabledKey)
+    }
+
     func toggleConnection() {
-        if core.state == .localProxy {
-            core.stop()
-        } else if core.state == .starting {
+        if core.state.isConnected || core.state == .starting {
             core.stop()
         } else {
             core.start(
                 subscriptions: subscriptions,
                 selectedSubscriptionID: selectedSubscriptionID,
                 selectedNodeName: selectedNodeName,
-                availableNodeNames: selectedNodes
+                availableNodeNames: selectedNodes,
+                preferTun: tunEnabled,
             )
         }
     }
@@ -194,7 +202,7 @@ final class AppModel: ObservableObject {
                     payload: imported.payload,
                 )
                 directImportMessage = "已刷新“\(subscription.name)”"
-                if core.state == .localProxy {
+                if core.state.isConnected {
                     core.stop()
                     let latestSubscriptions = vault.subscriptions
                     subscriptions = latestSubscriptions
@@ -203,6 +211,7 @@ final class AppModel: ObservableObject {
                         selectedSubscriptionID: selectedSubscriptionID,
                         selectedNodeName: selectedNodeName,
                         availableNodeNames: selectedNodes,
+                        preferTun: tunEnabled,
                     )
                 }
             } catch {

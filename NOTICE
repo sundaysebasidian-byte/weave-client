@@ -1,4 +1,4 @@
-Weave open-source preview
+Weave local open-source Android release candidate
 Copyright (C) 2026 Weave contributors
 
 Weave original source is provided under GPL-3.0-or-later. The complete license
@@ -20,7 +20,9 @@ release coordinate and artifact hashes are in geodata-lock.properties.
 AndroidX, ZXing and SnakeYAML components are licensed under Apache-2.0. The Android
 preview does not bundle Google Play services or ML Kit runtime artifacts;
 camera QR decoding uses the system camera preview and the bundled ZXing core.
-Additional project roles and links are listed in THIRD_PARTY.md. A production
-distributor must generate and ship the complete transitive dependency copyright,
-license, and SBOM bundle for the exact release; this preview notice is not a
-substitute for that generated bundle.
+Additional project roles and links are listed in THIRD_PARTY.md. The RC107 Android delivery includes generated runtime Maven and native Go module
+inventories, preserved upstream license/NOTICE files, inherited POM license
+declarations, Go runtime licensing and libyuv BSD attribution used by CameraX.
+Preserve this generated bundle with the exact binary and corresponding source.
+Coverage is Android ARM64, not all platforms; this notice does not replace the
+generated files or certify legal compliance.

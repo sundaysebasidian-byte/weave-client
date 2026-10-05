@@ -10,9 +10,6 @@ class SubscriptionDeletionReconcilerTest {
         id = "retained",
         name = "retained",
         nodeCount = 1,
-        updatedAt = "",
-        trafficUsedGb = 0.0,
-        trafficTotalGb = 0.0,
     )
 
     @Test

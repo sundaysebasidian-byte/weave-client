@@ -4,8 +4,9 @@
 
 Weave currently publishes prereleases. The latest public Android candidate is
 [0.4.0-rc4 / Build 110](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4),
-not a stable release. Its exact source is under the matching tag; `main` still
-contains the alpha83 code line. Security fixes target the latest published
+not a stable release. Its exact source is under the matching tag. `main` now
+integrates the RC4 code and tests; later main builds do not inherit the published
+binary's verification. Security fixes target the latest published
 prerelease. Older APKs and unofficial builds are not supported.
 
 ## Distribution boundary

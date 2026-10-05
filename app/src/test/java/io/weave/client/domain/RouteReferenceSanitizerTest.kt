@@ -9,9 +9,6 @@ class RouteReferenceSanitizerTest {
         id = "kept",
         name = "Kept",
         nodeCount = 1,
-        updatedAt = "",
-        trafficUsedGb = 0.0,
-        trafficTotalGb = 0.0,
     )
     private val node = ProxyNode(
         id = "jp-1",

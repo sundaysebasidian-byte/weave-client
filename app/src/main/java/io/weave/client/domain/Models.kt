@@ -116,6 +116,24 @@ enum class WeaveLanguage(
     JAPANESE("ja", "日本語", "日本語インターフェース"),
     FRENCH("fr", "Français", "Interface française"),
     GERMAN("de", "Deutsch", "Deutsche Oberfläche"),
+    ;
+
+    companion object {
+        /** Best match for the device locale; unsupported languages use English. */
+        fun fromSystem(locale: java.util.Locale = java.util.Locale.getDefault()): WeaveLanguage {
+            val language = locale.language.lowercase()
+            if (language == "zh") {
+                val script = locale.script.lowercase()
+                val region = locale.country.uppercase()
+                return if (script == "hant" || (script.isEmpty() && region in setOf("TW", "HK", "MO"))) {
+                    TRADITIONAL_CHINESE
+                } else {
+                    SIMPLIFIED_CHINESE
+                }
+            }
+            return entries.firstOrNull { it.localeTag == language } ?: ENGLISH
+        }
+    }
 }
 
 /**
@@ -154,13 +172,31 @@ data class NetworkPreferences(
     // can disable it explicitly in Settings.
     val domesticDirect: Boolean = true,
     val weavePalette: WeavePalette = WeavePalette.MINIMAL_LIGHT,
+    /** 0 disables scheduled refresh of HTTPS subscriptions. */
+    val subscriptionAutoUpdateHours: Int = 0,
+    val subscriptionAutoUpdateUnmeteredOnly: Boolean = true,
+    /** Apps routed DIRECT bypass the VPN interface entirely instead of the core's DIRECT rule. */
+    val bypassDirectApps: Boolean = false,
+    val bootstrapDns: BootstrapDns = BootstrapDns.MAINLAND,
+    /** Publishes the local mixed proxy as the VPN's HTTP proxy (browsers skip the TUN stack). */
+    val systemHttpProxy: Boolean = false,
+    /** Lets other LAN/hotspot devices use the authenticated mixed proxy. */
+    val lanSharing: Boolean = false,
 )
+
+/** Plain-DNS resolvers used only to resolve the encrypted DNS hostnames themselves. */
+enum class BootstrapDns(val label: String, val servers: List<String>) {
+    MAINLAND("中国大陆（阿里 / 腾讯）", listOf("223.5.5.5", "119.29.29.29")),
+    GLOBAL("海外（Cloudflare / Quad9）", listOf("1.1.1.1", "9.9.9.9")),
+}
 
 enum class RouteKind {
     AUTO,
     FIXED,
     DIRECT,
     BLOCK,
+    /** A user-defined proxy group (optionally chained through an entry node). */
+    GROUP,
 }
 
 @Immutable
@@ -179,11 +215,22 @@ data class Subscription(
     val id: String,
     val name: String,
     val nodeCount: Int,
-    val updatedAt: String,
-    val trafficUsedGb: Double,
-    val trafficTotalGb: Double,
+    /** From the provider's `subscription-userinfo` header; null when it did not send one. */
+    val quota: SubscriptionQuota? = null,
+    val updatedAtMillis: Long? = null,
+    val remote: Boolean = false,
     val enabled: Boolean = true,
 )
+
+@Immutable
+data class SubscriptionQuota(
+    val usedBytes: Long,
+    val totalBytes: Long,
+    val expireAtMillis: Long?,
+) {
+    val usedFraction: Float
+        get() = if (totalBytes > 0) (usedBytes.toDouble() / totalBytes).toFloat().coerceIn(0f, 1f) else 0f
+}
 
 enum class SubscriptionSourceKind(val label: String) {
     REMOTE("HTTPS 远程订阅"),
@@ -209,6 +256,7 @@ data class RouteTarget(
     val label: String,
     val subscriptionId: String? = null,
     val nodeId: String? = null,
+    val groupId: String? = null,
 )
 
 @Immutable

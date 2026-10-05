@@ -15,7 +15,8 @@ object SystemVpnProtection {
 
     fun lockdownEnabled(): Boolean? {
         if (Build.VERSION.SDK_INT < 29) return null
-        val current = service.get() ?: return null
+        // In the UI process the service lives in `:vpn`; use the value it last reported.
+        val current = service.get() ?: return io.weave.client.core.ipc.CoreClient.lockdownEnabled
         return runCatching { current.isAlwaysOn && current.isLockdownEnabled }.getOrNull()
     }
 }

@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <Version>0.4.3</Version>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WindowsPackageType>None</WindowsPackageType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>Weave.Windows</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets\Weave.ico')">Assets\Weave.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
     <PlatformTarget>$(Platform)</PlatformTarget>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -17,6 +22,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
+    <PackageReference Include="ZXing.Net" Version="0.16.10" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,6 +31,16 @@
 
   <ItemGroup>
     <None Update="app.manifest" />
+    <Content Include="Assets\Weave.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\privacy-lab.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\..\app\src\main\assets\geodata\GeoIP.dat" Link="geodata\GeoIP.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\..\app\src\main\assets\geodata\GeoSite.dat" Link="geodata\GeoSite.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="runtime\mihomo.exe" Condition="Exists('runtime\mihomo.exe')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="PublishXamlResources" AfterTargets="Publish">
+    <ItemGroup>
+      <WeaveXamlResource Include="$(TargetDir)**\*.xbf;$(TargetDir)*.pri" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WeaveXamlResource)" DestinationFiles="@(WeaveXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

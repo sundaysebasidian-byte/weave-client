@@ -1,8 +1,6 @@
 package io.weave.client.subscription
 
 import java.net.URI
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 sealed interface QrSubscriptionInput {
     data class RemoteUrl(val url: String) : QrSubscriptionInput
@@ -34,28 +32,9 @@ class QrSubscriptionDecoder {
         }
 
         if (scheme in WRAPPER_SCHEMES) {
-            val wrappedUrl = uri?.rawQuery
-                ?.split('&')
-                ?.asSequence()
-                ?.mapNotNull { field ->
-                    val separator = field.indexOf('=')
-                    if (separator <= 0) return@mapNotNull null
-                    val key = URLDecoder.decode(
-                        field.substring(0, separator),
-                        StandardCharsets.UTF_8.name(),
-                    )
-                    if (key != "url") return@mapNotNull null
-                    URLDecoder.decode(
-                        field.substring(separator + 1),
-                        StandardCharsets.UTF_8.name(),
-                    )
-                }
-                ?.firstOrNull()
-                ?: throw SubscriptionImportException("二维码未包含订阅地址")
-            if (!wrappedUrl.startsWith("https://", ignoreCase = true)) {
-                throw SubscriptionImportException("二维码订阅地址必须使用 HTTPS")
-            }
-            return QrSubscriptionInput.RemoteUrl(wrappedUrl)
+            val remote = ExternalImportParser.fromLink(value) as? ExternalImport.Remote
+                ?: throw SubscriptionImportException("客户端链接未包含有效 HTTPS 订阅地址")
+            return QrSubscriptionInput.RemoteUrl(remote.url)
         }
 
         return QrSubscriptionInput.InlinePayload(value)
@@ -63,6 +42,6 @@ class QrSubscriptionDecoder {
 
     private companion object {
         const val MAX_QR_PAYLOAD_LENGTH = 32 * 1024
-        val WRAPPER_SCHEMES = setOf("clash", "clashmeta", "clash-verge", "clashmi", "karing", "sing-box", "hiddify")
+        val WRAPPER_SCHEMES = ExternalImportParser.LINK_SCHEMES
     }
 }

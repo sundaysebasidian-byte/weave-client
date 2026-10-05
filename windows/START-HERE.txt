@@ -1,0 +1,36 @@
+Weave Windows x64 test build
+
+1. Extract the entire archive to a folder. Do not run from inside the ZIP.
+2. Open Weave.Windows.exe and import your subscription.
+3. Select a subscription and node, then connect. Approve the administrator relaunch for TUN.
+4. In the elevated window, click Connect again. Use the same Windows user account.
+
+Windows 10 22H2 / Windows 11 on Intel or AMD x64.
+The .NET runtime and Mihomo are bundled. Keep all DLLs and the runtime folder.
+This is an unsigned test build, not a stable release. Do not disable Windows security.
+Windows may show a reputation warning because this build is unsigned.
+
+This package uses official Mihomo v1.19.30 (not Android's patched core).
+Source: https://github.com/MetaCubeX/mihomo/tree/v1.19.30
+Core archive SHA256: 8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278
+Weave source: https://github.com/sundaysebasidian-byte/weave-client/tree/codex/windows-v1-preview
+
+No subscription is included. Import your own trusted configuration.
+Connected means the authenticated core, configured providers and TUN adapter are ready; it is not proof of internet reachability,
+DNS protection or successful IPv6 routing. Windows 10/11 real-device testing is pending.
+Disconnect before quitting. No automatic update or public release is performed.
+Installer version: Windows 0.4.3 RC4. Uninstalling preserves encrypted user subscriptions.
+Closing the window keeps Weave in the tray. Right-click the tray icon to disconnect and quit.
+Network changes and resume trigger a bounded connectivity check, not a silent switch to DIRECT.
+Language: Settings > Personalization > Language. Chinese and English switch immediately without restarting the proxy.
+Rule mode: process rules, custom domain/CIDR rules, optional bundled China-direct rules, then default exit.
+Global mode uses the default exit. Direct mode does not hide your public IP and needs no subscription.
+System proxy mode covers only applications which honor Windows proxy settings. TUN needs administrator rights.
+Chains require explicit entry and exit nodes. Independent application routes do not inherit the default chain.
+Android-compatible encrypted LAN sharing: QR, QR image or link; selected subscriptions; confirm the 6-digit code.
+Share links contain decryption keys: keep them private. They expire in five minutes and are single-use.
+Allow sharing only on trusted Private networks if Windows Firewall asks; do not disable the firewall.
+Camera scanning requires Windows camera permission. Browser privacy experiments require installed Edge WebView2 Runtime.
+These experiments describe only the embedded browser, not all applications. No-result means unknown, not safe.
+Full Android feature parity, tray/startup, background paired sync and a system-wide kill switch are not included.
+High-DPI rendering is supported; 120/144 Hz zero-drop performance has not been verified on physical hardware.

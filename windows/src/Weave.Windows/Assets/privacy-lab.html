@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.ipify.org https://api6.ipify.org; img-src data:">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weave 本地浏览器隐私实验</title>
+<style>
+:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;padding:28px;font:14px/1.65 system-ui,sans-serif;background:light-dark(#f5f7f9,#0b0e13);color:light-dark(#1d252d,#f1f3f6)}
+h1{font-size:23px;margin:0 0 8px}h2{font-size:16px;margin:0 0 10px}p{color:light-dark(#5d6873,#adb6c2)}
+section{padding:22px;margin-top:18px;border:1px solid light-dark(#dfe4ea,#303842);border-radius:18px;background:light-dark(#fff,#171c23)}
+pre{white-space:pre-wrap;word-break:break-word;font:13px/1.7 ui-monospace,monospace;margin:0}.note{font-size:12px}
+</style>
+<h1>浏览器隐私实验</h1><p>一次性检测，不循环刷新。网络错误、无候选地址均不是“无泄漏”的证据。</p>
+<section><h2>HTTPS 出口</h2><pre id="ip">正在分别查询 IPv4 / IPv6…</pre></section>
+<section><h2>WebRTC 路径</h2><pre id="rtc">正在收集 ICE 候选，最多 6 秒…</pre><p class="note">出口不同可能来自绕过代理、双栈差异或代理多出口，需要结合实际网络判断。</p></section>
+<section><h2>浏览器标识特征 · 只在本机</h2><pre id="fingerprint"></pre><p class="note">这是特征展示，不计算虚假的隐私分数，也不判断你在全网是否唯一。</p></section>
+<script>
+const write=(id,text)=>document.getElementById(id).textContent=text;
+const query=async url=>{const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),7000);try{const response=await fetch(url,{signal:controller.signal,cache:'no-store',credentials:'omit'});if(!response.ok)throw 0;const data=await response.json();return typeof data.ip==='string'?data.ip:null;}catch{return null}finally{clearTimeout(timer)}};
+const exitPromise=Promise.all([query('https://api.ipify.org?format=json'),query('https://api6.ipify.org?format=json')]).then(ips=>{write('ip','IPv4: '+(ips[0]||'无法确认')+'\nIPv6: '+(ips[1]||'无法确认（不可据此判断已阻断）'));return ips.filter(Boolean)});
+(async()=>{const results=[];let pc;try{pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'}]});pc.createDataChannel('weave-probe');
+await new Promise(async resolve=>{const timer=setTimeout(resolve,6000);pc.onicecandidate=event=>{if(!event.candidate){clearTimeout(timer);resolve();return}const fields=event.candidate.candidate.split(' ');const value={type:event.candidate.type||fields[7],address:event.candidate.address||fields[4]};if(value.address&&!results.some(item=>item.type===value.type&&item.address===value.address))results.push(value);};try{await pc.setLocalDescription(await pc.createOffer())}catch{clearTimeout(timer);resolve();}});
+const ips=await exitPromise;const publicCandidates=results.filter(item=>item.type==='srflx');let summary=publicCandidates.length===0?'未得到可判定的公网候选，不能证明无泄漏。':ips.length===0?'HTTPS 出口未知，无法进行一致性判断。':publicCandidates.every(item=>ips.includes(item.address))?'公网候选与本次 HTTPS 出口一致（仅当前浏览器）。':'发现不一致的公网候选，请检查 WebRTC、IPv6 路由或多出口配置。';write('rtc',summary+'\n\n'+results.map(item=>item.type+': '+item.address).join('\n'));
+}catch{write('rtc','当前环境无法执行 WebRTC 测试，结果未知。')}finally{if(pc)pc.close()}})();
+(async()=>{const lines=['User-Agent: '+navigator.userAgent,'平台: '+navigator.platform,'语言: '+navigator.languages.join(', '),'时区: '+Intl.DateTimeFormat().resolvedOptions().timeZone,'屏幕: '+screen.width+' × '+screen.height+' / DPR '+devicePixelRatio,'逻辑处理器: '+navigator.hardwareConcurrency];
+try{const canvas=document.createElement('canvas');canvas.width=240;canvas.height=60;const ctx=canvas.getContext('2d');ctx.font='18px system-ui';ctx.fillStyle='#527c74';ctx.fillText('Weave · 本地标识',8,35);const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canvas.toDataURL()));lines.push('Canvas SHA-256: '+Array.from(new Uint8Array(digest)).map(n=>n.toString(16).padStart(2,'0')).join(''));}catch{lines.push('Canvas 摘要: 当前环境不支持');}write('fingerprint',lines.join('\n'));})();
+</script></html>

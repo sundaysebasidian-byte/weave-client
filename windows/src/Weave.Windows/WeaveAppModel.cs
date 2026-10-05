@@ -12,10 +12,19 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private readonly AppRouteStore _routeStore;
     private readonly SubscriptionImporter _importer = new();
     private readonly MihomoConfigBuilder _configBuilder = new();
+    private readonly WindowsSystemProxy _systemProxy;
     private MihomoProcess? _process;
+    public RuntimeBundle? ActiveBundle { get; private set; }
+    public ConnectionHealthState Health { get; private set; }
+    private readonly SemaphoreSlim _connectionGate = new(1, 1);
+    private long _networkRevision;
+    public long NetworkRevision => Interlocked.Read(ref _networkRevision);
+    public event EventHandler? StatusChanged;
+    public WindowsNetworkOptions NetworkOptions { get; set; } = new();
 
     public WeaveAppModel()
     {
+        _systemProxy = new WindowsSystemProxy(_dataDirectory);
         _vault = new SubscriptionVault(
             Path.Combine(_dataDirectory, "subscriptions.bin"),
             new WindowsDpapiProtector());
@@ -28,13 +37,16 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public ObservableCollection<WindowsAppRoute> AppRoutes { get; } = new();
 
-    public bool IsConnected => _process?.IsRunning == true;
+    public bool IsConnected => _process?.IsReady == true;
 
-    public string Status { get; private set; } = "未连接";
+    private string _status = "未连接";
+    public string Status { get => L.T(_status); private set => _status = value; }
 
     public void Load()
     {
+        _systemProxy.Recover();
         Subscriptions.Clear();
+        AppRoutes.Clear();
         foreach (var subscription in _vault.List())
         {
             Subscriptions.Add(subscription);
@@ -48,10 +60,11 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         Status = Subscriptions.Count == 0 ? "请先导入订阅" : "未连接";
     }
 
-    public SubscriptionRecord ImportText(string name, string source, string payload)
+    public async Task<SubscriptionRecord> ImportTextAsync(string name, string source, string payload)
     {
-        var record = _importer.ImportText(name, source, payload);
-        _vault.Upsert(record);
+        var record = await Task.Run(() => _importer.ImportText(name, source, payload));
+        record = PreserveIdentity(record);
+        await Task.Run(() => _vault.Upsert(record));
         ReplaceInCollection(record);
         return record;
     }
@@ -59,21 +72,36 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public async Task<SubscriptionRecord> ImportUrlAsync(string name, string source, CancellationToken cancellationToken)
     {
         var record = await _importer.ImportUrlAsync(name, source, cancellationToken);
-        _vault.Upsert(record);
+        record = PreserveIdentity(record);
+        await Task.Run(() => _vault.Upsert(record), cancellationToken);
         ReplaceInCollection(record);
         return record;
     }
 
-    public SubscriptionRecord ImportFile(string name, string path)
+    public async Task<SubscriptionRecord> ImportFileAsync(string name, string path)
     {
-        var record = _importer.ImportFile(name, path);
-        _vault.Upsert(record);
+        var record = await Task.Run(() => _importer.ImportFile(name, path));
+        record = PreserveIdentity(record);
+        await Task.Run(() => _vault.Upsert(record));
         ReplaceInCollection(record);
         return record;
+    }
+
+    public async Task ImportTransferAsync(IReadOnlyList<TransferSubscription> items)
+    {
+        // Parse every selected subscription before the single atomic vault write.
+        var parsed = await Task.Run(() => items.Select(item => _importer.ImportText(item.Name, item.Source, item.Payload)).ToArray());
+        var merged = parsed.Select(PreserveIdentity).ToArray();
+        if (merged.Select(item => item.Id).Distinct().Count() != merged.Length)
+            throw new InvalidDataException(L.T("传输包包含重复订阅，请在发送端分别选择"));
+        await Task.Run(() => _vault.Merge(merged));
+        foreach (var record in merged) ReplaceInCollection(record);
     }
 
     public bool Remove(string id)
     {
+        if (AppRoutes.Any(route => route.Target.SubscriptionId == id))
+            throw new InvalidOperationException(L.T("请先删除引用此订阅的应用分流，避免应用意外改走其他出口。"));
         var removed = _vault.Remove(id);
         if (removed)
         {
@@ -87,13 +115,33 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         return removed;
     }
 
+    public async Task<bool> EditAsync(SubscriptionRecord existing, string name, string source, CancellationToken token,
+        Func<SubscriptionRecord, SubscriptionRecord, Task<bool>> confirm)
+    {
+        var parsed = source.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? await _importer.ImportUrlAsync(name, source, token)
+            : await Task.Run(() => _importer.ImportText(name, existing.Source, existing.ProviderYaml), token);
+        var nodes = parsed.Nodes.Select(node => new ProxyNode
+        {
+            Id = existing.Nodes.FirstOrDefault(old => old.RawName == node.RawName && old.Protocol == node.Protocol)?.Id ?? node.Id,
+            Name = node.Name, RawName = node.RawName, Protocol = node.Protocol, Index = node.Index,
+        }).ToList();
+        var updated = new SubscriptionRecord { Id = existing.Id, Name = parsed.Name, Source = parsed.Source,
+            Payload = parsed.Payload, ProviderYaml = parsed.ProviderYaml, Nodes = nodes };
+        if (!await confirm(existing, updated)) return false;
+        token.ThrowIfCancellationRequested();
+        await Task.Run(() => _vault.ReplaceReviewed(existing, updated), token);
+        ReplaceInCollection(updated);
+        return true;
+    }
+
     public void AddOrReplaceRoute(WindowsAppRoute route)
     {
         var processName = Path.GetFileName(route.ProcessName.Trim());
         if (string.IsNullOrWhiteSpace(processName) || processName.Contains(',') ||
             !processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("请输入不含逗号的 Windows .exe 进程名，例如 chrome.exe");
+            throw new InvalidDataException(L.T("请输入不含逗号的 Windows .exe 进程名，例如 chrome.exe"));
         }
 
         var normalized = new WindowsAppRoute
@@ -132,60 +180,194 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public async Task ConnectAsync(string subscriptionId, string? nodeId, CancellationToken cancellationToken)
     {
+        await _connectionGate.WaitAsync(cancellationToken);
+        try
+        {
         if (_process is not null)
         {
-            return;
+            if (_process.IsReady) return;
+            await _process.DisposeAsync();
+            _process = null;
+            await CleanupRuntimeAsync().ConfigureAwait(false);
         }
+
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (NetworkOptions.EnableTun && !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+            throw new InvalidOperationException(L.T("TUN 需要管理员权限。请退出 Weave，右键应用选择“以管理员身份运行”。"));
 
         var executable = FindMihomo();
         if (executable is null)
         {
-            throw new FileNotFoundException("未找到 mihomo.exe。请将它放到 Windows 发行包的 runtime 目录，或设置 WEAVE_MIHOMO_PATH。");
+            throw new FileNotFoundException(L.T("未找到 mihomo.exe。请将它放到 Windows 发行包的 runtime 目录，或设置 WEAVE_MIHOMO_PATH。"));
         }
 
         var runtime = Path.Combine(_dataDirectory, "runtime", Guid.NewGuid().ToString("N"));
-        var bundle = _configBuilder.Build(
-            Subscriptions,
-            AppRoutes,
+        var subscriptions = Subscriptions.ToArray();
+        var routes = AppRoutes.ToArray();
+        var options = NetworkOptions;
+        RuntimeBundle bundle;
+        try { bundle = await Task.Run(() => _configBuilder.Build(
+            subscriptions,
+            routes,
             subscriptionId,
             nodeId,
-            new WindowsNetworkOptions { EnableTun = true },
-            runtime);
+            options,
+            runtime), cancellationToken); }
+        catch { await RemoveSessionDirectoryAsync(runtime).ConfigureAwait(false); throw; }
+        ActiveBundle = bundle;
         var process = new MihomoProcess(executable);
         process.Exited += (_, _) =>
         {
             if (ReferenceEquals(_process, process))
             {
-                _process = null;
                 Status = "核心已停止";
+                try { _systemProxy.Recover(); } catch { Status = "核心已停止；系统代理恢复失败，请在 Windows 设置中检查"; }
+                StatusChanged?.Invoke(this, EventArgs.Empty);
             }
         };
+        try
+        {
         var validation = await process.ValidateConfigAsync(bundle, cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
             await process.DisposeAsync().ConfigureAwait(false);
-            throw new InvalidDataException($"Mihomo 配置校验失败：{validation.Diagnostics}");
+            throw new InvalidDataException(L.F($"Mihomo 配置校验失败：{validation.Diagnostics}"));
         }
 
-        Status = "正在启动 TUN";
-        await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
+        Status = options.EnableTun ? "正在启动 TUN" : "正在启动系统代理";
         _process = process;
-        Status = "已连接 · Mihomo TUN";
+        await process.StartAsync(bundle, cancellationToken).ConfigureAwait(false);
+        if (!process.IsReady) throw new InvalidOperationException(L.T("核心在启动时退出，请检查权限及配置。"));
+        // Browsers can keep obeying a stale loopback proxy even while TUN is up.
+        // Own the HTTP proxy for BOTH modes and restore it on stop/crash recovery.
+        _systemProxy.Enable(bundle.MixedPort);
+        if (!process.IsReady) throw new InvalidOperationException(L.T("内核在应用系统设置时退出，已取消连接"));
+        Health = ConnectionHealthState.Checking;
+        Status = "正在核验网络";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        var checkedRevision = Interlocked.Read(ref _networkRevision);
+        var checkedHealth = await ConnectionHealth.CheckAsync(bundle, cancellationToken).ConfigureAwait(false);
+        Health = checkedRevision == Interlocked.Read(ref _networkRevision) ? checkedHealth : ConnectionHealthState.Unchecked;
+        if (!process.IsReady) throw new InvalidOperationException(L.T("核心在启动时退出，请检查权限及配置。"));
+        Status = Health != ConnectionHealthState.Reachable ? "内核运行中 · 网络待确认" :
+            options.RoutingMode == RoutingMode.Direct ? "直连 · 不经过代理节点" : options.EnableTun ? "已连接 · TUN + 系统代理" : "已连接 · 系统代理";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch
+        {
+            Health = ConnectionHealthState.Unchecked;
+            _process = null;
+            try { _systemProxy.Recover(); } catch { /* Recovery record is retained for the next launch. */ }
+            await process.DisposeAsync().ConfigureAwait(false);
+            await CleanupRuntimeAsync().ConfigureAwait(false);
+            Status = "启动失败";
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+            throw;
+        }
+        }
+        finally { _connectionGate.Release(); }
     }
 
     public async Task DisconnectAsync()
     {
+        await _connectionGate.WaitAsync();
+        try
+        {
         var process = _process;
         _process = null;
-        if (process is not null)
+        Interlocked.Increment(ref _networkRevision);
+        Exception? recoveryError = null;
+        try { _systemProxy.Recover(); } catch (Exception error) { recoveryError = error; }
+        try
         {
-            await process.DisposeAsync().ConfigureAwait(false);
+            if (process is not null) await process.DisposeAsync().ConfigureAwait(false);
         }
+        finally { await CleanupRuntimeAsync().ConfigureAwait(false); }
 
+        Health = ConnectionHealthState.Unchecked;
         Status = "未连接";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        if (recoveryError is not null) throw new IOException(L.T("内核已停止，但系统代理恢复失败；请检查 Windows 代理设置。恢复记录已保留。"), recoveryError);
+        }
+        finally { _connectionGate.Release(); }
     }
 
-    public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
+    public void InvalidateNetworkEvidence()
+    {
+        Interlocked.Increment(ref _networkRevision);
+        if (!IsConnected) return;
+        Health = ConnectionHealthState.Unchecked;
+        Status = "网络已变化，等待重新确认";
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task RecheckAsync(CancellationToken token)
+    {
+        await _connectionGate.WaitAsync(token);
+        try
+        {
+            if (!IsConnected || ActiveBundle is not { } bundle) return;
+            Health = ConnectionHealthState.Checking;
+            Status = "正在核验网络";
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+            var revision = Interlocked.Read(ref _networkRevision);
+            var result = await ConnectionHealth.CheckAsync(bundle, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (!IsConnected || !ReferenceEquals(bundle, ActiveBundle) || revision != Interlocked.Read(ref _networkRevision)) return;
+            Health = result;
+            Status = result == ConnectionHealthState.Reachable ? "网络连通性已确认" : "内核运行中 · 网络待确认";
+            StatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        finally { _connectionGate.Release(); }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisconnectAsync().ConfigureAwait(false);
+        _importer.Dispose();
+    }
+
+    private async Task CleanupRuntimeAsync()
+    {
+        var bundle = ActiveBundle;
+        ActiveBundle = null;
+        if (bundle is not null) await RemoveSessionDirectoryAsync(bundle.Directory).ConfigureAwait(false);
+    }
+
+    private Task RemoveSessionDirectoryAsync(string path)
+    {
+        var root = Path.GetFullPath(Path.Combine(_dataDirectory, "runtime"));
+        // Only our own single GUID session, never a subscription-controlled path.
+        if (Path.GetDirectoryName(Path.GetFullPath(path)) != root ||
+            !Guid.TryParseExact(Path.GetFileName(path), "N", out _)) return Task.CompletedTask;
+        return Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt <= 10; attempt++)
+            {
+                try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); return; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    if (attempt == 10) return; // Preserve an inaccessible session; never broaden the deletion target.
+                    await Task.Delay(200).ConfigureAwait(false);
+                }
+            }
+        });
+    }
+
+    private SubscriptionRecord PreserveIdentity(SubscriptionRecord record)
+    {
+        var old = Subscriptions.FirstOrDefault(item => item.Id == record.Id || (item.Source == record.Source &&
+            (record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || item.Name == record.Name)));
+        if (old is null) return record;
+        var nodes = record.Nodes.Select(node =>
+        {
+            var previous = old.Nodes.FirstOrDefault(item => item.RawName == node.RawName && item.Protocol == node.Protocol);
+            return new ProxyNode { Id = previous?.Id ?? node.Id, Name = node.Name, RawName = node.RawName,
+                Protocol = node.Protocol, Index = node.Index };
+        }).ToList();
+        return new SubscriptionRecord { Id = old.Id, Name = record.Name, Source = record.Source, Payload = record.Payload,
+            ProviderYaml = record.ProviderYaml, Nodes = nodes, UpdatedAt = record.UpdatedAt };
+    }
 
     private static string? FindMihomo()
     {

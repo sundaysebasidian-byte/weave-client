@@ -16,7 +16,7 @@
 
 > **最新公开版本：0.4.0-rc4（Build 110）· Prerelease。** 生产签名，适用于 Android 8.0+ 的 ARM64 设备，尚未达到稳定版验收范围。验证范围见 [RC4 说明](docs/releases/v0.4.0-rc4.md)。
 >
-> **源码请按版本选择。** RC4 源码位于 [`v0.4.0-rc4` 标签](https://github.com/sundaysebasidian-byte/weave-client/tree/v0.4.0-rc4)；`main` 暂保留 `0.3.0-alpha83` 代码线。构建 RC4 请使用对应标签，不能把当前 main 构建结果当作 Build 110。
+> **源码请按版本选择。** `main` 已整合 RC4 / Build 110 的代码及测试，并保留 main 的既有修复和最近文档。已发布 APK 的固定对应源码仍是 [`v0.4.0-rc4` 标签](https://github.com/sundaysebasidian-byte/weave-client/tree/v0.4.0-rc4)；复现公开包请使用该标签。后续 main 构建不自动成为已发布或已验收的二进制。
 
 ![Weave 八种主题配色展示](docs/images/themes.png)
 

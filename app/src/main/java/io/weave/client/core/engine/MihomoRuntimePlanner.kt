@@ -10,6 +10,7 @@ data class MihomoRuntimePlan(
     val effectiveDefaultTarget: RouteTarget?,
     val activeSubscriptionIds: Set<String>,
     val automaticSubscriptionIds: Set<String>,
+    val activeGroupIds: Set<String> = emptySet(),
 )
 
 /**
@@ -26,11 +27,19 @@ object MihomoRuntimePlanner {
         defaultTarget: RouteTarget?,
         usableSubscriptionIds: List<String>,
         additionalSubscriptionIds: Set<String> = emptySet(),
+        /** Subscriptions each custom group draws nodes from (members and chain entry). */
+        groupSubscriptions: Map<String, Set<String>> = emptyMap(),
     ): MihomoRuntimePlan {
         val effectiveRoutes = routes.takeIf { mode == RoutingMode.RULE }.orEmpty()
         val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT }
         val usableIds = usableSubscriptionIds.toSet()
+        val groupIds = buildSet {
+            effectiveRoutes.filter { it.target.kind == RouteKind.GROUP }.mapNotNullTo(this) { it.target.groupId }
+            effectiveDefaultTarget?.takeIf { it.kind == RouteKind.GROUP }?.groupId?.let(::add)
+            retainAll(groupSubscriptions.keys)
+        }
         val activeIds = buildSet {
+            groupIds.forEach { addAll(groupSubscriptions.getValue(it)) }
             effectiveRoutes.mapNotNullTo(this) { route ->
                 route.target.subscriptionId.takeIf {
                     route.target.kind == RouteKind.AUTO || route.target.kind == RouteKind.FIXED
@@ -69,6 +78,7 @@ object MihomoRuntimePlanner {
             effectiveDefaultTarget = effectiveDefaultTarget,
             activeSubscriptionIds = activeIds,
             automaticSubscriptionIds = automaticIds,
+            activeGroupIds = groupIds,
         )
     }
 }

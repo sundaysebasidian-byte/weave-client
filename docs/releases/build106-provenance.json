@@ -1,0 +1,2386 @@
+{
+  "version_code": 106,
+  "version_name": "0.4.0-experience-preview5",
+  "apk_filename": "Weave-Experience-arm64-debug-build106.apk",
+  "apk_sha256": "e33249961a5c2c58412ca6a951ec87317b1d6c3f752cc08051def498bbc5368a",
+  "apk_size_bytes": 41764482,
+  "jvm_suites": 72,
+  "jvm_tests": 295,
+  "instrumented_tests": 25,
+  "real_phone_or_vpn_tested": false,
+  "native_core_input_sha256": "81fecea7c8bfe1d6aab9aba50bc9ddfcbe5f31d7088c92659a3051bb598947a1",
+  "native_core_apk_sha256": "d98ef51225c40b89e2ddc8eecb0677c677b80ae7298eee08859b9392d136f6df",
+  "native_core_relation": "NDK 29.0.14206865 llvm-strip --strip-unneeded reproduces the exact APK libclash.so bytes from the locked source-built input.",
+  "tested_source_files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 108,
+      "sha256": "01027249e70a579fe101297ccd5b98cdfbbfcd8a501483fb4fa3cee5fa3b8cc5"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug.yml",
+      "bytes": 1177,
+      "sha256": "fa8634fc80b8ffb3e438eecf0b5080be9ad8505b1beb303af0e0d424e6429a96"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature.yml",
+      "bytes": 621,
+      "sha256": "65bd67f1118b04c8b3cd297ada4ef0da4f0a7cae2433489603ed82fb067e4a85"
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "bytes": 260,
+      "sha256": "e4135efaa27bccbb3cd49244bd8b7b8db48d46bfa683dc8ba9a3ee3188c62b72"
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "bytes": 648,
+      "sha256": "c0ca51d54965c8a553f34aeb9cdc71c3ced88a1d7de546ec59b7c87a86ee695f"
+    },
+    {
+      "path": ".github/release.yml",
+      "bytes": 246,
+      "sha256": "0f52d4e8d65813df09f8ea2e99b06599a8edfbf44168d257f2274ece751a42b4"
+    },
+    {
+      "path": ".github/workflows/android.yml",
+      "bytes": 2066,
+      "sha256": "a4639726de16e756c02ca0a2e8d541265f09286a62572a148bbce53c6b4d8278"
+    },
+    {
+      "path": ".github/workflows/dependency-review.yml",
+      "bytes": 270,
+      "sha256": "33e7355dd0c557f725fe818fb00dbc37fb753e0bc46f897e0edded33a9b3d935"
+    },
+    {
+      "path": ".github/workflows/local-release-audit.yml",
+      "bytes": 491,
+      "sha256": "21529f8f7cbeee1b62a8f86dd3be068de2bbcb3be8ab6fd6ee5c3ba1a4be2763"
+    },
+    {
+      "path": ".github/workflows/windows-preview.yml",
+      "bytes": 7326,
+      "sha256": "a73c9275c7453d36e9d57196bb127f0d62d311f01c39678d40838ae26107ba5d"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 392,
+      "sha256": "d74356f15853ff57cb48167d7cb6e3aa987637ad3f52d05dedf1b7a459ce8d10"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 37589,
+      "sha256": "2ec0120b6a5b9310577f1d74a14c892287ad5e1f45556e0ef74c3bb6e891a2e2"
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "bytes": 732,
+      "sha256": "c6c1e330d6d719cfb6ade2fcfe9158a23eeee1e81f5efeeb03ce6b6c534a113e"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "bytes": 1552,
+      "sha256": "c1260f411335fc3aed48e70aca13f23febd86dcc8f67ed3658b941ab1b5808fd"
+    },
+    {
+      "path": "COPYRIGHT.md",
+      "bytes": 662,
+      "sha256": "e5cc2565f6766880fee0ffc9cab87f339a5df5996c6b9989d428f06307a97f92"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "NOTICE",
+      "bytes": 1483,
+      "sha256": "c8e045b4274868abde774447c169fa953f55339c2bb52965b75fdd72c74573cd"
+    },
+    {
+      "path": "PRIVACY.md",
+      "bytes": 6351,
+      "sha256": "86564694365b35346a1e70faa5c51c467fd62154bc25ad38aed2d41961c65464"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3870,
+      "sha256": "aa67e8c117854df0b537cb7b663a3b90ce49a49c33d1c3b743ccb8ef3190635a"
+    },
+    {
+      "path": "SECURITY.md",
+      "bytes": 1629,
+      "sha256": "fbe6fc593988950000cccc15bbb11ff9091b116a3f3f660d0ff83f35f65f73ad"
+    },
+    {
+      "path": "THIRD_PARTY.md",
+      "bytes": 2495,
+      "sha256": "b8e2f8b08ed93e6f473bfcbe66ee049cdfc01ac9f18fd1389b21578d2f2d23e0"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "bytes": 6379,
+      "sha256": "0f0292c49985283a5fc3c13a2e024392f90263f10016759162592a81365034a4"
+    },
+    {
+      "path": "app/gradle.lockfile",
+      "bytes": 96956,
+      "sha256": "e7a45c7bc36fe8a0692fdf3be44965bef89e35691175a388080cbdc22b8bd609"
+    },
+    {
+      "path": "app/proguard-rules.pro",
+      "bytes": 1251,
+      "sha256": "8edf351b167f12b6c7901156e69bc43c0d524daafaaedd99e5144ea32f449bb9"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/core/diagnostics/CoreApiParseTest.kt",
+      "bytes": 1246,
+      "sha256": "6b38663753acc0d6d6eca88059b91d0457fd8401e1b4834f8586e87f48138382"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/core/engine/MihomoProviderIntegrationTest.kt",
+      "bytes": 18788,
+      "sha256": "f127075246db4a06d20929df18c1bdc2aec42abd78402495736bc273b5bff6e9"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/core/engine/MihomoStartupConfigurationTest.kt",
+      "bytes": 4600,
+      "sha256": "d62107fc58c0b2b584b79d066ce8201063f57b28ea7e8fa4f50a9c26f09425e7"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/core/engine/MihomoVpnServiceIntegrationTest.kt",
+      "bytes": 7098,
+      "sha256": "46ecf8cbbfe8a72e896e44a552cf5c5edd6da4b78175981a78263d306e99cfc6"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/data/CrossProcessSettingsIntegrationTest.kt",
+      "bytes": 7078,
+      "sha256": "a2b62ab1f8fe804c00bd406a7da09603081b2bb48681906697ce920b388e9f18"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/subscription/StoredSubscriptionShapeTest.kt",
+      "bytes": 4692,
+      "sha256": "77082c88bfc5a2202642a1dce4c5f5090bfb1c424b4214b10406acb9ff5a3734"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/subscription/SubscriptionStoreIntegrationTest.kt",
+      "bytes": 6183,
+      "sha256": "ea1a59b542eab359f6500b0557329b7b4468da7f58f79d0df0118eb9b6f1fc64"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/ConnectionRefinementCaptureTest.kt",
+      "bytes": 5851,
+      "sha256": "719479a0a9cde728441b1fed2638e8dbcc56146737cd15f03d147bee15f77fb0"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/DiagnosticSummaryUiTest.kt",
+      "bytes": 4322,
+      "sha256": "d0460cbadf0dcfed6d8643e7e85b2f979acae45da145ef40338564e799cd4d0f"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/FilmPlateExportTest.kt",
+      "bytes": 4564,
+      "sha256": "7404485b94887c9e5729559f3c28ce3a8aed20ff3a05127157a55c19334127c4"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/HomeHeroGeometryTest.kt",
+      "bytes": 12731,
+      "sha256": "b6a8141119ba3fcc2ebef0dfbf560d10a6879813de0bfbe5d8ba72ffb0d56acf"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/LauncherIconRenderTest.kt",
+      "bytes": 2224,
+      "sha256": "39fccda278b421a85e158b5a68824a177fefaeeab3c02d3d3c34447bf821aead"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/PrivacyRendererRecoveryTest.kt",
+      "bytes": 1424,
+      "sha256": "3cce99f57fdabd4a3712f1d9aa3cb93290e019145d3c9d8f4e63fd5e03df6b4a"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/ProductExperienceUiTest.kt",
+      "bytes": 9814,
+      "sha256": "0e0176469fe7196d2517e5ef3868a7d7983cbc42011334a9236089e8fa4ba22e"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/ProductFlowVisualTest.kt",
+      "bytes": 1683,
+      "sha256": "e60cf4e2b05b327ed0d5851a9dc5f38d4e2c65bca39cf0e38ca5e19ebf525e84"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/ScreenPlatesCaptureTest.kt",
+      "bytes": 2860,
+      "sha256": "58e662987f6e0d034aa2de26f0ffc7a0179e9b313a0caf7438f177babce9ba2f"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/SubscriptionDetailScrollTest.kt",
+      "bytes": 3754,
+      "sha256": "ed3e7393a1994589978e61f052ebbab5bce85434af7b2f9cdddb4c07805df79f"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/SubscriptionLibraryUiTest.kt",
+      "bytes": 11764,
+      "sha256": "87b886c182536bcd740e5c8e1091d60ef40b3cb6736565b74d9eb6fe81d7c61b"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/SubscriptionUpgradeCaptureTest.kt",
+      "bytes": 5363,
+      "sha256": "77146e3ff15555b75dc733731f63c20089ec775d0885cbfce619797c6f9f4900"
+    },
+    {
+      "path": "app/src/androidTest/java/io/weave/client/ui/WeaveThemeVisualTest.kt",
+      "bytes": 4077,
+      "sha256": "28c9dd1048cc26496c9610995c1a4bca3e12bce07b36520a8ab0943d27743679"
+    },
+    {
+      "path": "app/src/debug/AndroidManifest.xml",
+      "bytes": 326,
+      "sha256": "362ccbbed8ee33d3d60f6102026b7c0450b4cb673a69b5f255bdaad5ecc93c3c"
+    },
+    {
+      "path": "app/src/debug/java/io/weave/client/data/SettingsProbeService.kt",
+      "bytes": 1238,
+      "sha256": "f68184af4ff34003cb3724dda9e77c9d597e546cbdc380ba9f0bc3f4139622b7"
+    },
+    {
+      "path": "app/src/debug/java/io/weave/client/ui/Build105SubscriptionBaseline.kt",
+      "bytes": 30183,
+      "sha256": "172ef84803ea27d2625445c38844d002cc28ac2dcb6a2fe049e424a19e8afa78"
+    },
+    {
+      "path": "app/src/debug/java/io/weave/client/ui/HomeStateFixtures.kt",
+      "bytes": 8550,
+      "sha256": "bf145d1893cd457b28468034b92e89e7e8169ca405c5167e9d9f03f42c10fecf"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "bytes": 6593,
+      "sha256": "2d9a24d03c4fd78bcec83097e729c41b6b2b907ab5d8f92c6c360a3ddc9ab376"
+    },
+    {
+      "path": "app/src/main/assets/geodata/GeoIP.dat",
+      "bytes": 207159,
+      "sha256": "1e49d985b16d13f3407d43582af64e0431c76e204a97460e5a8f859537687d13"
+    },
+    {
+      "path": "app/src/main/assets/geodata/GeoSite.dat",
+      "bytes": 176215,
+      "sha256": "b2c9500f8e3403126a99f47bd9a5bced435c04316823b914bab6d5ee639e8cb7"
+    },
+    {
+      "path": "app/src/main/baseline-prof.txt",
+      "bytes": 686,
+      "sha256": "046e8f35f58c0350c6acd68e931b62c861141a534d3a15f595c2cf0264ca73e3"
+    },
+    {
+      "path": "app/src/main/cpp/CMakeLists.txt",
+      "bytes": 613,
+      "sha256": "d5c5493f68213877c10c887192dcec664fc1230f25309ead5b90b712ddeb2719"
+    },
+    {
+      "path": "app/src/main/cpp/weave_bridge.c",
+      "bytes": 15435,
+      "sha256": "54f32bae5b86adb6740609d8f0b1a212a79732c14432e19583e041ec6f22ce71"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/MainActivity.kt",
+      "bytes": 8561,
+      "sha256": "af2d2f50c5c87a6395c30d47b4830db6455c7a23c288202e559a25c62fea1307"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/NotificationPermissionPolicy.kt",
+      "bytes": 703,
+      "sha256": "404bdfd14f847966475eaef618106ae437c7380a6ead34816c920eddd5754ce4"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/WeaveLocales.kt",
+      "bytes": 2829,
+      "sha256": "827f7035d689002793a0274df5287ea18348e6e544bad8fa75fc2b6a54940ee9"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/WeaveProcess.kt",
+      "bytes": 722,
+      "sha256": "e460d01982c07b3e61ea1d9e837ae2f1ed9688da1d97b152a5ce8c7a2ef273d1"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/apps/InstalledAppRepository.kt",
+      "bytes": 4847,
+      "sha256": "b6b7554157afe40dd0947e41c8501fba01ce9945b0c898af0aa262c046af7e6d"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/bridge/BundledGeodataInstaller.kt",
+      "bytes": 2890,
+      "sha256": "878fdf5419bf88ad59fe24ba03b8bc84d5da87dd640c838593c963a69837f386"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/bridge/NativeBridge.kt",
+      "bytes": 13262,
+      "sha256": "57e02611d63f62dffc1f66964ba037495931e6e2e17984ef64895b3a69efabcb"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/AppConnectionTrace.kt",
+      "bytes": 1104,
+      "sha256": "e6a677c4617556653188eeffb9384981015e8f1a041dada7cb9997f7b4735a75"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/CommonEndpointProbe.kt",
+      "bytes": 10059,
+      "sha256": "381654f16d225867eec5a4a024ad134fbfd32ca154f29c753327a578fa5f6e16"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/CoreApi.kt",
+      "bytes": 7587,
+      "sha256": "14c75fff1683ac918c9d52ec88994306619823f7aad5369e3815320b8fb9db9b"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/DiagnosticSafeSummary.kt",
+      "bytes": 1718,
+      "sha256": "3434efd2a9f6ba0a65d547cdf010d8221d9f356b7c2c72db60f97073c2a4ba54"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/DownloadProbe.kt",
+      "bytes": 2081,
+      "sha256": "4b71c37c64d8e0953bfae3e20a544737bd55181c520cd383b5dac6fa392e1de5"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/PrivacyObservatory.kt",
+      "bytes": 9209,
+      "sha256": "7ce86a1ea23dd925b497bd43650486a0ea9324196c258fdf1fc38e04b2378066"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/PrivateCoreConnections.kt",
+      "bytes": 2759,
+      "sha256": "584349cb1a3462009999a1e5e23f836e9d9f7565724343737a359cdf9c7eaa68"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/diagnostics/RouteLens.kt",
+      "bytes": 9398,
+      "sha256": "861b81944da2f7d8cb14efdb407a560e5c05aae04de6db90b6295320af3d7a63"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/dns/DnsProviderProbe.kt",
+      "bytes": 5950,
+      "sha256": "e5584b9b6884ef9334b2c66abb94472327bee77ab8c4a4bccc75d2391ee3d043"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/EngineAdapter.kt",
+      "bytes": 1002,
+      "sha256": "3eaffd915958f1e0880948c855d846193a42551adb737ebc057220532dad3153"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/LatencySamplePolicy.kt",
+      "bytes": 588,
+      "sha256": "bc8dec4ad14e2bddec06404e13fb60b2cfb21b7772f3720a69116fe327926da4"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/MihomoConfigAssembler.kt",
+      "bytes": 30464,
+      "sha256": "2a0478cb5ceef97acf5c55cd44ce2e5b8fb28e69f488999f0673023db2c8231b"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/MihomoEngineAdapter.kt",
+      "bytes": 23899,
+      "sha256": "08328d1fff9159e47dd6bdc50b3ad58faa569353ed3d6c0f204adcfce63c93a0"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/MihomoFeatureCompiler.kt",
+      "bytes": 17585,
+      "sha256": "2fe8f38dfb84257f232c97735e3043a8e0400d985a1a8085d0a7b638cb43c503"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/MihomoRuntimePlanner.kt",
+      "bytes": 3507,
+      "sha256": "7c4bbfb6e01ff8f6fb9de555a3c7461d294e15d476fd64c3796f5ad553bb64a7"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/MihomoTunDefaults.kt",
+      "bytes": 816,
+      "sha256": "96d502f24ad183ba866ecb40c882a47f6ca7fdb01b0214418f63112f39e7c5a0"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/QualityMatrix.kt",
+      "bytes": 2469,
+      "sha256": "715a7eb357369670524b58bc75ce9fd6c01ea04bb0f34d4fab04a17e0edf65e4"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/RouteConfigCompiler.kt",
+      "bytes": 3668,
+      "sha256": "40fd110827b502331bad5de3190c22703f0fd6112f1aec158c5875685d8b6c79"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/RuntimeProfileTransaction.kt",
+      "bytes": 3056,
+      "sha256": "2d37d7ec8c9da5b87684b8ae388488cce984979802480cfbfbddeedd32bce191"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/engine/RuntimeProxyGroupReadiness.kt",
+      "bytes": 1910,
+      "sha256": "1294cbdd9f84b97f7f5be991c179fe5b7256937f4692e43d3fb62306c243c40d"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/ipc/CoreClient.kt",
+      "bytes": 7898,
+      "sha256": "961b2ec92d9ad0a4ea7316416c94da80f3e25214451a029e4209ebcd5f8699ae"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/ipc/CoreControlService.kt",
+      "bytes": 4864,
+      "sha256": "76eb9635be90955a43de80e3a50b45e4f192bf16a963d435efae54ac81a7af2d"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/ipc/CoreIpc.kt",
+      "bytes": 5969,
+      "sha256": "085e3141f2973a60937c4a3e9d6060fa01d0d4765768e101a75c50dc241cec41"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/ipquality/IpQualityProbe.kt",
+      "bytes": 20781,
+      "sha256": "148424bb695080ddbba5ad67ef4dff632a05a84bad641d561edcce0955f678d6"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/NetworkAvailabilityTracker.kt",
+      "bytes": 918,
+      "sha256": "e6deea4067e86a15714ecd7d216b91a55586d6b84524af5b7eb47198d38606e7"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/NetworkPathChanges.kt",
+      "bytes": 492,
+      "sha256": "2ce6f5936475ca690b27f751dda9ad10639aa74e2415d742acaee90ac85a4da3"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/NetworkRecoveryPolicy.kt",
+      "bytes": 493,
+      "sha256": "0468053856ab9e5cd85ca0010dba8d694692d1243ae8201d435ce8cf79696772"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/RuntimeFailure.kt",
+      "bytes": 3527,
+      "sha256": "f8a87bcdc414f48eb48dd7ce6daddc369a64a56a328eea8ee262cb6df05735c6"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/SocketUidAttributionCache.kt",
+      "bytes": 2081,
+      "sha256": "1a8bde3f2a12814ff8afbf20b11af9cfd11b49df26dc28bb33459ac8a86e2914"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/SystemVpnProtection.kt",
+      "bytes": 856,
+      "sha256": "5c6cbc9ad96820565ca7fd91210b699c86e9199fd698a109edfc6bc0a439ba6f"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/TrafficNotificationPolicy.kt",
+      "bytes": 894,
+      "sha256": "baf1cbc1e13e33fd51cc692d564d06364a62218ccdf08ed93734a5084ccf9e09"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/UnderlyingNetworkMonitor.kt",
+      "bytes": 10923,
+      "sha256": "258d72a8eac63b257b5c330726ef047ce5b67b344f6e95563557f1370c46c597"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/VpnRuntimeState.kt",
+      "bytes": 2883,
+      "sha256": "19a0d7b6033ead98bc85ae5e50875d24ebef35d23247caf53f78e89c9cd66aba"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/WeaveTileService.kt",
+      "bytes": 3309,
+      "sha256": "2bce0ebf7b7f7de8d59b8647719694ebb938886afdec10d89042cdc203a86f39"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/core/vpn/WeaveVpnService.kt",
+      "bytes": 42743,
+      "sha256": "37c444e7bcedd8f394de62d502915ddb0ed99eaffcc3b2358de836ffe2c0c2dd"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/data/AppRouteStore.kt",
+      "bytes": 3696,
+      "sha256": "84d9071c7964b507b01d8737d197c79f74646f4b003593f3c6f8d36c1b8ddd17"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/data/CrossProcessPreferences.kt",
+      "bytes": 7770,
+      "sha256": "036a11f095b34031cf34bdbe4f3fbadb5eb4e637362d5fed3978cbea81e8d36f"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/data/RecoveryVault.kt",
+      "bytes": 3755,
+      "sha256": "c621963999e76c61017a530b4b066806664cffdcf025b8d9053ed29ef91da33a"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/data/RuntimeSettingsStore.kt",
+      "bytes": 13655,
+      "sha256": "aaf9f811ebed92908e21278bd4a02042db5d2b5c6fe34d44eac90b62cbd4a696"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/data/SupportDiagnostics.kt",
+      "bytes": 985,
+      "sha256": "c69bbbba6eed36c2c60752dadf8e52d4a257a52c641805678060a130c2afe84f"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/data/VpnDisclosureStore.kt",
+      "bytes": 733,
+      "sha256": "76376c9bb77b3706d9a00d58f340d37158d1015e49947a5a3bc9fbe830b47d64"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/DistributionProfile.kt",
+      "bytes": 955,
+      "sha256": "3c6ed660d9c90f15ce18ce5b7b71a41f7409cc2b8d5dae13a28990452bf1d138"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/Models.kt",
+      "bytes": 10028,
+      "sha256": "8790314e5f5b0d74fe2452d1612058533b4a3a24069a2917d568bc0fa0a4bfc7"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/NodeDisplayName.kt",
+      "bytes": 1626,
+      "sha256": "7040a1a5fc1688a1ef893df7da61f8bfac51225c7452b97bc13548cc8baf6ad5"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/RouteReferenceSanitizer.kt",
+      "bytes": 4324,
+      "sha256": "df4cfc509a4a64b2bfe4f6b78b1776b2a2ebe12fc193f87731acbcd8cd9624e8"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/SubscriptionDeletionReconciler.kt",
+      "bytes": 1106,
+      "sha256": "b532bbd8e3b595dfe4c2a1a002b0c1d40c4e5332b17eb8fc78680a64c1a1420c"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/SubscriptionTargetReconciler.kt",
+      "bytes": 1423,
+      "sha256": "106b5df6a29f4a81b402e5a712dee4aa90cfc99b0a020472e10fc46deac036b1"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/domain/TrafficFormat.kt",
+      "bytes": 708,
+      "sha256": "6369f1c7e9a54b01f663fed183a7c7af88355b7941001a13469cca38faea7ab6"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/policy/PolicyPack.kt",
+      "bytes": 14213,
+      "sha256": "ff92f06cb0b3b4af22c6d29a8fcfc2428edb8ebbdc84af824c8cf327912b5a7b"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/routing/CustomProxyGroup.kt",
+      "bytes": 5140,
+      "sha256": "a1492390c9f12ecdc5b660aeb1016d73c12ff86935bdfeeeca369da80c2fcf26"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/routing/LocalRouteRule.kt",
+      "bytes": 10250,
+      "sha256": "96ecedd0e09ead613fb06e9e1be00f9d62267c434070dbe71cac8af8843f6290"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/routing/RemoteRuleSet.kt",
+      "bytes": 13637,
+      "sha256": "f17e01b80ab31aee379c57542b046fceabee6dbc044b3350b5e0261c1a5be553"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/security/AndroidKeystoreSecretBox.kt",
+      "bytes": 4616,
+      "sha256": "af6498bec224ec956f7038eb452712ae3d202173d4b4ff4dfde251edc3f8f23d"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/security/SecretBox.kt",
+      "bytes": 204,
+      "sha256": "8e838dd0c0b5582179a19bd9d41380193f8c7bb35175b6d7db5509c4b87d4f12"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/ClashProviderResolver.kt",
+      "bytes": 12478,
+      "sha256": "090014cd4846c212356be903bdad9751f49c8c2cc15d37334ea909efa6c4c222"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/ClashSubscriptionDocument.kt",
+      "bytes": 1076,
+      "sha256": "b6704352f1ec86f4700a90fce0ac2e2ee41a80f8ded065a44fd23cb5a19c2bd4"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/ExternalImport.kt",
+      "bytes": 4156,
+      "sha256": "7309d07d5cb42c55cfc8787c9427fe345372f0914418210e734a059c832d3628"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/LiveQrDecoder.kt",
+      "bytes": 1187,
+      "sha256": "0e053d0377335691feaff8089b3326964983888009907247e004de5b6a09c75f"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/LocalSubscriptionReader.kt",
+      "bytes": 1843,
+      "sha256": "ff405d7be770f46ad82e7d7f3adb897acb61c02dba0e06724ee60f0eaffe9294"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/QrCodeImageReader.kt",
+      "bytes": 4448,
+      "sha256": "0b58e5f35c567957118c74d44ab346799065d1ae6c5eb441e8d12e5ab41837e1"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/QrSubscriptionDecoder.kt",
+      "bytes": 2620,
+      "sha256": "b6eb79cda225717103d4eefd70737f4b2808d3d95e2b62ff2d80fe91e174bdb8"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SafeSubscriptionFetcher.kt",
+      "bytes": 9731,
+      "sha256": "e703ea013b956a7827267555fab4a4dd0ed116a0cfd37d8f44adec20edc262cb"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionClientIdentity.kt",
+      "bytes": 328,
+      "sha256": "015c8a2891478febb51539dbad000a44964bc2f980457b78aa325a35cefc3601"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionDiffer.kt",
+      "bytes": 1521,
+      "sha256": "74b0bc80c0951000be3577f45ec749e70eb64f67db851e5d4ae4e147244d9eea"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionGuard.kt",
+      "bytes": 5812,
+      "sha256": "0952deb737e23ce7c6f104e5248636ac0cac31d0322f7a3573cbe9c6ed560789"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionImport.kt",
+      "bytes": 41522,
+      "sha256": "b46ef07c8bf75a1fd0fadb3b04638d6c0c3671c5e71f1e452b90829043438ee5"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionPreparation.kt",
+      "bytes": 1573,
+      "sha256": "a41f01fe0b0d3c02ecba46d8757d987c649d9d65aa557e6d00deae8c1e248384"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionRepository.kt",
+      "bytes": 23238,
+      "sha256": "106077cab3bbc0eee8c6968e753348c85be1337844b3b34b11f8d7ebe1b146d9"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionResponseBody.kt",
+      "bytes": 1656,
+      "sha256": "d29cc3a9ffa5f19110808f1ef897f93a6d41da1ee3c18f505f5f6b1645db0ebb"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionSecretStore.kt",
+      "bytes": 19767,
+      "sha256": "fa00ee63ff63a20409bcf2aa2d54f37ef2eee1da3352c6f060e3c0762d1b19b9"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionUpdateJobService.kt",
+      "bytes": 8019,
+      "sha256": "3d2abd8869251e1db24516fd975ca54e3ba39a46e65b22bce288da5e2562cf5a"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionUpdatePreview.kt",
+      "bytes": 1172,
+      "sha256": "674270b37954b8bb79ce0835fb74f4ee6590c3683f084cf228df766d8cf0e5a8"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionUrlPolicy.kt",
+      "bytes": 4261,
+      "sha256": "5f327a10b7f19774c034533b1081e7821d384b6739f1e67f87eec292740bfb61"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/SubscriptionUsage.kt",
+      "bytes": 2688,
+      "sha256": "3d6207f43752945e5cfc08c0ffdb8fe02ab7184209e1551bca0828b8d0c2cef1"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/subscription/YamlNodeName.kt",
+      "bytes": 2002,
+      "sha256": "25fa74d1ce88c51c8ffbb0fa97d1edde9578203d2d98734f099a7aad9154b9d4"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/transfer/BackupCodec.kt",
+      "bytes": 5583,
+      "sha256": "01ab44e3a825badf595893af7278cd28c6498f10c1d19307017f118ddf47d775"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/transfer/LanTransferCodec.kt",
+      "bytes": 7831,
+      "sha256": "5944165f6341de11d4b77d18ef6fe78c8a8b0fb59c095f105f089171d66e4323"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/transfer/LanTransferSocket.kt",
+      "bytes": 8335,
+      "sha256": "d7274955ef6c6abca77d152cd46795d3d1048e48ba4429a101ae977b232ed2a7"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/transfer/QrCodeGenerator.kt",
+      "bytes": 1270,
+      "sha256": "95b1a5256157dd7945bef4c00c0b4b0bcb5382c957c5aadee58d077bcc7c3732"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/transfer/SubscriptionShareSelection.kt",
+      "bytes": 457,
+      "sha256": "05ccca0d3e5fa46fc41075d358a029806f6078e5cd67816bcc080080c24be964"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/transfer/WeaveBackup.kt",
+      "bytes": 13073,
+      "sha256": "0bf753c47457b84de8591dfeb072532259d4be4e77a5a61abf96bff730c0ca8e"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/AppViewModel.kt",
+      "bytes": 76345,
+      "sha256": "8e7ad9dbc08e7a5ff23dbbbfec32d55db002caf71c31e3507b505f571399726a"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/BrowserPrivacyLab.kt",
+      "bytes": 25426,
+      "sha256": "e8214d9bfd8e125c5039dce45935aa92568bf784ba47b4887bb0ed2f5a6cc106"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/CommonComponents.kt",
+      "bytes": 19490,
+      "sha256": "864139c54d60b0dff9217c9e5cda5826214ee48e5947f805847193d94c9aca15"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/ConnectionTracePanel.kt",
+      "bytes": 6005,
+      "sha256": "1336da019353e1e1600ed95b209316836ce1d36f9b41ee6911ed65bf5dd96d18"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/DashboardRefreshPolicy.kt",
+      "bytes": 1990,
+      "sha256": "d3bc160ff16c3f2b599b194525c9378081bd055bd7a1178b1602186f9878669e"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/DiagnosticsDialogs.kt",
+      "bytes": 20958,
+      "sha256": "9254e6786443f339ffa127bc940b78238d0c6efc9b53be34d793b0327f6ab8f2"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/DnsDiagnosticLifecycle.kt",
+      "bytes": 262,
+      "sha256": "44aa02e20b9e4ef04101508fc53e6de3e9f7e66c2ef0f915c3c2e598cf244471"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/DnsSettingsDialog.kt",
+      "bytes": 23550,
+      "sha256": "cbe7645aa5b4c63eab9806573755bda9603cbe89239b51ed90c28aa222d5809b"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/HomeHeroModel.kt",
+      "bytes": 8682,
+      "sha256": "734679a2c363103e07befc08202a664ae220f01814bd312fefaff271a0d6ea1a"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/HomeScreen.kt",
+      "bytes": 43353,
+      "sha256": "2b194980fb3c260bee0c02ace9d5789d9a7a3b24f79e931b7c80e7fa492839cf"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/Language.kt",
+      "bytes": 317239,
+      "sha256": "e0e436302c8a4b9729a4bec323ee01272c07527e5015f032631f0d78c0446c92"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/LanguageV2.kt",
+      "bytes": 64752,
+      "sha256": "753dcac8bbd2ad9c9bd310396568a799f2ff14c728c8d82a738fb20e4a25c6e0"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/LiveQrScanner.kt",
+      "bytes": 8206,
+      "sha256": "9956ddd0f95f3639fec0726af4d291f2bca3433a02443cf7b67f3abe17b6942c"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/NetworkPrivacyCenter.kt",
+      "bytes": 38099,
+      "sha256": "d1d9945da24dd4e0ca0a85b54d03d4790826db0e54755ac3c6beba165290795b"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/NodeHealthIndex.kt",
+      "bytes": 454,
+      "sha256": "8ce257483c7fd7ff18c24b9753ff47b9e7d9e8273e7df67e5e0b650a8f06ecb2"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/NotificationStatusCard.kt",
+      "bytes": 1557,
+      "sha256": "f7e9defb0f9d16db182b5aea6a5d372dcb57bb2610d79f01e24050e17c708834"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/ProbeResultText.kt",
+      "bytes": 1072,
+      "sha256": "cd8063bff43c5e922bd6304458a5b361619e3aa1daf8a7db2c81116563110e3b"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/RouteTargetDialogs.kt",
+      "bytes": 33802,
+      "sha256": "657ff02f5f765f43e29f823545d10a5fdb415abbdce441efa0e717152e70addb"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/RoutesScreen.kt",
+      "bytes": 16913,
+      "sha256": "ff5f8e7ba75b8b9302c6339db1f07f03b4c58398f34b2a945d1fb73f578fe72f"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/RoutingRulesViewModel.kt",
+      "bytes": 10998,
+      "sha256": "b09bb6a029468fa8d2c24773d42c18be0cd3cd5159ad654bc5ec50622bb896f3"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/RoutingToolScreens.kt",
+      "bytes": 29369,
+      "sha256": "bf7d2533ebad575348447fb259387bc1310c6c548a7747aad3daca8cc0174116"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/RoutingToolsDialogs.kt",
+      "bytes": 24163,
+      "sha256": "62d23bc79798537fbe4c2e2acb5314ffbba14afdf63f97d5d4b6135fcf7d9a7f"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SecurityDialogs.kt",
+      "bytes": 22077,
+      "sha256": "723b31c363a1768cdc4bfe8c0af941e371e59d25acad76545c1fb3a79875b794"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SettingsScreen.kt",
+      "bytes": 48152,
+      "sha256": "4e7a1bad45eda88a26df2fe877e30469791ff3c481628149afeb44ac306c61db"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SubscriptionDialogs.kt",
+      "bytes": 59951,
+      "sha256": "bec3f6feb08531de3cd870c79181586037a8d51010d3baf89430d085582c49a7"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SubscriptionLibraryModel.kt",
+      "bytes": 1845,
+      "sha256": "16231f4b8a6772c20e92aa89773250f964aa2db60b18d55ef8c91f8d7746069e"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SubscriptionRefreshBatch.kt",
+      "bytes": 1631,
+      "sha256": "f27881e04c6a6e5c60745956638077c771d687bb091f92d1dcf2a073da95b3d0"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SubscriptionRefreshState.kt",
+      "bytes": 749,
+      "sha256": "ee0a001ab0043a3d40db3453eb17370d3bd4bb9f8afa9f9d25079c4c34fdd189"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/SubscriptionsScreen.kt",
+      "bytes": 43978,
+      "sha256": "53775967d4a09cd0bc99fba9982fe8a98f29c59175be67a4f0038dd87b8e2569"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/ToolScreens.kt",
+      "bytes": 21605,
+      "sha256": "820c9da925e3c57e6291b02e6f91e968b89ff7d3efb5421b333610b1e6446517"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/UiEvents.kt",
+      "bytes": 841,
+      "sha256": "67e05076bc92959a206bd68909b407c021168323a42ae87079d62d2be5141464"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/WeaveApp.kt",
+      "bytes": 50543,
+      "sha256": "5fc70d71a2cccc64e8cfcab5441be554ae56c462a2f2f57988a316f35c4e9288"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/WeaveMotion.kt",
+      "bytes": 9383,
+      "sha256": "c419a6fc0a66d38b410ec3d0c2fbff46ba8f38a704d05b6753f8552bf19a9735"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/WeaveUiPrimitives.kt",
+      "bytes": 13571,
+      "sha256": "3e7dd1b312b81b693f9856217f7c975734b9cb8c2407076eeddaedc02994ae4e"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/WeaveUiTokens.kt",
+      "bytes": 1826,
+      "sha256": "13a3c6a1659b2ae04a9c2d231dd47e2436afaf354e07c1be4e0fc6d00a48d9bc"
+    },
+    {
+      "path": "app/src/main/java/io/weave/client/ui/theme/Theme.kt",
+      "bytes": 14226,
+      "sha256": "aa07014b885066c7c746a1f967afe94f1c8fd26d75fa07a4d8168da11e6f5618"
+    },
+    {
+      "path": "app/src/main/res/drawable-nodpi/ic_launcher_art.webp",
+      "bytes": 292294,
+      "sha256": "ae2934d467bf50c2e48b95dd84a03d99a7c5d3a90054b887f4e591b104bbb810"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_adaptive_art.xml",
+      "bytes": 481,
+      "sha256": "92399be388a8b991194722d0c199ca417f4e8d16cc50af2a88bc80cd213e46db"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_background.xml",
+      "bytes": 314,
+      "sha256": "bd1b3b3bed4529c1375a02b5e938eb6829c65c2de96c1f74e5d27a479a6255c7"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "bytes": 1251,
+      "sha256": "ac20b504b2e547dc97671c06b1f87d59e02b905f7dc37a98aba550986ccbe588"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_shortcut_connect.xml",
+      "bytes": 751,
+      "sha256": "c1c127b24b4c3f16ca81a59987483428ba8f161216d48db6cb94896a1867c0cc"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_shortcut_disconnect.xml",
+      "bytes": 628,
+      "sha256": "703bbf7a31aa3754e22e9e6024a7772ce0fc98838052a0b0a7819656de7d50f3"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_shortcut_import.xml",
+      "bytes": 562,
+      "sha256": "54ce73ffe1bc2acc75094b68de20173f0a10dd31f0beb47103a4cd18ca16e080"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_stat_weave.xml",
+      "bytes": 654,
+      "sha256": "b2c4460adc566e4379356e7225c6ec04099098b1beec0d63ceb35ab58d18eb2c"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml",
+      "bytes": 346,
+      "sha256": "e5b634687633f2d0df4221c463f1a891a4005b89d968753ae0dd9ff332fa29fd"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v33/ic_launcher_round.xml",
+      "bytes": 346,
+      "sha256": "e5b634687633f2d0df4221c463f1a891a4005b89d968753ae0dd9ff332fa29fd"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi/ic_launcher.xml",
+      "bytes": 368,
+      "sha256": "09048da8bc5c64bdeb321995fbc7e2e061d80ad8aabf60569c2dcc2fed94e67d"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi/ic_launcher_round.xml",
+      "bytes": 368,
+      "sha256": "09048da8bc5c64bdeb321995fbc7e2e061d80ad8aabf60569c2dcc2fed94e67d"
+    },
+    {
+      "path": "app/src/main/res/values-de/strings.xml",
+      "bytes": 2336,
+      "sha256": "00ce83d1eb4c853362772153976e1cfbcc6e2b76f397dc8c4a60037d8f37f71a"
+    },
+    {
+      "path": "app/src/main/res/values-fr/strings.xml",
+      "bytes": 2396,
+      "sha256": "ae61109e4ab08e09ba887c31285bbe4bb6d6cfb4c6243b5ce7f6185ccc4dc572"
+    },
+    {
+      "path": "app/src/main/res/values-ja/strings.xml",
+      "bytes": 2420,
+      "sha256": "6d6771fbd0addc4e6dd4aebbf01d4460eb20abd6ea4bb52c0e37dc3191cac01c"
+    },
+    {
+      "path": "app/src/main/res/values-v27/themes.xml",
+      "bytes": 624,
+      "sha256": "6e11857322baafffef348f23253ba6b111e3e260690fdfddbe6ac291b2bafb07"
+    },
+    {
+      "path": "app/src/main/res/values-zh-rCN/strings.xml",
+      "bytes": 2122,
+      "sha256": "a55bcd63fc5a4f6d340a999954d074f58e9aa5e386f327288837b09a5c18caf8"
+    },
+    {
+      "path": "app/src/main/res/values-zh-rTW/strings.xml",
+      "bytes": 2140,
+      "sha256": "d2b3c33252200c2c3a12f4bcac18c3d59ddb73a07db3919ff14cea438c6b734c"
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "bytes": 2288,
+      "sha256": "7e83b2f7a883c5a57b7b6b2ce6b39220baf2e8dd8f64cf8e41422b1e7bcba9c5"
+    },
+    {
+      "path": "app/src/main/res/values/themes.xml",
+      "bytes": 558,
+      "sha256": "dde145fcddf3146a6e55a27604e570631cceabcbd4b4116258f8ced3645a0152"
+    },
+    {
+      "path": "app/src/main/res/xml/backup_rules.xml",
+      "bytes": 123,
+      "sha256": "df0caf5a169e312492ceaa3d7e6e053c831da3fc2038b99d83967c444549621f"
+    },
+    {
+      "path": "app/src/main/res/xml/data_extraction_rules.xml",
+      "bytes": 258,
+      "sha256": "9ccf53e8c648736adbf95a27d70ace297c7e3b56d6e48e878194f98c51b36b21"
+    },
+    {
+      "path": "app/src/main/res/xml/locales_config.xml",
+      "bytes": 335,
+      "sha256": "ddf0f713d1bc05b87da4b518f19ee3a361bcfd1045f014885b8220527eb1f6fd"
+    },
+    {
+      "path": "app/src/main/res/xml/network_security_config.xml",
+      "bytes": 441,
+      "sha256": "b8093de62e8b2d117f751d309b2f11ec5c4d593de1ccc350fda1ff0447d574bd"
+    },
+    {
+      "path": "app/src/main/res/xml/shortcuts.xml",
+      "bytes": 1573,
+      "sha256": "0920e02ddda9c9c8385b0494d3cbdf18f025688bb25ba17f2f0ef204cb754942"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/NotificationPermissionPolicyTest.kt",
+      "bytes": 1021,
+      "sha256": "baa01f2a04db6c55a8e5b5f71a0652f5ddeada2def3e728aa84cbd1a49b008ed"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/apps/ProxyClientDetectorTest.kt",
+      "bytes": 1684,
+      "sha256": "3fb04149aed1c1ac2b025fd7e045bd3889edd0dd23a0ec7fd737b1aa2dcc19b9"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/AppConnectionTraceTest.kt",
+      "bytes": 1038,
+      "sha256": "181ba76b48474a9b15fb77c8d2c7c072a6585072423845a900c9d783e863a68f"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/BoundedCoreResponseTest.kt",
+      "bytes": 385,
+      "sha256": "1723b7eeeb07e1f6e0f1467c41bc08934056f1dd5360ed35fe4b7ff14a3fe3f4"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/CommonEndpointProbeTest.kt",
+      "bytes": 4533,
+      "sha256": "158f665636595d1a837c3caa325829d1c5e280b3a5cc662bb2e5049b66717ecf"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/CoreApiTest.kt",
+      "bytes": 822,
+      "sha256": "9424502a32d0082604c2111e38d0931764f517ad0388c3f0277468a2f0622f47"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/DiagnosticSafeSummaryTest.kt",
+      "bytes": 1679,
+      "sha256": "abddff3d7ef1847c3fe494d13f1c9e61e273aa045c9f0a7144e23c2dc4c6c59e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/PrivacyObservatoryTest.kt",
+      "bytes": 3143,
+      "sha256": "877439d00e33eafd6871675acb3b9488ebd67f4bf916e8b97eca09042dca76f8"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/diagnostics/RouteLensTest.kt",
+      "bytes": 3666,
+      "sha256": "fc72819f8e82601c60e8882d98bdecaf2ba513a169bb1104c6d743cf5bc04ba2"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/dns/DnsProviderProbeTest.kt",
+      "bytes": 672,
+      "sha256": "476fa08db28d0791fb3e5f1fad8ea1a1314bb0ce15f3a22d737367726c56a99a"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/DefaultProxyPolicyTest.kt",
+      "bytes": 1981,
+      "sha256": "388cdab814f66b36f5f1dac51e953f7267b03efd9c07ce53681dd10fc34fa2e2"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/DnsProviderPresetTest.kt",
+      "bytes": 1216,
+      "sha256": "300e7eb4a5cb705cfb2e82b982220b6634a87cabfbe3cafed8e7ba6763b3c44e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/MihomoFeatureCompilerTest.kt",
+      "bytes": 9679,
+      "sha256": "f356c4e3a1c57dc22b7e8ebbadb2cbfd3812d845abf44f1ad8e04e3da707d8d4"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/MihomoRuntimePlannerTest.kt",
+      "bytes": 3669,
+      "sha256": "b8f9f1b02f2830d9041e0c6c197c1d988d4d1d82c225128a98cc36e026b189dd"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/MihomoTunDefaultsTest.kt",
+      "bytes": 538,
+      "sha256": "d802916f20673b353db60c47b624fa7b73728740aa09fcd0d93e5cf1ac48c1c6"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/NodeHealthAggregatorTest.kt",
+      "bytes": 2371,
+      "sha256": "e2222fda10356f8bbac9ffac758e6347014a939c269058e1b05bdf39c0336b5a"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/QualityMatrixTest.kt",
+      "bytes": 1256,
+      "sha256": "49255d12ed26b6f8472a95c9613a0ff7ff75b37ae83a4a700be4d01b89cf2fca"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/RouteConfigCompilerTest.kt",
+      "bytes": 6309,
+      "sha256": "ef34cd94290abe93d515d07e6dec6c6224eb585d063ad1aff3aafe352c3bd300"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/RuntimeProfileTransactionTest.kt",
+      "bytes": 3125,
+      "sha256": "3b320d970bb473bf42ae3d1a6555d588bace4c09886441d626c395991a64738e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/engine/RuntimeProxyGroupReadinessTest.kt",
+      "bytes": 2416,
+      "sha256": "9a9f3819272b18ca95ba337c605afadb62f7d4eb43e48ef5fa5096fd5f002bbf"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/ipquality/IpQualityProbeTest.kt",
+      "bytes": 5573,
+      "sha256": "d077617e1cb51ee6d217841541db3c655fdf66a8dc259749c0001e77cbfe13b9"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/NetworkAvailabilityTrackerTest.kt",
+      "bytes": 1493,
+      "sha256": "818161a6b1c9b2acb6e1981142f10fadcbfa55572774e15ffdd15e0af20bd52d"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/NetworkPathChangesTest.kt",
+      "bytes": 795,
+      "sha256": "93e8ada49bfc6ef07ad873271b46ea008b876e6c5095b7f67669b436a7a9a2cb"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/NetworkRecoveryPolicyTest.kt",
+      "bytes": 817,
+      "sha256": "1483e159e732542a5ab4aa91fba3a9d5204093cc41c26a0c23cd6d3c937dbc35"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/RuntimeFailureTest.kt",
+      "bytes": 1840,
+      "sha256": "77474e1c208bd4f797a35f187bf3268498d3aa530a25b76ebad2179da71b6fa1"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/SocketUidAttributionCacheTest.kt",
+      "bytes": 1514,
+      "sha256": "d3947203c07ec070ad7f2f0cc298ab92304da0efa227d1bb20a33c171d74d06d"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/TrafficNotificationPolicyTest.kt",
+      "bytes": 1821,
+      "sha256": "3db1e2a42a5ea7646a27a7e452641c530107cf9d89223417afd805bc56c22460"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/core/vpn/VpnRuntimeStateTest.kt",
+      "bytes": 2438,
+      "sha256": "4c90eb17e255ca788a11fb05283905b69c2fed8f32fd7295a4c5783d58069b2d"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/data/RecoveryRedactorTest.kt",
+      "bytes": 805,
+      "sha256": "caf4a52781e32f026ebc66e70d9011db3154c8f12f34d4b805a0d2bb044262e2"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/data/RecoveryStateTest.kt",
+      "bytes": 388,
+      "sha256": "5ccf596360e3643ce8f60ff5e0cad84539798de4c601aecab3944189b0b7411a"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/data/SupportDiagnosticsTest.kt",
+      "bytes": 1225,
+      "sha256": "79a1d50f64616f85c4b55d7dab7a8db64a443343eeed7b202a8d0acf74012859"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/AppearancePaletteTest.kt",
+      "bytes": 2015,
+      "sha256": "c94a3c5d2cb49419ad173d45624f9de6509960985aef4bea879609a8d50d5d3d"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/DistributionProfileTest.kt",
+      "bytes": 615,
+      "sha256": "9d189dad1ace96722845d9a419c13141689b6c6579497aac5059640a9029a15f"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/LocaleAndFormatTest.kt",
+      "bytes": 1406,
+      "sha256": "4e629ecc95d70563237d947430aa7e47733f800cae4af56ee35063d18b442afd"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/NodeDisplayNameTest.kt",
+      "bytes": 782,
+      "sha256": "25e338d23378ec7419f1043d74c7a39c277ece2dd469533c8b019c02c910e511"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/RouteReferenceSanitizerTest.kt",
+      "bytes": 2200,
+      "sha256": "719203729ddde47230d5ab478134ec20fe83a7d53fb5f48835e26998057719ab"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/SubscriptionDeletionReconcilerTest.kt",
+      "bytes": 2430,
+      "sha256": "9606dceecf79dd0b0cc329fb2b0347542cfa83f66f4e0aed5822dbdfe876dad1"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/domain/SubscriptionTargetReconcilerTest.kt",
+      "bytes": 2708,
+      "sha256": "78309ee555d2a1f6a8bf8e25c4ed067fa8066b2f2049e6085d5de5e97591fe55"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/policy/PolicyPackCompilerTest.kt",
+      "bytes": 1141,
+      "sha256": "e61fc9e9dd56dd5c0ee24fb78b878b1f68bcfc52f94806b715f25b1101438c15"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/routing/CustomProxyGroupTest.kt",
+      "bytes": 2233,
+      "sha256": "f8da82c3c71b2589c7e58d7353290e491719d3c9b161a6c0abcbd6aa89c1a33e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/routing/LocalRouteRuleTest.kt",
+      "bytes": 2197,
+      "sha256": "6fb73369f5ba666d745e220bb2f289850eb0a6c480581c73451f39c0ac68b3fd"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/routing/RemoteRuleSetTest.kt",
+      "bytes": 2638,
+      "sha256": "8ca5aa406fa477d063a38ed4e7e7ec1b4ce335b0155610d95d1b2c8449a91683"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/security/SecretBoxContractTest.kt",
+      "bytes": 1852,
+      "sha256": "294cdead4bebc0f908b1c25f5cb9ec0e7beae0e6925b9a379691486cf13e63be"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/ClashProviderResolverTest.kt",
+      "bytes": 7625,
+      "sha256": "6ce940e4fe9ca7200a02b8c8b8de677b7104cd8cfd2d18098064b93e9aace6c0"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/ExternalImportParserTest.kt",
+      "bytes": 2498,
+      "sha256": "da190c7598068c6d433a0c8d126ee7dd4600fcf2ef85e46ac41ff423881c6aec"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/LiveQrDecoderTest.kt",
+      "bytes": 1222,
+      "sha256": "ad957809b54ae9c623ea8b7ac94fba4557c5c5a54d0c794e1a7c2e0386754a48"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/LocalSubscriptionReaderTest.kt",
+      "bytes": 1438,
+      "sha256": "fca7e943c7362f0a291b515079b42a2abf3f87d16e1714f2eb0474d87756ddef"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/QrSubscriptionDecoderTest.kt",
+      "bytes": 1864,
+      "sha256": "52375075dd676732f63aa5e38cc5adcd09a96955bdcf3375001aa6ce5543a28e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SafeSubscriptionFetcherTest.kt",
+      "bytes": 2611,
+      "sha256": "b17a2d7471d64ce367a87269854c29800e530d31bb57887c7c4e7411777d2629"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionDifferTest.kt",
+      "bytes": 1436,
+      "sha256": "696f6615112eb2e57d725ca013736d6844a4c053a2b72896646527498313aaca"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionGuardTest.kt",
+      "bytes": 2528,
+      "sha256": "a8df89d716575385424c12406a3d92965c5792c55e2d88d9049c8791d5151c2e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionPayloadParserTest.kt",
+      "bytes": 17636,
+      "sha256": "50eaff453d2dc3b68a4aac8fa6a6a9339accf7814ec4037a1091623ec1abee28"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionPreparationTest.kt",
+      "bytes": 3363,
+      "sha256": "03bfb60d0887937031d281db7d489ed15ef65612883007a9270a972aa00055b3"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionRequestCompatibilityTest.kt",
+      "bytes": 2608,
+      "sha256": "2d9188f73986c6eeeb582585caf55b8ffdd75ba393fe307c0d2f29af57dd760f"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionResponseBodyTest.kt",
+      "bytes": 1232,
+      "sha256": "54f4f0d2a319f90e84be353f7990b778bc71f9af4eb147daadf44c9ff8114a2b"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionUpdatePreviewTest.kt",
+      "bytes": 1636,
+      "sha256": "c84ab6dd1b5c3833ea170705f7489af1ebadb13417b72ea7ba686e1fc644604e"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionUrlPolicyTest.kt",
+      "bytes": 2183,
+      "sha256": "b4c8c8ea09ab964cc755c3f6f06c2fb1a812aefdc0c1947aa072042120e60d0c"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/subscription/SubscriptionUsageTest.kt",
+      "bytes": 2023,
+      "sha256": "b375c100d759b3cdb283d834030c7f62774479838594088ed6a2b592f753abd7"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/transfer/BackupCodecTest.kt",
+      "bytes": 1870,
+      "sha256": "f3c0fc3126cef0398be442fe50c787f551d424113dee1838339e1532d45affe4"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/transfer/LanTransferCodecTest.kt",
+      "bytes": 3444,
+      "sha256": "a4d8c5af0c836e70eb8ea86e1c7db5d7f20e7d1bfeae187dcc78a634533bcfc5"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/transfer/SubscriptionShareSelectionTest.kt",
+      "bytes": 1511,
+      "sha256": "25b28b807dd4e46ee1a568150f7c7cfdeb091a7d8bd1f73c5c3a51822ec51d2a"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/CompleteLanguageCoverageTest.kt",
+      "bytes": 4575,
+      "sha256": "06918be484d00630979f0c3b2853c41a83581e3d9ea68308a2d07538d313f9d9"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/DashboardRefreshPolicyTest.kt",
+      "bytes": 3604,
+      "sha256": "e92cb997b5e1082480671eb562c3274b640bd3048f0f1c3aaf244386b62a36e9"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/DiagnosticCancellationStateTest.kt",
+      "bytes": 1505,
+      "sha256": "9534b3a5d4ad380781edf165d14c7c1eebdb2eb91e5d44bdb651ea96b0c0aeb5"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/DnsDiagnosticLifecycleTest.kt",
+      "bytes": 601,
+      "sha256": "5adac514772974f0bb6dfdcf9d83de4ece1ca2d2c13425de6074f920fbdd610b"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/HomeHeroModelTest.kt",
+      "bytes": 11479,
+      "sha256": "74e274f5cd0a4eb707697bda4e7f04995bfd7e926c5da74d372514407407b34f"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/LanguageTest.kt",
+      "bytes": 10251,
+      "sha256": "cc54d6a855e3e52329808cf7daeadfdc3b0e1ef2f9a227784601502f8cb4fd72"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/NodeHealthIndexTest.kt",
+      "bytes": 861,
+      "sha256": "7d807c7553164d8b618eba79a51193002db5b0b64a4343aba788efd02ce1a031"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/ProbeResultTextTest.kt",
+      "bytes": 1494,
+      "sha256": "72c7498abd40a4498169ac118c8f53ead761478bc74c0fd542f4c4a4b7235465"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/StartupFailureLanguageTest.kt",
+      "bytes": 1126,
+      "sha256": "ed5594706f7a552011c714e2c873fcdc3e48ad7bc34968bd65d9347568bcb0c3"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/SubscriptionLibraryModelTest.kt",
+      "bytes": 6000,
+      "sha256": "8f8a12054988d03f74ff19a7aeda8e1ecb890c75963ea11581f48177d5da5982"
+    },
+    {
+      "path": "app/src/test/java/io/weave/client/ui/SubscriptionRefreshBatchTest.kt",
+      "bytes": 4041,
+      "sha256": "396ff698ef432ed4fe642b0a96988aa5d7a9dde0a4b9272f342e754d643325f9"
+    },
+    {
+      "path": "app/src/test/resources/clash-import-65-smoke.json",
+      "bytes": 6641,
+      "sha256": "04dc30c897d82b72ea95b38a74c8a0bea0f93aa86410377732981563eb514ae2"
+    },
+    {
+      "path": "app/src/test/resources/mihomo-feature-smoke.yaml",
+      "bytes": 2318,
+      "sha256": "12c8a2113733aa39dbd7c6d2bf0e51ff40533071b5ffeca03f69769959496d84"
+    },
+    {
+      "path": "app/src/test/resources/providers/mihomo-feature-provider.yaml",
+      "bytes": 99,
+      "sha256": "7ebd65ffa4a8992a31249477a404e5ef0201dec564e4235ed69731b397b5632f"
+    },
+    {
+      "path": "build.gradle.kts",
+      "bytes": 149,
+      "sha256": "41eb063976a39e26de19ca6b5fecc750b7630e924469f22d3cb59ea14ae1cffb"
+    },
+    {
+      "path": "core-lock.properties",
+      "bytes": 1315,
+      "sha256": "24b3dcd878837472a1c1fb92bf5825b7d343b3f4912ea1d9c49b4d3c0b146915"
+    },
+    {
+      "path": "core-patches/cmfa-weave-runtime.patch",
+      "bytes": 1979,
+      "sha256": "8ac691f191bfa3d1368a231fbcbc6cf8e6d0d953f23a0786cc53bab956906590"
+    },
+    {
+      "path": "docs/ALPHA73_OPTIMIZATION_VALIDATION.md",
+      "bytes": 5300,
+      "sha256": "83ef8c17e7a79b2e34069a6794087ced8be3666cf5d9a4fb992d6bc4bc72e0ee"
+    },
+    {
+      "path": "docs/ALPHA74_VALIDATION.md",
+      "bytes": 4085,
+      "sha256": "9de44e86257ca41609ba9efdb59d908245653fc8d3f1c676439000025065f365"
+    },
+    {
+      "path": "docs/ALPHA75_VALIDATION.md",
+      "bytes": 2777,
+      "sha256": "04eb091657f9ef5eafa7941acdca68c5d221d8a03f8cc8f6fabb44e58a387243"
+    },
+    {
+      "path": "docs/ALPHA76_VALIDATION.md",
+      "bytes": 3778,
+      "sha256": "668d10bee5675aeb3c1f065bb535a704470acb4ef713f7c1d4f7eb7ebbda006e"
+    },
+    {
+      "path": "docs/ALPHA77_VALIDATION.md",
+      "bytes": 2181,
+      "sha256": "ef6881059c071768df099a99237cdc7629d821c894122708051104d2145a3bc9"
+    },
+    {
+      "path": "docs/ALPHA78_POWER_OPTIMIZATION.md",
+      "bytes": 2494,
+      "sha256": "9930e124a4e927c3cd63baf452010fce44411c208e92e2c757982eb759a6ca1b"
+    },
+    {
+      "path": "docs/ANDROID_ALPHA79_VALIDATION.md",
+      "bytes": 4296,
+      "sha256": "6e92ed96f467697a43a972bc9086740906f802ffdf4e64c4a12057380376dc7b"
+    },
+    {
+      "path": "docs/ANDROID_ALPHA80_VALIDATION.md",
+      "bytes": 3287,
+      "sha256": "2639e2e781ea9ba2f332efc6caef68105a36bb89c817c5df58b7a37fdf59e3fa"
+    },
+    {
+      "path": "docs/ANDROID_ALPHA81_VALIDATION.md",
+      "bytes": 3295,
+      "sha256": "4451519e51d282d529674782d75668f657c8163640fe6cb9373ed4949ad7ac30"
+    },
+    {
+      "path": "docs/ANDROID_ALPHA82_VALIDATION.md",
+      "bytes": 3509,
+      "sha256": "1d7b8cea0545a497110276833d052211b451d55efb71d6989c39a10523a38cb5"
+    },
+    {
+      "path": "docs/ANDROID_ALPHA83_VALIDATION.md",
+      "bytes": 2580,
+      "sha256": "5b4a1c1edb9873ccdbfc88c013356a922af68d5e6789c2cbb4bf4008d24d098b"
+    },
+    {
+      "path": "docs/ANDROID_CLIENT_CAPABILITY_AUDIT.md",
+      "bytes": 3737,
+      "sha256": "dfe1b1f0f3cae128e54c63fd675fe6bf7d48cb62a70e8915ed0302d1415a7fce"
+    },
+    {
+      "path": "docs/ANDROID_EXPERIENCE_PREVIEW_VALIDATION.md",
+      "bytes": 7376,
+      "sha256": "641f75848890ff92aea0413cc56616fc3adbe116c04d5f9600f590bb4eaa899c"
+    },
+    {
+      "path": "docs/ANDROID_FEATURE_MATRIX.md",
+      "bytes": 6754,
+      "sha256": "75bb8bdc3a9d3e3a67757b8c74a0ac3c2fd7cd2dbcec3e0664e23ea4fc408eeb"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "bytes": 4746,
+      "sha256": "0383a706cc54816336137267c47075729128b0c1f29d55ba08950b76bc44e2fa"
+    },
+    {
+      "path": "docs/BRAND_ICON_REPAIR.md",
+      "bytes": 2569,
+      "sha256": "f3e9ae17b6dfac4a36256f51117bf64bf14436d7c93bf05e96a1140048f2b2ad"
+    },
+    {
+      "path": "docs/BUILD_ANDROID.md",
+      "bytes": 1307,
+      "sha256": "5fe49a6fbc13d7f152156b0f08e1d11dbb0bbfb15f91c33f7addc191c4eceede"
+    },
+    {
+      "path": "docs/CLIENT_CAPABILITY_GAP.md",
+      "bytes": 3677,
+      "sha256": "b837736e60154899413d35127179e7be1bb726fade35a08f3bace83ecd6ae037"
+    },
+    {
+      "path": "docs/CORE_PROVENANCE.md",
+      "bytes": 3229,
+      "sha256": "6cd2ca6db4891c312efd0122c122f4907f7fa6a51cfd4a7fdf9642920223cc97"
+    },
+    {
+      "path": "docs/ENGINE_INTEGRATION.md",
+      "bytes": 3901,
+      "sha256": "56656f73837cbaf4cae30957a4d8e40ca8009f2efb2a0496d5177683060f40cf"
+    },
+    {
+      "path": "docs/GEODATA_PROVENANCE.md",
+      "bytes": 1401,
+      "sha256": "3db9fcd1d5bbd2061aa8f8f0d8caa926d4d257b2b60d972be91be7022974c5da"
+    },
+    {
+      "path": "docs/IP_QUALITY_CHECK.md",
+      "bytes": 1844,
+      "sha256": "592d35db0e27d4fe4a2cc6811a4d1eaa81a594882a05dbb5e3f23101c81283cf"
+    },
+    {
+      "path": "docs/LAN_TRANSFER_PROTOCOL.md",
+      "bytes": 2191,
+      "sha256": "f5cfe17b2a9001aee2b38e1d4fb41e1e0cde25f9a302dcdca118b9ad57998bc2"
+    },
+    {
+      "path": "docs/LOCAL_BACKUP_AND_ROUTE_EXPLANATION.md",
+      "bytes": 2305,
+      "sha256": "cafa6e22523243258017dc3612e851dd8a6b6ec5a46c13c56427e5e2b6df2656"
+    },
+    {
+      "path": "docs/LOCAL_ONLY_RELEASE_PROFILE.md",
+      "bytes": 4212,
+      "sha256": "7379e755d0f595778a6808d4c5109a070a515520a9372abc87dbbf3e190d0342"
+    },
+    {
+      "path": "docs/LOCAL_ROUTE_RULES.md",
+      "bytes": 940,
+      "sha256": "9291e3d07196dcf16c45d8d362d04237e7844de13591d6e416ee8b3dc5828e41"
+    },
+    {
+      "path": "docs/NETWORK_ENDPOINT_INVENTORY.md",
+      "bytes": 5200,
+      "sha256": "99ae8accabb2e5c02398ec908be03e51bdc8debcc1fce786e6304d0ed2434212"
+    },
+    {
+      "path": "docs/OFFLINE_POLICY_PACK.md",
+      "bytes": 1393,
+      "sha256": "e3c71cc2ba9f00af464dbecff8b3d0511d61a0335f2555d2db356d23253d9479"
+    },
+    {
+      "path": "docs/OPEN_SOURCE_RELEASE_CHECKLIST.md",
+      "bytes": 3022,
+      "sha256": "a9a49027c3114784ed32f154f52fc83a7232bda168ed2a84e95c18dd094da0f5"
+    },
+    {
+      "path": "docs/PRODUCT_SPEC.md",
+      "bytes": 6283,
+      "sha256": "a52815dc129b6c85355fd189d35d052d9d6033cf6a23ee51bacd07c601518ef7"
+    },
+    {
+      "path": "docs/PROXY_CHAIN.md",
+      "bytes": 1270,
+      "sha256": "6b940d5217090f65adfdb3057792046df7d99ba9e793e2d0c37d2797e8823be6"
+    },
+    {
+      "path": "docs/RUNTIME_VALIDATION.md",
+      "bytes": 61463,
+      "sha256": "96ae32459f70ef2fc082be74afd7a245048ca3da7d436c9c56c921e7ffd2dca7"
+    },
+    {
+      "path": "docs/SECURITY.md",
+      "bytes": 9792,
+      "sha256": "02469ebbf18a8569d31377bf1db7adcb692530b2582fb0b9e54bcb1068b6e4e1"
+    },
+    {
+      "path": "docs/UI_ENTRYPOINT_AUDIT.md",
+      "bytes": 8547,
+      "sha256": "40ab6c640a3c2388cb83b0ce20044248efdbfb05a3520c8c204e77b76e653ea9"
+    },
+    {
+      "path": "docs/images/themes.png",
+      "bytes": 244860,
+      "sha256": "edbc65bf76545213b764e9bf0f317122e2a99d190b02365582d38c896aa87b6c"
+    },
+    {
+      "path": "docs/images/themes.svg",
+      "bytes": 11003,
+      "sha256": "2375c85c401b1993d79bd7ac74ba6d5855a5d271f3ca6cdabe198a4380e52f65"
+    },
+    {
+      "path": "docs/images/weave-icon-master.png",
+      "bytes": 2303700,
+      "sha256": "f5a73ac22f28e7382b0c5a754e1699bd7cdf51820b684fc9db96efc5a26caaef"
+    },
+    {
+      "path": "docs/images/weave-icon.webp",
+      "bytes": 292294,
+      "sha256": "ae2934d467bf50c2e48b95dd84a03d99a7c5d3a90054b887f4e591b104bbb810"
+    },
+    {
+      "path": "docs/releases/v0.3.0-alpha77.md",
+      "bytes": 2715,
+      "sha256": "51c7db3834023a1bde91b23b306c68e82c3a5b2d363a96411871f90e1a3d6679"
+    },
+    {
+      "path": "docs/releases/v0.3.0-alpha83.md",
+      "bytes": 3021,
+      "sha256": "e0f3ae6eb9c42a83adb455554e75cf0df8c3ec1c3c25323c7fe4c5e0bc1f66ce"
+    },
+    {
+      "path": "geodata-lock.properties",
+      "bytes": 497,
+      "sha256": "2e5a24494e335446f5cc8c898b1a3f83e08c596d487da3e71e6770f793141aca"
+    },
+    {
+      "path": "gradle.properties",
+      "bytes": 218,
+      "sha256": "62ad03196183fb40aaff35577304002008d6ed981eae35382c97ac29189d41c5"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.jar",
+      "bytes": 48966,
+      "sha256": "55243ef57851f12b070ad14f7f5bb8302daceeebc5bce5ece5fa6edb23e1145c"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.properties",
+      "bytes": 339,
+      "sha256": "519280ee807cb83ee0f7be30bb3aa51b71d0e14905cb3ecc285a4243b2ce4ac8"
+    },
+    {
+      "path": "gradlew",
+      "bytes": 8654,
+      "sha256": "aed171fb114f82e6eaea4970a245a200e0582a7dcc8ec0891ca41b6e4a62b754"
+    },
+    {
+      "path": "gradlew.bat",
+      "bytes": 2896,
+      "sha256": "fedad02c18e266ec094995a5751b7fe1eb6e74f66bf75db64fae2e50eb22c234"
+    },
+    {
+      "path": "ios/Config/PacketTunnel.entitlements",
+      "bytes": 449,
+      "sha256": "9a360f50a3f710b9a17de645f8e0db930c24a36d468bf153b381236931ff90d4"
+    },
+    {
+      "path": "ios/Config/WeaveIOS.entitlements",
+      "bytes": 449,
+      "sha256": "9a360f50a3f710b9a17de645f8e0db930c24a36d468bf153b381236931ff90d4"
+    },
+    {
+      "path": "ios/MOBILE_CORE.md",
+      "bytes": 2438,
+      "sha256": "7fa1e363c4a244d0830684f6e7466ee79f7aba619ac47fc4977216ec4b6ab439"
+    },
+    {
+      "path": "ios/PacketTunnel/Info.plist",
+      "bytes": 1017,
+      "sha256": "5e23037273c95c1ef1f30171619e39b743367b1e954c2122943d70e61806c8ab"
+    },
+    {
+      "path": "ios/PacketTunnel/MobileCoreBridge.swift",
+      "bytes": 1883,
+      "sha256": "783d26b157ba8179d2c1fd2b20669854ca1c371e5745aafd2748835888dd6456"
+    },
+    {
+      "path": "ios/PacketTunnel/PacketTunnelProvider.swift",
+      "bytes": 4270,
+      "sha256": "e9e84b026c2270e7aeb7aeea15a19c817453542a85582ca200d843796167c2d9"
+    },
+    {
+      "path": "ios/README.md",
+      "bytes": 4229,
+      "sha256": "6cb85549a95dfc79af5ca3eeabec6a2e3efcbede4e68a491fddb151e9a5f2eb0"
+    },
+    {
+      "path": "ios/WeaveCore/Package.swift",
+      "bytes": 678,
+      "sha256": "a4c25a07dd4a3da4994463b801b39746c1ba88dac2b7008f05d931c47a866b11"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/ClashNodeParser.swift",
+      "bytes": 5161,
+      "sha256": "e0a1270c985a29c3fbc3cbde090783e29e368eb6afc245c0d21d2d13203b0546"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/LANTransferService.swift",
+      "bytes": 10136,
+      "sha256": "ebf06312ffe3d856ba6add4e33f6a9c0cdc2105a5764a2e4e3aed33de277372d"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/Models.swift",
+      "bytes": 5507,
+      "sha256": "437dfa831e5a507ecd697c04d941bf3c3fcc4f3ab6e38539b1e2172769f70757"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/RuntimeCompiler.swift",
+      "bytes": 13570,
+      "sha256": "3faa0d6cb72d7412596ca129c40de43350dda5bbf73ffbf1873d404e9c15f277"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/SecureSubscriptionStore.swift",
+      "bytes": 7557,
+      "sha256": "29ca156bc695290e663266a212f42453dcd2f03fe0c2d81780a571ec15ecbdbf"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/SubscriptionImporter.swift",
+      "bytes": 21266,
+      "sha256": "41604d84aa3e1d93c32f6ff533e809fb74160389f25c527e0de174b85877aab7"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCore/TransferCodec.swift",
+      "bytes": 9230,
+      "sha256": "443b8c85acf5c725c824c6ab64cf367d2fdcb6c6d67242dbeadaa38040054fc8"
+    },
+    {
+      "path": "ios/WeaveCore/Sources/WeaveCoreSelfTest/main.swift",
+      "bytes": 8178,
+      "sha256": "40a9b2de6331aa3a76a37416775c757c25ee840fe2889517984472ddc7c9be94"
+    },
+    {
+      "path": "ios/WeaveIOS.xcodeproj/project.pbxproj",
+      "bytes": 23344,
+      "sha256": "6a2781c8567fbe61ed814ca6c007249a7d0051ed7a4adfbd8108419288d81bde"
+    },
+    {
+      "path": "ios/WeaveIOS.xcodeproj/xcshareddata/xcschemes/WeaveIOS.xcscheme",
+      "bytes": 2147,
+      "sha256": "9f6afe2252c40f450fa832e26ec7695c0669cbfde72ee15edce250d703d6c89e"
+    },
+    {
+      "path": "ios/WeaveIOS/Resources/Assets.xcassets/AccentColor.colorset/Contents.json",
+      "bytes": 329,
+      "sha256": "06617da1a620c96206f52982c1c71d087668328340b431a3709498d5220b98c2"
+    },
+    {
+      "path": "ios/WeaveIOS/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "bytes": 218,
+      "sha256": "9ac8e71cc3748311f8ff72485846b7482329434777818ecc27051c3b71c9fa0d"
+    },
+    {
+      "path": "ios/WeaveIOS/Resources/Assets.xcassets/AppIcon.appiconset/WeaveIcon-1024.png",
+      "bytes": 1431720,
+      "sha256": "41886e257f86321cf8a303493abfa9f417f7afc787df262fc4b74a032bb429f7"
+    },
+    {
+      "path": "ios/WeaveIOS/Resources/Assets.xcassets/Contents.json",
+      "bytes": 63,
+      "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
+    },
+    {
+      "path": "ios/WeaveIOS/Resources/Info.plist",
+      "bytes": 1654,
+      "sha256": "f84309d901c9bf822634f12121c4c6817da25e8e4297aa75d66a3ea7cab197f9"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/AppModel.swift",
+      "bytes": 15564,
+      "sha256": "2ed02273aed74f252d38530b3705e0144b86a51165940269c733fe3ba9593812"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Design/MonetGlass.swift",
+      "bytes": 9849,
+      "sha256": "26bd9d1a54fcd3c563648fd13f6fdea226faa8f06435abc2a6fa39ccd91bdfa9"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/RootView.swift",
+      "bytes": 2478,
+      "sha256": "733ae50aa37ea94407f9e4d494b25d1fb0587f992a091bc268bcfb6170af1273"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Services/QRCodeServices.swift",
+      "bytes": 5609,
+      "sha256": "0af5ebcf7e3b0f63490dfd2656be3af73cc3c41bac235e98f43384ae6283d954"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Services/TunnelManager.swift",
+      "bytes": 3573,
+      "sha256": "ef9f80eb863b0681c851d7fac6fcaf78fd08f012668eff4c7fd9f0d2e071b6da"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Views/ConnectionView.swift",
+      "bytes": 7208,
+      "sha256": "7bd9c556393e55366a39ba3efddfda7638f11f8e25ad21cf25e71d373b0b368b"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Views/RoutingView.swift",
+      "bytes": 7452,
+      "sha256": "de285ddeb38390bd9e320ef62559aeac5c32fecdda659816eb5eee61cc2c7430"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Views/SettingsView.swift",
+      "bytes": 15812,
+      "sha256": "481b988b267bd61e4ff6f3e52835917b7a43b647ea235cdc4a230d394e650b75"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/Views/SubscriptionsView.swift",
+      "bytes": 14639,
+      "sha256": "2572464ba482b524eaca962b9f0383f30b67e2bf1cf6b22e9c72a932e701b9e7"
+    },
+    {
+      "path": "ios/WeaveIOS/Sources/WeaveIOSApp.swift",
+      "bytes": 295,
+      "sha256": "5b7dd8b81c859e05c3a1aec458e97867959b6f912050a39362b44acd03b07bca"
+    },
+    {
+      "path": "ios/build.sh",
+      "bytes": 725,
+      "sha256": "88dba704c1a5e6cd945134681bc19544d1697ae4017ad112a19d8321956b8c73"
+    },
+    {
+      "path": "macos/Package.swift",
+      "bytes": 830,
+      "sha256": "c741f9881d20279548ad4031792fe01596a7311d0bd45240dc971f60c37ba577"
+    },
+    {
+      "path": "macos/README.md",
+      "bytes": 3987,
+      "sha256": "918231829fcf85c56f7264020022c1abb285fd3b092bba56fc4d6c02f8588b65"
+    },
+    {
+      "path": "macos/Resources/Info.plist",
+      "bytes": 1188,
+      "sha256": "6a042710cce8807b908c30fe25d6c72b5689657a79e82018375b0e7f28b95b4f"
+    },
+    {
+      "path": "macos/Resources/Weave.icns",
+      "bytes": 2424434,
+      "sha256": "32c5debe65b899aa634febdfa4c828d8902d07c98d716cfe886b7ae372592062"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_128x128.png",
+      "bytes": 35183,
+      "sha256": "8300e4d0d25b10dbef2e5ac8f1da662c63c7770683d68b25e951feb00547804f"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_128x128@2x.png",
+      "bytes": 126086,
+      "sha256": "126276c2bc82aacb122318130a88c0e0155b2e35b6d2e59bce75a4e692906938"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_16x16.png",
+      "bytes": 1468,
+      "sha256": "7ce01cacb0cc2573b769515fc2145f4887736fe404e0b0eb06e70a757fcb7fc4"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_16x16@2x.png",
+      "bytes": 3461,
+      "sha256": "40802eb2b20615c58bcaeccd7de8e0c81087823e857ace24b546aa93a6ec06cd"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_256x256.png",
+      "bytes": 126086,
+      "sha256": "126276c2bc82aacb122318130a88c0e0155b2e35b6d2e59bce75a4e692906938"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_256x256@2x.png",
+      "bytes": 468898,
+      "sha256": "4748e163773d8665c2ba4b7bb8760406f900939b69c540de09411819ceb2ce9d"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_32x32.png",
+      "bytes": 3461,
+      "sha256": "40802eb2b20615c58bcaeccd7de8e0c81087823e857ace24b546aa93a6ec06cd"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_32x32@2x.png",
+      "bytes": 10255,
+      "sha256": "d6af688c1a020c5dc5ff73089da4a4e05d5560e73cf7a1b879b3392a23ad5d55"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_512x512.png",
+      "bytes": 468898,
+      "sha256": "4748e163773d8665c2ba4b7bb8760406f900939b69c540de09411819ceb2ce9d"
+    },
+    {
+      "path": "macos/Resources/Weave.iconset/icon_512x512@2x.png",
+      "bytes": 1779019,
+      "sha256": "af63598198e0e5c132b9dc9aeefc4f4d1039e2407378086a8dd5175c228b5c06"
+    },
+    {
+      "path": "macos/Resources/WeaveIcon-1024.png",
+      "bytes": 1779019,
+      "sha256": "af63598198e0e5c132b9dc9aeefc4f4d1039e2407378086a8dd5175c228b5c06"
+    },
+    {
+      "path": "macos/Resources/WeaveImpressionTexture.webp",
+      "bytes": 59862,
+      "sha256": "1125d402ea753a52e564c31e037c0807b3427fc61a391bc5e6e21d01a7a7214b"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/AppModel.swift",
+      "bytes": 15459,
+      "sha256": "f9fd1db8cf586acb5d6bfa45ce3e0af06c2fa2bea11212fa27c679a82884d1d1"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/ClashNodeNames.swift",
+      "bytes": 8391,
+      "sha256": "3eaa59441ae28382cffa3feb4f5fbd731efd0accacfaa081c2963ef2d701bb01"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/ContentView.swift",
+      "bytes": 57205,
+      "sha256": "44ea1d935a3ee244c1d2a26e475269e0d78767a575ad48a864034f3471c92fe9"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/DirectSubscriptionImporter.swift",
+      "bytes": 23247,
+      "sha256": "f5bd6ec037faca770ccc5aac813644b817c24fc02d6031f07d57673c76a00429"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/LANTransferService.swift",
+      "bytes": 11970,
+      "sha256": "62da371b4569a84262f98f7ebacac0cbe3e119b774bc0c3634ed424dc73e929a"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/MihomoController.swift",
+      "bytes": 14296,
+      "sha256": "65ab1f5f5391f2479b763f1603953460ba69b6ff3dd000675b32404ab380c8b1"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/Models.swift",
+      "bytes": 907,
+      "sha256": "755a49110993c0165292d0a28681f8c89efc0827753ea6e0aaf957d07413c65e"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/QRCodeImporter.swift",
+      "bytes": 1653,
+      "sha256": "aac4cb2a9b87ad664e8fd4a1377ddde6b3c5ae0297d4e6a1e7aef33addc79fc4"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/QRCodeView.swift",
+      "bytes": 993,
+      "sha256": "fdc619d63ffb7404c19b7ea31a6de3e83666fd22be5206278cdcc5375fa3d416"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/SubscriptionVault.swift",
+      "bytes": 6068,
+      "sha256": "d656a868cd565941b098eb8792c1e97ba8b886e07c435af7c4204c809751d8e5"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/SystemProxyManager.swift",
+      "bytes": 15494,
+      "sha256": "f240a08a4609b42d4ed03a5920919e8e4f09b0025e6e0b0ed958f3eb00939ba9"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/TransferCodec.swift",
+      "bytes": 9143,
+      "sha256": "0ee1cf3bc4e60fab3c55a412b133232478441e717aef320348e041f5a238817e"
+    },
+    {
+      "path": "macos/Sources/WeaveMac/WeaveMacApp.swift",
+      "bytes": 530,
+      "sha256": "e57c0a9d9b5952ddd566e6120b992d6bdf49508f05808a45e93daa3dba803d52"
+    },
+    {
+      "path": "macos/Tools/BuildIcns.swift",
+      "bytes": 1155,
+      "sha256": "c9d4b4a2227a12d19825d211675b9c96a7abe542ba7a7907223467b070a45189"
+    },
+    {
+      "path": "macos/Tools/ExportBrandIcon.swift",
+      "bytes": 1904,
+      "sha256": "ecb2623012f7b93a2d50aeef92e883574490878bff8d3077e2fb183574c14d77"
+    },
+    {
+      "path": "macos/Tools/GenerateAppIcon.swift",
+      "bytes": 4142,
+      "sha256": "abff606fe6dc38fd752bacb751e28c6b6064cf1c3e0a96cf5c75dceab82fb996"
+    },
+    {
+      "path": "macos/Tools/MaskIcon.swift",
+      "bytes": 1655,
+      "sha256": "4e7d6ab13968190ae26a6ef0803613b4a9013f9fd0ca9642b2d51b134b5e6da2"
+    },
+    {
+      "path": "macos/Tools/TransferSelfTest/main.swift",
+      "bytes": 3775,
+      "sha256": "15a824204b939f14533e5610af8f7646879b759388e3c5baf7b26d04eebb405d"
+    },
+    {
+      "path": "macos/Tools/mihomo-smoke.yaml",
+      "bytes": 1188,
+      "sha256": "85826faf790c9bf802e830fa5f6b72b5fe9eea00ed0719906c15b0ad7b1e7eba"
+    },
+    {
+      "path": "macos/WeaveMac.NetworkExtension.entitlements.example",
+      "bytes": 340,
+      "sha256": "3e15038bbf0d9814e147f05d40c096bc1520d83c41cdad724759f9244c1325e2"
+    },
+    {
+      "path": "macos/WeaveMac.entitlements",
+      "bytes": 369,
+      "sha256": "3bd14fee8474439123259e5f50a31c18bf3cb17f49c88e8776947cdd75124ce0"
+    },
+    {
+      "path": "macos/build-app.sh",
+      "bytes": 2872,
+      "sha256": "9b85e0da1387db62b62a5b306f56ca862b9c4a4e5eee518c4f5cd1b3eba00828"
+    },
+    {
+      "path": "settings.gradle.kts",
+      "bytes": 325,
+      "sha256": "5d54d1f4459bf351b40274a38752015664ad77c3992a45799b85cafcd33e1f1f"
+    },
+    {
+      "path": "tools/audit-local-release.sh",
+      "bytes": 3123,
+      "sha256": "17582f0221e9eb010fd365b58d08e843f0f667eeac76d05dc623996e947abc39"
+    },
+    {
+      "path": "tools/build-core.sh",
+      "bytes": 3283,
+      "sha256": "abc8ef88b71ce2e8a1205c9fbafa3ee4aea38e63569a349104ab5a343c99b7e6"
+    },
+    {
+      "path": "tools/export-brand-icons.sh",
+      "bytes": 1864,
+      "sha256": "60ae7aecee8e1d22549ef833353eb66a253fca323121cdc01c3b81265465e4bc"
+    },
+    {
+      "path": "tools/verify-core-lock.sh",
+      "bytes": 808,
+      "sha256": "51d0d8878f1877bc64d91964bb767ad9a4d05254b6baf317d2cb2e4323361f04"
+    },
+    {
+      "path": "windows/.gitignore",
+      "bytes": 35,
+      "sha256": "fb0cf042afc374da1f8dfd4ee937c5fde84dc4300d0ffc2f835ae2984578bdb3"
+    },
+    {
+      "path": "windows/README.md",
+      "bytes": 12048,
+      "sha256": "ae8e20b4ebc3f8c308edafbd088e95b0c2f398062bd70b4b71e5396c1ce3ee90"
+    },
+    {
+      "path": "windows/START-HERE.txt",
+      "bytes": 2916,
+      "sha256": "8d42c45f5ccfbb5dd875a6c3a27956e16197a1e6891e013949aa25d2f2514401"
+    },
+    {
+      "path": "windows/THIRD-PARTY.md",
+      "bytes": 1623,
+      "sha256": "a5b72907479b2cadb86ab248729602e9b9065c0a541b9d9f958ce9bf88f79164"
+    },
+    {
+      "path": "windows/VALIDATION-RC1.md",
+      "bytes": 2006,
+      "sha256": "f3afe20d6aa2ca4c75648a9f406f8af84d084115c2eab3ca86317cdbca5c4fa8"
+    },
+    {
+      "path": "windows/VALIDATION-RC2.md",
+      "bytes": 3489,
+      "sha256": "8644d5e2f6b333f5f7a36a45d99906747c3696f69a087e6bec9328d1ced5d227"
+    },
+    {
+      "path": "windows/VALIDATION-RC3.md",
+      "bytes": 2343,
+      "sha256": "b246b552eff4f593a41dbea0316ac4fd12b6b9d855aeeb32fb56c677cd211699"
+    },
+    {
+      "path": "windows/VALIDATION-RC4.md",
+      "bytes": 1771,
+      "sha256": "d04c36e5bd803643f2df3b2543504201eb5ae3cde21b3f93509e34c9973e3882"
+    },
+    {
+      "path": "windows/Weave.Windows.sln",
+      "bytes": 2974,
+      "sha256": "6189b8b1be0d47a3923b2e955d36286cbed8a5218c2bc90b728d8dd8998cb184"
+    },
+    {
+      "path": "windows/build.ps1",
+      "bytes": 3091,
+      "sha256": "29866857faf113998a25f3c4f498ef7dedcf1a40c4023437d565621c0e4782cb"
+    },
+    {
+      "path": "windows/installer.iss",
+      "bytes": 838,
+      "sha256": "6bfe806b6479e9907ab853cc006ac2128eab79c216fd52e8c898c592804b7917"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/AppearancePalette.cs",
+      "bytes": 1241,
+      "sha256": "8d21072a937ddb2aa6d62f8a6ef989bbb1c6dadf8f7f4177d9ba485bb293de72"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/AtomicFile.cs",
+      "bytes": 984,
+      "sha256": "ba6cd26ae9a348565e8f13ed497a2430c16e8c60e366b7f435f580499718707c"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/ChildProcessLifetime.cs",
+      "bytes": 2444,
+      "sha256": "6bbec3deb35773d2131b026ace3aec85984733d26098c89f41d009856d3b18b5"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/ConnectionHealth.cs",
+      "bytes": 3898,
+      "sha256": "528d36c03c25fc6cacf2c44948d405bbcae96e61cdb0509b174d30575a628c9f"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/DiagnosticResultList.cs",
+      "bytes": 957,
+      "sha256": "57e8af52fd89b15d1b6f4fc9d5eb39902c857966997b3980eddf2efc8abc1e7a"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/DiagnosticSafeSummary.cs",
+      "bytes": 1786,
+      "sha256": "d3f431e823ba6cfb19813a7e17b6b9fb906bb3ba532981d2f4bb8a0468e6fa22"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/LanTransfer.cs",
+      "bytes": 13659,
+      "sha256": "7e35bde3c3fe89bcf9cee94e62995c131c3de6ccc0bcfb41293c67fada6ce732"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Localization.cs",
+      "bytes": 1665,
+      "sha256": "6d993ff0dde2d50c82644d6c2008c8e8cea79ac50e5410151d129b1cec6e3a54"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/MihomoConfigBuilder.cs",
+      "bytes": 17794,
+      "sha256": "c1dde2ffd390827bd152aebba17256f34a3f6b529b97c216b5a831eac4c846e4"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/MihomoController.cs",
+      "bytes": 6288,
+      "sha256": "84442de05ea334cfc38dfe385f9a99aeb081f0f81b37989c96ca0bc831000074"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/MihomoProcess.cs",
+      "bytes": 9628,
+      "sha256": "a14fd80c6effcdb3dcfcdf381957a8bc9c5b5ee44dba4ff81adaa21e319d7cbe"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Models.cs",
+      "bytes": 5979,
+      "sha256": "136bb09c3f14ec0583e447848dea36ae68f419f792b52116df97c0f204ee6470"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/NetworkDiagnostics.cs",
+      "bytes": 8015,
+      "sha256": "187106b106ef04721e6302ddc9186a8137265de1b7c70a87bd2d1b24073087b8"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/NodeName.cs",
+      "bytes": 1558,
+      "sha256": "1b77caf1a954c8b2d627938bef6915c770645a6cc176e7d33d52ab24198556a4"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/PrivacyLabText.cs",
+      "bytes": 3028,
+      "sha256": "790e6d220bd75e630a3a47cf6f2b65a7ff08188e260e6dee2d9de624533ab4d3"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/ProcessRuleCompiler.cs",
+      "bytes": 3135,
+      "sha256": "e6cf7e9ea82dea79603bf990e9a931ed62ae37dcab44059c3fdf3c349eabd457"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/ProxyChain.cs",
+      "bytes": 2916,
+      "sha256": "ffc1f14e5524febc352dbbf07916c067192a723c30bd0274a1e006c35b310e35"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Strings.en.json",
+      "bytes": 35558,
+      "sha256": "ca1ce7d5323c62843873ded58a676b947605a23e0529639f59e038c52174d581"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/SubscriptionImporter.cs",
+      "bytes": 14972,
+      "sha256": "2b33820fd20edecd0da8dfcdd0b29b1a1558a72f911f1eec60fa38276109815d"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/SubscriptionVault.cs",
+      "bytes": 4029,
+      "sha256": "d743bea447898e61cc682dd8e44c451bbba9ac49649639bb45594cc5f47aa473"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/AtomicFileTests.cs",
+      "bytes": 1249,
+      "sha256": "e89be8a0a9e19187f57c8341648efda03b7c9201f47c97a031750024db35e051"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/CoreTests.cs",
+      "bytes": 3032,
+      "sha256": "41518efd083ecc66b4621731222dceb87f018b2ab5dfd2af9f9f1b9fdea7decb"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/DataPathTests.cs",
+      "bytes": 7229,
+      "sha256": "67e0f38cf5866770f6f518418e8a1e9274e73a346bea56b887a7ce023ce21496"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/DiagnosticResultListTests.cs",
+      "bytes": 1663,
+      "sha256": "f4d6bafb87e5811dc8022fe86723ed7e41026a4351aec9b9d45abaa215d86170"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/DiagnosticSafeSummaryTests.cs",
+      "bytes": 1838,
+      "sha256": "c549d3f79bd65ac86e4d357e7b20a3688a69202132e9380fe20acd1351670a98"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/LocalizationTests.cs",
+      "bytes": 3994,
+      "sha256": "b823b8cefe99bf0707a83380bf7409c2e50c5af5b429c997c164c5808549421b"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/NativeSessionCleanup.cs",
+      "bytes": 638,
+      "sha256": "108135831025cd6931e67176984e7a7ab845c1c8afd47031bf8173b2befa63e8"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/NetworkDiagnosticsTests.cs",
+      "bytes": 2685,
+      "sha256": "8b91d890dce28a4f154e77172f7c6ff011b1ba46a4e868e51887c4fa402ce44f"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/SubscriptionReviewTests.cs",
+      "bytes": 2183,
+      "sha256": "c44d6648f1cadd68f0950c70f7d2c354940be30d2bd1f833ef904e5e0be9ca87"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/TransferAndRoutingTests.cs",
+      "bytes": 9211,
+      "sha256": "000a2f2abf6533567f2c714e8848e6ac779367a1275345bcf0d8857dca3aad22"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/Weave.Windows.Core.Tests.csproj",
+      "bytes": 641,
+      "sha256": "b38a3fb395cb6a9e1dfbbb76e49eb6fae03ea88f449b6b9d6e201a40ea648e47"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.Tests/WindowsV1Tests.cs",
+      "bytes": 8466,
+      "sha256": "95716988eb63a9521b506a9a9ac438b9d81f7c666f2ac5038e676d8f8b1dc8dd"
+    },
+    {
+      "path": "windows/src/Weave.Windows.Core/Weave.Windows.Core.csproj",
+      "bytes": 569,
+      "sha256": "1f408abb5f23b105c985ba0b6700a8eb73ab484947a62c80be2474ad6d03f13b"
+    },
+    {
+      "path": "windows/src/Weave.Windows/App.xaml",
+      "bytes": 10553,
+      "sha256": "01e53a1551ebf95c102040f496385e41393d22a21399e7d7accad8feeb27d076"
+    },
+    {
+      "path": "windows/src/Weave.Windows/App.xaml.cs",
+      "bytes": 2681,
+      "sha256": "1b00efdb4b8eec7f8a9f9b698a5b805331e62a33dbb4001a9d8f774f0c37e751"
+    },
+    {
+      "path": "windows/src/Weave.Windows/AppRouteStore.cs",
+      "bytes": 1272,
+      "sha256": "c0ad8ce3db03e4ef057ce67ece8ef49870e66b0b41d7c5d003cb512b295385e4"
+    },
+    {
+      "path": "windows/src/Weave.Windows/Assets/Weave.png",
+      "bytes": 126086,
+      "sha256": "126276c2bc82aacb122318130a88c0e0155b2e35b6d2e59bce75a4e692906938"
+    },
+    {
+      "path": "windows/src/Weave.Windows/Assets/privacy-lab.html",
+      "bytes": 4567,
+      "sha256": "f5884f1fec7c81eb822aa4902ed068dda07cd2c461d8892f4cca9198d5419c5a"
+    },
+    {
+      "path": "windows/src/Weave.Windows/CameraQrScanner.cs",
+      "bytes": 3361,
+      "sha256": "29a32e3f1f62b3232d8362b3014d386533c6cad460e55d7cc137f1f3df5c95d9"
+    },
+    {
+      "path": "windows/src/Weave.Windows/DesktopFilePicker.cs",
+      "bytes": 2484,
+      "sha256": "ca27acc354d6412bccc1e33f3e233ad050aeff1d7a13d4fc94a398d5ffcfad62"
+    },
+    {
+      "path": "windows/src/Weave.Windows/FlowPanel.cs",
+      "bytes": 1511,
+      "sha256": "dec3c65439c507593f3b4595a8ab86247dda1b650baba496a24b58b5314c3852"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.Diagnostics.cs",
+      "bytes": 2250,
+      "sha256": "03180742fd4f7a1a98cde91d36f9e4b7afb6390e6fb3acc1834366c8b684dd29"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.Language.cs",
+      "bytes": 3367,
+      "sha256": "5468e903c9971e660d2aebbd6195b2798c325729c0e32179d25041853ad9a26e"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.Privacy.cs",
+      "bytes": 6608,
+      "sha256": "0bc5d20e9cee7475356afce7c75937e65f71e1c9ac9e7f3c12d68b79ec8788b9"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.Subscriptions.cs",
+      "bytes": 3650,
+      "sha256": "022670e320c4988efafe3029f57bbee02e7ed34b41789487515904e8e520202e"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.Transfer.cs",
+      "bytes": 10057,
+      "sha256": "b2dc9abf98a5353df59bb3342bb73505fd262b025bf9cf9d049b3305f6fbb1e7"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.xaml",
+      "bytes": 33515,
+      "sha256": "0c0a31d1d48451a6e71152f7b448dfb76cf874911894b048477a6a807ac4db07"
+    },
+    {
+      "path": "windows/src/Weave.Windows/MainWindow.xaml.cs",
+      "bytes": 52009,
+      "sha256": "18784bf2e074b5f0f24495b6811b47780a91c76c9c8f6132bedf1b514408228a"
+    },
+    {
+      "path": "windows/src/Weave.Windows/QrTransfer.cs",
+      "bytes": 2396,
+      "sha256": "7c4aa4c8ae85bb998bdeb4428136fe76f153d77ce9a95c00935e8c759f8a69c9"
+    },
+    {
+      "path": "windows/src/Weave.Windows/TrayIcon.cs",
+      "bytes": 6081,
+      "sha256": "52fafb2fc3c833d4bb219323eae78193d7d2065c4ca05f7738e808e00ff4ab99"
+    },
+    {
+      "path": "windows/src/Weave.Windows/UiText.Keys.cs",
+      "bytes": 8725,
+      "sha256": "a818ab994b3af543415d26806d5d78db7eb77d65cc58f2a0de9be404235a89a9"
+    },
+    {
+      "path": "windows/src/Weave.Windows/UiText.cs",
+      "bytes": 433,
+      "sha256": "cb4134a6fbd77e25a03ce7515c053d995d006da11952451ae56746ace0afb20b"
+    },
+    {
+      "path": "windows/src/Weave.Windows/Weave.Windows.csproj",
+      "bytes": 2471,
+      "sha256": "88955b1ad05cb3a76e65fffd46320b00f70f6b2c4cdf1914b4b8623666f47d52"
+    },
+    {
+      "path": "windows/src/Weave.Windows/WeaveAppModel.cs",
+      "bytes": 17128,
+      "sha256": "45f9dec1c8e3ba0ff5c3b3ef7be6f681ffeaf40050b19b810df2c6fe1a79ccfd"
+    },
+    {
+      "path": "windows/src/Weave.Windows/WindowActivation.cs",
+      "bytes": 1693,
+      "sha256": "b577f52c0ae472ebeaa0ff8092625ba6239d19b467a45414502ef42cab332c6a"
+    },
+    {
+      "path": "windows/src/Weave.Windows/WindowsDpapiProtector.cs",
+      "bytes": 2386,
+      "sha256": "4194f2c5405c004000494218ac728e10ee520d80b4ac5f873026e2b98575d072"
+    },
+    {
+      "path": "windows/src/Weave.Windows/WindowsSystemProxy.cs",
+      "bytes": 4248,
+      "sha256": "de819ab25382d095cfd6bebb3e5275996536dc79a4b824fbcdc66495097efd97"
+    },
+    {
+      "path": "windows/src/Weave.Windows/app.manifest",
+      "bytes": 930,
+      "sha256": "bce8519f123132a5d3eaeaea6e3a7ceb6d4c4af39829a3ac94c2e3c9216fa13f"
+    },
+    {
+      "path": "windows/tests/AndroidTransferInterop.java",
+      "bytes": 2613,
+      "sha256": "cafee295c6f255d35565e7cbe615b76b7d81140eaf4a6a9fa943474e1c3fd8d0"
+    }
+  ]
+}

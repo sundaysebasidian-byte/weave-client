@@ -41,7 +41,7 @@ class SubscriptionDetailScrollTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.4f)) {
                 WeaveTheme {
                     SubscriptionManagerDialog(
-                        subscription = Subscription("fixture", "Scroll fixture", 200, "", 0.0, 0.0),
+                        subscription = Subscription("fixture", "Scroll fixture", 200),
                         nodes = nodes,
                         state = SubscriptionEditorState(editor = EditableSubscription(
                             "fixture", "Scroll fixture", SubscriptionSourceKind.REMOTE, "https://example.test/fixture",

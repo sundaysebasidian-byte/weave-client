@@ -31,25 +31,31 @@ class CompleteLanguageCoverageTest {
         }
     }
 
-    private fun visibleSourceFiles(): List<File> = listOf(
-        "src/main/java/io/weave/client/ui/WeaveApp.kt",
-        "src/main/java/io/weave/client/ui/LiveQrScanner.kt",
-        "src/main/java/io/weave/client/ui/BrowserPrivacyLab.kt",
-        "src/main/java/io/weave/client/ui/NetworkPrivacyCenter.kt",
-        "src/main/java/io/weave/client/ui/ProbeResultText.kt",
-        "src/main/java/io/weave/client/ui/ConnectionTracePanel.kt",
-        "src/main/java/io/weave/client/ui/AppViewModel.kt",
+    /** Every Compose/UI source (translation tables excluded) plus user-visible model/diagnostic copy. */
+    private fun visibleSourceFiles(): List<File> = (
+        resolveModuleFile("src/main/java/io/weave/client/ui").listFiles().orEmpty()
+            .filter { it.isFile && it.extension == "kt" && !it.name.startsWith("Language") }
+            .map { "src/main/java/io/weave/client/ui/${it.name}" } +
+            listOf(
         "src/main/java/io/weave/client/domain/Models.kt",
+        "src/main/java/io/weave/client/subscription/ClientSourceCatalogue.kt",
+        "src/main/java/io/weave/client/subscription/CmfaDocumentsSource.kt",
+        "src/main/java/io/weave/client/subscription/CmfaProfileCatalogue.kt",
+        "src/main/java/io/weave/client/subscription/KaringBackupSource.kt",
+        "src/main/java/io/weave/client/core/vpn/RuntimeFailure.kt",
+        "src/main/java/io/weave/client/routing/RemoteRuleSet.kt",
+        "src/main/java/io/weave/client/routing/CustomProxyGroup.kt",
         "src/main/java/io/weave/client/core/diagnostics/PrivacyObservatory.kt",
         "src/main/java/io/weave/client/core/diagnostics/RouteLens.kt",
         "src/main/java/io/weave/client/core/ipquality/IpQualityProbe.kt",
-    ).map(::resolveModuleFile).onEach { file ->
+            )
+        ).map(::resolveModuleFile).onEach { file ->
         assertTrue("missing language-audit input: $file", file.isFile)
     }
 
     private fun resolveModuleFile(path: String): File {
         val direct = File(path)
-        if (direct.isFile) return direct
+        if (direct.exists()) return direct
         return File("app", path)
     }
 

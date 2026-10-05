@@ -2,6 +2,50 @@ mixed-port: 7890
 allow-lan: false
 mode: rule
 log-level: warning
+ipv6: true
+find-process-mode: strict
+tun:
+  enable: true
+  stack: mixed
+  device: utun_weave
+  dns-hijack:
+    - 'any:53'
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: true
+  mtu: 1500
+  route-address:
+    - 0.0.0.0/1
+    - 128.0.0.0/1
+    - ::/1
+    - 8000::/1
+  route-exclude-address:
+    - 10.0.0.0/8
+    - 100.64.0.0/10
+    - 127.0.0.0/8
+    - 169.254.0.0/16
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 224.0.0.0/4
+    - ::1/128
+    - fe80::/10
+    - fc00::/7
+    - ff00::/8
+dns:
+  enable: true
+  ipv6: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver:
+    - 223.5.5.5
+  nameserver:
+    - 'https://doh.pub/dns-query'
+    - 'https://dns.alidns.com/dns-query'
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: false
 proxies:
   - name: WEAVE-DIRECT
     type: direct
@@ -11,4 +55,7 @@ proxy-groups:
     proxies:
       - WEAVE-DIRECT
 rules:
+  - AND,((NETWORK,UDP),(DST-PORT,3478)),REJECT
+  - AND,((NETWORK,UDP),(DST-PORT,5349)),REJECT
+  - AND,((NETWORK,UDP),(DST-PORT,19302-19309)),REJECT
   - MATCH,DEFAULT

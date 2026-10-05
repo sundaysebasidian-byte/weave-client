@@ -1,0 +1,143 @@
+name: Windows preview
+on:
+  push:
+    branches: ['codex/windows-test-package', 'codex/windows-v1-preview']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: microsoft/setup-msbuild@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Bundle pinned official Mihomo
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-windows-amd64-v1-v1.19.30.zip'
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP/core.zip"
+          if ((Get-FileHash "$env:RUNNER_TEMP/core.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278') { throw 'Core hash mismatch' }
+          Expand-Archive "$env:RUNNER_TEMP/core.zip" "$env:RUNNER_TEMP/core"
+          New-Item -ItemType Directory -Force windows/src/Weave.Windows/runtime | Out-Null
+          $exe = @(Get-ChildItem "$env:RUNNER_TEMP/core" -Recurse -Filter '*.exe')
+          if ($exe.Count -ne 1) { throw 'Unexpected core archive' }
+          Copy-Item $exe[0].FullName windows/src/Weave.Windows/runtime/mihomo.exe
+          & windows/src/Weave.Windows/runtime/mihomo.exe -v
+          if ($LASTEXITCODE -ne 0) { throw 'Core cannot execute' }
+      - name: Build and test x64 preview
+        shell: pwsh
+        run: ./windows/build.ps1 -Platform x64 -Configuration Release
+      - name: Check packaged app starts
+        shell: pwsh
+        run: |
+          $env:WEAVE_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP/weave-startup.txt"
+          function Wait-WeaveFrame($process) {
+            $deadline = (Get-Date).AddSeconds(20)
+            do {
+              $process.Refresh()
+              if ($process.HasExited) { break }
+              if (Test-Path ($env:WEAVE_UI_CAPTURE + '.ready')) { return }
+              Start-Sleep -Milliseconds 200
+            } while ((Get-Date) -lt $deadline)
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            throw "Window did not render a frame within 20 seconds: $env:WEAVE_UI_CAPTURE"
+          }
+          $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
+          $env:WEAVE_PREVIEW_DIAGNOSTICS = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop.png"
+          Get-ChildItem windows/src/Weave.Windows/bin -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
+          Get-ChildItem windows/artifacts/x64 -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Wait-WeaveFrame $app
+          if ($app.HasExited) {
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-2)} -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty Message
+            throw "App exited during startup: $($app.ExitCode)"
+          }
+          Stop-Process -Id $app.Id
+          $env:WEAVE_PREVIEW_COMPACT = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-compact.png"
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Wait-WeaveFrame $app
+          if ($app.HasExited -or -not (Test-Path $env:WEAVE_UI_CAPTURE)) {
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            throw 'Compact desktop layout failed'
+          }
+          Stop-Process -Id $app.Id
+          Remove-Item Env:WEAVE_PREVIEW_COMPACT
+          foreach ($theme in @(1,2,5)) {
+            $env:WEAVE_PREVIEW_THEME = "$theme"
+            $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-$theme.png"
+            $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+            Wait-WeaveFrame $app
+            if ($app.HasExited) { throw "Theme $theme failed to start" }
+            Stop-Process -Id $app.Id
+          }
+          $env:WEAVE_PREVIEW_THEME = '0'
+          $env:WEAVE_PREVIEW_WIDE = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-wide.png"
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Wait-WeaveFrame $app
+          if ($app.HasExited) { throw 'Wide desktop layout failed to start' }
+          Stop-Process -Id $app.Id
+          foreach ($page in @(1,2,3,4,5)) {
+            $env:WEAVE_PREVIEW_PAGE = "$page"
+            $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-page-$page.png"
+            $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+            Wait-WeaveFrame $app
+            if ($app.HasExited) { throw "Page $page failed to start" }
+            Stop-Process -Id $app.Id
+          }
+          $env:WEAVE_PREVIEW_LANGUAGE = 'en'
+          foreach ($page in @(0,1,2,3,4,5)) {
+            $env:WEAVE_PREVIEW_PAGE = "$page"
+            $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-en-$page.png"
+            $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+            Wait-WeaveFrame $app
+            if ($app.HasExited) { throw "English page $page failed to start" }
+            if (-not (Test-Path $env:WEAVE_UI_CAPTURE)) { throw "English page $page did not render" }
+            Stop-Process -Id $app.Id
+          }
+          $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
+          $env:WEAVE_PREVIEW_PAGE = '3'
+          $env:WEAVE_PREVIEW_SWITCH_LANGUAGE = '1'
+          $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop-live-language.png"
+          $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
+          Wait-WeaveFrame $app
+          if ($app.HasExited -or -not (Test-Path $env:WEAVE_UI_CAPTURE)) {
+            if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
+            throw 'Live language switching failed'
+          }
+          Stop-Process -Id $app.Id
+      - name: Package Windows installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { choco install innosetup --no-progress -y }
+          if (-not (Test-Path $compiler)) { throw 'Inno Setup unavailable' }
+          & $compiler windows/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+          Get-FileHash windows/artifacts/installer/*.exe -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-v3-Setup-x64
+          path: windows/artifacts/installer/*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-UI-preview
+          path: ${{ runner.temp }}/weave-desktop*.png
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-x64-test
+          path: windows/artifacts/x64/
+          if-no-files-found: error

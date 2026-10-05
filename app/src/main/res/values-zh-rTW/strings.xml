@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">代理連線</string>
+    <string name="vpn_channel_description">顯示 Weave 的代理連線狀態</string>
+    <string name="updates_channel_name">訂閱更新</string>
+    <string name="updates_channel_description">定時重新整理訂閱的結果</string>
+    <string name="action_disconnect">中斷</string>
+    <string name="action_connect">連線</string>
+    <string name="notification_speed">↑ %1$s/s · ↓ %2$s/s</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">已連線</string>
+    <string name="tile_disconnected">已關閉</string>
+    <string name="tile_connecting">正在連線…</string>
+    <string name="tile_needs_app">請開啟 Weave 授權 VPN</string>
+    <string name="shortcut_connect_short">連線</string>
+    <string name="shortcut_connect_long">連線 Weave</string>
+    <string name="shortcut_disconnect_short">中斷</string>
+    <string name="shortcut_disconnect_long">中斷 Weave</string>
+    <string name="shortcut_import_short">匯入</string>
+    <string name="shortcut_import_long">匯入訂閱</string>
+    <string name="update_applied_title">「%1$s」已更新</string>
+    <string name="update_applied_body">新增 %1$d · 移除 %2$d · 保留 %3$d</string>
+    <string name="update_review_title">「%1$s」需要預覽</string>
+    <string name="update_review_body">本次更新會影響已固定的出口或未通過安全稽核，請開啟 Weave 預覽後再更新。</string>
+    <string name="update_failed_title">訂閱重新整理失敗</string>
+    <string name="update_failed_body">%1$d 個訂閱未能重新整理，已保留原版本。</string>
+    <string name="notification_control_title">連線通知</string>
+    <string name="notification_control_enabled">在通知列顯示連線狀態與中斷操作。</string>
+    <string name="notification_control_disabled">通知已關閉。通道仍可執行，但通知列可能無法顯示狀態和中斷操作。</string>
+    <string name="notification_control_action">管理通知</string>
+</resources>

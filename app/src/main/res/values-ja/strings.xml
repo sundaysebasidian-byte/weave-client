@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">プロキシ接続</string>
+    <string name="vpn_channel_description">Weave のプロキシ接続状態を表示します</string>
+    <string name="updates_channel_name">購読の更新</string>
+    <string name="updates_channel_description">定期的な購読更新の結果</string>
+    <string name="action_disconnect">切断</string>
+    <string name="action_connect">接続</string>
+    <string name="notification_speed">↑ %1$s/s · ↓ %2$s/s</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">接続済み</string>
+    <string name="tile_disconnected">オフ</string>
+    <string name="tile_connecting">接続中…</string>
+    <string name="tile_needs_app">Weave を開いて VPN を許可してください</string>
+    <string name="shortcut_connect_short">接続</string>
+    <string name="shortcut_connect_long">Weave に接続</string>
+    <string name="shortcut_disconnect_short">切断</string>
+    <string name="shortcut_disconnect_long">Weave を切断</string>
+    <string name="shortcut_import_short">インポート</string>
+    <string name="shortcut_import_long">購読をインポート</string>
+    <string name="update_applied_title">「%1$s」を更新しました</string>
+    <string name="update_applied_body">追加 %1$d · 削除 %2$d · 維持 %3$d</string>
+    <string name="update_review_title">「%1$s」の確認が必要です</string>
+    <string name="update_review_body">この更新は固定された出口に影響するか、安全監査に通りませんでした。Weave でプレビューしてから更新してください。</string>
+    <string name="update_failed_title">購読の更新に失敗しました</string>
+    <string name="update_failed_body">%1$d 件の購読を更新できませんでした。以前のバージョンを保持しています。</string>
+    <string name="notification_control_title">接続通知</string>
+    <string name="notification_control_enabled">通知欄に接続状態と切断操作を表示します。</string>
+    <string name="notification_control_disabled">通知はオフです。トンネルは動作できますが、状態と切断操作が通知欄に表示されない場合があります。</string>
+    <string name="notification_control_action">通知を管理</string>
+</resources>

@@ -45,6 +45,7 @@ class MihomoProviderIntegrationTest {
             override fun getApplicationContext(): Context = this
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(context.applicationInfo).apply { dataDir = root.absolutePath }
             override fun getSharedPreferences(name: String, mode: Int) =
                 context.getSharedPreferences(prefsPrefix + name, mode)
         }
@@ -119,6 +120,7 @@ class MihomoProviderIntegrationTest {
             override fun getApplicationContext(): Context = this
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(context.applicationInfo).apply { dataDir = root.absolutePath }
             override fun getSharedPreferences(name: String, mode: Int) =
                 context.getSharedPreferences(root.name + name, mode)
         }
@@ -176,7 +178,8 @@ class MihomoProviderIntegrationTest {
                         networkPreferences = NetworkPreferences(),
                     )
                     // A loopback-only test listener, never included in production configuration.
-                    val config = compiled.yaml + "\nmixed-port: $inboundPort\nbind-address: 127.0.0.1\n"
+                    // The production profile already pins bind-address to loopback.
+                    val config = compiled.yaml + "\nmixed-port: $inboundPort\n"
                     engine.validate(config).getOrThrow()
                     NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
                     Socket("127.0.0.1", inboundPort).use { client ->

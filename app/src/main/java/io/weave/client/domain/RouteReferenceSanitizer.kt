@@ -13,11 +13,15 @@ object RouteReferenceSanitizer {
         routes: List<AppRoute>,
         subscriptions: List<Subscription>,
         nodes: List<ProxyNode>,
+        groups: Map<String, String> = emptyMap(),
     ): List<AppRoute> {
         val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
         return routes.map { route ->
             val target = route.target
             when (target.kind) {
+                RouteKind.GROUP -> groups[target.groupId]?.let { name ->
+                    route.copy(target = target.copy(label = name))
+                } ?: route.copy(target = target.copy(kind = RouteKind.BLOCK, label = "出口已失效，请重新选择"))
                 RouteKind.DIRECT -> route.copy(target = target.copy(label = "直连"))
                 RouteKind.BLOCK -> route.copy(target = target.copy(label =
                     if (target.nodeId != null || target.subscriptionId != null) "出口已失效，请重新选择" else "阻止联网"))
@@ -56,9 +60,12 @@ object RouteReferenceSanitizer {
         target: RouteTarget?,
         subscriptions: List<Subscription>,
         nodes: List<ProxyNode>,
+        groups: Map<String, String> = emptyMap(),
     ): RouteTarget? {
         target ?: return null
         return when (target.kind) {
+            RouteKind.GROUP -> groups[target.groupId]?.let { target.copy(label = it) }
+                ?: target.copy(label = "出口已失效，请重新选择")
             RouteKind.DIRECT -> target.copy(label = "直连")
             RouteKind.BLOCK -> target
             RouteKind.AUTO -> if (subscriptions.any { it.id == target.subscriptionId }) {

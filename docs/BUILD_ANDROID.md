@@ -2,7 +2,7 @@
 
 ## 选择源码版本
 
-公开 RC4（Build 110）的源码位于 [`v0.4.0-rc4`](https://github.com/sundaysebasidian-byte/weave-client/tree/v0.4.0-rc4)，`main` 暂保留 `0.3.0-alpha83` / versionCode `89`。构建 RC4 时请在工作副本中选择对应标签：
+公开 RC4（Build 110）的固定源码位于 [`v0.4.0-rc4`](https://github.com/sundaysebasidian-byte/weave-client/tree/v0.4.0-rc4)。`main` 已整合 RC4 / versionCode `110` 的代码与测试，并保留既有修复和最近文档。复现公开 APK 时请在工作副本中选择对应标签；后续 main 构建需独立验证：
 
 ```sh
 git fetch origin tag v0.4.0-rc4

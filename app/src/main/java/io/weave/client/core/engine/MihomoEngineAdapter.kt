@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.compose.runtime.Immutable
 import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.core.bridge.NativeTunCallback
+import io.weave.client.core.vpn.RuntimeFailure
+import io.weave.client.core.vpn.RuntimeFailureException
 import io.weave.client.domain.ConnectionState
 import java.io.File
 import java.nio.file.Files
@@ -128,7 +130,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         // A failed replacement must invalidate the previous validation token.
         validatedDigest = null
         if (!isAvailable) {
-            return@withLock Result.failure(IllegalStateException(CORE_UNAVAILABLE))
+            return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
         runCatching {
             NativeBridge.initialize(appContext).getOrThrow()
@@ -156,7 +158,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
     ): Result<Unit> = lifecycleMutex.withLock {
         if (!isAvailable) {
             mutableState.value = ConnectionState.ERROR
-            return@withLock Result.failure(IllegalStateException(CORE_UNAVAILABLE))
+            return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
         if (!digest(config).contentEquals(validatedDigest)) {
             mutableState.value = ConnectionState.ERROR
@@ -276,7 +278,10 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             "Loaded profile has no real node in required groups: " +
                 missing.joinToString { readinessDiagnostic(it) },
         )
-        error("订阅节点未成功载入：所选出口没有实际节点，已停止连接")
+        throw RuntimeFailureException(
+            RuntimeFailure.NODES_NOT_LOADED,
+            "订阅节点未成功载入：所选出口没有实际节点，已停止连接",
+        )
     }
 
     private fun isReadyGroup(name: String): Boolean {

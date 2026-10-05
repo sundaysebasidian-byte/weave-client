@@ -568,30 +568,20 @@ private fun DiagnosticProgress(label: String) {
 private fun NetworkObservationRow(observation: PrivacyObservation) {
     val (icon, color, label) = when (observation.state) {
         ObservatoryState.VERIFIED -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, "已确认")
+        ObservatoryState.CONFIGURED -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "已配置")
         ObservatoryState.ATTENTION -> Triple(Icons.Rounded.Warning, MaterialTheme.colorScheme.error, "注意")
         ObservatoryState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
         ObservatoryState.NOT_TESTED -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(observation.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                Spacer(Modifier.width(6.dp))
-                Text(localizeWeaveText(label, LocalWeaveLanguage.current), color = color, fontSize = 10.sp)
-            }
-            Text(
-                observation.detail,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-            )
-        }
-    }
+    WeaveEvidenceRow(
+        icon = icon,
+        color = color,
+        stateLabel = label,
+        title = observation.title,
+        detail = observation.detail,
+        titleSize = 12.sp,
+        detailSize = 11.sp,
+    )
 }
 
 @Composable
@@ -671,18 +661,15 @@ private fun NetworkIpCheckRow(check: IpQualityCheck) {
         IpQualityState.UNKNOWN -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, "未知")
         IpQualityState.NOT_TESTED -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant, "未测试")
     }
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(check.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                Spacer(Modifier.width(6.dp))
-                Text(localizeWeaveText(label, LocalWeaveLanguage.current), color = color, fontSize = 10.sp)
-            }
-            Text(check.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
-        }
-    }
+    WeaveEvidenceRow(
+        icon = icon,
+        color = color,
+        stateLabel = label,
+        title = check.title,
+        detail = check.detail,
+        titleSize = 12.sp,
+        detailSize = 11.sp,
+    )
 }
 
 @Composable

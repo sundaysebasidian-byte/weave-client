@@ -53,7 +53,7 @@ internal sealed class WindowsDpapiProtector : ISecretProtector
                 : CryptUnprotectData(ref inputBlob, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, out outputBlob);
             if (!success)
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows 数据保护失败");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("Windows 数据保护失败"));
             }
 
             try

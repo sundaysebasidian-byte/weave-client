@@ -7,6 +7,7 @@ internal data class PreparedSubscription(
     val first: String,
     val second: ParsedSubscription,
     val counts: SubscriptionImportCounts,
+    val inputFormat: SubscriptionFormat,
 )
 
 /** The same data-only pipeline is used by URL, file, QR, and LAN imports and updates. */
@@ -26,6 +27,6 @@ internal class SubscriptionPreparation(private val resolver: ClashProviderResolv
         }
         return PreparedSubscription(normalized, stored, SubscriptionImportCounts(
             resolved.rootNodes ?: parsed.nodeCount, resolved.providerNodes, resolved.collections, stored.nodeCount,
-        ))
+        ), parsed.format)
     }
 }
