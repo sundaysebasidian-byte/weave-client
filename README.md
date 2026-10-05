@@ -8,11 +8,14 @@
 <p align="center">A beautiful, local-first Android proxy client.</p>
 
 <p align="center">
-  <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-experience-preview5">下载公开预览版</a> ·
+  <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4">下载公开测试版</a> ·
   <a href="docs/BUILD_ANDROID.md">构建指南</a> ·
   <a href="PRIVACY.md">隐私说明</a> ·
   <a href="https://github.com/sundaysebasidian-byte/weave-client/issues">反馈问题</a>
 </p>
+
+> **当前版本：0.4.0-rc4（Build 110）· 公开测试版。** 生产签名，适用于 Android 8.0+ 的 ARM64 设备。
+> 它是发布候选，尚未达到稳定版验收，请先备份配置再试用。验证范围与已知问题见 [Release 说明](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4)。
 
 ![Weave 八种主题配色展示](docs/images/themes.png)
 
@@ -25,6 +28,7 @@
 - **本地优先，隐私自主。** 无 Weave 账号、云端后台或遥测上报。订阅与凭据在本机加密保存；你选择的第三方服务仍会接收完成请求所需的信息。
 - **持续维护，定期迭代。** 持续改善兼容性、稳定性和使用体验；通过 GitHub 发布更新，由你决定何时升级。
 - **网络与隐私检测，一个入口。** 查看出口 IP、连接延迟、探测失败率及常用网站可达性，检查 WebRTC 与浏览器身份暴露；明确区分检测证据、未知项和外部核验。
+- **上手容易，更新放心。** 三步新手引导（导入订阅、选择节点、连接）可跳过，也能在设置中重开；更新订阅时先预览节点增减，确认后才保存。
 - **迁移方便，分享可控。** 支持 CMFA、Clash、Karing 等客户端的兼容文件、链接和二维码导入；局域网快速分享时，自选要分享的订阅。
 
 ## 八种风格，随心选择
@@ -35,17 +39,25 @@
 
 支持简体中文、繁體中文、English、日本語、Français、Deutsch。
 
-本地候选新增可跳过的三步新手引导：导入订阅、选择节点、连接。已有配置和升级用户不强制弹出，设置中可重新查看，也可减弱引导动画。
-
 ## 开始使用
 
-1. 从 [公开预览 Release](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-experience-preview5) 下载 APK。目前提供 **ARM64** 安装包。
-2. 导入你已有的订阅，选择订阅与节点。
+1. 从 [Release 页面](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4) 下载 `Weave-0.4.0-rc4-build110-Production-signed-arm64-v8a.apk`，核对 SHA-256 后安装。
+2. 导入你已有的订阅，选择订阅与节点；首次使用可跟着三步引导走。
 3. 按需设置应用分流，确认系统 VPN 授权后连接。
 
-Weave 不提供、销售或推荐节点。支持 Clash/Mihomo YAML、JSON、URI/Base64，以及兼容的 sing-box / 基础 V2Ray 配置；不代表支持所有客户端的专有备份或全部配置扩展，也不会读取其他应用的私有数据。
+Weave 不提供、销售或推荐节点。
 
-本分支正在验收 **0.4.0-rc1（Build 107）候选版**，尚未作为稳定版公开发布。候选安装包关闭调试、启用代码与资源压缩，但仍使用现有开发证书；生产签名及真机安装、升级和 VPN 验收尚未完成。当前公开预览版为 **Build 106**。安装包面向 Android 8.0 及以上的 ARM64 设备。请保留可用配置，覆盖安装前查看[签名与升级说明](docs/ANDROID_0_4_RELEASE_CANDIDATE.md)。
+### 支持的导入
+
+- Clash/Mihomo YAML、JSON、URI/Base64，以及兼容的 sing-box / 基础 V2Ray 配置。
+- 通过系统文件授权导入 CMFA 配置文档，通过官方备份文件导入 Karing 订阅组。导入的是兼容节点的本地快照，不迁移原订阅 URL、路由或 DNS 设置。
+- 不代表支持所有客户端的专有备份或全部配置扩展，也不会读取其他应用的私有数据。
+
+### 升级前请注意
+
+公开的 Build 106 使用开发证书签名，本版使用生产证书签名，Android 通常不能直接覆盖安装；本轮没有验收 106 的数据迁移。
+请先在应用内导出加密备份并确认可以恢复，不要为了安装而卸载应用、清空数据或强制降级。
+详细的验证范围、签名信息与已知问题见 [Release 说明](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4)。
 
 ## 隐私，说清楚
 

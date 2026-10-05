@@ -1,6 +1,11 @@
 # Android 0.4 发布候选
 
-本地候选：`0.4.0-rc1` / versionCode `107` / ARM64 / Android 8.0+。当前公开版本仍为
+> **状态更新：** 0.4.0 候选已发布为公开测试版 `0.4.0-rc4`（Build 110，生产签名，Prerelease）。
+> 当前的验证范围、签名信息、升级说明与已知问题，以 [`releases/v0.4.0-rc4.md`](releases/v0.4.0-rc4.md)
+> 和对应 GitHub Release 为准。以下内容是 RC107 阶段（`0.4.0-rc1`，versionCode `107`）的历史记录，
+> 其中“当前公开版本为 Build 106”“仍使用开发证书”“生产签名待配置”等表述已过时。
+
+本地候选：`0.4.0-rc1` / versionCode `107` / ARM64 / Android 8.0+。当时的公开版本仍为
 Build 106，没有发布新的 GitHub Release。本候选不代表 Windows 或其他平台验收。
 
 ## 引导体验

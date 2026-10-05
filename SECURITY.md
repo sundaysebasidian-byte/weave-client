@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-Weave is currently an alpha preview. Security fixes are made only on the latest
-published preview. Older APKs and unofficial builds are not supported.
+Weave is currently in public beta (the 0.4.0 release-candidate line). Security
+fixes are made only on the latest published release. Older APKs and unofficial
+builds are not supported.
 
 ## Distribution boundary
 

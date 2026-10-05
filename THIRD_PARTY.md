@@ -19,13 +19,15 @@ Design and architecture references:
 | [ZXing](https://github.com/zxing/zxing) | QR generation and payload utilities | Apache-2.0 |
 | [SnakeYAML](https://github.com/snakeyaml/snakeyaml) | Version 2.5, bounded data-only Clash YAML parsing with SafeConstructor | Apache-2.0 |
 
-The existing public Build 106 release provides the pinned CMFA and Mihomo source archives alongside APKs.
+Public releases provide the pinned CMFA and Mihomo source archives alongside APKs; for 0.4.0-rc4 (Build 110)
+they are bundled in `Weave-RC110-Corresponding-source.zip`.
 Weave source, its CMFA patch, lockfiles and build instructions are available under the matching tag.
 Source-availability obligations also apply to preview binaries, not just production releases.
-The local Android RC107 delivery includes a runtime Maven SBOM, the unchanged ARM64 core's actual
+The 0.4.0-rc4 notices bundle (`Weave-0.4.0-rc4-build110-Notices.zip`) reuses the Android RC107
+delivery, which includes a runtime Maven SBOM, the unchanged ARM64 core's actual
 Go build-info module SBOM, preserved upstream license/NOTICE files and verified public module source
 archives. Android declarations include POM inheritance and CameraX's libyuv BSD attribution.
-Coverage is this Android candidate, not all platforms or proof every class survives R8. Preserve
-the exact bundle and corresponding source with any eventual binary distribution. Production
-signing, device acceptance and user approval remain pending. See
-[`docs/ANDROID_0_4_RELEASE_CANDIDATE.md`](docs/ANDROID_0_4_RELEASE_CANDIDATE.md).
+Dependency, core and geodata locks are unchanged since RC107, so the inventory was not regenerated for
+Build 110. Coverage is this Android build, not all platforms or proof every class survives R8. Preserve
+the exact bundle and corresponding source with any binary distribution. See
+[`docs/releases/v0.4.0-rc4.md`](docs/releases/v0.4.0-rc4.md).
