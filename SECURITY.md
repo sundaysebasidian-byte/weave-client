@@ -2,8 +2,11 @@
 
 ## Supported versions
 
-Weave is currently an alpha preview. Security fixes are made only on the latest
-published preview. Older APKs and unofficial builds are not supported.
+Weave currently publishes prereleases. The latest public Android candidate is
+[0.4.0-rc4 / Build 110](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4),
+not a stable release. Its exact source is under the matching tag; `main` still
+contains the alpha83 code line. Security fixes target the latest published
+prerelease. Older APKs and unofficial builds are not supported.
 
 ## Distribution boundary
 
@@ -28,7 +31,7 @@ reproduction steps, impact, and a minimal redacted sample if one is required.
 Never include an unredacted personal subscription.
 
 Maintainers should acknowledge a report within seven days. A fix date cannot be
-promised for this volunteer alpha, but confirmed high-impact issues should be
+promised for this volunteer project, but confirmed high-impact issues should be
 handled privately until a patched build and advisory are ready.
 
 The detailed threat model and release gates are in

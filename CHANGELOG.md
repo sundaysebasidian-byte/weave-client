@@ -1,9 +1,22 @@
 # Changelog
 
-This project follows semantic versioning while in alpha. Breaking storage or
+This project follows semantic versioning. Breaking storage or
 configuration changes may still occur before 1.0.
 
 ## Unreleased
+
+## Android `0.4.0-rc4` (Build 110, public prerelease)
+
+- 单订阅手动更新先预览节点增减，再确认保存；取消保留已保存节点。新增可跳过、可重开的三步引导与减弱引导动画选项。
+- 改善节点、局域网传输和设置对话框，补齐六种语言与大字体；支持授权 CMFA 文档、官方 Karing 备份中的兼容节点快照选择与导入。
+- 生产签名、Android 8.0+、ARM64；Build 106 开发签名到本包的迁移未验收，升级前备份并确认可解密恢复。
+- 既往 JVM 356 通过，Android 231 通过、4 条件跳过、0 失败；Pixel 四项 UI 检查通过。真机确认保存、重装、VPN 流量及 Windows 10/11 VPN 回滚等仍未验收。
+- 完整对应源码、第三方通知与校验和随发布提供。详见 [RC4 说明](docs/releases/v0.4.0-rc4.md)。RC4 源码位于对应标签；此 main 代码线仍为 alpha83。
+
+## Android Build 106 (public experience preview)
+
+- 独立的开发签名 Android ARM64 预览，提供订阅体验改进；其发布与资产继续保留于 [`v0.4.0-experience-preview5`](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-experience-preview5)。
+- 不属于生产签名 RC107–RC110 的覆盖升级链，不能将该旧下载称为 RC4。
 
 ## Android `0.3.0-alpha83` (public ARM64 preview)
 

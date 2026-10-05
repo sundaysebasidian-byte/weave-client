@@ -1,5 +1,18 @@
 # 构建 Android
 
+## 选择源码版本
+
+公开 RC4（Build 110）的源码位于 [`v0.4.0-rc4`](https://github.com/sundaysebasidian-byte/weave-client/tree/v0.4.0-rc4)，`main` 暂保留 `0.3.0-alpha83` / versionCode `89`。构建 RC4 时请在工作副本中选择对应标签：
+
+```sh
+git fetch origin tag v0.4.0-rc4
+git checkout v0.4.0-rc4
+```
+
+完整内核及依赖源码见 [RC4 附件](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4)中的 `Weave-RC110-Corresponding-source.zip`。该标签内旧 RC107/RC109 状态说明是历史记录；当前发行与验收范围见 [RC4 说明](releases/v0.4.0-rc4.md)。
+
+## 工具链与构建
+
 安装 JDK 17、Android SDK 36、NDK `29.0.14206865` 和 CMake `3.31.6`。
 在未提交的 `local.properties` 中配置本机 `sdk.dir`，或设置 `ANDROID_HOME`。
 Gradle 版本与校验值以仓库 wrapper 为准。
@@ -15,8 +28,9 @@ bash tools/audit-local-release.sh
 无发行签名配置时，`assembleRelease` 输出未签名 APK，不能直接安装。
 
 本地测试可使用 `:app:assembleLocalOptimized`：开启 R8 和资源压缩、关闭 debuggable，
-但沿用本机开发证书。公开 alpha 预览包的签名边界在对应 Release 中说明；生产分发应使用
-独立妥善保管的发行签名。覆盖安装须签名一致，切勿为解决签名不匹配而盲目卸载已有数据。
+但沿用本机开发证书。本地构建不自动获得发布包的生产签名。公开 Build 106 使用开发证书，
+公开 RC4 使用生产证书；已有生产签名 RC107–RC110 属于同一证书链。生产私钥应独立保管，
+不得进入仓库。覆盖安装须签名一致；106 到 RC4 的迁移尚未验收，切勿通过卸载或清空数据强行升级。
 
 ## 内核与许可证
 
