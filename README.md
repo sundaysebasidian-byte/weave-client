@@ -62,9 +62,11 @@ RC4 新增可跳过、可从设置重开的三步引导；手动更新单个订�
 
 ### 原宣传片 · 20 秒
 
-[![Weave 原宣传片封面](docs/media/weave-original-cg-poster.png)](https://github.com/sundaysebasidian-byte/weave-client/blob/main/docs/media/weave-original-cg.mp4)
+[![Weave 原宣传片封面 · 点击打开原 MP4](docs/media/weave-original-cg-poster.png)](https://raw.githubusercontent.com/sundaysebasidian-byte/weave-client/main/docs/media/weave-original-cg.mp4)
 
-[查看视频文件](docs/media/weave-original-cg.mp4) · [下载原 MP4](https://raw.githubusercontent.com/sundaysebasidian-byte/weave-client/main/docs/media/weave-original-cg.mp4)
+[打开／下载原 MP4](https://raw.githubusercontent.com/sundaysebasidian-byte/weave-client/main/docs/media/weave-original-cg.mp4)
+
+点击封面或上方链接直接打开原 MP4；浏览器若直接播放，可右键保存视频。GitHub 文件页不支持预览此视频，README 不内嵌播放。
 
 保留已确认原片的画面、节奏和音轨，1920 × 1080、30 fps。它是历史品牌宣传素材，包含风格示意，当前 RC4 实际界面见上方截图。[素材版本与校验值](docs/media/PROVENANCE.json)。
 
