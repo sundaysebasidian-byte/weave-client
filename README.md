@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4">下载公开测试版</a> ·
   <a href="docs/BUILD_ANDROID.md">构建指南</a> ·
-  <a href="PRIVACY.md">隐私说明</a> ·
+  <a href="PRIVACY.zh-CN.md">隐私说明</a> ·
   <a href="https://github.com/sundaysebasidian-byte/weave-client/issues">反馈问题</a>
 </p>
 
@@ -88,7 +88,7 @@ RC4 已完成既往回归及 Pixel 四项 UI 检查，真机确认保存、重�
 
 本地优先不等于绝对匿名。订阅、代理节点、DNS 和检测服务由第三方提供，仍可能看到完成请求所需的信息；主动检测也会连接相应服务。HTTP 探测失败率不等于底层数据包丢失，网站可达不等于账号或流媒体解锁。DNS 泄漏需结合独立服务核验，不用一个“安全分数”代替证据。
 
-了解 [RC4 隐私说明](https://github.com/sundaysebasidian-byte/weave-client/blob/v0.4.0-rc4/PRIVACY.md)与[端点清单](https://github.com/sundaysebasidian-byte/weave-client/blob/v0.4.0-rc4/docs/NETWORK_ENDPOINT_INVENTORY.md)，或查看 [main 代码线的隐私说明](PRIVACY.md)及[安全反馈方式](SECURITY.md)。
+了解 [隐私说明（简体中文）](PRIVACY.zh-CN.md)与[端点清单](https://github.com/sundaysebasidian-byte/weave-client/blob/v0.4.0-rc4/docs/NETWORK_ENDPOINT_INVENTORY.md)。英文原文见 [RC4 隐私说明](https://github.com/sundaysebasidian-byte/weave-client/blob/v0.4.0-rc4/PRIVACY.md)或 [main 代码线的隐私说明](PRIVACY.md)；[安全反馈方式](SECURITY.md)。
 
 ## 开源与共建
 

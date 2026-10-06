@@ -1,5 +1,7 @@
 # Weave privacy notice
 
+**[简体中文（主要阅读版本）](PRIVACY.zh-CN.md)** · English
+
 Last updated: 2026-10-04
 
 This notice describes the local-first Android client in this repository. A
