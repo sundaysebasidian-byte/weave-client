@@ -41,9 +41,20 @@ else
   pass "no known telemetry/crash-reporting/updater markers in runtime inputs"
 fi
 
+# This intentionally public, request-local TLS test identity is never packaged in the app.
+# Pin its exact bytes so moving shared fixtures does not exempt arbitrary future credentials.
+test_key="tests/fixtures/https/test-only-key.pem"
+test_key_sha256="f337722a69f245ca3541271ab47f6d77ec170f0518348d69e35f715cdd9ebf01"
+if [[ -f "$test_key" ]] && [[ "$(openssl dgst -sha256 "$test_key" | awk '{print $NF}')" == "$test_key_sha256" ]]; then
+  pass "public TLS fixture key matches its reviewed fingerprint"
+else
+  fail "public TLS fixture key is missing or changed; review its fingerprint"
+fi
+
 if scan_output="$(rg -n \
   'BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}' \
   . --glob '!**/.git/**' --glob '!**/build/**' --glob '!**/.build/**' --glob '!**/src/test/**' --glob '!**/Tests/**' \
+  --glob '!tests/fixtures/https/test-only-key.pem' \
   --glob '!docs/**' --glob '!tools/audit-local-release.sh' 2>/dev/null)"; then
   printf '%s\n' "$scan_output" >&2
   fail "possible private key or service credential found"
