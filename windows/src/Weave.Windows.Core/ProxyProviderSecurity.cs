@@ -23,7 +23,9 @@ internal static class ProxyProviderSecurity
         long total = 0;
         foreach (var record in records)
         {
-            total += Utf8.GetByteCount(record.ProviderYaml);
+            var bytes = Utf8.GetByteCount(record.ProviderYaml);
+            if (bytes > MaxBytes) throw new InvalidDataException(L.T("节点配置超过安全处理上限。"));
+            total += bytes;
             if (total > 32 * 1024 * 1024) throw new InvalidDataException(L.T("节点配置超过安全处理上限。"));
         }
     }

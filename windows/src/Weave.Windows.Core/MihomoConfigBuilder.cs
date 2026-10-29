@@ -17,10 +17,7 @@ public sealed class MihomoConfigBuilder
     {
         if (options.RoutingMode == RoutingMode.Direct) return BuildDirect(options, runtimeDirectory);
         var activeRoutes = options.RoutingMode == RoutingMode.Rule ? routes : Array.Empty<WindowsAppRoute>();
-        var requiredIds = activeRoutes.Select(route => route.Target.SubscriptionId).Where(id => id is not null).ToHashSet();
-        requiredIds.Add(selectedSubscriptionId);
-        if (ProxyChain.Enabled(options)) requiredIds.Add(options.ChainEntrySubscriptionId);
-        var usable = subscriptions.Where(item => item.Nodes.Count > 0 && requiredIds.Contains(item.Id)).ToList();
+        var usable = RequiredSubscriptions(subscriptions, activeRoutes, selectedSubscriptionId, options);
         if (usable.Count == 0)
         {
             throw new InvalidDataException(L.T("没有可用订阅，请先导入 Clash/Mihomo 节点"));
@@ -98,6 +95,16 @@ public sealed class MihomoConfigBuilder
             ProviderNodeCounts = usable.ToDictionary(ProviderName, subscription => subscription.Nodes.Count),
             RequiredSelections = requiredSelections,
         };
+    }
+
+    internal static List<SubscriptionRecord> RequiredSubscriptions(IEnumerable<SubscriptionRecord> subscriptions,
+        IEnumerable<WindowsAppRoute> activeRoutes, string? selectedSubscriptionId, WindowsNetworkOptions options)
+    {
+        if (options.RoutingMode == RoutingMode.Direct) return [];
+        var requiredIds = activeRoutes.Select(route => route.Target.SubscriptionId).Where(id => id is not null).ToHashSet();
+        requiredIds.Add(selectedSubscriptionId);
+        if (ProxyChain.Enabled(options)) requiredIds.Add(options.ChainEntrySubscriptionId);
+        return subscriptions.Where(item => item.Nodes.Count > 0 && requiredIds.Contains(item.Id)).ToList();
     }
 
     private static string BuildYaml(

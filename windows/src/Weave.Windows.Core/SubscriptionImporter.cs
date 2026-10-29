@@ -190,7 +190,8 @@ internal static class ClashPayloadParser
             if (stream.Documents.Count != 1 || stream.Documents[0].RootNode is not YamlMappingNode root)
                 throw new InvalidDataException(L.T("Clash 配置必须只有一个对象文档"));
             var budget = 100_000;
-            return (YamlMappingNode)Clone(root, new HashSet<YamlNode>(ReferenceEqualityComparer.Instance), 0, ref budget);
+            var scalarBytes = SubscriptionImporter.MaxBytes;
+            return (YamlMappingNode)Clone(root, new HashSet<YamlNode>(ReferenceEqualityComparer.Instance), 0, ref budget, ref scalarBytes);
         }
         catch (YamlException) { throw new InvalidDataException(L.T("Clash 配置格式无效，请检查缩进、引号及重复字段")); }
     }
@@ -211,23 +212,30 @@ internal static class ClashPayloadParser
                 Name = NodeName.Core(name), RawName = name, Protocol = protocol.ToLowerInvariant(), Index = nodes.Count });
         }
         var clean = new YamlMappingNode(new YamlScalarNode("proxies"), sequence);
-        using var writer = new StringWriter();
+        using var writer = new ProviderWriter();
         new YamlStream(new YamlDocument(clean)).Save(writer, assignAnchors: false);
-        return new ParsedClashPayload(writer.ToString(), nodes);
+        var provider = writer.ToString();
+        if (Encoding.UTF8.GetByteCount(provider) > SubscriptionImporter.MaxBytes) throw ExpansionLimit();
+        return new ParsedClashPayload(provider, nodes);
     }
 
     // Expand aliases and YAML merge keys with a depth/size/cycle budget. Save only actual
     // proxy data, never the subscription's controller, TUN, rules or filesystem paths.
-    private static YamlNode Clone(YamlNode node, HashSet<YamlNode> path, int depth, ref int budget)
+    private static YamlNode Clone(YamlNode node, HashSet<YamlNode> path, int depth, ref int budget, ref int scalarBytes)
     {
         if (depth > 40 || --budget < 0 || !path.Add(node)) throw new InvalidDataException(L.T("配置过于复杂或存在循环引用"));
         try
         {
-            if (node is YamlScalarNode scalar) return new YamlScalarNode(scalar.Value) { Style = scalar.Style };
+            if (node is YamlScalarNode scalar)
+            {
+                scalarBytes -= Encoding.UTF8.GetByteCount(scalar.Value ?? "");
+                if (scalarBytes < 0) throw ExpansionLimit();
+                return new YamlScalarNode(scalar.Value) { Style = scalar.Style };
+            }
             if (node is YamlSequenceNode sequence)
             {
                 var copy = new YamlSequenceNode();
-                foreach (var child in sequence.Children) copy.Add(Clone(child, path, depth + 1, ref budget));
+                foreach (var child in sequence.Children) copy.Add(Clone(child, path, depth + 1, ref budget, ref scalarBytes));
                 return copy;
             }
             if (node is YamlMappingNode mapping)
@@ -236,7 +244,7 @@ internal static class ClashPayloadParser
                 var merge = Find(mapping, "<<");
                 if (merge is not null)
                 {
-                    var expanded = Clone(merge, path, depth + 1, ref budget);
+                    var expanded = Clone(merge, path, depth + 1, ref budget, ref scalarBytes);
                     IEnumerable<YamlNode> maps = expanded is YamlSequenceNode list ? list.Children : new[] { expanded };
                     foreach (var entry in maps)
                     {
@@ -247,7 +255,7 @@ internal static class ClashPayloadParser
                 foreach (var pair in mapping.Children)
                 {
                     if (pair.Key is YamlScalarNode { Value: "<<" }) continue;
-                    copy.Children[Clone(pair.Key, path, depth + 1, ref budget)] = Clone(pair.Value, path, depth + 1, ref budget);
+                    copy.Children[Clone(pair.Key, path, depth + 1, ref budget, ref scalarBytes)] = Clone(pair.Value, path, depth + 1, ref budget, ref scalarBytes);
                 }
                 return copy;
             }
@@ -258,4 +266,23 @@ internal static class ClashPayloadParser
     internal static YamlNode? Find(YamlMappingNode mapping, string key) =>
         mapping.Children.TryGetValue(new YamlScalarNode(key), out var value) ? value : null;
     internal static string? Scalar(YamlMappingNode mapping, string key) => (Find(mapping, key) as YamlScalarNode)?.Value;
+
+    private static InvalidDataException ExpansionLimit() => new(L.T("展开后的订阅超过 5 MiB"));
+
+    private sealed class ProviderWriter : TextWriter
+    {
+        private readonly StringBuilder _text = new();
+        public override Encoding Encoding => Encoding.UTF8;
+        private void Check(int characters)
+        {
+            // UTF-16 characters are a lower bound on UTF-8 bytes. Bound the emitter's
+            // buffer first, then check its exact UTF-8 size once serialization finishes.
+            if ((long)_text.Length + characters > SubscriptionImporter.MaxBytes) throw ExpansionLimit();
+        }
+        public override void Write(char value) { Check(1); _text.Append(value); }
+        public override void Write(string? value) { Check(value?.Length ?? 0); _text.Append(value); }
+        public override void Write(char[] buffer, int index, int count) { Check(count); _text.Append(buffer, index, count); }
+        public override void Write(ReadOnlySpan<char> buffer) { Check(buffer.Length); _text.Append(buffer); }
+        public override string ToString() => _text.ToString();
+    }
 }

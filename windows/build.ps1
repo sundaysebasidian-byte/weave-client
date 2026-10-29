@@ -29,6 +29,9 @@ $env:WEAVE_TEST_GEODATA = Join-Path $PSScriptRoot '..\app\src\main\assets\geodat
 $env:WEAVE_INTEROP_FIXTURE = Join-Path ([IO.Path]::GetTempPath()) 'weave-android-reference.bin'
 java '-Dfile.encoding=UTF-8' (Join-Path $PSScriptRoot 'tests\AndroidTransferInterop.java') $env:WEAVE_INTEROP_FIXTURE
 if ($LASTEXITCODE -ne 0) { throw 'Android wire-format fixture failed' }
+dotnet build (Join-Path $PSScriptRoot 'tests\Weave.BrokerProbe\Weave.BrokerProbe.csproj') -c $Configuration
+if ($LASTEXITCODE -ne 0) { throw 'Broker lifecycle probe build failed' }
+$env:WEAVE_TEST_BROKER_PROBE = Join-Path $PSScriptRoot "tests\Weave.BrokerProbe\bin\$Configuration\net10.0\Weave.BrokerProbe.exe"
 dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration `
     --logger 'trx;LogFileName=core-tests.trx' --results-directory (Join-Path $PSScriptRoot 'artifacts\test-results')
 if ($LASTEXITCODE -ne 0) { throw "Core tests failed" }

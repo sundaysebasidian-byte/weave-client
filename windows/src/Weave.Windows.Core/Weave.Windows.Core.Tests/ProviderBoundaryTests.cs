@@ -152,5 +152,20 @@ public sealed class ProviderBoundaryTests : IDisposable
     private RuntimeBundle Build(SubscriptionRecord record) => new MihomoConfigBuilder().Build([record], [], record.Id, null,
         new WindowsNetworkOptions { EnableTun = true }, _root);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AliasExpansionAndYamlEscapingCannotExceedTheProviderBudget(bool escaped)
+    {
+        using var importer = new SubscriptionImporter();
+        var scalar = escaped ? new string('"', 4000) : new string('密', 1024);
+        var count = escaped ? 900 : 2000;
+        var yaml = new System.Text.StringBuilder("shared: &value " + System.Text.Json.JsonSerializer.Serialize(scalar) + "\nproxies:\n");
+        for (var i = 0; i < count; i++)
+            yaml.AppendLine($"- {{name: node-{i}, type: http, server: example.com, port: 443, password: *value}}");
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(yaml.ToString()) < 256 * 1024);
+        Assert.Throws<InvalidDataException>(() => importer.ImportText("fixture", "inline://bounded-expansion", yaml.ToString()));
+    }
+
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }
