@@ -37,7 +37,7 @@ jobs:
         timeout-minutes: 15
         run: ./gradlew lintDebug --no-daemon --no-configuration-cache
       - name: Debug build
-        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache
+        run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
       - name: Release build (ABI splits)
         run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
       - name: Ensure no universal APK is published

@@ -3,38 +3,39 @@ package io.weave.client.subscription
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.test.platform.app.InstrumentationRegistry
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.InetAddress
-import java.net.URI
 import java.nio.file.Files
-import java.security.cert.Certificate
-import javax.net.ssl.HttpsURLConnection
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.*
 import org.junit.Test
 
 /** Encrypted real repository, isolated synthetic data, fake HTTPS. No phone data or VPN. */
 class SubscriptionRefreshReviewIntegrationTest {
-    private class Response(uri: URI, val body: String, val status: Int) : HttpsURLConnection(uri.toURL()) {
-        override fun getResponseCode() = status
-        override fun getInputStream() = ByteArrayInputStream(body.toByteArray())
-        override fun getContentLengthLong() = body.toByteArray().size.toLong()
-        override fun getCipherSuite() = "TLS_FIXTURE"
-        override fun getLocalCertificates(): Array<Certificate>? = null
-        override fun getServerCertificates(): Array<Certificate> = emptyArray()
-        override fun connect() = Unit
-        override fun disconnect() = Unit
-        override fun usingProxy() = false
-    }
     private class Fixture(context: Context) {
         val store = SubscriptionSecretStore(context)
         var body = payload()
         var status = 200
         var requests = 0
+        var beforeResponse: () -> Unit = {}
         val repo = SubscriptionRepository(context, fetcher = SafeSubscriptionFetcher(
             resolver = { arrayOf(InetAddress.getByAddress(byteArrayOf(1, 1, 1, 1))) },
-            connectionFactory = { uri -> requests++; Response(uri, body, status) },
+            client = OkHttpClient.Builder().addInterceptor { chain ->
+                requests++
+                beforeResponse()
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(status).message("fixture").body(body.toResponseBody()).build()
+            }.build(),
         ), store = store)
         val old = store.save("Synthetic Walless", "https://subs.wallesspku.space/subs/synthetic-token",
             body, SubscriptionPayloadParser().parse(body))
@@ -110,6 +111,27 @@ class SubscriptionRefreshReviewIntegrationTest {
         assertTrue(preview.audit.blocked)
         assertTrue(runCatching { f.repo.applyReview(preview.token, false) }.isFailure)
         assertEquals(original, f.store.readPayload(f.old.id))
+    } }
+    @Test fun cancelledBackgroundDownloadCannotPersistItsResult() = isolated { f -> runBlocking {
+        val original = f.store.readPayload(f.old.id)
+        val nodes = f.repo.loadNodes()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        f.body = payload().replace("1080", "1082")
+        f.beforeResponse = {
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+        }
+        val download = launch(Dispatchers.Default) { f.repo.autoRefreshRemote(f.old.id, emptySet()) }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            withTimeout(2_000) { download.cancelAndJoin() }
+            assertEquals(original, f.store.readPayload(f.old.id))
+            assertEquals(nodes, f.repo.loadNodes())
+        } finally {
+            release.countDown()
+            download.cancelAndJoin()
+        }
     } }
     companion object {
         private fun payload(count: Int = 73, renameLast: Boolean = false) = "proxies:\n" +
