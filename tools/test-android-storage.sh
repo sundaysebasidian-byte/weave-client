@@ -19,7 +19,17 @@ case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported emulato
 # This process belongs exclusively to this test invocation.
 "${target[@]}" logcat -v threadtime -T 1 > "$results/logcat.txt" 2>&1 &
 logcat_pid=$!
-trap 'kill "$logcat_pid" 2>/dev/null || true; wait "$logcat_pid" 2>/dev/null || true' EXIT
+cleanup() {
+  result=$?
+  if [[ $result != 0 ]]; then
+    python3 "$root/tools/collect-android-failure.py" "$adb" "$port" "$serial" "$results" ||
+      echo 'Failure diagnostics were incomplete; original test failure is retained.' >&2
+  fi
+  kill "$logcat_pid" 2>/dev/null || true
+  wait "$logcat_pid" 2>/dev/null || true
+  return "$result"
+}
+trap cleanup EXIT
 "${target[@]}" install -r "$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
 "${target[@]}" install -r "$root/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest,io.weave.client.routing.RemoteRuleSetStoreIntegrationTest,io.weave.client.subscription.SubscriptionTransferIntegrationTest,io.weave.client.transfer.BackupRestoreIntegrationTest,io.weave.client.data.ProfileRecoveryIntegrationTest,io.weave.client.ui.StartupRecoveryIntegrationTest
