@@ -27,7 +27,8 @@ bash tools/audit-local-release.sh
 只构建现代 ARM64 手机可增加 `-PweaveArm64Only=true`。
 无发行签名配置时，`assembleRelease` 输出未签名 APK，不能直接安装。
 
-CI 在可丢弃的 API 36 模拟器运行加密存储、订阅更新竞争与跨进程偏好回归，并保留报告。
+CI 在可丢弃的 API 36 模拟器运行加密存储、订阅/规则集更新竞争与跨进程回归，并保留报告。
+模拟器只使用 runner 已有权限；无 KVM 访问权时采用软件模拟，不修改设备 ACL 或用户组。
 本地复现时先创建独立测试模拟器；不要指定装有个人数据的现有设备。构建 `:app:assembleDebug`
 和 `:app:assembleDebugAndroidTest` 后，明确指定它的序列号运行：
 

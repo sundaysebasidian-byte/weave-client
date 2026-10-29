@@ -17,7 +17,7 @@ results=${WEAVE_TEST_RESULTS:-"$root/app/build/reports/storage-integration"}
 mkdir -p "$results"
 "${target[@]}" install -r "$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
 "${target[@]}" install -r "$root/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest
+classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest,io.weave.client.routing.RemoteRuleSetStoreIntegrationTest
 "${target[@]}" shell am instrument -w -r -e class "$classes" \
   io.weave.client.test/androidx.test.runner.AndroidJUnitRunner > "$results/instrumentation.txt" 2>&1
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' "$results/instrumentation.txt" ||

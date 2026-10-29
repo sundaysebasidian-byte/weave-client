@@ -79,12 +79,12 @@ class WeaveBackup(
                 }
             }.toString(),
             RULE_SETS to JSONArray().apply {
-                ruleSets.list().forEach { set ->
+                ruleSets.snapshot().forEach { (set, entries) ->
                     put(
                         JSONObject().put("id", set.id).put("name", set.name).put("url", set.url)
                             .put("behavior", set.behavior.name).put("action", set.action.name)
                             .put("enabled", set.enabled)
-                            .put("entries", JSONArray(ruleSets.entries(set.id))),
+                            .put("entries", JSONArray(entries)),
                     )
                 }
             }.toString(),
