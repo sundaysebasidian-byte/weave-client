@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($Platform -ne 'x64') { throw 'The core service currently requires the pinned Windows x64 core. ARM64 release validation is still pending.' }
 
 # Wrap the existing 256px Android-matching PNG in an ICO container without changing pixels.
 $png = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'src\Weave.Windows\Assets\Weave.png'))
@@ -49,6 +50,9 @@ dotnet msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj"
     /restore /t:Publish /p:Configuration=$Configuration /p:Platform=$Platform `
     /p:RuntimeIdentifier=$runtime /p:SelfContained=true /p:PublishDir="$output\"
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
+dotnet publish (Join-Path $PSScriptRoot 'src\Weave.Core.Service\Weave.Core.Service.csproj') `
+    -c $Configuration -r win-x64 --self-contained true -o (Join-Path $output 'service')
+if ($LASTEXITCODE -ne 0) { throw 'Core service publish failed' }
 Copy-Item (Join-Path $PSScriptRoot 'START-HERE.txt') $output
 Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY.md') $output
 Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $output 'LICENSE-Weave.txt')

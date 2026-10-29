@@ -130,6 +130,19 @@ jobs:
             throw 'Live language switching failed'
           }
           Stop-Process -Id $app.Id
+      - name: Validate isolated Windows core service
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_SERVICE_TEST: '1'
+          WEAVE_TEST_TUN: '1'
+        run: ./windows/tests/Test-Service.ps1
+      - name: Preserve service acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-service-tests
+          path: windows/artifacts/service-tests/
+          if-no-files-found: warn
       - name: Package Windows installer
         shell: pwsh
         run: |

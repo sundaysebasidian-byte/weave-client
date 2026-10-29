@@ -1,6 +1,6 @@
 # Windows 核心服务迁移
 
-状态：服务协议、会话后端、客户端连接层和 Windows 管道验证代码已加入；尚未安装或接入 WinUI，当前 TUN 仍使用原提升权限流程。不得把本文件或组件测试当作权限分离已交付。
+状态：服务协议、会话后端、客户端连接层、SCM 宿主和 Windows 管道验证代码已加入；生产安装程序和 WinUI 尚未切换，当前 TUN 仍使用原提升权限流程。原生服务验收尚待 CI，不得把组件编译当作权限分离已交付。
 
 ## 已实现的边界
 
@@ -11,6 +11,8 @@
 - `BrokerSession` 持有私有会话、核心和控制器；连接 EOF、停止请求或服务停止会撤销在途启动并清理本会话。校验探针测试实际启动一个无网络子进程，证明 EOF/停止会终止它；清理失败保留文件及状态。
 - `BrokerClient` 按请求 ID 分派并发返回，最多三个普通请求在途，为停止保留一个名额；取消测速只停止调用方等待，仍排空迟到的返回。取消启动撤销整条连接；未知返回/坏帧/服务退出使未完成操作失败并通知断开。重复停止合并，停止确认必须在核心退出后返回。配置校验取消现在等待子进程退出；未确认退出时保留进程句柄及会话。
 - Windows YAML 在别名展开时累计 UTF-8 标量预算，在输出时限制缓冲区和最终字节数，避免小输入通过别名或转义绕过 5 MiB provider 上限。
+- `Weave.Core.Service` 在任何核心启动前把自身加入关闭即终止子进程的 Job。宿主检查 Program Files 下的安装树、所有祖先的替换权限、所有者和重解析点，核验固定 Windows x64 核心及 geodata 哈希；ProgramData 私有目录携带 ACL 原子创建，未知弱权限旧目录拒绝使用。固定管道句柄在断开后复用，避免每次重建实例留下名称抢占间隙。
+- SCM 停止取消会话并等待清理；15 秒不能完成则结束服务进程，由 Job 回收子进程。服务仅接收已安装 GUI 映像的客户端。仅可丢弃 Windows CI 会安装测试服务并以新建普通用户运行合成探针，验证本地 TUN 转发、错误映像拒绝、断开重连和服务崩溃回收；该路径不在开发者主机自动运行。测试配置只保留 ChangeNotify/LoadDriver 权限，是否足够以原生验收为准。
 
 管道策略依据 [Windows 管道访问权限](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)、[客户端身份与模拟级别](https://learn.microsoft.com/en-us/windows/win32/ipc/impersonating-a-named-pipe-client) 和 [OS 客户端 PID 查询](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid)。客户端没有创建同名服务端实例的权限；首次实例检查仍不能代替 SCM 身份核验。
 
