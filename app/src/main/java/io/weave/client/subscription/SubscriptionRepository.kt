@@ -14,6 +14,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
+
+internal class PreparedTransfer(val snapshot: SubscriptionTransferSnapshot, val entries: List<NewSubscriptionBatchEntry>)
 
 class SubscriptionRepository(
     context: Context,
@@ -251,7 +254,14 @@ class SubscriptionRepository(
         withContext(Dispatchers.IO) { store.exportForTransfer(selectedIds) }
 
     suspend fun importFromLanTransfer(items: List<TransferSubscription>): List<Subscription> = withContext(Dispatchers.IO) {
-        val snapshot = store.captureTransfer(items)
+        commitTransfer(prepareTransfer(items), currentCoroutineContext())
+    }
+
+    internal fun exportAllForBackup(): List<TransferSubscription> =
+        store.exportAllForBackup()
+
+    internal suspend fun prepareTransfer(items: List<TransferSubscription>, preserveIds: Boolean = false): PreparedTransfer {
+        val snapshot = store.captureTransfer(items, preserveIds)
         val validated = items.mapIndexed { i, item ->
             val prepared = prepareRuntimePayload(item.payload, item.source)
             if (prepared.second.nodeCount == 0) throw SubscriptionImportException("订阅中没有可用节点")
@@ -261,8 +271,11 @@ class SubscriptionRepository(
             }
             NewSubscriptionBatchEntry(item.name, item.source, prepared.first, prepared.second, prepared.counts)
         }
-        store.saveTransferredBatch(snapshot, validated, currentCoroutineContext()).map(::toDomain)
+        return PreparedTransfer(snapshot, validated)
     }
+
+    internal fun commitTransfer(prepared: PreparedTransfer, coroutine: CoroutineContext): List<Subscription> =
+        store.saveTransferredBatch(prepared.snapshot, prepared.entries, coroutine).map(::toDomain)
 
     suspend fun replaceRemote(
         subscriptionId: String,

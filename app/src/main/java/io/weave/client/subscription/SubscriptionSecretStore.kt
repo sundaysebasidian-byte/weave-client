@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import io.weave.client.WeaveProcess
 import io.weave.client.data.crossProcessPreferences
+import io.weave.client.data.ProfileStorage
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import java.io.File
@@ -76,7 +77,7 @@ class SubscriptionSecretStore(
      * Serializes store access across threads (monitor) and across the UI and `:vpn` processes
      * (file lock). JVM file locks are not reentrant, so nested calls reuse the outer lock.
      */
-    private inline fun <T> locked(block: () -> T): T = synchronized(STORE_LOCK) {
+    private inline fun <T> locked(block: () -> T): T = ProfileStorage.access(appContext) { synchronized(STORE_LOCK) {
         if (lockDepth > 0) {
             lockDepth++
             try {
@@ -101,7 +102,7 @@ class SubscriptionSecretStore(
                 }
             }
         }
-    }
+    } }
 
     private class SaveEntry(val id: String, val name: String, val source: String, val payload: String,
         val parsed: ParsedSubscription, val counts: SubscriptionImportCounts?, val metadata: SubscriptionRemoteMetadata?)
@@ -128,7 +129,7 @@ class SubscriptionSecretStore(
     }
 
     /** Resolve identities and capture revisions before provider downloads or parsing can suspend. */
-    internal fun captureTransfer(items: List<TransferSubscription>): SubscriptionTransferSnapshot = locked {
+    internal fun captureTransfer(items: List<TransferSubscription>, preserveIds: Boolean = false): SubscriptionTransferSnapshot = locked {
         require(items.isNotEmpty()) { "传输中没有订阅" }
         val incomingIds = items.map { item ->
             item.id.trim().takeIf(String::isNotEmpty)?.let {
@@ -136,6 +137,7 @@ class SubscriptionSecretStore(
                 UUID.fromString(it).toString()
             }
         }
+        if (preserveIds) require(incomingIds.all { it != null }) { "备份中的订阅缺少 ID" }
         check(incomingIds.filterNotNull().let { it.size == it.distinct().size }) { "传输中包含重复的订阅 ID，已停止同步" }
         val records = list()
         val index = preferences.all
@@ -145,7 +147,7 @@ class SubscriptionSecretStore(
         val sources = records.associate { it.id to readUrl(it.id) }
         val previous = items.mapIndexed { i, item ->
             val byId = incomingIds[i]?.let { id -> records.find { it.id.equals(id, ignoreCase = true) } }
-            val candidates = if (byId != null) listOf(byId) else records.filter {
+            val candidates = if (byId != null) listOf(byId) else if (preserveIds) emptyList() else records.filter {
                 it.name == normalizeName(item.name) && sources[it.id] == item.source
             }
             check(candidates.size <= 1) { "存在多个同名同来源订阅，请先明确同步目标" }
@@ -173,6 +175,13 @@ class SubscriptionSecretStore(
         val records = list()
         val allowed = SubscriptionShareSelection.validate(records.mapTo(linkedSetOf()) { it.id }, selectedIds)
         records.filter { it.id in allowed }.map { TransferSubscription(it.name, readUrl(it.id), readPayload(it.id), it.id) }
+    }
+
+    internal fun exportAllForBackup(): List<TransferSubscription> = locked {
+        val records = list()
+        check(records.mapTo(linkedSetOf()) { it.id } == preferences.getStringSet(KEY_IDS, emptySet()).orEmpty() &&
+            records.all { it.nodes.size == it.nodeCount }) { "订阅索引无法完整读取，已停止备份" }
+        records.map { TransferSubscription(it.name, readUrl(it.id), readPayload(it.id), it.id) }
     }
 
     /** Staged generations remain unreachable until a single complete index commit succeeds. */

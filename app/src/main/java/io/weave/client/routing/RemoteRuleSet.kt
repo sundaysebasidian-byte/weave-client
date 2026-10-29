@@ -163,11 +163,12 @@ class RemoteRuleSetStore(
         resolver = io.weave.client.subscription.SubscriptionDNSResolver.forContext(context)::resolve,
     ),
 ) {
+    private val appContext = context.applicationContext
     private val directory = File(context.applicationContext.noBackupFilesDir, DIRECTORY)
     private val index = File(directory, INDEX_FILE)
     private class Record(val set: RemoteRuleSet, val generation: String?)
 
-    private fun <T> locked(block: () -> T): T = synchronized(STORE_LOCK) {
+    private fun <T> locked(block: () -> T): T = io.weave.client.data.ProfileStorage.access(appContext) { synchronized(STORE_LOCK) {
         try {
             check(directory.isDirectory || directory.mkdirs())
             RandomAccessFile(File(directory, "store.lock"), "rw").use { file ->
@@ -181,7 +182,7 @@ class RemoteRuleSetStore(
             // Neither ciphertext, decrypted URLs nor filesystem paths belong in UI diagnostics.
             throw RuleSetException("规则集无法读取或保存；原数据已保留，请重试或从备份恢复")
         }
-    }
+    } }
 
     fun list(): List<RemoteRuleSet> = locked { readIndex().map { it.set } }
 

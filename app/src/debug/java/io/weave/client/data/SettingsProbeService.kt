@@ -12,6 +12,37 @@ import java.io.File
 class SettingsProbeService : Service() {
     private val messenger = Messenger(Handler(Looper.getMainLooper()) { message ->
         val request = message.data
+        if (request.getString("operation")?.startsWith("profile_") == true) {
+            fun reply(phase: String) = message.replyTo.send(Message.obtain().apply {
+                data = Bundle().apply { putInt("pid", Process.myPid()); putString("phase", phase) }
+            })
+            try {
+                val name = requireNotNull(request.getString("directory"))
+                require(name.startsWith("profile-test-") && '/' !in name && '\\' !in name)
+                val root = File(cacheDir, name)
+                require(root.isDirectory && root.canonicalFile.parentFile == cacheDir.canonicalFile)
+                val isolated = object : ContextWrapper(this) {
+                    override fun getApplicationContext(): Context = this
+                    override fun getNoBackupFilesDir(): File = root
+                    override fun getApplicationInfo() = android.content.pm.ApplicationInfo(this@SettingsProbeService.applicationInfo)
+                        .apply { dataDir = root.absolutePath }
+                }
+                ProfileStorage.restore(isolated, ProfileStorage.fingerprint(isolated)) {
+                    RuntimeSettingsStore(isolated).setRoutingMode(io.weave.client.domain.RoutingMode.DIRECT)
+                    CustomProxyGroupStore(isolated).save(emptyList())
+                    reply("mutated")
+                    if (request.getString("operation") == "profile_kill") Process.killProcess(Process.myPid())
+                    val deadline = SystemClock.elapsedRealtime() + 10_000
+                    while (!File(root, "qa-continue").exists()) {
+                        check(SystemClock.elapsedRealtime() < deadline)
+                        Thread.sleep(10)
+                    }
+                    LocalRouteRuleStore(isolated).save(emptyList())
+                }
+                reply("committed")
+            } catch (_: Exception) { reply("failed") }
+            return@Handler true
+        }
         if (request.getString("operation") == "rule_sets") {
             val reply = Bundle().apply { putInt("pid", Process.myPid()) }
             try {

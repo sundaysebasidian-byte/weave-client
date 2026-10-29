@@ -3,9 +3,11 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
+sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("readiness", Path(__file__).with_name("wait-android-ready.py"))
 readiness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(readiness)

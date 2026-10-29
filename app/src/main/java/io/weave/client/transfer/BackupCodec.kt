@@ -19,7 +19,7 @@ class BackupException(message: String) : IllegalArgumentException(message)
 /**
  * Passphrase-encrypted Weave backup (`.weavebackup`).
  *
- * Layout: `WVBK` · version(1) · PBKDF2 iterations(4) · salt(16) · IV(12) · AES-256-GCM(ZIP).
+ * Layout: `WVBK` · version(1 byte) · PBKDF2 iterations(4) · salt(16) · IV(12) · AES-256-GCM(ZIP).
  * The header is authenticated as GCM associated data, so a tampered iteration count or salt
  * fails decryption instead of silently weakening the key.
  */
@@ -27,7 +27,6 @@ object BackupCodec {
     const val FILE_EXTENSION = "weavebackup"
     const val MIN_PASSPHRASE_LENGTH = 8
     private val MAGIC = byteArrayOf('W'.code.toByte(), 'V'.code.toByte(), 'B'.code.toByte(), 'K'.code.toByte())
-    private const val VERSION: Byte = 1
     private const val DEFAULT_ITERATIONS = 310_000
     private const val MAX_ITERATIONS = 5_000_000
     private const val SALT_BYTES = 16
@@ -43,8 +42,10 @@ object BackupCodec {
         passphrase: CharArray,
         iterations: Int = DEFAULT_ITERATIONS,
         random: SecureRandom = SecureRandom(),
+        formatVersion: Int = 1,
     ): ByteArray {
         requirePassphrase(passphrase)
+        require(formatVersion in 1..2) { "unsupported backup format" }
         require(entries.keys.all(ENTRY_NAME::matches)) { "invalid entry name" }
         val zip = ByteArrayOutputStream().also { output ->
             ZipOutputStream(output).use { stream ->
@@ -58,7 +59,7 @@ object BackupCodec {
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
         val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val header = ByteBuffer.allocate(HEADER_BYTES)
-            .put(MAGIC).put(VERSION).putInt(iterations).put(salt).put(iv)
+            .put(MAGIC).put(formatVersion.toByte()).putInt(iterations).put(salt).put(iv)
             .array()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt, iterations), GCMParameterSpec(128, iv))
@@ -72,7 +73,7 @@ object BackupCodec {
         val buffer = ByteBuffer.wrap(data)
         val magic = ByteArray(4).also(buffer::get)
         if (!magic.contentEquals(MAGIC)) throw BackupException("这不是有效的 Weave 备份")
-        if (buffer.get() != VERSION) throw BackupException("不支持的备份版本")
+        if (buffer.get().toInt() !in 1..2) throw BackupException("不支持的备份版本")
         val iterations = buffer.int
         if (iterations !in 100_000..MAX_ITERATIONS) throw BackupException("这不是有效的 Weave 备份")
         val salt = ByteArray(SALT_BYTES).also(buffer::get)

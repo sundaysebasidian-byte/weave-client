@@ -62,7 +62,7 @@ class MihomoConfigAssembler(
         packageUids: Map<String, Int> = emptyMap(),
         networkPreferences: NetworkPreferences = NetworkPreferences(),
         additionalSubscriptionIds: Set<String> = emptySet(),
-    ): AssembledMihomoConfig {
+    ): AssembledMihomoConfig = io.weave.client.data.ProfileStorage.access(appContext) {
         val subscriptions = secretStore.list()
         val usable = subscriptions.filter { it.hasPayload }
         if (
@@ -449,7 +449,7 @@ class MihomoConfigAssembler(
             rules.forEach { appendLine("  - ${yamlString(it)}") }
         }
 
-        return AssembledMihomoConfig(yaml, activeSubscriptions.size, requiredNodeGroups)
+        return@access AssembledMihomoConfig(yaml, activeSubscriptions.size, requiredNodeGroups)
     }
 
     fun cleanRuntimeFiles() {
