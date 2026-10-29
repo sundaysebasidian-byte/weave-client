@@ -4,6 +4,7 @@ if ($env:WEAVE_ISOLATED_SERVICE_TEST -ne '1' -or $env:WEAVE_TEST_TUN -ne '1' -or
 }
 $root = Split-Path $PSScriptRoot -Parent
 $serviceName = 'WeaveCore'
+$startedAt = Get-Date
 if (Get-Service $serviceName -ErrorAction SilentlyContinue) { throw 'An existing Weave service must not be changed by this test.' }
 $suffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $install = Join-Path $env:ProgramFiles "Weave-CI-$suffix"
@@ -102,6 +103,10 @@ try {
     'Ordinary-user TUN forwarding, authenticated endpoint, stop/reconnect and service-crash cleanup passed.' | Set-Content (Join-Path $results 'acceptance.txt')
 }
 finally {
+    Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$startedAt} -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProviderName -in @('WeaveCore', '.NET Runtime') } |
+        Select-Object TimeCreated, ProviderName, Id, LevelDisplayName, Message |
+        ConvertTo-Json -Depth 4 | Set-Content (Join-Path $results 'service-events.json')
     @{ install = $install; service = $serviceExe; userSid = $createdUser.Sid.Value; sourceCommit = (git rev-parse HEAD); filesRetained = $true } |
         ConvertTo-Json | Set-Content (Join-Path $results 'cleanup-manifest.json')
     foreach ($process in $processes) {

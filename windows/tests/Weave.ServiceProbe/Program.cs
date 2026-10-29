@@ -56,7 +56,8 @@ try
 }
 catch (Exception error)
 {
-    Console.Error.WriteLine(error.GetType().Name + ": " + error.Message);
+    // This executable only uses the public synthetic fixture, never user profiles.
+    Console.Error.WriteLine(error);
     return 1;
 }
 

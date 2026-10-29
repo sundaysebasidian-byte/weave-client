@@ -18,7 +18,10 @@ public static class BrokerWindowsPipe
     public const string PipeName = "Weave.Core.v1";
     public const string ServiceName = "WeaveCore";
     private static readonly byte[] Hello = "WEAVE001"u8.ToArray();
-    private const PipeAccessRights ClientRights = PipeAccessRights.ReadData | PipeAccessRights.WriteData | PipeAccessRights.Synchronize;
+    // CreateFile also requests FILE_READ_ATTRIBUTES for a client handle. The pipe
+    // owner can hide a missing grant in same-user tests; ordinary users cannot.
+    private const PipeAccessRights ClientRights = PipeAccessRights.ReadData | PipeAccessRights.WriteData |
+        PipeAccessRights.ReadAttributes | PipeAccessRights.Synchronize;
 
     public static NamedPipeServerStream CreateServer(string name)
     {
