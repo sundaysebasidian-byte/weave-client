@@ -10,7 +10,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         "Weave");
     private readonly SubscriptionVault _vault;
     private readonly AppRouteStore _routeStore;
-    private readonly SubscriptionImporter _importer = new();
+    private readonly SubscriptionImporter _importer;
     private readonly MihomoConfigBuilder _configBuilder = new();
     private readonly WindowsSystemProxy _systemProxy;
     private MihomoProcess? _process;
@@ -26,6 +26,13 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public WeaveAppModel()
     {
+        _importer = new SubscriptionImporter(resolveHost: (host, token) =>
+        {
+            var process = _process;
+            return process?.IsReady == true
+                ? process.ResolveHostAsync(host, token)
+                : System.Net.Dns.GetHostAddressesAsync(host, token);
+        });
         _systemProxy = new WindowsSystemProxy(_dataDirectory);
         _vault = new SubscriptionVault(
             Path.Combine(_dataDirectory, "subscriptions.bin"),

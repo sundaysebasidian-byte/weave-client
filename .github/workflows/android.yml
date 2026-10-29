@@ -27,8 +27,9 @@ jobs:
         with:
           # Legacy SDK "tools" is no longer available; the action installs cmdline-tools itself.
           packages: platform-tools
+          cmdline-tools-version: '15859902'
       - name: Install locked Android toolchain
-        run: sdkmanager "platforms;android-36" "ndk;29.0.14206865" "cmake;3.31.6"
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache

@@ -13,7 +13,7 @@ git checkout v0.4.0-rc4
 
 ## 工具链与构建
 
-安装 JDK 17、Android SDK 36、NDK `29.0.14206865` 和 CMake `3.31.6`。
+安装 JDK 17、Android SDK 37.0（`platforms;android-37.0`）、NDK `29.0.14206865` 和 CMake `3.31.6`。SDK 命令行工具使用 `15859902` 或更新版本；旧工具不能完整识别新版 SDK 元数据。`compileSdk` 为 37，`targetSdk` 仍为 36，最低版本仍为 26。
 在未提交的 `local.properties` 中配置本机 `sdk.dir`，或设置 `ANDROID_HOME`。
 Gradle 版本与校验值以仓库 wrapper 为准。
 

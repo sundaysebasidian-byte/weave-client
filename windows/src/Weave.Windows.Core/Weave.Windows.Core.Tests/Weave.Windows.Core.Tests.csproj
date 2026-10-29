@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Weave.Windows.Core.csproj" />
+    <None Include="..\..\..\..\tests\fixtures\network\public-addresses.tsv" Link="public-addresses.tsv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

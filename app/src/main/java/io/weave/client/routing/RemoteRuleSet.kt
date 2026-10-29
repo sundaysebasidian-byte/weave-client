@@ -154,7 +154,9 @@ object RuleSetCompiler {
 class RemoteRuleSetStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
-    private val fetcher: SafeSubscriptionFetcher = SafeSubscriptionFetcher(),
+    private val fetcher: SafeSubscriptionFetcher = SafeSubscriptionFetcher(
+        resolver = io.weave.client.subscription.SubscriptionDNSResolver.forContext(context)::resolve,
+    ),
 ) {
     private val directory = File(context.applicationContext.noBackupFilesDir, DIRECTORY)
     private val index = File(directory, INDEX_FILE)

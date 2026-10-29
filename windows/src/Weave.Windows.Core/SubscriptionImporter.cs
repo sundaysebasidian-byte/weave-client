@@ -12,12 +12,15 @@ public sealed class SubscriptionImporter : IDisposable
     internal const int MaxBytes = 5 * 1024 * 1024;
     private readonly HttpClient _http;
     private readonly bool _ownsClient;
-    public SubscriptionImporter(HttpClient? httpClient = null)
+    private readonly Func<string, CancellationToken, Task<IPAddress[]>> _resolveHost;
+    public SubscriptionImporter(HttpClient? httpClient = null,
+        Func<string, CancellationToken, Task<IPAddress[]>>? resolveHost = null)
     {
+        _resolveHost = resolveHost ?? ((host, token) => Dns.GetHostAddressesAsync(host, token));
         _ownsClient = httpClient is null;
         _http = httpClient ?? new HttpClient(new SocketsHttpHandler
         {
-            UseProxy = false, AllowAutoRedirect = false,
+            UseProxy = false, UseCookies = false, AllowAutoRedirect = false, MaxResponseHeadersLength = 64,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
             ConnectTimeout = TimeSpan.FromSeconds(15),
             ConnectCallback = ConnectPublicAsync,
@@ -145,15 +148,21 @@ public sealed class SubscriptionImporter : IDisposable
 
     private static Uri ValidateUri(string source)
     {
-        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri) || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo))
+        if (source.Length > 8192 || !Uri.TryCreate(source, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment) || uri.Port is < 1 or > 65535 ||
+            uri.Host.TrimEnd('.').Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.TrimEnd('.').EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.TrimEnd('.').EndsWith(".local", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException(L.T("远程订阅只接受无用户信息的 HTTPS 地址"));
         return uri;
     }
 
-    private static async ValueTask<Stream> ConnectPublicAsync(SocketsHttpConnectionContext context, CancellationToken token)
+    private async ValueTask<Stream> ConnectPublicAsync(SocketsHttpConnectionContext context, CancellationToken token)
     {
-        var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, token).ConfigureAwait(false);
-        if (addresses.Length == 0 || addresses.Any(IsPrivate)) throw new HttpRequestException(L.T("订阅地址解析到本机、内网或保留地址，已阻止"));
+        IPAddress[] addresses = IPAddress.TryParse(context.DnsEndPoint.Host, out var literal)
+            ? [literal] : await _resolveHost(context.DnsEndPoint.Host, token).ConfigureAwait(false);
+        if (addresses.Length is 0 or > 32 || addresses.Any(address => !PublicSubscriptionAddress.IsPublic(address)))
+            throw new HttpRequestException(L.T("订阅地址解析到本机、内网或保留地址，已阻止"));
         // Connect to the addresses just checked: no second DNS resolution/rebinding window.
         var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
         try
@@ -164,17 +173,6 @@ public sealed class SubscriptionImporter : IDisposable
         catch { socket.Dispose(); throw; }
     }
 
-    private static bool IsPrivate(IPAddress address)
-    {
-        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
-        if (IPAddress.IsLoopback(address)) return true;
-        var b = address.GetAddressBytes();
-        if (b.Length == 4) return b[0] is 0 or 10 or 127 or >= 224 ||
-            (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) ||
-            (b[0] == 169 && b[1] == 254) || (b[0] == 100 && b[1] is >= 64 and <= 127);
-        return address.Equals(IPAddress.IPv6Any) || b[0] == 0xff || (b[0] & 0xfe) == 0xfc ||
-            (b[0] == 0xfe && (b[1] & 0xc0) == 0x80);
-    }
     internal static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
     public void Dispose() { if (_ownsClient) _http.Dispose(); }
     private sealed class DownloadBudget { public int Bytes; public int Requests; }

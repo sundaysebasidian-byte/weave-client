@@ -21,7 +21,7 @@ class SubscriptionRepository(
     private val qrDecoder: QrSubscriptionDecoder = QrSubscriptionDecoder(),
 ) {
     // Subscription traffic follows the user's current system/VPN route.
-    private val safeFetcher = fetcher ?: SafeSubscriptionFetcher()
+    private val safeFetcher = fetcher ?: SafeSubscriptionFetcher(resolver = SubscriptionDNSResolver.forContext(context)::resolve)
     private val providerResolver = ClashProviderResolver(
         fetch = { safeFetcher.fetch(it, adaptMainSubscription = false) },
     )

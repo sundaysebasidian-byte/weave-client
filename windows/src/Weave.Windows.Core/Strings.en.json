@@ -1,4 +1,6 @@
 {
+  "本会话核心已停止，无法完成订阅 DNS 查询": "This session's core has stopped; subscription DNS lookup is unavailable",
+  "核心 DNS 没有返回可用地址，请检查网络或节点": "Core DNS returned no usable addresses; check your network or proxy node",
   "会话配置尚未清理": "Session configuration cleanup pending",
   "尚未检测": "Not tested yet",
   "发生重定向，最终服务尚未验证": "Redirect received; final service not verified",

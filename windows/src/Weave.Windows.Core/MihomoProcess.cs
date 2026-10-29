@@ -36,6 +36,16 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public event EventHandler? Exited;
 
+    public Task<IPAddress[]> ResolveHostAsync(string host, CancellationToken token)
+    {
+        lock (_gate)
+        {
+            if (!_ready || _process is not { HasExited: false } || _controller is null)
+                throw new HttpRequestException(L.T("本会话核心已停止，无法完成订阅 DNS 查询"));
+            return _controller.ResolveHostAsync(host, token);
+        }
+    }
+
     public async Task StartAsync(RuntimeBundle bundle, CancellationToken cancellationToken = default)
     {
         _ready = false;

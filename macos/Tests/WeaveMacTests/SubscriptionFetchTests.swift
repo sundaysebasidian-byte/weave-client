@@ -153,42 +153,17 @@ struct SubscriptionFetchTests {
         #expect(requests.count == (path == "loop" ? 6 : 1))
     }
 
-    @Test(arguments: [
-        "0.0.0.0", "10.1.2.3", "127.0.0.1", "169.254.169.254", "172.16.1.1", "172.31.255.255",
-        "192.168.1.1", "100.64.0.1", "100.127.255.255", "224.0.0.1", "255.255.255.255",
-        "198.18.0.1", "198.19.255.255", "192.0.2.1", "198.51.100.1", "203.0.113.1",
-        "::", "::1", "fc00::1", "fd00::1", "fe80::1", "fec0::1", "ff02::1",
-        "::ffff:127.0.0.1", "::ffff:10.0.0.1", "64:ff9b::a00:1", "64:ff9b:1::1",
-        "2002:7f00:1::", "2001:db8::1", "2001::1", "2001:20::1", "3fff::1",
-    ])
-    func specialUseAddressCannotBecomeASubscriptionSocket(address: String) {
-        #expect(!isPublic(address))
-    }
-
-    @Test(arguments: ["1.1.1.1", "8.8.8.8", "172.15.255.255", "172.32.0.0", "100.63.255.255", "100.128.0.0",
-                      "2606:4700:4700::1111", "2001:4860:4860::8888", "::ffff:8.8.8.8", "64:ff9b::808:808"])
-    func globalAddressesRemainAvailable(address: String) { #expect(isPublic(address)) }
-
-    private func isPublic(_ text: String) -> Bool {
-        if text.contains(":") {
-            var address = sockaddr_in6()
-            address.sin6_family = sa_family_t(AF_INET6)
-            guard inet_pton(AF_INET6, text, &address.sin6_addr) == 1 else { return false }
-            return withUnsafePointer(to: &address) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    weave_http_is_public_address($0, socklen_t(MemoryLayout<sockaddr_in6>.size))
-                }
-            }
-        }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        guard inet_pton(AF_INET, text, &address.sin_addr) == 1 else { return false }
-        return withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                weave_http_is_public_address($0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
+    @Test func sharedAddressPolicyMatchesEveryPlatformFixture() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("tests/fixtures/network/public-addresses.tsv")
+        for line in try String(contentsOf: fixture, encoding: .utf8).split(separator: "\n") where !line.hasPrefix("#") {
+            let fields = line.split(separator: "\t")
+            #expect(fields.count == 2)
+            let literal = String(fields[0])
+            #expect(literal.withCString { weave_http_is_public_ip($0) } == (fields[1] == "true"), Comment(rawValue: literal))
         }
     }
+
 }
 
 @MainActor private final class HTTPSFixture {
@@ -200,7 +175,8 @@ struct SubscriptionFetchTests {
 
     init() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("WeaveHTTPS-\(UUID())")
-        fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Fixtures/HTTPS")
+        fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("tests/fixtures/https")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [fixture.appendingPathComponent("server.py").path, directory.path]

@@ -5,7 +5,11 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URI
 import java.net.SocketTimeoutException
-import javax.net.ssl.HttpsURLConnection
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
+import okhttp3.Dns
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 data class SubscriptionFetchResult(
     val body: String,
@@ -76,14 +80,24 @@ class SafeSubscriptionFetcher(
     private val urlPolicy: SubscriptionUrlPolicy = SubscriptionUrlPolicy(),
     private val maxBytes: Int = DEFAULT_MAX_BYTES,
     private val maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
-    private val resolver: (String) -> Array<InetAddress> = InetAddress::getAllByName,
-    private val connectionFactory: (URI) -> HttpsURLConnection = { uri ->
-        uri.toURL().openConnection() as? HttpsURLConnection
-            ?: throw SubscriptionImportException("订阅连接不是 HTTPS")
-    },
+    resolver: (String) -> Array<InetAddress> = InetAddress::getAllByName,
+    client: OkHttpClient = OkHttpClient(),
 ) {
+    private val http = client.newBuilder()
+        .proxy(Proxy.NO_PROXY)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        .readTimeout(READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        .dns(object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> =
+                urlPolicy.validateResolvedAddresses(URI("https", null, hostname, -1, null, null, null), resolver).toList()
+        })
+        .build()
+
     fun fetch(rawUrl: String, adaptMainSubscription: Boolean = true): SubscriptionFetchResult {
         var current = urlPolicy.validate(rawUrl)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
 
         repeat(maxRedirects + 1) { hop ->
             // Apply this before every hop so a Walless redirect remains in expanded-node mode while
@@ -97,7 +111,9 @@ class SafeSubscriptionFetcher(
             // Honor the process route, including an already-working VPN. Binding exclusively
             // to physical networks made protected/blocked provider downloads fail and bypassed
             // the user's selected tunnel. Never silently bypass another VPN during import.
-            val response = fetchHop(current)
+            val remainingMillis = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (remainingMillis <= 0) throw SubscriptionImportException("订阅下载超时")
+            val response = fetchHop(current, remainingMillis)
             when (response.status) {
                 HttpURLConnection.HTTP_OK -> {
                     return SubscriptionFetchResult(
@@ -139,49 +155,39 @@ class SafeSubscriptionFetcher(
         val updateInterval: String? = null,
     )
 
-    private fun fetchHop(uri: URI): HopResponse = try {
-        urlPolicy.validateResolvedAddresses(uri, resolver)
-        executeHop(uri)
+    private fun fetchHop(uri: URI, remainingMillis: Long): HopResponse = try {
+        executeHop(uri, remainingMillis)
     } catch (error: SocketTimeoutException) {
         throw SubscriptionImportException("订阅服务器连接超时，请检查当前网络或暂时关闭其他 VPN 后重试", error)
     } catch (error: IOException) {
         throw SubscriptionImportException("无法连接订阅服务器，请检查当前网络或暂时关闭其他 VPN 后重试", error)
     }
 
-    private fun executeHop(uri: URI): HopResponse {
-        val connection = connectionFactory(uri)
-        try {
-            connection.instanceFollowRedirects = false
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.requestMethod = "GET"
-            connection.useCaches = false
-            connection.setRequestProperty(
-                "Accept",
-                "application/yaml, text/yaml, text/plain, application/json, */*",
-            )
-            // Keep the response bytes directly parseable. Some Android URL stacks do not
-            // transparently decode gzip streams when a custom Network is used, which would
-            // otherwise turn a valid Clash document into an invalid UTF-8 import.
-            connection.setRequestProperty("Accept-Encoding", "identity")
-            connection.setRequestProperty("User-Agent", SubscriptionClientIdentity.USER_AGENT)
-            connection.setRequestProperty("Cache-Control", "no-cache, no-transform")
-
-            return when (val status = connection.responseCode) {
+    private fun executeHop(uri: URI, remainingMillis: Long): HopResponse {
+        val request = Request.Builder().url(uri.toString())
+            .header("Accept", "application/yaml, text/yaml, text/plain, application/json, */*")
+            .header("Accept-Encoding", "identity")
+            .header("User-Agent", SubscriptionClientIdentity.USER_AGENT)
+            .header("Cache-Control", "no-cache, no-transform")
+            .build()
+        val call = http.newCall(request)
+        call.timeout().timeout(remainingMillis, TimeUnit.MILLISECONDS)
+        return call.execute().use { response ->
+            when (val status = response.code) {
                 HttpURLConnection.HTTP_OK -> {
-                    val declared = connection.contentLengthLong
+                    val declared = response.body.contentLength()
                     if (declared > maxBytes) {
                         throw SubscriptionImportException("订阅内容超过 ${maxBytes / 1024} KiB 限制")
                     }
-                    val body = connection.inputStream.use {
-                        SubscriptionResponseBody.read(it, connection.contentEncoding, maxBytes)
+                    val body = response.body.byteStream().use {
+                        SubscriptionResponseBody.read(it, response.header("Content-Encoding"), maxBytes)
                     }
                     HopResponse(
                         status = status,
                         body = body,
-                        contentType = connection.contentType,
-                        userInfo = connection.getHeaderField("subscription-userinfo"),
-                        updateInterval = connection.getHeaderField("profile-update-interval"),
+                        contentType = response.header("Content-Type"),
+                        userInfo = response.header("subscription-userinfo"),
+                        updateInterval = response.header("profile-update-interval"),
                     )
                 }
 
@@ -192,13 +198,11 @@ class SafeSubscriptionFetcher(
                 308,
                 -> HopResponse(
                     status = status,
-                    location = connection.getHeaderField("Location"),
+                    location = response.header("Location"),
                 )
 
                 else -> throw SubscriptionImportException("订阅服务器返回 HTTP $status")
             }
-        } finally {
-            connection.disconnect()
         }
     }
 
