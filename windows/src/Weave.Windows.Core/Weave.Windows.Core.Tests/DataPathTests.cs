@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Collections.Concurrent;
+using Xunit.Abstractions;
 using YamlDotNet.RepresentationModel;
 
 namespace Weave.Windows.Core.Tests;
@@ -9,7 +11,7 @@ namespace Weave.Windows.Core.Tests;
 public sealed class NativeDataPathCollection { }
 
 [Collection("Native data path")]
-public sealed class DataPathTests
+public sealed class DataPathTests(ITestOutputHelper output)
 {
     [Theory]
     [InlineData(false, false)]
@@ -25,7 +27,8 @@ public sealed class DataPathTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var server = ServeProxyAsync(listener, received, timeout.Token);
+        var requests = new ConcurrentQueue<string>();
+        var server = ServeProxyAsync(listener, received, requests, timeout.Token);
         using var importer = new SubscriptionImporter();
         var subscription = importer.ImportText("wire-test", "inline://wire-test",
             $"proxies:\n- {{name: '東京 HTTP', type: http, server: 127.0.0.1, port: {port}, username: test-user, password: test-pass}}\n");
@@ -44,7 +47,21 @@ public sealed class DataPathTests
             // imported upstream test proxy can provide this unique body.
             // The TUN case deliberately has NO HTTP proxy and targets TEST-NET-2.
             // Its response can only come through the TUN and our local upstream.
-            var body = await client.GetStringAsync(tun ? "http://198.51.100.42/check" : "http://weave-data-path.invalid/check", timeout.Token);
+            string body;
+            try
+            {
+                body = await client.GetStringAsync(tun ? "http://198.51.100.42/check" : "http://weave-data-path.invalid/check", timeout.Token);
+            }
+            catch
+            {
+                output.WriteLine($"Core running={process.IsRunning}, ready={process.IsReady}; last diagnostic: {process.LastDiagnostics}");
+                output.WriteLine("Upstream request targets: " + string.Join(" | ", requests));
+                output.WriteLine($"Upstream fixture status: {server.Status}; error: {server.Exception}");
+                foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                    output.WriteLine($"Adapter {adapter.Name}: {adapter.OperationalStatus}; " +
+                        string.Join(", ", adapter.GetIPProperties().UnicastAddresses.Select(item => item.Address)));
+                throw;
+            }
             Assert.Equal("weave-upstream-reached", body);
             var request = await received.Task.WaitAsync(timeout.Token);
             Assert.Contains(tun ? "198.51.100.42:80" : "weave-data-path.invalid:80", request);
@@ -58,7 +75,8 @@ public sealed class DataPathTests
         }
     }
 
-    private static async Task ServeProxyAsync(TcpListener listener, TaskCompletionSource<string> received, CancellationToken token)
+    private static async Task ServeProxyAsync(TcpListener listener, TaskCompletionSource<string> received,
+        ConcurrentQueue<string> requests, CancellationToken token)
     {
         // Mihomo's HTTP outbound uses CONNECT even for an HTTP destination.
         // Handle health checks too; only capture the explicit .invalid request.
@@ -69,6 +87,7 @@ public sealed class DataPathTests
                 using var socket = await listener.AcceptTcpClientAsync(token);
                 await using var stream = socket.GetStream();
                 var header = await ReadHeaderAsync(stream, token);
+                requests.Enqueue(header.Split('\r', '\n')[0]);
                 if (!header.Contains("weave-data-path.invalid", StringComparison.Ordinal) && !header.Contains("198.51.100.42", StringComparison.Ordinal)) continue;
                 received.TrySetResult(header);
                 if (header.StartsWith("CONNECT ", StringComparison.Ordinal))
