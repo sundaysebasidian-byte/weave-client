@@ -89,7 +89,7 @@ class SubscriptionSecretStore(
             file.channel.lock().use {
                 val index = File(appContext.applicationInfo.dataDir, "shared_prefs/$PREFERENCES_NAME.xml")
                 if (!index.exists() && !File(index.path + ".bak").exists() && payloadDirectory.isDirectory) {
-                    check(requireNotNull(payloadDirectory.listFiles()).none { it.extension == ENCRYPTED_PAYLOAD_EXTENSION }) {
+                    check(requireNotNull(payloadDirectory.listFiles()).none { it.extension in setOf(ENCRYPTED_PAYLOAD_EXTENSION, DELETED_PAYLOAD_EXTENSION) }) {
                         "订阅索引缺失，已保留加密正文；请检查备份"
                     }
                 }
@@ -326,26 +326,15 @@ class SubscriptionSecretStore(
         locked {
             val record = get(id) ?: throw NoSuchElementException("订阅不存在")
             val payload = payloadFile(id)
-            val pendingDeletion = File(payloadDirectory, "$id.$DELETED_PAYLOAD_EXTENSION")
-            pendingDeletion.delete()
-            if (payload.isFile) {
-                check(payload.renameTo(pendingDeletion)) {
-                    "Unable to stage encrypted subscription payload deletion"
-                }
-            }
 
             val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
             ids.remove(id)
             val editor = preferences.edit().putStringSet(KEY_IDS, ids)
             STORED_FIELDS.forEach { field -> editor.remove(key(id, field)) }
-            if (!editor.commit()) {
-                if (pendingDeletion.isFile) pendingDeletion.renameTo(payload)
-                error("Unable to delete encrypted subscription metadata")
-            }
-
-            // The payload is already unreachable at this point. If physical deletion is temporarily
-            // unavailable, the encrypted tombstone is retried when the store is constructed again.
-            pendingDeletion.delete()
+            check(editor.commit()) { "Unable to delete encrypted subscription metadata" }
+            // Readers hold the same lock. Until the index commits, the old payload stays readable.
+            // An interrupted cleanup leaves only an unreachable encrypted file, never a dangling index.
+            payload.delete()
             return record
         }
     }
@@ -485,15 +474,22 @@ class SubscriptionSecretStore(
     }
 
     private fun cleanPayloadDirectory(directory: File) {
+        val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
+        // Older versions moved the active file before committing deletion. Recover that move
+        // if the index still refers to the subscription; never discard its only encrypted copy.
+        directory.listFiles().orEmpty().filter { it.extension == DELETED_PAYLOAD_EXTENSION }.forEach { file ->
+            val id = file.name.removeSuffix(".$DELETED_PAYLOAD_EXTENSION")
+            if (id in ids) {
+                val target = payloadFile(id)
+                if (!target.exists()) check(file.renameTo(target)) { "Unable to recover interrupted subscription deletion" }
+            }
+        }
         val referencedFiles = referencedPayloadNames()
         directory.listFiles().orEmpty().forEach { file ->
             if (
-                file.extension == DELETED_PAYLOAD_EXTENSION ||
+                (file.extension == DELETED_PAYLOAD_EXTENSION && file.name.removeSuffix(".$DELETED_PAYLOAD_EXTENSION") !in ids) ||
                 file.extension == PENDING_PAYLOAD_EXTENSION ||
-                (
-                    file.extension == ENCRYPTED_PAYLOAD_EXTENSION &&
-                        file.name !in referencedFiles
-                    )
+                (file.extension == ENCRYPTED_PAYLOAD_EXTENSION && file.name !in referencedFiles)
             ) {
                 file.delete()
             }

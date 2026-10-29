@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  # Complete the running device acceptance; newer commits coalesce into the pending run.
+  cancel-in-progress: false
 
 jobs:
   test-and-build:
