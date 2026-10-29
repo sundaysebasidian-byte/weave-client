@@ -38,6 +38,58 @@ jobs:
         run: ./gradlew lintDebug --no-daemon --no-configuration-cache
       - name: Debug build
         run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
+      - name: Storage transactions on a disposable Android emulator
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "emulator" "system-images;android-36;google_apis;x86_64"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/weave-android-user"
+          export ANDROID_EMULATOR_HOME="$RUNNER_TEMP/weave-android-emulator"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-avds"
+          export ANDROID_ADB_SERVER_PORT=5041
+          export ADB_MDNS_AUTO_CONNECT=''
+          export WEAVE_TEST_ADB_PORT=5041
+          export WEAVE_ISOLATED_EMULATOR=1
+          export WEAVE_TEST_RESULTS="$RUNNER_TEMP/weave-storage-results"
+          mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" "$WEAVE_TEST_RESULTS"
+          printf 'no\n' | avdmanager create avd -n weave-storage -k 'system-images;android-36;google_apis;x86_64'
+          adb -P 5041 --one-device weave-isolated-no-usb start-server
+          emulator_pid=''
+          cleanup() {
+            adb -P 5041 -s emulator-5580 emu kill >/dev/null 2>&1 || true
+            if [[ -n "$emulator_pid" ]]; then
+              kill "$emulator_pid" 2>/dev/null || true
+              wait "$emulator_pid" 2>/dev/null || true
+            fi
+            adb -P 5041 kill-server || true
+          }
+          trap cleanup EXIT
+          test -c /dev/kvm
+          # Select the KVM group for this child only; do not change host ACLs or group membership.
+          sudo -u "$(id -un)" -g kvm env \
+            ANDROID_HOME="$ANDROID_HOME" ANDROID_SDK_ROOT="$ANDROID_HOME" \
+            ANDROID_USER_HOME="$ANDROID_USER_HOME" ANDROID_EMULATOR_HOME="$ANDROID_EMULATOR_HOME" \
+            ANDROID_AVD_HOME="$ANDROID_AVD_HOME" ANDROID_ADB_SERVER_PORT=5041 \
+            "$ANDROID_HOME/emulator/emulator" -avd weave-storage -port 5580 \
+            -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
+            -gpu swiftshader -cores 2 -memory 2048 -camera-back none -camera-front none \
+            > "$WEAVE_TEST_RESULTS/emulator.log" 2>&1 &
+          emulator_pid=$!
+          timeout 180 adb -P 5041 -s emulator-5580 wait-for-device
+          for attempt in $(seq 1 90); do
+            if [[ $(adb -P 5041 -s emulator-5580 shell getprop sys.boot_completed | tr -d '\r') == 1 ]]; then break; fi
+            kill -0 "$emulator_pid"
+            sleep 2
+          done
+          bash tools/test-android-storage.sh emulator-5580
+      - name: Preserve device test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Android-storage-tests
+          path: ${{ runner.temp }}/weave-storage-results/
+          if-no-files-found: warn
       - name: Release build (ABI splits)
         run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
       - name: Ensure no universal APK is published

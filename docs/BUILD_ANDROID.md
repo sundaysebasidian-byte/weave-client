@@ -27,6 +27,17 @@ bash tools/audit-local-release.sh
 只构建现代 ARM64 手机可增加 `-PweaveArm64Only=true`。
 无发行签名配置时，`assembleRelease` 输出未签名 APK，不能直接安装。
 
+CI 在可丢弃的 API 36 模拟器运行加密存储、订阅更新竞争与跨进程偏好回归，并保留报告。
+本地复现时先创建独立测试模拟器；不要指定装有个人数据的现有设备。构建 `:app:assembleDebug`
+和 `:app:assembleDebugAndroidTest` 后，明确指定它的序列号运行：
+
+```sh
+WEAVE_ISOLATED_EMULATOR=1 bash tools/test-android-storage.sh emulator-5580
+```
+
+使用独立 ADB 服务时同时设置 `WEAVE_TEST_ADB_PORT`。脚本只向指定模拟器安装测试 APK，
+不会卸载已有应用、清空数据或操作其他设备；签名不匹配时直接失败。
+
 本地测试可使用 `:app:assembleLocalOptimized`：开启 R8 和资源压缩、关闭 debuggable，
 但沿用本机开发证书。本地构建不自动获得发布包的生产签名。公开 Build 106 使用开发证书，
 公开 RC4 使用生产证书；已有生产签名 RC107–RC110 属于同一证书链。生产私钥应独立保管，

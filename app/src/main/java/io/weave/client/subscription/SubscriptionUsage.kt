@@ -2,6 +2,9 @@ package io.weave.client.subscription
 
 import java.math.BigDecimal
 
+/** Null fields clear obsolete provider headers; a null metadata object preserves them. */
+data class SubscriptionRemoteMetadata(val usage: SubscriptionUsage?, val updateIntervalHours: Int?)
+
 /**
  * Parsed `subscription-userinfo` response header, e.g.
  * `upload=455727941; download=6174315083; total=1073741824000; expire=1671815872`.

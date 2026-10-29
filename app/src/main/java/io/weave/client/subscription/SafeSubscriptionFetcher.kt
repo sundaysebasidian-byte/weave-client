@@ -26,7 +26,9 @@ data class SubscriptionFetchResult(
     val contentType: String?,
     val usage: SubscriptionUsage? = null,
     val updateIntervalHours: Int? = null,
-)
+) {
+    val remoteMetadata get() = SubscriptionRemoteMetadata(usage, updateIntervalHours)
+}
 
 /**
  * Request expanded Walless nodes without forcing the legacy CFA response format. Provider

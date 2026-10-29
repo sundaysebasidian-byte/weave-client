@@ -2,6 +2,7 @@ package io.weave.client.subscription
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import io.weave.client.WeaveProcess
 import io.weave.client.data.crossProcessPreferences
 import io.weave.client.security.AndroidKeystoreSecretBox
@@ -32,6 +33,9 @@ data class StoredNode(
 
 internal data class NewSubscriptionBatchEntry(val name: String, val source: String, val payload: String,
     val parsed: ParsedSubscription, val counts: SubscriptionImportCounts)
+
+// Not a data class: the decrypted source must not appear in generated diagnostics.
+internal class StoredSubscriptionSnapshot(val record: StoredSubscription, val source: String, val revision: String)
 
 class SubscriptionSecretStore(
     context: Context,
@@ -87,6 +91,7 @@ class SubscriptionSecretStore(
         parsed: ParsedSubscription,
         id: String = UUID.randomUUID().toString(),
         counts: SubscriptionImportCounts? = null,
+        remoteMetadata: SubscriptionRemoteMetadata? = null,
     ): StoredSubscription {
         locked {
             val normalizedName = normalizeName(name)
@@ -122,7 +127,7 @@ class SubscriptionSecretStore(
 
             val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
             ids += id
-            val committed = preferences.edit()
+            val editor = preferences.edit()
                 .putStringSet(KEY_IDS, ids)
                 .putString(key(id, "name"), normalizedName)
                 .putString(key(id, "url"), encryptedUrl)
@@ -134,7 +139,8 @@ class SubscriptionSecretStore(
                 .remove(key(id, "node_metadata"))
                 .putString(key(id, "payload_generation"), generation)
                 .putLong(key(id, "updated_at"), System.currentTimeMillis())
-                .commit()
+            remoteMetadata?.let { writeRemoteMetadata(editor, id, it) }
+            val committed = editor.commit()
             if (!committed) {
                 candidatePayload.delete()
                 error("Unable to persist encrypted subscription")
@@ -143,14 +149,7 @@ class SubscriptionSecretStore(
                 oldPayload.delete()
             }
 
-            return StoredSubscription(
-                id = id,
-                name = normalizedName,
-                nodeCount = parsed.nodeCount,
-                format = parsed.format,
-                nodes = nodes,
-                hasPayload = true,
-            )
+            return requireNotNull(get(id))
         }
     }
 
@@ -201,12 +200,22 @@ class SubscriptionSecretStore(
     }
 
     fun saveReviewed(id: String, expectedRevision: String, name: String, source: String,
-        payload: String, parsed: ParsedSubscription, counts: SubscriptionImportCounts): StoredSubscription = locked {
+        payload: String, parsed: ParsedSubscription, counts: SubscriptionImportCounts,
+        remoteMetadata: SubscriptionRemoteMetadata? = null): StoredSubscription = locked {
+        requireRevision(id, expectedRevision)
+        save(name, source, payload, parsed, id, counts, remoteMetadata)
+    }
+
+    internal fun readForUpdate(id: String): StoredSubscriptionSnapshot = locked {
         val current = requireNotNull(get(id)) { "订阅不存在" }
-        check(subscriptionRevision(current, readPayload(id), readUrl(id)) == expectedRevision) {
+        val source = readUrl(id)
+        StoredSubscriptionSnapshot(current, source, subscriptionRevision(current, readPayload(id), source))
+    }
+
+    private fun requireRevision(id: String, expected: String) {
+        check(readForUpdate(id).revision == expected) {
             "订阅已变化，请重新预览"
         }
-        save(name, source, payload, parsed, id, counts)
     }
 
     fun importCounts(id: String): SubscriptionImportCounts? = locked {
@@ -240,16 +249,22 @@ class SubscriptionSecretStore(
     }
 
     /** Provider-declared quota and refresh interval; neither is secret nor an endpoint. */
-    fun recordRemoteMetadata(id: String, usage: SubscriptionUsage?, updateIntervalHours: Int?) = locked {
+    fun recordRemoteMetadata(id: String, usage: SubscriptionUsage?, updateIntervalHours: Int?,
+        expectedRevision: String? = null) = locked {
+        expectedRevision?.let { requireRevision(id, it) }
         if (id !in preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()) return@locked
         val editor = preferences.edit()
-        if (usage != null) editor.putString(key(id, "usage"), usage.encode()) else editor.remove(key(id, "usage"))
-        if (updateIntervalHours != null) {
-            editor.putInt(key(id, "update_interval_hours"), updateIntervalHours)
+        writeRemoteMetadata(editor, id, SubscriptionRemoteMetadata(usage, updateIntervalHours))
+        check(editor.commit()) { "Unable to persist subscription metadata" }
+    }
+
+    private fun writeRemoteMetadata(editor: SharedPreferences.Editor, id: String, metadata: SubscriptionRemoteMetadata) {
+        if (metadata.usage != null) editor.putString(key(id, "usage"), metadata.usage.encode()) else editor.remove(key(id, "usage"))
+        if (metadata.updateIntervalHours != null) {
+            editor.putInt(key(id, "update_interval_hours"), metadata.updateIntervalHours)
         } else {
             editor.remove(key(id, "update_interval_hours"))
         }
-        editor.commit()
     }
 
     fun get(id: String): StoredSubscription? = list().firstOrNull { it.id == id }

@@ -186,4 +186,35 @@ class SubscriptionStoreIntegrationTest {
         assertEquals(listOf(old.id), SubscriptionSecretStore(context).list().map { it.id })
     }
 
+    @Test fun reviewedPayloadAndQuotaStayAtTheOldRevisionWhenIndexCommitFails() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val parser = SubscriptionPayloadParser()
+        val payload = "proxies: [{name: fixture, type: socks5, server: example.test, port: 1080}]"
+        val originalMetadata = SubscriptionRemoteMetadata(SubscriptionUsage(1, 2, 100, null), 24)
+        val replacementMetadata = SubscriptionRemoteMetadata(SubscriptionUsage(10, 20, 1000, null), 12)
+        val old = store.save("Existing", "https://fixture.invalid/old", payload, parser.parse(payload), remoteMetadata = originalMetadata)
+        val snapshot = store.readForUpdate(old.id)
+        val candidate = payload.replace("1080", "1081")
+        val blocker = File(context.applicationInfo.dataDir, "shared_prefs/encrypted_subscriptions_v1.xml.new")
+        check(blocker.mkdir())
+        File(blocker, "keep-nonempty").writeText("synthetic fault")
+        try {
+            assertTrue(runCatching {
+                store.saveReviewed(old.id, snapshot.revision, "Changed", "https://fixture.invalid/new", candidate,
+                    parser.parse(candidate), SubscriptionImportCounts(1, 0, 0, 1), replacementMetadata)
+            }.isFailure)
+            assertEquals(snapshot.revision, store.readForUpdate(old.id).revision)
+            assertEquals(payload, store.readPayload(old.id))
+            assertEquals(originalMetadata.usage, store.get(old.id)!!.usage)
+            assertEquals(24, store.get(old.id)!!.updateIntervalHours)
+        } finally { blocker.deleteRecursively() }
+        val reopened = SubscriptionSecretStore(context)
+        assertEquals(snapshot.revision, reopened.readForUpdate(old.id).revision)
+        val updated = reopened.saveReviewed(old.id, snapshot.revision, "Changed", "https://fixture.invalid/new", candidate,
+            parser.parse(candidate), SubscriptionImportCounts(1, 0, 0, 1), replacementMetadata)
+        assertEquals(replacementMetadata.usage, updated.usage)
+        assertEquals(12, updated.updateIntervalHours)
+        assertEquals(candidate, reopened.readPayload(old.id))
+    }
+
 }
