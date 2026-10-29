@@ -41,6 +41,10 @@ public sealed class MihomoConfigBuilder
             throw new InvalidDataException(L.T("运行目录已存在，请使用新的会话目录"));
         if (usable.Any(item => !System.Text.RegularExpressions.Regex.IsMatch(item.Id, "^[a-zA-Z0-9_-]{1,80}$")))
             throw new InvalidDataException(L.T("订阅标识无效"));
+        // Validate every provider before creating any runtime files, including persisted
+        // records that did not pass through this version of the import UI.
+        ProxyProviderSecurity.CheckTotalSize(usable);
+        var providers = usable.ToDictionary(item => item.Id, ProxyProviderSecurity.Validate, StringComparer.Ordinal);
         var mixedPort = AvailablePort();
         var controllerPort = AvailablePort();
         while (controllerPort == mixedPort) controllerPort = AvailablePort();
@@ -64,7 +68,7 @@ public sealed class MihomoConfigBuilder
         foreach (var subscription in usable)
         {
             var providerPath = Path.Combine(providersDirectory, ProviderFileName(subscription));
-            File.WriteAllText(providerPath, subscription.ProviderYaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.WriteAllText(providerPath, providers[subscription.Id], new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
         var configPath = Path.Combine(runtimeDirectory, "config.yaml");

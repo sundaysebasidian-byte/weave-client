@@ -71,6 +71,14 @@ TUN 需要当前 Windows 用户授权管理员重开，之后再次点击连接�
 | 检测 | 同一入口内的代理 IP、常用网站可达性、浏览器 WebRTC/指纹实验、第三方 DNS 出口实测 |
 | 同步 | Android 兼容 AES-256-GCM 一次性互传；QR/图片/链接；选择订阅分享、接收预览、同源更新；无需云服务器 |
 
+### 节点配置边界
+
+连接前检查所有本次使用的订阅，包括已保存的旧数据。当前允许 HTTP、SOCKS5、SS、SSR、Snell、VMess、VLESS、Trojan、Hysteria、Hysteria2、TUIC、AnyTLS、SSH、WireGuard 的已核验字段；未知协议或字段明确报错，不能直接透传任意 Mihomo 配置。OpenVPN、Tailscale、ZeroTier 等协议及未纳入字段表的扩展仍待支持。
+
+证书和密钥必须是可解析的内联内容；不接受本机文件路径。订阅不能指定网卡、路由标记或自带 dialer-proxy；链式出口由界面中的入口→出口设置生成。WebSocket 路径和传输头仍按网络数据处理。单份 provider 上限 5 MiB，本次使用的 provider 合计上限 32 MiB。
+
+14 类协议样本及内联 RSA 证书经过锁定核心的节点解析验证；这不代表所有字段组合、密钥格式或远端握手均已验收。证书格式还须被当前 .NET 解析器支持。当前 TUN 仍会提升整个界面进程；独立核心服务、认证 IPC 和普通权限界面迁移尚未完成。
+
 ### 手机与 Windows 同步
 
 1. 两端连接同一 Wi-Fi、手机热点或 USB 网络共享。USB 数据线本身不等于网络共享。
@@ -118,7 +126,7 @@ Windows 10/11 真机 TUN、IPv6、睡眠恢复/网络切换、摄像头与 Andro
 官方 Mihomo **v1.19.30 amd64-v1**（不是 Android 定制 JNI 核心）：
 [对应源码](https://github.com/MetaCubeX/mihomo/tree/v1.19.30)。下载包 SHA-256：
 `8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278`。
-需要 VS 2022、.NET 8、Java 17（协议测试）和 Windows App SDK 构建支持；先将同版本内核放入 runtime 目录：
+需要项目锁定的 .NET 10 SDK、Java 17（协议测试）及 Windows App SDK 的 MSBuild 构建支持；具体环境见 `.github/workflows/windows-preview.yml`，先将同版本内核放入 runtime 目录：
 
 ```powershell
 .\windows\build.ps1 -Platform x64 -Configuration Release

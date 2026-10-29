@@ -385,5 +385,8 @@
   "连接超时": "Connection timed out",
   "域名解析失败": "DNS resolution failed",
   "TLS 握手失败": "TLS handshake failed",
-  "连接失败": "Connection failed"
+  "连接失败": "Connection failed",
+  "节点包含尚未核验的协议或选项，已取消连接；请检查配置。": "A node uses an unreviewed protocol or option. Connection was cancelled; check the configuration.",
+  "节点证书和密钥必须使用有效的内联内容，不能引用本机文件。": "Node certificates and keys must contain valid inline data, not local file references.",
+  "节点配置超过安全处理上限。": "The node configuration exceeds the processing limit."
 }
