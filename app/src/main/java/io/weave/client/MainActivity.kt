@@ -24,19 +24,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalResources
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.weave.client.core.ipc.CoreClient
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.core.vpn.WeaveVpnService
 import io.weave.client.data.VpnDisclosureStore
+import io.weave.client.data.ProfileStorage
 import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.WeaveLanguage
 import io.weave.client.subscription.ExternalImport
 import io.weave.client.subscription.ExternalImportParser
 import io.weave.client.ui.AppViewModel
 import io.weave.client.ui.ExternalRequest
 import io.weave.client.ui.WeaveApp
 import io.weave.client.ui.LocalWeaveLanguage
+import io.weave.client.ui.ProfileRecoveryScreen
 import io.weave.client.ui.theme.WeaveTheme
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @SuppressLint("InvalidFragmentVersionForActivityResult")
 class MainActivity : ComponentActivity() {
@@ -47,34 +58,48 @@ class MainActivity : ComponentActivity() {
     private lateinit var vpnDisclosureStore: VpnDisclosureStore
     private var vpnDisclosureAccepted by mutableStateOf(false)
     private val appViewModel: AppViewModel by viewModels()
+    private var readyModel by mutableStateOf<AppViewModel?>(null)
+    private var startupFailed by mutableStateOf(false)
+    private var startupJob: Job? = null
+    private var pendingIntent: Intent? = null
+    private var coreAttached = false
+    private var started = false
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            WeaveVpnService.start(this)
+            // Permission results can arrive while a recreated activity is still loading.
+            handleIntent(Intent(this, MainActivity::class.java).setAction(ACTION_CONNECT))
         } else {
             VpnRuntimeState.update(ConnectionState.ERROR, "VPN 权限未授予")
         }
     }
 
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(WeaveLocales.wrap(newBase))
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        WeaveLocales.syncFromSystem(this)
         super.onCreate(savedInstanceState)
         vpnDisclosureStore = VpnDisclosureStore(this)
         vpnDisclosureAccepted = vpnDisclosureStore.isAccepted()
         enableEdgeToEdge()
         setContent {
-            val networkPreferences by appViewModel.networkPreferences.collectAsStateWithLifecycle()
-            val language by appViewModel.language.collectAsStateWithLifecycle()
+            val model = readyModel
+            if (model == null) {
+                WeaveTheme {
+                    CompositionLocalProvider(LocalWeaveLanguage provides WeaveLanguage.fromSystem()) {
+                        ProfileRecoveryScreen(startupFailed, ::loadProfile, ::openSystemVpnSettings, ::finish)
+                    }
+                }
+                return@setContent
+            }
+            val networkPreferences by model.networkPreferences.collectAsStateWithLifecycle()
+            val language by model.language.collectAsStateWithLifecycle()
+            // Resource strings on Android < 13 use the same language as Compose, without
+            // reading profile storage in attachBaseContext before a recovery UI can exist.
+            val resourceContext = remember(language) { WeaveLocales.wrap(this, language) }
             WeaveTheme(palette = networkPreferences.weavePalette) {
-                CompositionLocalProvider(LocalWeaveLanguage provides language) {
+                CompositionLocalProvider(LocalWeaveLanguage provides language, LocalResources provides resourceContext.resources) {
                     WeaveApp(
-                        viewModel = appViewModel,
+                        viewModel = model,
                         notificationsEnabled = notificationsEnabled,
                         onRequestNotifications = ::requestNotifications,
                         onRequestConnection = ::requestVpnPermission,
@@ -90,8 +115,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // A recreated activity has already consumed its launch intent.
-        if (savedInstanceState == null) handleIntent(intent)
+        // Retain only an unconsumed launch request across recreation; never replay one the
+        // model already received. A newer intent replaces the pending request, as in the UI.
+        @Suppress("DEPRECATION")
+        val launchIntent = if (savedInstanceState == null) intent else savedInstanceState.getParcelable<Intent>("startup_request")
+        handleIntent(launchIntent)
+        loadProfile()
+    }
+
+    private fun loadProfile() {
+        if (startupJob?.isActive == true || readyModel != null) return
+        startupFailed = false
+        startupJob = lifecycleScope.launch {
+            val model = try {
+                withContext(Dispatchers.IO) {
+                    ProfileStorage.access(this@MainActivity) { WeaveLocales.syncFromSystem(this@MainActivity) }
+                }
+                appViewModel
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // Never expose parser messages (which may contain profile content), nor turn
+                // a failed read into a fresh/default profile. Retry leaves the journal intact.
+                android.util.Log.e("WeaveStartup", "Profile startup failed: ${error.javaClass.simpleName}")
+                startupFailed = true
+                return@launch
+            }
+            readyModel = model
+            attachCoreIfReady()
+            val request = pendingIntent
+            pendingIntent = null
+            handleIntent(request)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingIntent?.let { outState.putParcelable("startup_request", it) }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -130,28 +190,46 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        CoreClient.attach(this)
+        started = true
+        attachCoreIfReady()
+    }
+
+    private fun attachCoreIfReady() {
+        if (!coreAttached && readyModel != null && started) {
+            CoreClient.attach(this)
+            coreAttached = true
+        }
     }
 
     override fun onStop() {
-        CoreClient.detach()
+        started = false
+        if (coreAttached) {
+            CoreClient.detach()
+            coreAttached = false
+        }
         super.onStop()
     }
 
     /** Shortcuts, the Quick Settings tile, deep links and share-sheet content. */
     private fun handleIntent(intent: Intent?) {
+        if (intent?.action == ACTION_DISCONNECT) {
+            pendingIntent = null
+            WeaveVpnService.stop(this)
+            return
+        }
+        val model = readyModel
+        if (model == null) {
+            if (intent != null) pendingIntent = intent
+            return
+        }
         val request = when (intent?.action) {
             ACTION_CONNECT -> ExternalRequest.Connect
-            ACTION_DISCONNECT -> {
-                WeaveVpnService.stop(this)
-                null
-            }
             ACTION_IMPORT -> ExternalRequest.OpenImport
             Intent.ACTION_VIEW -> intent.data?.let(::importFromUri)?.let(ExternalRequest::Import)
             Intent.ACTION_SEND -> sharedImport(intent)?.let(ExternalRequest::Import)
             else -> null
         } ?: return
-        appViewModel.offerExternalRequest(request)
+        model.offerExternalRequest(request)
     }
 
     private fun importFromUri(uri: Uri): ExternalImport? = when (uri.scheme?.lowercase()) {

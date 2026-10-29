@@ -21,6 +21,11 @@ object WeaveLocales {
     fun wrap(base: Context): Context {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return base
         val language = RuntimeSettingsStore(base).explicitLanguage() ?: return base
+        return wrap(base, language)
+    }
+
+    /** Resource context after the profile has loaded; never reads or mutates storage. */
+    fun wrap(base: Context, language: WeaveLanguage): Context {
         val configuration = Configuration(base.resources.configuration)
         configuration.setLocale(locale(language))
         return base.createConfigurationContext(configuration)
