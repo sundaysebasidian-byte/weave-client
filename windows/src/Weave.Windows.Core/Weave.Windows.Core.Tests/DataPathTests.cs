@@ -52,6 +52,11 @@ public sealed class DataPathTests(ITestOutputHelper output)
             var bundle = new MihomoConfigBuilder().Build([subscription], [], subscription.Id,
                 automatic ? null : subscription.Nodes[0].Id,
                 new WindowsNetworkOptions { EnableTun = tun, Ipv6Enabled = false, RoutingMode = RoutingMode.Global }, folder);
+            // Only this synthetic fixture enables debug output. Warning-only logs hide
+            // successful TUN initialization and forwarding decisions around a reset.
+            var config = File.ReadAllText(bundle.ConfigPath);
+            Assert.Contains("log-level: warning", config);
+            File.WriteAllText(bundle.ConfigPath, config.Replace("log-level: warning", "log-level: debug", StringComparison.Ordinal));
             var coreLog = new ConcurrentQueue<string>();
             await using var process = new MihomoProcess(core) { TestLogObserver = line =>
             {
@@ -80,6 +85,7 @@ public sealed class DataPathTests(ITestOutputHelper output)
                 foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
                     output.WriteLine($"Adapter {adapter.Name}: {adapter.OperationalStatus}; " +
                         string.Join(", ", adapter.GetIPProperties().UnicastAddresses.Select(item => item.Address)));
+                if (tun) await RecordRoutesAsync();
                 throw;
             }
             Assert.Equal("weave-upstream-reached", body);
@@ -92,6 +98,39 @@ public sealed class DataPathTests(ITestOutputHelper output)
             timeout.Cancel(); listener.Stop();
             await server;
             await NativeSessionCleanup.DeleteAsync(folder);
+        }
+    }
+
+    private async Task RecordRoutesAsync()
+    {
+        using var process = new System.Diagnostics.Process { StartInfo = new()
+        {
+            FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "route.exe"),
+            Arguments = "PRINT -4", UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+        } };
+        var started = false;
+        try
+        {
+            started = process.Start();
+            if (!started) return;
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
+            var stderr = process.StandardError.ReadToEndAsync(deadline.Token);
+            await process.WaitForExitAsync(deadline.Token);
+            var text = await stdout + await stderr;
+            output.WriteLine("IPv4 routes at failure:\n" + text[..Math.Min(text.Length, 16_384)]);
+        }
+        catch (Exception error) when (error is OperationCanceledException or System.ComponentModel.Win32Exception or IOException)
+        { output.WriteLine("Route snapshot unavailable: " + error.GetType().Name); }
+        finally
+        {
+            if (started && !process.HasExited)
+            {
+                try { process.Kill(); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
+                { output.WriteLine("Route snapshot process cleanup unconfirmed: " + error.GetType().Name); }
+            }
         }
     }
 
