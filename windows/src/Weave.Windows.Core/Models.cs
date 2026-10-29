@@ -137,6 +137,8 @@ public sealed record DomainRoute(string Kind, string Value, string Target)
     public string Compile() => $"{Kind},{Value},{(Target == "PROXY" ? "DEFAULT" : Target)}{(Kind.StartsWith("IP-", StringComparison.Ordinal) ? ",no-resolve" : "")}";
 }
 
+public sealed record ConnectionEndpoint(int MixedPort, bool RequiresTun, IReadOnlyDictionary<string, int> ProviderNodeCounts);
+
 public sealed class RuntimeBundle
 {
     public required string Directory { get; init; }
