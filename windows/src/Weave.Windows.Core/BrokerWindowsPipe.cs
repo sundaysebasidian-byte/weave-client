@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -60,6 +59,8 @@ public static class BrokerWindowsPipe
             var response = new byte[Hello.Length];
             await pipe.ReadExactlyAsync(response, timeout.Token).ConfigureAwait(false);
             if (!response.AsSpan().SequenceEqual(Hello)) throw new InvalidDataException("Unsupported service handshake.");
+            EnsureAlive(serviceProcess);
+            if (pid != ServiceProcessId()) throw new UnauthorizedAccessException("Service identity changed during authentication.");
             return pipe;
         }
         catch { pipe.Dispose(); throw; }
@@ -85,27 +86,36 @@ public static class BrokerWindowsPipe
                 throw new UnauthorizedAccessException("A local identified client is required.");
             sid = identity.User.Value;
         });
-        if (process.HasExited || sid is null) throw new UnauthorizedAccessException("Client exited during authentication.");
-        var peer = new BrokerPeer(sid, process.Id, process.SessionId);
+        EnsureAlive(process);
+        if (sid is null || !ProcessIdToSessionId(pid, out var sessionId))
+            throw new UnauthorizedAccessException("Client session is unavailable.");
+        var peer = new BrokerPeer(sid, checked((int)pid), checked((int)sessionId));
         await pipe.WriteAsync(Hello, timeout.Token).ConfigureAwait(false);
         return peer;
     }
 
-    private static Process VerifyProcessImage(int pid, string expected)
+    private static SafeProcessHandle VerifyProcessImage(int pid, string expected)
     {
-        var process = Process.GetProcessById(pid);
+        // Retain the verified process object through the handshake and check its exit
+        // state before accepting the peer; do not reopen it later by PID.
+        var handle = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
         try
         {
             var path = new StringBuilder(32_768);
             var size = path.Capacity;
             // A standard-user GUI must not request PROCESS_ALL_ACCESS to inspect SYSTEM.
-            using var handle = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
             if (handle.IsInvalid || !QueryFullProcessImageName(handle, 0, path, ref size)) throw new Win32Exception(Marshal.GetLastWin32Error());
             if (!Path.GetFullPath(path.ToString()).Equals(Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase))
                 throw new UnauthorizedAccessException("Unexpected executable at the service boundary.");
-            return process;
+            return handle;
         }
-        catch { process.Dispose(); throw; }
+        catch { handle.Dispose(); throw; }
+    }
+
+    private static void EnsureAlive(SafeProcessHandle process)
+    {
+        if (!GetExitCodeProcess(process, out var exitCode)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (exitCode != 259) throw new UnauthorizedAccessException("Peer exited during authentication."); // STILL_ACTIVE
     }
 
     private static uint ServiceProcessId()
@@ -145,6 +155,12 @@ public static class BrokerWindowsPipe
     private static extern bool QueryFullProcessImageName(SafeProcessHandle process, int flags, StringBuilder path, ref int size);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern SafeProcessHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int processId);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetExitCodeProcess(SafeProcessHandle process, out uint exitCode);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ProcessIdToSessionId(uint processId, out uint sessionId);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint processId);
