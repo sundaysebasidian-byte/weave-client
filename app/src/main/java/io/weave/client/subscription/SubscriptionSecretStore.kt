@@ -8,10 +8,16 @@ import io.weave.client.data.crossProcessPreferences
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import java.io.File
+import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
+import io.weave.client.transfer.TransferSubscription
+import io.weave.client.transfer.SubscriptionShareSelection
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 data class StoredSubscription(
     val id: String,
@@ -36,6 +42,13 @@ internal data class NewSubscriptionBatchEntry(val name: String, val source: Stri
 
 // Not a data class: the decrypted source must not appear in generated diagnostics.
 internal class StoredSubscriptionSnapshot(val record: StoredSubscription, val source: String, val revision: String)
+
+// Opaque snapshots avoid generated diagnostics containing decrypted subscription sources.
+internal class SubscriptionTransferSnapshot(
+    val index: Map<String, *>,
+    val ids: List<String>,
+    val previous: List<StoredSubscriptionSnapshot?>,
+)
 
 class SubscriptionSecretStore(
     context: Context,
@@ -74,6 +87,12 @@ class SubscriptionSecretStore(
         }
         RandomAccessFile(lockFile, "rw").use { file ->
             file.channel.lock().use {
+                val index = File(appContext.applicationInfo.dataDir, "shared_prefs/$PREFERENCES_NAME.xml")
+                if (!index.exists() && !File(index.path + ".bak").exists() && payloadDirectory.isDirectory) {
+                    check(requireNotNull(payloadDirectory.listFiles()).none { it.extension == ENCRYPTED_PAYLOAD_EXTENSION }) {
+                        "订阅索引缺失，已保留加密正文；请检查备份"
+                    }
+                }
                 lockDepth = 1
                 try {
                     return block()
@@ -84,6 +103,10 @@ class SubscriptionSecretStore(
         }
     }
 
+    private class SaveEntry(val id: String, val name: String, val source: String, val payload: String,
+        val parsed: ParsedSubscription, val counts: SubscriptionImportCounts?, val metadata: SubscriptionRemoteMetadata?)
+    private class StagedSave(val record: StoredSubscription, val payload: File, val previousPayload: File?)
+
     fun save(
         name: String,
         url: String,
@@ -92,111 +115,127 @@ class SubscriptionSecretStore(
         id: String = UUID.randomUUID().toString(),
         counts: SubscriptionImportCounts? = null,
         remoteMetadata: SubscriptionRemoteMetadata? = null,
-    ): StoredSubscription {
-        locked {
-            val normalizedName = normalizeName(name)
-            val encryptedUrl = secretBox.encrypt(
-                plaintext = url.toByteArray(Charsets.UTF_8),
-                associatedData = id.toByteArray(Charsets.UTF_8),
-            )
-            val encryptedPayload = secretBox.encrypt(
-                plaintext = payload.toByteArray(Charsets.UTF_8),
-                associatedData = "$id:payload".toByteArray(Charsets.UTF_8),
-            )
-            val reusableNodes = get(id)?.nodes.orEmpty()
-                .groupBy { nodeKey(it.name, it.protocol) }
-                .mapValues { (_, nodes) -> ArrayDeque(nodes) }
-            val occurrences = mutableMapOf<String, Int>()
-            val nodes = parsed.nodes.map { node ->
-                val nodeKey = nodeKey(node.name, node.protocol)
-                val occurrence = occurrences.getOrDefault(nodeKey, 0)
-                occurrences[nodeKey] = occurrence + 1
-                StoredNode(
-                    id = reusableNodes[nodeKey]
-                        ?.removeFirstOrNull()
-                        ?.id
-                        ?: nodeId(node.name, node.protocol, occurrence),
-                    name = node.name,
-                    protocol = node.protocol,
-                )
-            }
-            val oldPayload = payloadFile(id).takeIf(File::isFile)
-            val generation = UUID.randomUUID().toString().replace("-", "")
-            val candidatePayload = writePayloadCandidate(id, generation, encryptedPayload)
-            val encryptedNodeMetadata = encryptNodeMetadata(id, nodes)
-
-            val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
-            ids += id
-            val editor = preferences.edit()
-                .putStringSet(KEY_IDS, ids)
-                .putString(key(id, "name"), normalizedName)
-                .putString(key(id, "url"), encryptedUrl)
-                .putInt(key(id, "nodes"), parsed.nodeCount)
-                .putString(key(id, "import_counts"), counts?.let { "${it.root},${it.providers},${it.collections},${it.imported}" })
-                .putString(key(id, "format"), parsed.format.name)
-                .putString(key(id, "node_metadata_encrypted"), encryptedNodeMetadata)
-                .putInt(key(id, "node_index_version"), NODE_INDEX_VERSION)
-                .remove(key(id, "node_metadata"))
-                .putString(key(id, "payload_generation"), generation)
-                .putLong(key(id, "updated_at"), System.currentTimeMillis())
-            remoteMetadata?.let { writeRemoteMetadata(editor, id, it) }
-            val committed = editor.commit()
-            if (!committed) {
-                candidatePayload.delete()
-                error("Unable to persist encrypted subscription")
-            }
-            if (oldPayload != null && oldPayload != candidatePayload) {
-                oldPayload.delete()
-            }
-
-            return requireNotNull(get(id))
-        }
+    ): StoredSubscription = locked {
+        commitBatch(listOf(SaveEntry(id, name, url, payload, parsed, counts, remoteMetadata)), EmptyCoroutineContext).single()
     }
 
-    /** Stages every encrypted file first, then publishes every new record in one index commit. */
-    internal fun saveNewBatch(entries: List<NewSubscriptionBatchEntry>): List<StoredSubscription> = locked {
+    internal fun saveNewBatch(entries: List<NewSubscriptionBatchEntry>,
+        coroutine: CoroutineContext = EmptyCoroutineContext): List<StoredSubscription> = locked {
         require(entries.isNotEmpty() && entries.size <= 20)
+        require(entries.all { it.parsed.nodeCount > 0 })
+        commitBatch(entries.map { SaveEntry(UUID.randomUUID().toString(), it.name, it.source, it.payload,
+            it.parsed, it.counts, null) }, coroutine)
+    }
+
+    /** Resolve identities and capture revisions before provider downloads or parsing can suspend. */
+    internal fun captureTransfer(items: List<TransferSubscription>): SubscriptionTransferSnapshot = locked {
+        require(items.isNotEmpty()) { "传输中没有订阅" }
+        val incomingIds = items.map { item ->
+            item.id.trim().takeIf(String::isNotEmpty)?.let {
+                require(TRANSFER_ID.matches(it)) { "传输中的订阅 ID 无效" }
+                UUID.fromString(it).toString()
+            }
+        }
+        check(incomingIds.filterNotNull().let { it.size == it.distinct().size }) { "传输中包含重复的订阅 ID，已停止同步" }
+        val records = list()
+        val index = preferences.all
+        check(records.map { it.id }.toSet() == preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()) {
+            "订阅索引无法完整读取，已停止同步"
+        }
+        val sources = records.associate { it.id to readUrl(it.id) }
+        val previous = items.mapIndexed { i, item ->
+            val byId = incomingIds[i]?.let { id -> records.find { it.id.equals(id, ignoreCase = true) } }
+            val candidates = if (byId != null) listOf(byId) else records.filter {
+                it.name == normalizeName(item.name) && sources[it.id] == item.source
+            }
+            check(candidates.size <= 1) { "存在多个同名同来源订阅，请先明确同步目标" }
+            candidates.singleOrNull()?.let { readForUpdate(it.id) }
+        }
+        val ids = items.indices.map { i -> previous[i]?.record?.id ?: incomingIds[i] ?: UUID.randomUUID().toString() }
+        check(ids.size == ids.distinct().size) { "传输中包含重复的同一订阅，已停止同步" }
+        SubscriptionTransferSnapshot(index, ids, previous)
+    }
+
+    internal fun saveTransferredBatch(snapshot: SubscriptionTransferSnapshot, entries: List<NewSubscriptionBatchEntry>,
+        coroutine: CoroutineContext): List<StoredSubscription> = locked {
+        require(entries.isNotEmpty() && entries.size == snapshot.ids.size)
+        coroutine.ensureActive()
+        check(preferences.all == snapshot.index) { "本地订阅已变化，请重新同步" }
+        snapshot.previous.filterNotNull().forEach { requireRevision(it.record.id, it.revision) }
+        commitBatch(entries.mapIndexed { i, entry ->
+            val changedSource = snapshot.previous[i]?.source?.let { it != entry.source } == true
+            SaveEntry(snapshot.ids[i], entry.name, entry.source, entry.payload, entry.parsed, entry.counts,
+                if (changedSource) SubscriptionRemoteMetadata(null, null) else null)
+        }, coroutine)
+    }
+
+    internal fun exportForTransfer(selectedIds: Set<String>): List<TransferSubscription> = locked {
+        val records = list()
+        val allowed = SubscriptionShareSelection.validate(records.mapTo(linkedSetOf()) { it.id }, selectedIds)
+        records.filter { it.id in allowed }.map { TransferSubscription(it.name, readUrl(it.id), readPayload(it.id), it.id) }
+    }
+
+    /** Staged generations remain unreachable until a single complete index commit succeeds. */
+    private fun commitBatch(entries: List<SaveEntry>, coroutine: CoroutineContext): List<StoredSubscription> {
         val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
-        val files = mutableListOf<File>()
+        val existing = list().associateBy { it.id }
+        check(existing.keys == ids) { "订阅索引无法完整读取，已停止同步" }
         val editor = preferences.edit()
-        val results = mutableListOf<StoredSubscription>()
+        val staged = mutableListOf<StagedSave>()
         try {
             entries.forEach { entry ->
-                require(entry.parsed.nodeCount > 0)
-                val id = UUID.randomUUID().toString()
-                check(ids.add(id))
-                val name = normalizeName(entry.name)
-                val source = secretBox.encrypt(entry.source.toByteArray(Charsets.UTF_8), id.toByteArray(Charsets.UTF_8))
-                val payload = secretBox.encrypt(entry.payload.toByteArray(Charsets.UTF_8), "$id:payload".toByteArray(Charsets.UTF_8))
-                val occurrences = mutableMapOf<String, Int>()
-                val nodes = entry.parsed.nodes.map { node ->
-                    val key = nodeKey(node.name, node.protocol)
-                    val occurrence = occurrences.getOrDefault(key, 0)
-                    occurrences[key] = occurrence + 1
-                    StoredNode(nodeId(node.name, node.protocol, occurrence), node.name, node.protocol)
-                }
-                val encryptedNodes = encryptNodeMetadata(id, nodes)
-                val generation = UUID.randomUUID().toString().replace("-", "")
-                files += writePayloadCandidate(id, generation, payload)
-                editor.putString(key(id, "name"), name)
-                    .putString(key(id, "url"), source)
-                    .putInt(key(id, "nodes"), entry.parsed.nodeCount)
-                    .putString(key(id, "import_counts"), "${entry.counts.root},${entry.counts.providers},${entry.counts.collections},${entry.counts.imported}")
-                    .putString(key(id, "format"), entry.parsed.format.name)
-                    .putString(key(id, "node_metadata_encrypted"), encryptedNodes)
-                    .putInt(key(id, "node_index_version"), NODE_INDEX_VERSION)
-                    .putString(key(id, "payload_generation"), generation)
-                    .putLong(key(id, "updated_at"), System.currentTimeMillis())
-                results += StoredSubscription(id, name, entry.parsed.nodeCount, entry.parsed.format, nodes, true)
+                coroutine.ensureActive()
+                staged += stageSave(editor, entry, existing[entry.id])
+                ids += entry.id
             }
+            coroutine.ensureActive()
             check(editor.putStringSet(KEY_IDS, ids).commit()) { "Unable to persist encrypted subscription batch" }
-            results
         } catch (error: Exception) {
-            // TransactionalPreferences publishes only after AtomicFile.finishWrite succeeds.
-            // A failed transaction retains the old complete index.
-            files.forEach(File::delete)
+            // A failed platform commit may have an uncertain outcome. Only remove candidates
+            // proven unreachable by a fresh index; retain everything if that read also fails.
+            val referenced = try { referencedPayloadNames() } catch (_: Exception) { null }
+            if (referenced != null) staged.filterNot { it.payload.name in referenced }.forEach { it.payload.delete() }
             throw error
         }
+        staged.forEach { it.previousPayload?.delete() }
+        return staged.map { it.record }
+    }
+
+    private fun stageSave(editor: SharedPreferences.Editor, entry: SaveEntry, old: StoredSubscription?): StagedSave {
+        val name = normalizeName(entry.name)
+        val encryptedSource = secretBox.encrypt(entry.source.toByteArray(Charsets.UTF_8), entry.id.toByteArray(Charsets.UTF_8))
+        val encryptedPayload = secretBox.encrypt(entry.payload.toByteArray(Charsets.UTF_8), "${entry.id}:payload".toByteArray(Charsets.UTF_8))
+        val reusable = old?.nodes.orEmpty().groupBy { nodeKey(it.name, it.protocol) }
+            .mapValues { (_, nodes) -> ArrayDeque(nodes) }
+        val occurrences = mutableMapOf<String, Int>()
+        val nodes = entry.parsed.nodes.map { node ->
+            val fingerprint = nodeKey(node.name, node.protocol)
+            val occurrence = occurrences.getOrDefault(fingerprint, 0)
+            occurrences[fingerprint] = occurrence + 1
+            StoredNode(reusable[fingerprint]?.removeFirstOrNull()?.id ?: nodeId(node.name, node.protocol, occurrence),
+                node.name, node.protocol)
+        }
+        val encryptedNodes = encryptNodeMetadata(entry.id, nodes)
+        val generation = UUID.randomUUID().toString().replace("-", "")
+        val previousPayload = payloadFile(entry.id).takeIf(File::isFile)
+        val payload = writePayloadCandidate(entry.id, generation, encryptedPayload)
+        val updated = System.currentTimeMillis()
+        editor.putString(key(entry.id, "name"), name)
+            .putString(key(entry.id, "url"), encryptedSource)
+            .putInt(key(entry.id, "nodes"), entry.parsed.nodeCount)
+            .putString(key(entry.id, "import_counts"), entry.counts?.let { "${it.root},${it.providers},${it.collections},${it.imported}" })
+            .putString(key(entry.id, "format"), entry.parsed.format.name)
+            .putString(key(entry.id, "node_metadata_encrypted"), encryptedNodes)
+            .putInt(key(entry.id, "node_index_version"), NODE_INDEX_VERSION)
+            .remove(key(entry.id, "node_metadata"))
+            .putString(key(entry.id, "payload_generation"), generation)
+            .putLong(key(entry.id, "updated_at"), updated)
+        entry.metadata?.let { writeRemoteMetadata(editor, entry.id, it) }
+        val record = StoredSubscription(entry.id, name, entry.parsed.nodeCount, entry.parsed.format,
+            nodes.sortedBy { it.name.lowercase() }, true,
+            if (entry.metadata != null) entry.metadata.usage else old?.usage, updated,
+            if (entry.metadata != null) entry.metadata.updateIntervalHours else old?.updateIntervalHours)
+        return StagedSave(record, payload, previousPayload)
     }
 
     fun saveReviewed(id: String, expectedRevision: String, name: String, source: String,
@@ -344,7 +383,10 @@ class SubscriptionSecretStore(
         val destination = File(payloadDirectory, payloadFileName(id, generation))
         val pending = File(payloadDirectory, "$id.$generation.pending")
         try {
-            pending.writeText(encryptedPayload, Charsets.UTF_8)
+            FileOutputStream(pending).use { output ->
+                output.write(encryptedPayload.toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
             check(pending.renameTo(destination)) { "Unable to persist encrypted subscription payload" }
             return destination
         } catch (error: Exception) {
@@ -443,11 +485,7 @@ class SubscriptionSecretStore(
     }
 
     private fun cleanPayloadDirectory(directory: File) {
-        val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
-        val referencedFiles = ids.mapTo(mutableSetOf()) { id ->
-            val generation = preferences.getString(key(id, "payload_generation"), null)
-            generation?.let { payloadFileName(id, it) } ?: "$id.enc"
-        }
+        val referencedFiles = referencedPayloadNames()
         directory.listFiles().orEmpty().forEach { file ->
             if (
                 file.extension == DELETED_PAYLOAD_EXTENSION ||
@@ -459,6 +497,13 @@ class SubscriptionSecretStore(
             ) {
                 file.delete()
             }
+        }
+    }
+
+    private fun referencedPayloadNames(): Set<String> {
+        val current = preferences
+        return current.getStringSet(KEY_IDS, emptySet()).orEmpty().mapTo(mutableSetOf()) { id ->
+            current.getString(key(id, "payload_generation"), null)?.let { payloadFileName(id, it) } ?: "$id.enc"
         }
     }
 
@@ -505,6 +550,7 @@ class SubscriptionSecretStore(
         val STORE_LOCK = Any()
         // Guarded by STORE_LOCK.
         var lockDepth = 0
+        val TRANSFER_ID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
         const val LOCK_FILE = "subscriptions.lock"
         const val NODE_INDEX_VERSION = 3
         const val PREFERENCES_NAME = "encrypted_subscriptions_v1"

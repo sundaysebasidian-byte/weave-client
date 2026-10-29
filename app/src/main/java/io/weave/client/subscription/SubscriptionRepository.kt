@@ -11,7 +11,6 @@ import io.weave.client.domain.SubscriptionSourceKind
 import io.weave.client.transfer.TransferSubscription
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -75,7 +74,7 @@ class SubscriptionRepository(
     suspend fun applyClientSourceSelection(token: String): List<Subscription> = withContext(Dispatchers.IO) {
         val records = migrationBatch.consume(token)
         val saved = store.saveNewBatch(records.map { NewSubscriptionBatchEntry(it.name, it.source,
-            it.prepared.first, it.prepared.second, it.prepared.counts) })
+            it.prepared.first, it.prepared.second, it.prepared.counts) }, currentCoroutineContext())
         clientSources.clear()
         saved.map(::toDomain)
     }
@@ -248,127 +247,21 @@ class SubscriptionRepository(
         store.delete(subscriptionId)
     }
 
-    suspend fun exportForLanTransfer(
-        selectedIds: Set<String>,
-    ): List<TransferSubscription> =
-        withContext(Dispatchers.IO) {
-            val records = store.list()
-            val allowed = io.weave.client.transfer.SubscriptionShareSelection.validate(
-                records.mapTo(linkedSetOf()) { it.id }, selectedIds,
-            )
-            records.filter { it.id in allowed }
-                .map { subscription ->
-                TransferSubscription(
-                    id = subscription.id,
-                    name = subscription.name,
-                    source = store.readUrl(subscription.id),
-                    payload = store.readPayload(subscription.id),
-                )
-                }
-        }
+    suspend fun exportForLanTransfer(selectedIds: Set<String>): List<TransferSubscription> =
+        withContext(Dispatchers.IO) { store.exportForTransfer(selectedIds) }
 
-    suspend fun importFromLanTransfer(
-        items: List<TransferSubscription>,
-    ): List<Subscription> = withContext(Dispatchers.IO) {
-        require(items.isNotEmpty()) { "传输中没有订阅" }
-        val records = store.list()
-        val sourceById = records.associate { record ->
-            record.id to runCatching { store.readUrl(record.id) }.getOrNull()
-        }
-        data class ExistingSnapshot(
-            val record: StoredSubscription,
-            val source: String,
-            val payload: String,
-        )
-        data class PreparedImport(
-            val item: TransferSubscription,
-            val runtimePayload: String,
-            val parsed: ParsedSubscription,
-            val existing: ExistingSnapshot?,
-        )
-        fun stableId(value: String): String? = value.trim().takeIf {
-            it.length <= 64 && runCatching { java.util.UUID.fromString(it) }.isSuccess
-        }
-        fun existingFor(item: TransferSubscription): ExistingSnapshot? {
-            val byId = stableId(item.id)?.let { id -> records.firstOrNull { it.id == id } }
-            val record = byId ?: records.firstOrNull {
-                it.name == item.name && sourceById[it.id] == item.source
-            } ?: return null
-            val source = sourceById[record.id] ?: return null
-            return ExistingSnapshot(record, source, store.readPayload(record.id))
-        }
-
-        val validated = items.map { item ->
-            val existing = existingFor(item)
-            val prepared = prepareRuntimePayload(item.payload, item.source).also { (_, parsed) ->
-                if (parsed.nodeCount == 0) {
-                    throw SubscriptionImportException("订阅中没有可用节点")
-                }
-            }
-            if (existing != null) {
-                val audit = SubscriptionGuard.audit(
-                    previous = existing.record,
-                    candidate = prepared.second,
-                    oldSource = existing.source,
-                    newSource = item.source,
-                )
+    suspend fun importFromLanTransfer(items: List<TransferSubscription>): List<Subscription> = withContext(Dispatchers.IO) {
+        val snapshot = store.captureTransfer(items)
+        val validated = items.mapIndexed { i, item ->
+            val prepared = prepareRuntimePayload(item.payload, item.source)
+            if (prepared.second.nodeCount == 0) throw SubscriptionImportException("订阅中没有可用节点")
+            snapshot.previous[i]?.let { existing ->
+                val audit = SubscriptionGuard.audit(existing.record, prepared.second, existing.source, item.source)
                 if (audit.blocked) throw SubscriptionGuardException(audit)
             }
-            PreparedImport(item, prepared.first, prepared.second, existing)
+            NewSubscriptionBatchEntry(item.name, item.source, prepared.first, prepared.second, prepared.counts)
         }
-        val incomingIds = items.mapNotNull { stableId(it.id) }
-        check(incomingIds.size == incomingIds.distinct().size) {
-            "传输中包含重复的订阅 ID，已停止同步"
-        }
-        val existingIds = validated.mapNotNull { it.existing?.record?.id }
-        check(existingIds.size == existingIds.distinct().size) {
-            "传输中包含重复的同一订阅，已停止同步"
-        }
-        val imported = mutableListOf<Subscription>()
-        val saved = mutableListOf<Pair<PreparedImport, String>>()
-        try {
-            currentCoroutineContext().ensureActive()
-            validated.forEach { prepared ->
-                val item = prepared.item
-                val id = prepared.existing?.record?.id
-                    ?: stableId(item.id)
-                    ?: java.util.UUID.randomUUID().toString()
-                val savedRecord = store.save(
-                        name = item.name,
-                        url = item.source,
-                        payload = prepared.runtimePayload,
-                        parsed = prepared.parsed,
-                        id = id,
-                    )
-                saved += prepared to id
-                imported += toDomain(savedRecord)
-            }
-            imported
-        } catch (error: Throwable) {
-            // A same-ID sync updates in place. Roll it back to its encrypted snapshot if a later
-            // item fails; new imports are removed entirely. This keeps a multi-subscription packet
-            // transactional without deleting a pre-existing local subscription on error.
-            withContext(NonCancellable) {
-                saved.asReversed().forEach { (prepared, id) ->
-                    runCatching {
-                        val snapshot = prepared.existing
-                        if (snapshot == null) {
-                            store.delete(id)
-                        } else {
-                            val oldParsed = prepareRuntimePayload(snapshot.payload)
-                            store.save(
-                                name = snapshot.record.name,
-                                url = snapshot.source,
-                                payload = oldParsed.first,
-                                parsed = oldParsed.second,
-                                id = snapshot.record.id,
-                            )
-                        }
-                    }
-                }
-            }
-            throw error
-        }
+        store.saveTransferredBatch(snapshot, validated, currentCoroutineContext()).map(::toDomain)
     }
 
     suspend fun replaceRemote(

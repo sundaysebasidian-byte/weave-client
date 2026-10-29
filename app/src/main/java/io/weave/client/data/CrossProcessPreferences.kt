@@ -93,7 +93,13 @@ private class TransactionalPreferences(context: Context, name: String) : SharedP
             }
             serializer.endTag(null, "map")
             serializer.endDocument()
+            serializer.flush()
+            output.fd.sync()
             atomicFile.finishWrite(output)
+            // AtomicFile logs some finish failures instead of throwing (including failed rename).
+            check(file.isFile && !File(file.path + ".new").exists() && !File(file.path + ".bak").exists()) {
+                "Unable to commit settings file"
+            }
         } catch (failure: Throwable) {
             atomicFile.failWrite(output)
             throw failure
