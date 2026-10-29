@@ -14,6 +14,8 @@ public sealed class MihomoProcess : IAsyncDisposable
     private ChildProcessLifetime? _childLifetime;
     private MihomoController? _controller;
     private volatile bool _ready;
+    // Only synthetic integration fixtures consume raw lines; the app receives redacted diagnostics.
+    internal Action<string>? TestLogObserver { get; init; }
     public bool IsReady => _ready && IsRunning;
 
     public MihomoProcess(string executablePath)
@@ -246,6 +248,7 @@ public sealed class MihomoProcess : IAsyncDisposable
                 }
 
                 LastDiagnostics = SafeDiagnostic(line);
+                TestLogObserver?.Invoke(line);
             }
         }
         catch (OperationCanceledException)

@@ -20,9 +20,9 @@ public sealed class DataPathTests(ITestOutputHelper output)
     public async Task RepeatedTunStartStopKeepsDataPathUsable()
     {
         if (!TunTestsEnabled || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEAVE_TEST_CORE"))) return;
-        for (var cycle = 1; cycle <= 5; cycle++)
+        for (var cycle = 1; cycle <= 20; cycle++)
         {
-            output.WriteLine($"TUN start/forward/stop cycle {cycle}/5");
+            output.WriteLine($"TUN start/forward/stop cycle {cycle}/20");
             await ImportedHttpNodeActuallyForwardsTrafficWithAuthentication(automatic: false, tun: true);
         }
     }
@@ -52,7 +52,12 @@ public sealed class DataPathTests(ITestOutputHelper output)
             var bundle = new MihomoConfigBuilder().Build([subscription], [], subscription.Id,
                 automatic ? null : subscription.Nodes[0].Id,
                 new WindowsNetworkOptions { EnableTun = tun, Ipv6Enabled = false, RoutingMode = RoutingMode.Global }, folder);
-            await using var process = new MihomoProcess(core);
+            var coreLog = new ConcurrentQueue<string>();
+            await using var process = new MihomoProcess(core) { TestLogObserver = line =>
+            {
+                coreLog.Enqueue(line.Length > 4096 ? line[..4096] : line);
+                while (coreLog.Count > 128) coreLog.TryDequeue(out _);
+            } };
             Assert.True((await process.ValidateConfigAsync(bundle, timeout.Token)).IsValid);
             await process.StartAsync(bundle, timeout.Token);
             using var handler = new SocketsHttpHandler { UseProxy = !tun, Proxy = new WebProxy($"http://127.0.0.1:{bundle.MixedPort}") };
@@ -71,6 +76,7 @@ public sealed class DataPathTests(ITestOutputHelper output)
                 output.WriteLine($"Core running={process.IsRunning}, ready={process.IsReady}; last diagnostic: {process.LastDiagnostics}");
                 output.WriteLine("Upstream request targets: " + string.Join(" | ", requests));
                 output.WriteLine($"Upstream fixture status: {server.Status}; error: {server.Exception}");
+                output.WriteLine("Synthetic fixture core log:\n" + string.Join("\n", coreLog));
                 foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
                     output.WriteLine($"Adapter {adapter.Name}: {adapter.OperationalStatus}; " +
                         string.Join(", ", adapter.GetIPProperties().UnicastAddresses.Select(item => item.Address)));

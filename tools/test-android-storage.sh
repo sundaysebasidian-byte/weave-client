@@ -11,11 +11,8 @@ port=${WEAVE_TEST_ADB_PORT:-5037}
 target=("$adb" -P "$port" -s "$serial")
 results=${WEAVE_TEST_RESULTS:-"$root/app/build/reports/storage-integration"}
 mkdir -p "$results"
-python3 "$root/tools/wait-android-ready.py" "$serial" | tee "$results/readiness.txt"
-abi=$("${target[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')
-case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported emulator ABI' >&2; exit 1 ;; esac
 # Preserve native/runner crash diagnostics too: am instrument can exit successfully while
-# reporting only "Process crashed". Start before APK installation to retain platform failures.
+# reporting only "Process crashed". Start before readiness to retain platform startup failures.
 # This process belongs exclusively to this test invocation.
 "${target[@]}" logcat -v threadtime -T 1 > "$results/logcat.txt" 2>&1 &
 logcat_pid=$!
@@ -30,6 +27,9 @@ cleanup() {
   return "$result"
 }
 trap cleanup EXIT
+python3 "$root/tools/wait-android-ready.py" "$serial" | tee "$results/readiness.txt"
+abi=$("${target[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')
+case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported emulator ABI' >&2; exit 1 ;; esac
 "${target[@]}" install -r "$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
 "${target[@]}" install -r "$root/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest,io.weave.client.routing.RemoteRuleSetStoreIntegrationTest,io.weave.client.subscription.SubscriptionTransferIntegrationTest,io.weave.client.transfer.BackupRestoreIntegrationTest,io.weave.client.data.ProfileRecoveryIntegrationTest,io.weave.client.ui.StartupRecoveryIntegrationTest
