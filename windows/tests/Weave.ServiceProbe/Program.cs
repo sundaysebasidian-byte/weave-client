@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 using Weave.Windows.Core;
 
 if (Environment.GetEnvironmentVariable("WEAVE_ISOLATED_SERVICE_TEST") != "1" || args is not [var mode, var servicePath] ||
@@ -25,6 +28,7 @@ try
     var subscription = importer.ImportText("service-fixture", "inline://service-fixture",
         $"proxies: [{{name: fixture, type: http, server: 127.0.0.1, port: {port}, username: fixture-user, password: fixture-password}}]");
     await using var client = await BrokerClient.ConnectAsync(servicePath, timeout.Token);
+    ServiceAccessProbe.Verify();
     if (await client.CheckReadyAsync(timeout.Token)) return 5;
     var profile = BrokerProfile.FromLocal([subscription], [], subscription.Id, subscription.Nodes[0].Id,
         new() { EnableTun = true, RoutingMode = RoutingMode.Global, Ipv6Enabled = false });
@@ -87,4 +91,29 @@ static async Task<string> ReadHeaderAsync(Stream stream, CancellationToken token
         if (length >= 4 && bytes.AsSpan(length - 4, 4).SequenceEqual("\r\n\r\n"u8)) return Encoding.ASCII.GetString(bytes, 0, length);
     }
     throw new InvalidDataException("Synthetic request header is too large.");
+}
+
+internal static class ServiceAccessProbe
+{
+    public static void Verify()
+    {
+        var services = Process.GetProcessesByName("Weave.Core.Service");
+        try
+        {
+            if (services.Length != 1) throw new InvalidOperationException("Expected one isolated service process.");
+            using var query = OpenProcess(0x1000, false, services[0].Id);
+            if (query.IsInvalid) throw new InvalidOperationException("Ordinary client cannot query the service image.");
+            // Terminate, inject, read/write memory, duplicate handles and change its DACL must all fail.
+            foreach (var access in new[] { 0x1, 0x2, 0x8, 0x10, 0x20, 0x40, 0x40000 })
+            {
+                using var forbidden = OpenProcess(access, false, services[0].Id);
+                if (!forbidden.IsInvalid || Marshal.GetLastWin32Error() != 5)
+                    throw new InvalidOperationException("An ordinary client received unsafe service process access.");
+            }
+        }
+        finally { foreach (var process in services) process.Dispose(); }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern SafeProcessHandle OpenProcess(int access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int processId);
 }

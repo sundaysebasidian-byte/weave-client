@@ -18,6 +18,7 @@ internal static class Program
         if (identity.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) != true) return 5;
         using var process = Process.GetCurrentProcess();
         _lifetime = new(process);
+        ServiceProcessAccess.AllowImageQuery(process.SafeHandle);
         using var service = new CoreService();
         ServiceBase.Run(service);
         GC.KeepAlive(_lifetime);
