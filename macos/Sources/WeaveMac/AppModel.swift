@@ -156,7 +156,7 @@ final class AppModel: ObservableObject {
                 if trimmed.lowercased().hasPrefix("weave://lan/") {
                     throw WeaveMacError.message("局域网链接请在“局域网互传”页面输入发送端 6 位短码")
                 } else if trimmed.lowercased().hasPrefix("https://") {
-                    let imported = try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
+                    let imported = try await DirectSubscriptionImporter.fetchHTTPS(trimmed, hostResolver: core.subscriptionHostResolver)
                     try await storeDirectSubscription(imported, preferredName: name)
                 } else {
                     let imported = try await Task.detached(priority: .userInitiated) {
@@ -202,7 +202,7 @@ final class AppModel: ObservableObject {
                     throw WeaveMacError.message("局域网二维码请在“局域网互传”页面输入发送端 6 位短码")
                 } else {
                     let imported = if trimmed.lowercased().hasPrefix("https://") {
-                        try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
+                        try await DirectSubscriptionImporter.fetchHTTPS(trimmed, hostResolver: core.subscriptionHostResolver)
                     } else {
                         try await Task.detached(priority: .userInitiated) {
                             try DirectSubscriptionImporter.inlinePayload(from: trimmed)
@@ -250,7 +250,7 @@ final class AppModel: ObservableObject {
         Task {
             defer { refreshingSubscriptionID = nil }
             do {
-                let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source)
+                let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source, hostResolver: core.subscriptionHostResolver)
                 try await stageSubscriptionUpdate(subscription, imported: imported)
                 directImportMessage = "更新已下载，请检查变化后保存"
             } catch {

@@ -19,6 +19,7 @@ Design and architecture references:
 | [ZXing](https://github.com/zxing/zxing) | QR generation and payload utilities | Apache-2.0 |
 | [SnakeYAML](https://github.com/snakeyaml/snakeyaml) | Version 2.5, bounded data-only Clash YAML parsing with SafeConstructor | Apache-2.0 |
 | [Yams](https://github.com/jpsim/Yams) / [LibYAML](https://github.com/yaml/libyaml) | macOS YAML parsing; Yams 6.2.2 pinned in `macos/Package.resolved`, with streaming resource checks before composition | MIT; notices in `macos/Resources/Licenses/`, included in macOS packages |
+| [curl / libcurl](https://curl.se/libcurl/) | macOS system HTTPS library, dynamically linked; the socket callback enforces the subscription destination policy before connection | curl license; supplied by macOS, no libcurl binary is bundled |
 
 The [RC4 public prerelease](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4)
 provides `Weave-RC110-Corresponding-source.zip`: its exact Weave tree, pinned

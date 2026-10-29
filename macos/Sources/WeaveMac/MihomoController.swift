@@ -38,6 +38,12 @@ final class MihomoController: ObservableObject {
     var coreAvailable: Bool { executableURL != nil }
     var processIdentifier: Int32? { process?.processIdentifier }
 
+    var subscriptionHostResolver: SubscriptionHostResolver? {
+        guard state.isConnected, let runtime, let process, process.isRunning else { return nil }
+        let resolver = CoreDNSResolver(controllerPort: runtime.controllerPort, secret: runtime.secret, processID: process.processIdentifier)
+        return { host in try await resolver.resolve(host) }
+    }
+
     func start(
         subscriptions: [MacSubscription],
         selectedSubscriptionID: UUID?,
@@ -385,7 +391,7 @@ final class MihomoController: ObservableObject {
         return runtime
     }
 
-    nonisolated private static func waitUntilReady(runtime: MacRuntime, pid: Int32, requireTun: Bool) async throws {
+    nonisolated static func waitUntilReady(runtime: MacRuntime, pid: Int32, requireTun: Bool) async throws {
         let config = URLSessionConfiguration.ephemeral
         config.connectionProxyDictionary = ["HTTPEnable": 0, "HTTPSEnable": 0, "SOCKSEnable": 0]
         config.timeoutIntervalForRequest = 1
@@ -410,7 +416,7 @@ final class MihomoController: ObservableObject {
             : "本会话内核未能就绪，请检查端口与配置")
     }
 
-    nonisolated private static func listenerBelongsToProcess(port: UInt16, pid: Int32) -> Bool {
+    nonisolated static func listenerBelongsToProcess(port: UInt16, pid: Int32) -> Bool {
         guard let output = commandOutput(executable: "/usr/sbin/lsof", arguments: ["-nP", "-a", "-p", String(pid), "-iTCP:\(port)", "-sTCP:LISTEN", "-Fp"]) else { return false }
         return output.split(separator: "\n").contains("p\(pid)")
     }

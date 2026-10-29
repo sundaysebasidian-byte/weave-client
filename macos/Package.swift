@@ -11,9 +11,10 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
     ],
     targets: [
+        .target(name: "CWeaveHTTP", linkerSettings: [.linkedLibrary("curl")]),
         .executableTarget(
             name: "WeaveMac",
-            dependencies: [.product(name: "Yams", package: "Yams")],
+            dependencies: ["CWeaveHTTP", .product(name: "Yams", package: "Yams")],
             path: "Sources/WeaveMac",
             swiftSettings: [
                 .unsafeFlags(["-Xfrontend", "-strict-concurrency=minimal"]),

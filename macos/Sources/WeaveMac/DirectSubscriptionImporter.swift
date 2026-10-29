@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import Foundation
 import UniformTypeIdentifiers
 
@@ -12,10 +11,9 @@ struct ImportedSubscriptionPayload: Sendable {
 enum DirectSubscriptionImporter {
     static let maxPayloadBytes = 5 * 1024 * 1024
 
-    static func fetchHTTPS(_ rawValue: String) async throws -> ImportedSubscriptionPayload {
+    static func fetchHTTPS(_ rawValue: String, hostResolver: SubscriptionHostResolver? = nil) async throws -> ImportedSubscriptionPayload {
         let url = try validateRemoteURL(rawValue)
-        try validateResolvedHost(url)
-        let result = try await SubscriptionFetchOperation().fetch(url)
+        let result = try await SubscriptionFetchOperation(hostResolver: hostResolver).fetch(url)
         try Task.checkCancellation()
         return ImportedSubscriptionPayload(
             suggestedName: result.url.host ?? "远程订阅",
@@ -104,6 +102,7 @@ enum DirectSubscriptionImporter {
             components.user == nil,
             components.password == nil,
             components.fragment == nil,
+            components.port.map({ (1...65_535).contains($0) }) ?? true,
             let host = components.host?.lowercased(),
             !host.isEmpty,
             host != "localhost",
@@ -118,84 +117,6 @@ enum DirectSubscriptionImporter {
         return url
     }
 
-    /// Resolve the host before URLSession follows it. A syntactically public hostname can still
-    /// resolve to loopback, private, link-local, CGNAT or multicast space (including after a
-    /// redirect), so fail closed before handing the request to the system networking stack.
-    static func validateResolvedHost(_ url: URL) throws {
-        guard let host = url.host, !host.isEmpty else {
-            throw WeaveMacError.message("订阅地址没有可解析的主机名")
-        }
-        var hints = addrinfo()
-        hints.ai_family = AF_UNSPEC
-        hints.ai_socktype = Int32(SOCK_STREAM)
-        hints.ai_protocol = Int32(IPPROTO_TCP)
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, nil, &hints, &result)
-        guard status == 0, let first = result else {
-            throw WeaveMacError.message("订阅主机无法解析")
-        }
-        defer { freeaddrinfo(first) }
-        var found = false
-        var cursor: UnsafeMutablePointer<addrinfo>? = first
-        while let item = cursor {
-            let info = item.pointee
-            guard let address = info.ai_addr else {
-                cursor = info.ai_next
-                continue
-            }
-            var numeric = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            let code = getnameinfo(
-                address,
-                info.ai_addrlen,
-                &numeric,
-                socklen_t(numeric.count),
-                nil,
-                0,
-                NI_NUMERICHOST,
-            )
-            guard code == 0 else {
-                cursor = info.ai_next
-                continue
-            }
-            let value = String(decoding: numeric.prefix { $0 != 0 }.map(UInt8.init), as: UTF8.self)
-            found = true
-            if isUnsafeResolvedAddress(value, family: info.ai_family) {
-                throw WeaveMacError.message("订阅主机解析到了本机或私有地址")
-            }
-            cursor = info.ai_next
-        }
-        guard found else {
-            throw WeaveMacError.message("订阅主机没有可用地址")
-        }
-    }
-
-    private static func isUnsafeResolvedAddress(_ value: String, family: Int32) -> Bool {
-        if family == AF_INET {
-            let parts = value.split(separator: ".").compactMap { UInt8($0) }
-            guard parts.count == 4 else { return true }
-            let a = parts[0]
-            let b = parts[1]
-            return a == 0 || a == 10 || a == 127 ||
-                (a == 100 && (64...127).contains(b)) ||
-                (a == 169 && b == 254) ||
-                (a == 172 && (16...31).contains(b)) ||
-                (a == 192 && b == 168) ||
-                a >= 224
-        }
-        if family == AF_INET6 {
-            let lower = value.lowercased()
-            if lower == "::" || lower == "::1" || lower.hasPrefix("fe8") ||
-                lower.hasPrefix("fe9") || lower.hasPrefix("fea") || lower.hasPrefix("feb") ||
-                lower.hasPrefix("fc") || lower.hasPrefix("fd") || lower.hasPrefix("ff") {
-                return true
-            }
-            if lower.hasPrefix("::ffff:") {
-                let mapped = String(lower.dropFirst("::ffff:".count))
-                return isUnsafeResolvedAddress(mapped, family: AF_INET)
-            }
-        }
-        return false
-    }
 }
 
 private enum URIListConverter {
@@ -489,165 +410,5 @@ private enum URIListConverter {
 
     private static func yaml(_ value: String) -> String {
         value.replacingOccurrences(of: "'", with: "''")
-    }
-}
-
-final class SubscriptionFetchOperation: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private let queue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 1
-        queue.qualityOfService = .userInitiated
-        return queue
-    }()
-    private let configuration: URLSessionConfiguration
-
-    init(configuration: URLSessionConfiguration = .ephemeral) {
-        self.configuration = configuration
-        super.init()
-    }
-
-    private lazy var session: URLSession = {
-        configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 30
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        return URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
-    }()
-
-    private var continuation: CheckedContinuation<(url: URL, payload: String), Error>?
-    private var received = Data()
-    private var finalURL: URL?
-    private var redirects = 0
-    private var finished = false
-    private var cancelled = false
-    private var started = false
-
-    func fetch(_ url: URL) async throws -> (url: URL, payload: String) {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                queue.addOperation {
-                    guard !self.started else {
-                        continuation.resume(throwing: WeaveMacError.message("订阅请求不能重复使用"))
-                        return
-                    }
-                    self.started = true
-                    self.continuation = continuation
-                    guard !self.cancelled else {
-                        self.finish(.failure(CancellationError()))
-                        return
-                    }
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "GET"
-                    request.setValue(
-                        "Weave/0.1 (ClashMetaForAndroid compatible)",
-                        forHTTPHeaderField: "User-Agent"
-                    )
-                    request.setValue(
-                        "application/yaml,text/yaml,text/plain;q=0.9,*/*;q=0.1",
-                        forHTTPHeaderField: "Accept"
-                    )
-                    self.session.dataTask(with: request).resume()
-                }
-            }
-        } onCancel: {
-            self.queue.addOperation {
-                self.cancelled = true
-                self.finish(.failure(CancellationError()))
-            }
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        do {
-            redirects += 1
-            guard redirects <= 5, let url = request.url else {
-                throw WeaveMacError.message("订阅重定向次数过多")
-            }
-            _ = try DirectSubscriptionImporter.validateRemoteURL(url.absoluteString)
-            try DirectSubscriptionImporter.validateResolvedHost(url)
-            completionHandler(request)
-        } catch {
-            completionHandler(nil)
-            finish(.failure(error))
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        do {
-            guard
-                let http = response as? HTTPURLResponse,
-                (200..<300).contains(http.statusCode),
-                let url = http.url
-            else {
-                throw WeaveMacError.message("订阅服务器没有返回成功响应")
-            }
-            _ = try DirectSubscriptionImporter.validateRemoteURL(url.absoluteString)
-            try DirectSubscriptionImporter.validateResolvedHost(url)
-            if http.expectedContentLength > Int64(DirectSubscriptionImporter.maxPayloadBytes) {
-                throw WeaveMacError.message("订阅响应超过 5 MiB 限制")
-            }
-            finalURL = url
-            completionHandler(.allow)
-        } catch {
-            completionHandler(.cancel)
-            finish(.failure(error))
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive data: Data
-    ) {
-        guard !finished else { return }
-        guard received.count + data.count <= DirectSubscriptionImporter.maxPayloadBytes else {
-            dataTask.cancel()
-            finish(.failure(WeaveMacError.message("订阅响应超过 5 MiB 限制")))
-            return
-        }
-        received.append(data)
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didCompleteWithError error: Error?
-    ) {
-        guard !finished else { return }
-        if let error {
-            finish(.failure(error))
-            return
-        }
-        guard
-            let finalURL,
-            let payload = String(data: received, encoding: .utf8),
-            Data(payload.utf8) == received
-        else {
-            finish(.failure(WeaveMacError.message("订阅响应不是严格 UTF-8 文本")))
-            return
-        }
-        finish(.success((finalURL, payload)))
-    }
-
-    private func finish(_ result: Result<(url: URL, payload: String), Error>) {
-        guard !finished, let continuation else { return }
-        finished = true
-        self.continuation = nil
-        continuation.resume(with: result)
-        if case .failure = result { session.invalidateAndCancel() }
-        else { session.finishTasksAndInvalidate() }
     }
 }
