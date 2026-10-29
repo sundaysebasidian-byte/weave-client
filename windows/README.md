@@ -127,4 +127,6 @@ Windows 10/11 真机 TUN、IPv6、睡眠恢复/网络切换、摄像头与 Andro
 CI 执行核心测试、独立 Java Android 字节协议互操作测试、真实 Mihomo 配置/会话测试，
 以及本地模拟 HTTP 上游的自动/手动节点真实转发和 Windows TUN IPv4 转发测试，
 WinUI 启动和多页面/主题截图，再生成 Inno Setup 安装包。CI 不能替代真实代理节点及双端设备验收。
+实际 TUN 测试仅在 Windows 且显式设置 `WEAVE_TEST_TUN=1` 时启用，包含连续五次启动/转发/停止；
+普通本地构建不会接管网络。CI 使用可丢弃 runner，并保留失败诊断与 TRX 报告。
 依赖及规则数据来源见 [THIRD-PARTY.md](THIRD-PARTY.md)。

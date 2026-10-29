@@ -37,6 +37,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Core cannot execute' }
       - name: Build and test x64 preview
         shell: pwsh
+        env:
+          # Only the disposable CI host opts into tests that change real network routes.
+          WEAVE_TEST_TUN: '1'
         run: ./windows/build.ps1 -Platform x64 -Configuration Release
       - name: Preserve core test diagnostics
         if: always()

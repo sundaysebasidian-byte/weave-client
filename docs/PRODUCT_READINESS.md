@@ -45,3 +45,6 @@
 - `43c35b9` 的 Mac CI 已完成完整回归、Release 构建和打包；Windows CI 通过。Android 此版本的 CI 单独跟踪。共享夹具后 Mac 的 11 项 HTTPS 定向测试再次通过。
 - 三端网络边界后续验证：Android 367 项 JVM 单测通过、lint 无错误、ARM64 Debug APK 构建通过；Windows 96 项核心测试通过，启用实际 Mihomo、固定 geodata 和 Java 互传夹具，包含本地 UDP DNS 上游的 fake-IP 查询验证。均未启动用户 TUN 或更改系统代理。
 - Android 使用 OkHttp 5.5.1 / Okio 3.18.1 并保留许可证，按库要求编译 SDK 37.0；targetSdk 仍为 36、minSdk 仍为 26。CI 固定新版命令行工具，Gradle 锁覆盖相关依赖。后台订阅更新在选择 DNS 前绑定控制服务取得真实状态，结束/取消时释放绑定；该 Android 服务路径仍需实机后台验收。
+- `be1a235` 的 Mac CI 和发行审计通过；Windows 真实 TUN 用例曾出现连接重置（95/96 通过）。增加失败诊断后，`b2bdcb8` 的 Windows 完整 CI 通过，但尚未复现根因，不能据此认定已修复。后续加入显式选择开启的连续五次 TUN 启停/转发检查；仅 CI 的可丢弃 Windows 主机启用，普通构建不接管网络。
+- Android 下载改为可取消挂起请求：取消会关闭 OkHttp 调用；各重定向、子 provider 与解析完成后检查取消；规则集刷新不吞取消。真实回环 TLS 的响应等待和半截响应体用例均能在取消后两秒内结束，子 provider 取消不返回部分内容。369 项 JVM 测试、lint、四架构 Debug 和带 R8 的 Release 构建通过；Release 包为未签名产物，未包含测试证书，包含网络库许可证；新提交 CI 单独跟踪。共享 TLS 服务增加慢响应体夹具后，Mac 的 11 项定向回归再次通过。
+- 后续并发验收仍需覆盖 Android 自动刷新与手工编辑/删除同一订阅的竞争、远程规则集的并发更新，以及批量导入失败时的完整回滚；当前下载取消回归不能替代这些事务测试。

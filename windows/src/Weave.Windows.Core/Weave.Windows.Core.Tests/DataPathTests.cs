@@ -13,6 +13,20 @@ public sealed class NativeDataPathCollection { }
 [Collection("Native data path")]
 public sealed class DataPathTests(ITestOutputHelper output)
 {
+    private static bool TunTestsEnabled => OperatingSystem.IsWindows() &&
+        Environment.GetEnvironmentVariable("WEAVE_TEST_TUN") == "1";
+
+    [Fact]
+    public async Task RepeatedTunStartStopKeepsDataPathUsable()
+    {
+        if (!TunTestsEnabled || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEAVE_TEST_CORE"))) return;
+        for (var cycle = 1; cycle <= 5; cycle++)
+        {
+            output.WriteLine($"TUN start/forward/stop cycle {cycle}/5");
+            await ImportedHttpNodeActuallyForwardsTrafficWithAuthentication(automatic: false, tun: true);
+        }
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -21,7 +35,7 @@ public sealed class DataPathTests(ITestOutputHelper output)
     {
         var core = Environment.GetEnvironmentVariable("WEAVE_TEST_CORE");
         if (string.IsNullOrEmpty(core)) return;
-        if (tun && !OperatingSystem.IsWindows()) return;
+        if (tun && !TunTestsEnabled) return;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();

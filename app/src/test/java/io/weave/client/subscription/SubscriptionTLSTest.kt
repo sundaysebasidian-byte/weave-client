@@ -12,9 +12,44 @@ import javax.net.ssl.X509TrustManager
 import okhttp3.OkHttpClient
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import java.io.IOException
+import okhttp3.Call
+import okhttp3.EventListener
 
 class SubscriptionTLSTest {
-    @Test fun `TLS keeps original hostname and supports bounded chunked redirects`() {
+    @Test fun `cancellation closes an active TLS request and an incomplete body promptly`() = runBlocking<Unit> {
+        for (path in listOf("hang", "slow-body")) Fixture().use { fixture ->
+            val stopped = CompletableDeferred<Unit>()
+            var delivered = false
+            val fetcher = fixture.fetcher(events = object : EventListener() {
+                override fun callFailed(call: Call, ioe: IOException) { stopped.complete(Unit) }
+            })
+            val download = launch {
+                fetcher.fetch(fixture.url(path))
+                delivered = true
+            }
+            val marker = if (path == "hang") "\"event\": \"request\"" else "\"event\": \"body-start\""
+            try {
+                withTimeout(5_000) { while (!fixture.events().contains(marker)) delay(10) }
+                withTimeout(2_000) {
+                    download.cancelAndJoin()
+                    stopped.await()
+                }
+                assertFalse(delivered)
+                assertTrue(download.isCancelled)
+            } finally {
+                download.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test fun `TLS keeps original hostname and supports bounded chunked redirects`() = runBlocking<Unit> {
         Fixture().use { fixture ->
             for (path in listOf("success", "chunked", "redirect")) {
                 val result = fixture.fetcher().fetch(fixture.url(path))
@@ -27,29 +62,29 @@ class SubscriptionTLSTest {
         }
     }
 
-    @Test fun `untrusted certificate and wrong hostname fail before HTTP`() {
+    @Test fun `untrusted certificate and wrong hostname fail before HTTP`() = runBlocking<Unit> {
         for (wrongHost in listOf(false, true)) Fixture().use { fixture ->
             val host = if (wrongHost) "wrong.fixture.invalid" else "https.fixture.invalid"
-            assertThrows(SubscriptionImportException::class.java) {
+            assertThrowsSuspending(SubscriptionImportException::class.java) {
                 fixture.fetcher(trustCertificate = wrongHost).fetch(fixture.url("success", host))
             }
             assertFalse(fixture.events().contains("\"event\": \"request\""))
         }
     }
 
-    @Test fun `real TLS bodies remain bounded after decompression`() {
+    @Test fun `real TLS bodies remain bounded after decompression`() = runBlocking<Unit> {
         Fixture().use { fixture ->
             for (path in listOf("too-large", "gzip-bomb", "invalid-utf8", "server-error", "loop", "downgrade", "credentials")) {
-                assertThrows(path, SubscriptionImportException::class.java) {
+                assertThrowsSuspending(path, SubscriptionImportException::class.java) {
                     fixture.fetcher().fetch(fixture.url(path))
                 }
             }
         }
     }
 
-    @Test fun `production address policy refuses before the TLS listener accepts a socket`() {
+    @Test fun `production address policy refuses before the TLS listener accepts a socket`() = runBlocking<Unit> {
         Fixture().use { fixture ->
-            assertThrows(SubscriptionImportException::class.java) {
+            assertThrowsSuspending(SubscriptionImportException::class.java) {
                 fixture.fetcher(allowLoopback = false).fetch(fixture.url("success"))
             }
             assertEquals("", fixture.events())
@@ -82,8 +117,9 @@ class SubscriptionTLSTest {
         fun url(path: String, host: String = "https.fixture.invalid") = "https://$host:$port/$path"
         fun events(): String = directory.resolve("events.jsonl").let { if (Files.exists(it)) Files.readString(it) else "" }
 
-        fun fetcher(trustCertificate: Boolean = true, allowLoopback: Boolean = true): SafeSubscriptionFetcher {
+        fun fetcher(trustCertificate: Boolean = true, allowLoopback: Boolean = true, events: EventListener? = null): SafeSubscriptionFetcher {
             val builder = OkHttpClient.Builder()
+            events?.let(builder::eventListener)
             if (trustCertificate) {
                 val certificate = Files.newInputStream(fixture.resolve("test-only-cert.pem")).use {
                     CertificateFactory.getInstance("X.509").generateCertificate(it)

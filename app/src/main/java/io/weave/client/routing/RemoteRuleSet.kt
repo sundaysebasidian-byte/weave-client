@@ -5,6 +5,8 @@ import androidx.compose.runtime.Immutable
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import io.weave.client.subscription.ClashYamlCodec
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import io.weave.client.subscription.SafeSubscriptionFetcher
 import java.io.File
 import java.nio.file.Files
@@ -195,8 +197,8 @@ class RemoteRuleSetStore(
         }
     }
 
-    /** Downloads, validates and stores a set. Blocking; call on an IO dispatcher. */
-    fun refresh(candidate: RemoteRuleSet): RemoteRuleSet {
+    /** Downloads cancellably; validation and storage run on the caller’s IO dispatcher. */
+    suspend fun refresh(candidate: RemoteRuleSet): RemoteRuleSet {
         val name = candidate.name.trim().take(60).ifEmpty { throw RuleSetException("请填写规则集名称") }
         if (!candidate.url.trim().startsWith("https://", ignoreCase = true)) {
             throw RuleSetException("规则集地址必须使用 HTTPS")
@@ -218,6 +220,7 @@ class RemoteRuleSetStore(
             entryCount = entries.size,
             updatedAtMillis = System.currentTimeMillis(),
         )
+        currentCoroutineContext().ensureActive()
         synchronized(this) {
             directory.mkdirs()
             writeAtomic(payloadFile(stored.id), secretBox.encrypt(entries.joinToString("\n").toByteArray(Charsets.UTF_8), payloadAad(stored.id)))

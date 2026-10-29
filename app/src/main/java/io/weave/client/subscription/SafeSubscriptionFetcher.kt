@@ -6,10 +6,19 @@ import java.net.InetAddress
 import java.net.URI
 import java.net.SocketTimeoutException
 import java.net.Proxy
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 
 data class SubscriptionFetchResult(
     val body: String,
@@ -90,16 +99,21 @@ class SafeSubscriptionFetcher(
         .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
         .readTimeout(READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
         .dns(object : Dns {
-            override fun lookup(hostname: String): List<InetAddress> =
+            override fun lookup(hostname: String): List<InetAddress> = try {
                 urlPolicy.validateResolvedAddresses(URI("https", null, hostname, -1, null, null, null), resolver).toList()
+            } catch (error: SubscriptionImportException) {
+                // OkHttp's asynchronous dispatcher requires DNS failures to be IOExceptions.
+                throw UnknownHostException("Subscription DNS answer rejected").apply { initCause(error) }
+            }
         })
         .build()
 
-    fun fetch(rawUrl: String, adaptMainSubscription: Boolean = true): SubscriptionFetchResult {
+    suspend fun fetch(rawUrl: String, adaptMainSubscription: Boolean = true): SubscriptionFetchResult {
         var current = urlPolicy.validate(rawUrl)
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
 
         repeat(maxRedirects + 1) { hop ->
+            currentCoroutineContext().ensureActive()
             // Apply this before every hop so a Walless redirect remains in expanded-node mode while
             // unrelated hosts and explicitly supplied parameters stay untouched.
             // Provider URLs already identify a concrete node file. Main-subscription query
@@ -155,15 +169,16 @@ class SafeSubscriptionFetcher(
         val updateInterval: String? = null,
     )
 
-    private fun fetchHop(uri: URI, remainingMillis: Long): HopResponse = try {
+    private suspend fun fetchHop(uri: URI, remainingMillis: Long): HopResponse = try {
         executeHop(uri, remainingMillis)
     } catch (error: SocketTimeoutException) {
         throw SubscriptionImportException("订阅服务器连接超时，请检查当前网络或暂时关闭其他 VPN 后重试", error)
     } catch (error: IOException) {
+        (error.cause as? SubscriptionImportException)?.let { throw it }
         throw SubscriptionImportException("无法连接订阅服务器，请检查当前网络或暂时关闭其他 VPN 后重试", error)
     }
 
-    private fun executeHop(uri: URI, remainingMillis: Long): HopResponse {
+    private suspend fun executeHop(uri: URI, remainingMillis: Long): HopResponse = suspendCancellableCoroutine { continuation ->
         val request = Request.Builder().url(uri.toString())
             .header("Accept", "application/yaml, text/yaml, text/plain, application/json, */*")
             .header("Accept-Encoding", "identity")
@@ -172,39 +187,58 @@ class SafeSubscriptionFetcher(
             .build()
         val call = http.newCall(request)
         call.timeout().timeout(remainingMillis, TimeUnit.MILLISECONDS)
-        return call.execute().use { response ->
-            when (val status = response.code) {
-                HttpURLConnection.HTTP_OK -> {
-                    val declared = response.body.contentLength()
-                    if (declared > maxBytes) {
-                        throw SubscriptionImportException("订阅内容超过 ${maxBytes / 1024} KiB 限制")
-                    }
-                    val body = response.body.byteStream().use {
-                        SubscriptionResponseBody.read(it, response.header("Content-Encoding"), maxBytes)
-                    }
-                    HopResponse(
-                        status = status,
-                        body = body,
-                        contentType = response.header("Content-Type"),
-                        userInfo = response.header("subscription-userinfo"),
-                        updateInterval = response.header("profile-update-interval"),
-                    )
-                }
-
-                HttpURLConnection.HTTP_MOVED_PERM,
-                HttpURLConnection.HTTP_MOVED_TEMP,
-                HttpURLConnection.HTTP_SEE_OTHER,
-                307,
-                308,
-                -> HopResponse(
-                    status = status,
-                    location = response.header("Location"),
-                )
-
-                else -> throw SubscriptionImportException("订阅服务器返回 HTTP $status")
+        continuation.invokeOnCancellation { call.cancel() }
+        if (!continuation.isActive) return@suspendCancellableCoroutine
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                continuation.resumeWithException(e)
             }
-        }
+
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val result = response.use {
+                        if (!continuation.isActive) return
+                        readHop(it)
+                    }
+                    continuation.resume(result)
+                } catch (error: Exception) {
+                    continuation.resumeWithException(error)
+                }
+            }
+        })
     }
+
+    private fun readHop(response: Response): HopResponse =
+        when (val status = response.code) {
+            HttpURLConnection.HTTP_OK -> {
+                val declared = response.body.contentLength()
+                if (declared > maxBytes) {
+                    throw SubscriptionImportException("订阅内容超过 ${maxBytes / 1024} KiB 限制")
+                }
+                val body = response.body.byteStream().use {
+                    SubscriptionResponseBody.read(it, response.header("Content-Encoding"), maxBytes)
+                }
+                HopResponse(
+                    status = status,
+                    body = body,
+                    contentType = response.header("Content-Type"),
+                    userInfo = response.header("subscription-userinfo"),
+                    updateInterval = response.header("profile-update-interval"),
+                )
+            }
+
+            HttpURLConnection.HTTP_MOVED_PERM,
+            HttpURLConnection.HTTP_MOVED_TEMP,
+            HttpURLConnection.HTTP_SEE_OTHER,
+            307,
+            308,
+            -> HopResponse(
+                status = status,
+                location = response.header("Location"),
+            )
+
+            else -> throw SubscriptionImportException("订阅服务器返回 HTTP $status")
+        }
 
     private companion object {
         const val DEFAULT_MAX_BYTES = 5 * 1024 * 1024

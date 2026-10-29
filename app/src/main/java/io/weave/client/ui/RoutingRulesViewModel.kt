@@ -200,7 +200,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
             var failures = 0
             val sets = withContext(Dispatchers.IO) {
                 ruleSetStore.list().forEach { set ->
-                    if (runCatching { ruleSetStore.refresh(set) }.isFailure) failures++
+                    if (probeSafely { ruleSetStore.refresh(set) }.isFailure) failures++
                 }
                 ruleSetStore.list()
             }

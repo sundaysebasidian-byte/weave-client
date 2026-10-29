@@ -4,9 +4,10 @@ import java.net.URI
 import java.util.Base64
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class ClashProviderResolverTest {
-    @Test fun `23 root proxies plus 42 provider proxies retain all 65`() {
+    @Test fun `23 root proxies plus 42 provider proxies retain all 65`() = runBlocking<Unit> {
         fun proxies(range: IntRange) = range.joinToString("\n") {
             "  - {name: fixture-$it, type: http, server: 127.0.0.1, port: 443}"
         }
@@ -24,7 +25,7 @@ class ClashProviderResolverTest {
           - {name: DE-N1 (0.3x), type: socks5, server: 127.0.0.1, port: 1080}
     """.trimIndent()
 
-    @Test fun `manifest downloads node files once and excludes runtime controls`() {
+    @Test fun `manifest downloads node files once and excludes runtime controls`() = runBlocking<Unit> {
         val requests = mutableListOf<String>()
         val resolver = ClashProviderResolver(fetch = {
             requests += it
@@ -52,17 +53,17 @@ class ClashProviderResolverTest {
         assertFalse(result.contains("url:"))
     }
 
-    @Test fun `child download failure does not return partial nodes`() {
+    @Test fun `child download failure does not return partial nodes`() = runBlocking<Unit> {
         val resolver = ClashProviderResolver(fetch = { throw SubscriptionImportException("temporary failure") })
         val manifest = """
             proxies: [{name: old, type: socks5, server: 127.0.0.1, port: 1080}]
             proxy-providers:
               remote: {type: http, url: https://subs.example.test/providers/fixture}
         """.trimIndent()
-        assertThrows(SubscriptionImportException::class.java) { resolver.resolve(manifest, source) }
+        assertThrowsSuspending(SubscriptionImportException::class.java) { resolver.resolve(manifest, source) }
     }
 
-    @Test fun `base64 manifest and inline payload resolve without external writes`() {
+    @Test fun `base64 manifest and inline payload resolve without external writes`() = runBlocking<Unit> {
         val manifest = """
             proxy-providers:
               inline:
@@ -74,22 +75,22 @@ class ClashProviderResolverTest {
         assertEquals("yes", parser.parse(resolver.resolve(encoded, source)).nodes.single().name)
     }
 
-    @Test fun `untrusted provider cannot fetch local files or insecure urls`() {
+    @Test fun `untrusted provider cannot fetch local files or insecure urls`() = runBlocking<Unit> {
         val resolver = ClashProviderResolver(fetch = { error("Must not fetch") })
         for (url in listOf("file:///etc/passwd", "http://example.test/sub", "https://127.0.0.1/sub")) {
             val manifest = "proxy-providers:\n  child: {type: http, url: '$url'}"
-            assertThrows(SubscriptionImportException::class.java) { resolver.resolve(manifest, source) }
+            assertThrowsSuspending(SubscriptionImportException::class.java) { resolver.resolve(manifest, source) }
         }
     }
 
-    @Test fun `recursive providers and excessive requests are rejected`() {
+    @Test fun `recursive providers and excessive requests are rejected`() = runBlocking<Unit> {
         val manifest = "proxy-providers:\n  child: {type: http, url: https://subs.example.test/provider}"
         val resolver = ClashProviderResolver(fetch = { SubscriptionFetchResult(manifest, URI(it), null) })
-        assertThrows(SubscriptionImportException::class.java) { resolver.resolve(manifest, source) }
+        assertThrowsSuspending(SubscriptionImportException::class.java) { resolver.resolve(manifest, source) }
         val excessive = "proxy-providers:\n" + (1..17).joinToString("\n") {
             "  node$it: {type: http, url: https://subs.example.test/$it}"
         }
-        assertThrows(SubscriptionImportException::class.java) { resolver.resolve(excessive, source) }
+        assertThrowsSuspending(SubscriptionImportException::class.java) { resolver.resolve(excessive, source) }
     }
 
     @Test fun `unsafe yaml types duplicates and cycles are refused without leaking content`() {

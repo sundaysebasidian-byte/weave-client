@@ -63,6 +63,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == '/hang':
             time.sleep(40)
             return
+        if path == '/slow-body':
+            self.send_response(200)
+            self.send_header('Content-Length', '100')
+            self.end_headers()
+            self.wfile.write(b'p')
+            self.wfile.flush()
+            record({'event': 'body-start'})
+            time.sleep(40)
+            return
         if path in ['/redirect', '/loop', '/private', '/downgrade', '/credentials']:
             target = {'/redirect': '/success', '/loop': '/loop', '/private': 'https://localhost:9/',
                       '/downgrade': 'http://https.fixture.invalid:9/',

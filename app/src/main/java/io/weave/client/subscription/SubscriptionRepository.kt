@@ -10,6 +10,9 @@ import io.weave.client.domain.SubscriptionQuota
 import io.weave.client.domain.SubscriptionSourceKind
 import io.weave.client.transfer.TransferSubscription
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class SubscriptionRepository(
@@ -124,7 +127,7 @@ class SubscriptionRepository(
         prepareReview(id, name, LOCAL_IMPORT_SOURCE, body, LOCAL_IMPORT_SOURCE)
     }
 
-    private fun prepareReview(id: String, name: String, source: String, payload: String, resolutionSource: String,
+    private suspend fun prepareReview(id: String, name: String, source: String, payload: String, resolutionSource: String,
         fetched: SubscriptionFetchResult? = null): SubscriptionUpdatePreview {
         val previous = requireNotNull(store.get(id)) { "订阅不存在" }
         val oldSource = store.readUrl(id)
@@ -307,6 +310,7 @@ class SubscriptionRepository(
         val imported = mutableListOf<Subscription>()
         val saved = mutableListOf<Pair<PreparedImport, String>>()
         try {
+            currentCoroutineContext().ensureActive()
             validated.forEach { prepared ->
                 val item = prepared.item
                 val id = prepared.existing?.record?.id
@@ -327,20 +331,22 @@ class SubscriptionRepository(
             // A same-ID sync updates in place. Roll it back to its encrypted snapshot if a later
             // item fails; new imports are removed entirely. This keeps a multi-subscription packet
             // transactional without deleting a pre-existing local subscription on error.
-            saved.asReversed().forEach { (prepared, id) ->
-                runCatching {
-                    val snapshot = prepared.existing
-                    if (snapshot == null) {
-                        store.delete(id)
-                    } else {
-                        val oldParsed = prepareRuntimePayload(snapshot.payload)
-                        store.save(
-                            name = snapshot.record.name,
-                            url = snapshot.source,
-                            payload = oldParsed.first,
-                            parsed = oldParsed.second,
-                            id = snapshot.record.id,
-                        )
+            withContext(NonCancellable) {
+                saved.asReversed().forEach { (prepared, id) ->
+                    runCatching {
+                        val snapshot = prepared.existing
+                        if (snapshot == null) {
+                            store.delete(id)
+                        } else {
+                            val oldParsed = prepareRuntimePayload(snapshot.payload)
+                            store.save(
+                                name = snapshot.record.name,
+                                url = snapshot.source,
+                                payload = oldParsed.first,
+                                parsed = oldParsed.second,
+                                id = snapshot.record.id,
+                            )
+                        }
                     }
                 }
             }
@@ -391,6 +397,7 @@ class SubscriptionRepository(
             return@withContext AutoRefreshOutcome.NeedsReview(record.name)
         }
         val diff = SubscriptionDiffer.compare(record.nodes, parsed.nodes)
+        currentCoroutineContext().ensureActive()
         store.save(record.name, source, runtimePayload, parsed, subscriptionId, prepared.counts)
         store.recordRemoteMetadata(subscriptionId, fetched.usage, fetched.updateIntervalHours)
         AutoRefreshOutcome.Updated(record.name, diff)
@@ -470,7 +477,7 @@ class SubscriptionRepository(
             }
         }
 
-    private fun importPayload(name: String, source: String, payload: String): Subscription =
+    private suspend fun importPayload(name: String, source: String, payload: String): Subscription =
         replacePayload(null, name, source, payload)
 
     private fun displayName(uri: Uri): String? = runCatching {
@@ -485,7 +492,7 @@ class SubscriptionRepository(
         }
     }.getOrNull()
 
-    private fun replacePayload(
+    private suspend fun replacePayload(
         subscriptionId: String?,
         name: String,
         source: String,
@@ -509,7 +516,7 @@ class SubscriptionRepository(
         )
     }
 
-    private fun replacePayloadWithDiff(
+    private suspend fun replacePayloadWithDiff(
         subscriptionId: String,
         name: String,
         source: String,
@@ -553,7 +560,7 @@ class SubscriptionRepository(
         }
     }
 
-    private fun prepareRuntimePayload(payload: String, source: String = ""): PreparedSubscription =
+    private suspend fun prepareRuntimePayload(payload: String, source: String = ""): PreparedSubscription =
         preparation.prepare(payload, source)
 
     private fun toDomain(record: StoredSubscription) = Subscription(

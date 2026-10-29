@@ -2,6 +2,7 @@ package io.weave.client.subscription
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 /** Synthetic CMFA DocumentsProvider metadata shapes from pinned official Picker source. */
 class ClientSourceMigrationTest {
@@ -47,7 +48,7 @@ class ClientSourceMigrationTest {
         }
     }
 
-    @Test fun fileProvidersAreMaterializedFromGrantedRelativePathsBeforePreparation() {
+    @Test fun fileProvidersAreMaterializedFromGrantedRelativePathsBeforePreparation() = runBlocking<Unit> {
         val raw = """proxy-providers:
   cache:
     type: file
@@ -88,7 +89,7 @@ proxies: []
         assertThrows(IllegalArgumentException::class.java) { session.select(current.token, setOf("1")) }
     }
 
-    @Test fun selectedBatchMetadataExcludesSecretsAndConfirmationCannotReplay() {
+    @Test fun selectedBatchMetadataExcludesSecretsAndConfirmationCannotReplay() = runBlocking<Unit> {
         val session = MigrationBatchSession()
         val first = PreparedSourceMigration("First", "https://example.test/?token=synthetic-secret", pipeline.prepare(payload, "local://fixture"))
         val second = first.copy(name = "Second", source = "local://user-selected-file")
@@ -97,17 +98,17 @@ proxies: []
         assertTrue(preview.entries.first().remote); assertFalse(preview.entries.last().remote)
         assertFalse(preview.toString().contains("synthetic-secret"))
         assertEquals(listOf(first, second), session.consume(preview.token))
-        assertThrows(IllegalArgumentException::class.java) { session.consume(preview.token) }
+        assertThrowsSuspending(IllegalArgumentException::class.java) { session.consume(preview.token) }
     }
 
-    @Test fun pendingBatchClearsOnCancelReplacementAndExpiry() {
+    @Test fun pendingBatchClearsOnCancelReplacementAndExpiry() = runBlocking<Unit> {
         var now = 0L; val session = MigrationBatchSession { now }
         val record = PreparedSourceMigration("First", "local://fixture", pipeline.prepare(payload, "local://fixture"))
         val old = session.prepare(listOf(record)); val new = session.prepare(listOf(record))
-        assertThrows(IllegalArgumentException::class.java) { session.consume(old.token) }
-        session.clear(); assertThrows(IllegalArgumentException::class.java) { session.consume(new.token) }
+        assertThrowsSuspending(IllegalArgumentException::class.java) { session.consume(old.token) }
+        session.clear(); assertThrowsSuspending(IllegalArgumentException::class.java) { session.consume(new.token) }
         val expired = session.prepare(listOf(record)); now = 300_000_000_000L
-        assertThrows(IllegalArgumentException::class.java) { session.consume(expired.token) }
+        assertThrowsSuspending(IllegalArgumentException::class.java) { session.consume(expired.token) }
     }
 
     @Test fun capabilitiesRecognizeOnlyVerifiedOfficialPackages() {
