@@ -9,6 +9,7 @@ public static class BrokerConnection
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(stopping);
         using var writes = new SemaphoreSlim(1, 1);
         var pending = new Dictionary<long, Task>();
+        long? stopId = null;
         void CoreExited(object? sender, EventArgs args) => lifetime.Cancel();
         session.Exited += CoreExited;
         try
@@ -24,7 +25,7 @@ public static class BrokerConnection
                 }
                 if (request.Id <= 0 || pending.ContainsKey(request.Id) || pending.Count >= 4)
                     throw new InvalidDataException("Too many or duplicate pending service requests.");
-                if (request is BrokerStop) break; // Closing the lease also cancels an in-flight start.
+                if (request is BrokerStop) { stopId = request.Id; break; }
                 pending.Add(request.Id, HandleAsync(request));
             }
         }
@@ -34,6 +35,13 @@ public static class BrokerConnection
             lifetime.Cancel();
             try { await Task.WhenAll(pending.Values).ConfigureAwait(false); }
             finally { await session.DisposeAsync().ConfigureAwait(false); }
+        }
+        // Acknowledge only after the core is stopped, including an in-flight validation.
+        if (stopId is { } acknowledgedId)
+        {
+            using var acknowledgement = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+            acknowledgement.CancelAfter(TimeSpan.FromSeconds(5));
+            await BrokerWire.WriteAsync(stream, new BrokerReply(acknowledgedId, Ready: false), acknowledgement.Token).ConfigureAwait(false);
         }
 
         async Task HandleAsync(BrokerRequest request)

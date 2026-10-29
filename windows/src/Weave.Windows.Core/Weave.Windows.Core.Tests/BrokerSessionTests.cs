@@ -20,13 +20,16 @@ public sealed class BrokerSessionTests
         var accept = listener.AcceptTcpClientAsync(timeout.Token).AsTask();
         await client.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port, timeout.Token);
         using var server = await accept;
+        await using var broker = explicitStop ? new BrokerClient(client.GetStream()) : null;
         await using var session = new BrokerSession(root, executable, "not-used");
         var running = BrokerConnection.RunAsync(server.GetStream(), session, timeout.Token);
         try
         {
             var profile = new BrokerProfile([], [], null, null,
                 new(RoutingMode.Direct, false, false, false, DnsProfile.Privacy, null, "", null, null));
-            await BrokerWire.WriteAsync<BrokerRequest>(client.GetStream(), new BrokerStart(1, profile), timeout.Token);
+            Task<BrokerRuntimeInfo>? start = null;
+            if (broker is not null) start = broker.StartAsync(profile, timeout.Token);
+            else await BrokerWire.WriteAsync<BrokerRequest>(client.GetStream(), new BrokerStart(1, profile), timeout.Token);
             var marker = Path.Combine(root, "probe.pid");
             while (!File.Exists(marker))
             {
@@ -36,7 +39,14 @@ public sealed class BrokerSessionTests
             var pid = int.Parse(await File.ReadAllTextAsync(marker, timeout.Token));
             using var child = Process.GetProcessById(pid);
             Assert.False(child.HasExited);
-            if (explicitStop) await BrokerWire.WriteAsync<BrokerRequest>(client.GetStream(), new BrokerStop(2), timeout.Token);
+            if (broker is not null)
+            {
+                await broker.StopAsync(timeout.Token);
+                await Assert.ThrowsAsync<IOException>(() => start!);
+                Assert.True(child.HasExited);
+                Assert.Empty(Directory.EnumerateDirectories(root));
+                Assert.Empty(Directory.EnumerateFiles(root, "*.session"));
+            }
             else client.Dispose();
             await running.WaitAsync(TimeSpan.FromSeconds(5));
             await child.WaitForExitAsync(timeout.Token);

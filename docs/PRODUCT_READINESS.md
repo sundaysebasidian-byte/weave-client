@@ -81,3 +81,5 @@
 - 两项 YAML 放大回归在原解析器上全部失败：不足 256 KiB 的输入经别名或转义生成超过 5 MiB 的 provider。现在展开累计标量字节，并限制输出缓冲区和最终 UTF-8 体积；原别名合并兼容回归仍通过。尚未据此声称穷尽所有 YAML 解析器资源边界。
 - `7556a51` 的 Mac、依赖检查和发行审计通过；Windows 原生管道身份/ACL 用例通过，但真实 TUN 在连续启停的第二轮连接重置，完整 CI 为 158/159。现在仅合成数据路径测试有界保留核心原始输出，并将连续次数增至 20 以定位间歇失败；生产日志继续脱敏，尚未认定 TUN 根因。
 - `163c212` Android 在安装测试包前失败：包管理器内部对象尚为空，日志显示 SystemServer 仍在启动。回归复现原就绪检查误把已发布的 Binder 服务当作完成启动。现在检查 [ActivityManager 的启动状态](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-16.0.0_r1/services/core/java/com/android/server/am/ActivityManagerService.java) 和采样前后/连续采样的 system_server PID；日志采集提前到就绪等待前。七项脚本回归及本地 API 36/ARM64 的 87 项设备用例通过。软件模拟器上的 ANR 和远端执行仍需单独验收。
+- Windows 客户端连接层新增八项回环测试：并发乱序、迟到返回、取消启动、未知返回/EOF、停止保留名额及合并、非法 DNS 返回、服务空闲退出。端到端测试复现取消校验后子进程尚未退出就返回停止确认；修正为等待实际退出，未确认则保留句柄/会话并报错。完整本地核心套件 166 项通过、1 项 Windows 身份测试跳过；Java 互操作及发行审计通过。SCM 宿主和普通权限 GUI 尚未接入。
+- `3b9b3d6` Mac、Windows、依赖检查与发行审计通过，Windows 包含原生身份测试、20 次真实 TUN 启停、界面启动和打包。该次成功不能解释 `7556a51` 的间歇重置；Android 和后续提交独立跟踪。

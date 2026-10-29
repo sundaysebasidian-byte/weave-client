@@ -10,6 +10,7 @@ public sealed class MihomoProcess : IAsyncDisposable
     private readonly string _executablePath;
     private readonly object _gate = new();
     private Process? _process;
+    private Process? _pendingValidationExit;
     private CancellationTokenSource? _logCancellation;
     private ChildProcessLifetime? _childLifetime;
     private MihomoController? _controller;
@@ -54,6 +55,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         LastDiagnostics = string.Empty;
         lock (_gate)
         {
+            if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
             if (_process is { HasExited: false })
             {
                 throw new InvalidOperationException(L.T("Mihomo 已经在运行"));
@@ -117,6 +119,8 @@ public sealed class MihomoProcess : IAsyncDisposable
         RuntimeBundle bundle,
         CancellationToken cancellationToken = default)
     {
+        lock (_gate)
+            if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
         var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
@@ -127,37 +131,52 @@ public sealed class MihomoProcess : IAsyncDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        using var process = new Process { StartInfo = startInfo };
-        if (!process.Start())
-        {
-            return (false, L.T("无法启动 Mihomo 配置检查"));
-        }
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        // Drain both pipes before waiting; a full diagnostic pipe otherwise deadlocks validation.
-        var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
-        var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+        var process = new Process { StartInfo = startInfo };
+        var started = false;
         try
         {
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
-            catch (OperationCanceledException) { }
-            cancellationToken.ThrowIfCancellationRequested();
-            return (false, L.T("Mihomo 配置检查超时"));
-        }
+            started = process.Start();
+            if (!started) return (false, L.T("无法启动 Mihomo 配置检查"));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            // Drain both pipes before waiting; a full diagnostic pipe otherwise deadlocks validation.
+            var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await TerminateAndWaitAsync(process).ConfigureAwait(false);
+                try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+                cancellationToken.ThrowIfCancellationRequested();
+                return (false, L.T("Mihomo 配置检查超时"));
+            }
 
-        var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
-        return (process.ExitCode == 0, process.ExitCode == 0 ? L.T("配置校验通过") : SafeDiagnostic(output));
+            var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
+            return (process.ExitCode == 0, process.ExitCode == 0 ? L.T("配置校验通过") : SafeDiagnostic(output));
+        }
+        finally
+        {
+            if (!started || process.HasExited) process.Dispose();
+            else lock (_gate) _pendingValidationExit = process;
+        }
     }
 
     public async Task StopAsync()
     {
         _ready = false;
+        Process? validation;
+        lock (_gate) validation = _pendingValidationExit;
+        if (validation is not null)
+        {
+            // Keep the handle and fail cleanup if termination cannot be confirmed.
+            await TerminateAndWaitAsync(validation).ConfigureAwait(false);
+            lock (_gate) if (ReferenceEquals(_pendingValidationExit, validation)) _pendingValidationExit = null;
+            validation.Dispose();
+        }
         Process? process;
         CancellationTokenSource? cancellation;
         lock (_gate)
@@ -206,6 +225,17 @@ public sealed class MihomoProcess : IAsyncDisposable
     }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
+
+    private static async Task TerminateAndWaitAsync(Process process)
+    {
+        if (!process.HasExited)
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) when (process.HasExited) { }
+        }
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+    }
 
     private async Task WaitForReadyAsync(RuntimeBundle bundle, Process process, CancellationToken cancellationToken)
     {

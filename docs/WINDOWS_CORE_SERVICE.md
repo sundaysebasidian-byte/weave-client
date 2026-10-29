@@ -1,6 +1,6 @@
 # Windows 核心服务迁移
 
-状态：服务协议、会话后端和 Windows 管道验证代码已加入；尚未安装或接入 WinUI，当前 TUN 仍使用原提升权限流程。不得把本文件或组件测试当作权限分离已交付。
+状态：服务协议、会话后端、客户端连接层和 Windows 管道验证代码已加入；尚未安装或接入 WinUI，当前 TUN 仍使用原提升权限流程。不得把本文件或组件测试当作权限分离已交付。
 
 ## 已实现的边界
 
@@ -9,6 +9,7 @@
 - 消息采用有版本的长度帧，单帧 40 MiB；拒绝重复/未知字段、未知操作、缺失或非法 null 参数。已开始的帧 30 秒超时，已认证空闲连接不会被当作传输超时。每连接最多四个未完成请求。
 - `BrokerWindowsPipe` 使用首次实例与精确客户端访问权限，拒绝网络/匿名身份。客户端以 Identification 打开本机管道，发送任何连接数据前核对 SCM 报告的服务 PID 和进程映像；服务读取固定握手后核对 OS 客户端 SID、PID、会话与指定 GUI 映像。安装目录保护仍须由服务宿主完成。
 - `BrokerSession` 持有私有会话、核心和控制器；连接 EOF、停止请求或服务停止会撤销在途启动并清理本会话。校验探针测试实际启动一个无网络子进程，证明 EOF/停止会终止它；清理失败保留文件及状态。
+- `BrokerClient` 按请求 ID 分派并发返回，最多三个普通请求在途，为停止保留一个名额；取消测速只停止调用方等待，仍排空迟到的返回。取消启动撤销整条连接；未知返回/坏帧/服务退出使未完成操作失败并通知断开。重复停止合并，停止确认必须在核心退出后返回。配置校验取消现在等待子进程退出；未确认退出时保留进程句柄及会话。
 - Windows YAML 在别名展开时累计 UTF-8 标量预算，在输出时限制缓冲区和最终字节数，避免小输入通过别名或转义绕过 5 MiB provider 上限。
 
 管道策略依据 [Windows 管道访问权限](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)、[客户端身份与模拟级别](https://learn.microsoft.com/en-us/windows/win32/ipc/impersonating-a-named-pipe-client) 和 [OS 客户端 PID 查询](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid)。客户端没有创建同名服务端实例的权限；首次实例检查仍不能代替 SCM 身份核验。
