@@ -18,6 +18,7 @@ Design and architecture references:
 | [CameraX](https://developer.android.com/jetpack/androidx/releases/camera) | Version 1.5.3; lifecycle-bound live QR preview and bounded image analysis, decoded locally with ZXing | Apache-2.0 |
 | [ZXing](https://github.com/zxing/zxing) | QR generation and payload utilities | Apache-2.0 |
 | [SnakeYAML](https://github.com/snakeyaml/snakeyaml) | Version 2.5, bounded data-only Clash YAML parsing with SafeConstructor | Apache-2.0 |
+| [Yams](https://github.com/jpsim/Yams) / [LibYAML](https://github.com/yaml/libyaml) | macOS YAML parsing; Yams 6.2.2 pinned in `macos/Package.resolved`, with streaming resource checks before composition | MIT; notices in `macos/Resources/Licenses/`, included in macOS packages |
 
 The [RC4 public prerelease](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4)
 provides `Weave-RC110-Corresponding-source.zip`: its exact Weave tree, pinned

@@ -1,7 +1,7 @@
 name: macOS integrity
 on:
   push:
-    branches: [main, codex/product-hardening]
+    branches: [main]
     paths: ['macos/**', 'core-lock.properties', '.github/workflows/macos.yml']
   pull_request:
     paths: ['macos/**', 'core-lock.properties', '.github/workflows/macos.yml']
@@ -27,3 +27,13 @@ jobs:
         run: bash macos/test.sh --parallel
       - name: Optimized build
         run: swift build --package-path macos --configuration release
+      - name: Package verifiable preview
+        run: bash macos/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-macOS-arm64-preview
+          path: |
+            macos/build/package.*/Weave-macos-arm64.zip
+            macos/build/package.*/Weave-macos-arm64.zip.sha256
+            macos/build/package.*/manifest.json
+          if-no-files-found: error

@@ -1,57 +1,37 @@
 # Weave for macOS
 
-原生 SwiftUI / Apple Silicon (`arm64`) 客户端。当前 `0.1.0-alpha09` 包含：
+原生 SwiftUI 客户端，当前支持 macOS 14+、Apple Silicon arm64。仍处于产品加固阶段；验收状态见 [产品验收账本](../docs/PRODUCT_READINESS.md)。
 
-- 与 Android 共用 `Ink / Acid / Canvas / Paper / Good` 配色、圆角卡片、状态标签和页面层级，
-  同时保留适合键鼠操作的 macOS 侧栏；
-- 与 Android 共用“编织结”应用图标：深靛蓝三环交叠，叠加雾青、淡紫和珊瑚节点的莫奈式柔和色彩；
-- 节点 YAML 只在订阅变化时于后台解析缓存；核心配置、互传编解码和加密不阻塞 UI 主线程；
-- 固定桌面双栏取代 `NavigationSplitView`，四个主页面常驻且切换无重建、无隐式转场；
-  节点选择使用可搜索、懒加载的弹层，不同步构造完整原生菜单；
-- Keychain 主密钥 + AES-256-GCM 的本机订阅库；
-- Weave LAN Transfer v1 一次性加密导入/导出；
-- 导出二维码与链接；订阅页可直接从公网 HTTPS / Weave 链接、二维码图片或本地
-  Clash/Mihomo YAML 文件导入，并在写入前校验有效节点；
-- 独立订阅列表和永久删除；
-- 订阅编辑、HTTPS 原位刷新和导入前的 Clash 控制面清理，只把节点 provider 交给 Mihomo；
-- 连接页先选择订阅，再选择自动策略或该订阅的原始节点；
-- 内置由固定源码构建并校验 SHA-256 的 `mihomo` arm64，默认优先启用 Mihomo 原生 macOS TUN；
-- TUN 模式接管 IPv4、IPv6、UDP 和 DNS，不依赖系统代理的应用，并阻断标准 STUN 端口；TUN 或 DNS 未就绪时拒绝连接，避免静默直连；
-- 订阅远程请求在初始地址、重定向和最终响应前解析并拒绝本机/私网/CGNAT/链路本地地址；
-- 连接成功后接管当前主网络服务的 HTTP/HTTPS/SOCKS 代理并临时关闭 PAC，停止、崩溃或下次启动会恢复原设置；
-- 局域网互传只绑定当前私有 IPv4，并严格校验一次性令牌、响应类型、长度和 AES-GCM 密文；
-- 未签名 Apple Network Extension 时不伪装成系统签名 VPN；当前 TUN 由内置 Mihomo 原生 `utun` 实现。关闭 TUN 开关后才会主动使用本地代理，但该模式不保证所有 IPv4、IPv6、UDP 和 DNS 都经过 Weave。
+## 当前能力
 
-## 构建
+- Keychain + AES-256-GCM 订阅库；密钥不可用或库损坏时进入只读状态，保留原文件。
+- HTTPS、本地文件、二维码、URI/Base64 与 Clash YAML/JSON 使用一致的导入流程。Yams 6.2.2 固定版本负责结构化解析；先限制文档数量、嵌套深度、节点数量和锚点展开规模。重复键、重名节点和暂不支持的 URI 参数明确报错。
+- 持久化订阅/固定节点选择；节点消失时要求重新选择；刷新先预览增删变化，保存后下次连接生效。
+- 只把选中的节点 provider 交给核心；移除订阅中的监听器、控制器、脚本和远程规则配置。会话使用随机回环端口和认证密钥，目录 0700、配置 0600，带进程租约的清理保留未知文件。
+- 本地代理模式接管 HTTP/HTTPS/SOCKS 系统代理。恢复时逐项检查归属，保留用户后来做的修改；失败时保留可重试日志。
+- Weave LAN Transfer v1 一次性加密互传，发送端确认短码和 AES-GCM 校验。
 
-完整发布构建推荐 Xcode 16+。当前命令行工具可执行：
+## 构建与验证
+
+在 Apple Silicon Mac 上使用 Swift 6 / Xcode 16+：
 
 ```bash
-cd macos
-./build-app.sh
+bash macos/test.sh --jobs 4
+bash macos/build-app.sh
 ```
 
-输出为 `macos/build/Weave.app`。脚本执行 ad-hoc 签名，适合 Apple Silicon 本机和朋友私下分发；
-朋友首次打开可能需要在“系统设置 → 隐私与安全性”中允许打开。未做 Apple notarization，
-不应当作公开商店发行包。
-打包前会核对内核哈希，不匹配 `core-lock.properties` 时直接失败。
+打包脚本核对 `core-lock.properties` 的内核 SHA-256，缺失或不匹配即失败。输出位于新的 `macos/build/package.XXXXXX/` 目录，包含 `Weave.app`、ZIP、ZIP SHA-256 和 `manifest.json`。不会覆盖已有包。App 内含源码 commit、dirty 标记及第三方许可证。
 
-## TUN 与完整 VPN
+默认使用 ad-hoc 签名，只是本地测试预览，尚未经过 Developer ID 签名及 Apple 公证。正式发行模式须从干净提交构建，显式设置 `WEAVE_MAC_RELEASE=1`、`WEAVE_MAC_SIGN_IDENTITY` 和已有 Keychain 公证配置 `WEAVE_MAC_NOTARY_PROFILE`；公证成功并装订票据后才生成最终 ZIP。脚本不会创建证书、账号或公证凭据。
 
-alpha09 默认先尝试 Mihomo 自己创建 `utun_weave`，打开 IPv4/IPv6 分半路由、DNS 劫持和
-严格路由。它不需要 Apple Network Extension entitlement，适合在自己的 Apple Silicon Mac
-上快速验证双栈 TUN、DNS 和 UDP 分流。如果 macOS 拒绝创建 utun、路由或 DNS 未能就绪，
-Weave 会拒绝连接并明确显示错误，不会把“本地代理已启动”误报成全设备 VPN。只有用户主动
-关闭设置中的“双栈 TUN”开关，才会使用绑定 `127.0.0.1:7890` 的本地 HTTP/HTTPS/SOCKS 代理。
+## TUN 与连接状态的范围
 
-这里的“双栈”表示本机 IPv4 和 IPv6 都进入 TUN；远端节点是否能提供独立的公网 IPv6 出口，仍取决于
-节点协议、服务端网络和订阅本身。若节点只有 IPv4，IPv6 目标可能经由 IPv4 节点转发，或在节点不支持时失败，
-不会因此回到物理网卡直连。
+TUN 由内置 Mihomo 创建随机 `utun` 设备，需要系统权限；普通 GUI 当前尚无经过验收的提权辅助服务。默认请求 TUN，启动失败时不会自动降级。本地代理模式由用户关闭 TUN 开关后使用，仅覆盖遵循系统代理的应用。
 
-如果要做面向朋友分发的系统级签名 VPN，仍建议增加 `NEPacketTunnelProvider`/system extension、
-Apple entitlement 和 Developer ID 签名。当前构建不会伪造或隐藏这一差异。
+连接检查确认属于本会话的核心进程、认证控制 API、监听端口；TUN 模式还核对 IPv4/IPv6 路由。它们不等同于外网节点可达、DNS 无泄漏或断线锁网。未连接或核心退出时，其他应用仍可能使用原网络。真实 DNS/出口探测、权限辅助服务、休眠与网络切换验收仍在开发中。
 
-## 内核
+HTTPS 导入拒绝私有地址，但 DNS 解析与实际连接尚未绑定；重绑定防护仍是开放验收项。不要把配置选项或单元测试结果解释为这些网络保证已经成立。
 
-`Resources/mihomo` 必须是从 `core-lock.properties` 固定的 Mihomo commit 为
-`darwin/arm64` 构建的可执行文件。构建脚本只有在该文件存在且可执行时才会打入 App。
+## 内核与供应链
+
+`Resources/mihomo` 固定到 `core-lock.properties` 指定的源码和工具链，当前仅打包 darwin/arm64。Swift 依赖由 `Package.resolved` 固定到提交，Yams 与其 LibYAML 许可证位于 `Resources/Licenses/`。核心来源及重建说明见 [CORE_PROVENANCE](../docs/CORE_PROVENANCE.md)。

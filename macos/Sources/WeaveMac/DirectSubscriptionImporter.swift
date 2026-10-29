@@ -19,7 +19,7 @@ enum DirectSubscriptionImporter {
         return ImportedSubscriptionPayload(
             suggestedName: result.url.host ?? "远程订阅",
             source: url.absoluteString,
-            payload: result.payload
+            payload: try inlinePayload(from: result.payload).payload
         )
     }
 
@@ -50,59 +50,46 @@ enum DirectSubscriptionImporter {
             return ImportedSubscriptionPayload(
                 suggestedName: url.deletingPathExtension().lastPathComponent,
                 source: "file://local-import",
-                payload: payload
+                payload: try inlinePayload(from: payload).payload
             )
         }.value
     }
 
     static func inlinePayload(from rawValue: String) throws -> ImportedSubscriptionPayload {
-        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
         guard Data(value.utf8).count <= maxPayloadBytes else {
-            throw WeaveMacError.message("二维码内容超过 5 MiB 限制")
+            throw WeaveMacError.message("订阅内容超过 5 MiB 限制")
         }
-        guard value.range(of: #"(?m)^\s*proxies\s*:"#, options: .regularExpression) != nil else {
-            // QR codes commonly carry URI/Base64 subscriptions. Decode them locally and convert
-            // only the supported URI forms to a minimal Clash provider.
-            if let decoded = try URIListConverter.convertIfSupported(value) ?? decodeBase64Clash(value) ?? decodeBase64URIList(value) {
-                return ImportedSubscriptionPayload(
-                    suggestedName: "二维码订阅",
-                    source: "qr://inline-uri",
-                    payload: decoded,
-                )
-            }
-            throw WeaveMacError.message("二维码不是 HTTPS 链接、Weave 传输码或受支持的 Clash/URI 订阅")
+        let source: String
+        let payload: String
+        if let decoded = decodeBase64Text(value) {
+            payload = try normalizedPayload(decoded)
+            source = "qr://inline-base64"
+        } else {
+            payload = try normalizedPayload(value)
+            source = "qr://inline-clash"
         }
-        return ImportedSubscriptionPayload(
-            suggestedName: "二维码订阅",
-            source: "qr://inline-clash",
-            payload: value
-        )
+        return ImportedSubscriptionPayload(suggestedName: "二维码订阅", source: source, payload: payload)
     }
 
-    private static func decodeBase64URIList(_ value: String) throws -> String? {
-        let compact = value.components(separatedBy: .whitespacesAndNewlines).joined()
-        guard compact.count <= maxPayloadBytes * 2 else { return nil }
-        let padded = compact + String(repeating: "=", count: (4 - compact.count % 4) % 4)
-        guard let data = Data(base64Encoded: padded, options: [.ignoreUnknownCharacters]),
-              let text = String(data: data, encoding: .utf8),
-              text.split(whereSeparator: \.isNewline).contains(where: { line in
-                  let lower = line.lowercased()
-                  return lower.hasPrefix("ss://") || lower.hasPrefix("vless://") ||
-                      lower.hasPrefix("vmess://") || lower.hasPrefix("trojan://") ||
-                      lower.hasPrefix("hysteria") || lower.hasPrefix("tuic://") ||
-                      lower.hasPrefix("socks5://")
-              }) else { return nil }
-        return try URIListConverter.convertIfSupported(text)
+    private static func normalizedPayload(_ value: String) throws -> String {
+        let firstLine = value.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && !$0.hasPrefix("#") } ?? ""
+        if firstLine.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#, options: .regularExpression) != nil,
+           let converted = try URIListConverter.convertIfSupported(value) {
+            _ = try ClashProviderDocument(converted)
+            return converted
+        }
+        return try ClashProviderSanitizer.sanitize(value)
     }
 
-    private static func decodeBase64Clash(_ value: String) -> String? {
+    private static func decodeBase64Text(_ value: String) -> String? {
         let compact = value.components(separatedBy: .whitespacesAndNewlines).joined()
-        guard compact.count > 16, compact.count <= maxPayloadBytes * 2 else { return nil }
+            .replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        guard compact.count > 16 else { return nil }
         let padded = compact + String(repeating: "=", count: (4 - compact.count % 4) % 4)
-        guard let data = Data(base64Encoded: padded, options: [.ignoreUnknownCharacters]),
-              let text = String(data: data, encoding: .utf8),
-              text.range(of: #"(?m)^\s*proxies\s*:"#, options: .regularExpression) != nil
-        else { return nil }
+        guard let data = Data(base64Encoded: padded), let text = String(data: data, encoding: .utf8) else { return nil }
         return text
     }
 
@@ -229,11 +216,27 @@ private enum URIListConverter {
             guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { throw invalid() }
             let name = decode(url.fragment) ?? "\(scheme.uppercased()) 节点 \(index + 1)"
             guard let host = url.host, let port = url.port, !host.isEmpty, (1...65_535).contains(port) else { throw invalid() }
-            let query = Dictionary(
-                (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
-                    .compactMap { item in item.value.map { (item.name.lowercased(), $0) } },
-                uniquingKeysWith: { _, last in last },
-            )
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard Set(items.map { $0.name.lowercased() }).count == items.count,
+                  items.allSatisfy({ $0.value != nil }) else { throw invalid() }
+            let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name.lowercased(), $0.value!) })
+            let transport: Set<String> = ["type", "network", "path", "host", "servicename", "service"]
+            let tls: Set<String> = ["sni", "fp", "alpn", "allowinsecure", "insecure"]
+            let allowed: Set<String>
+            switch scheme {
+            case "vless": allowed = transport.union(tls).union(["encryption", "security", "pbk", "sid", "flow"])
+            case "trojan": allowed = transport.union(tls).union(["security"])
+            case "ss", "socks", "socks5": allowed = []
+            case "hy2", "hysteria2": allowed = ["sni", "insecure", "obfs", "obfs-password"]
+            case "tuic": allowed = tls.union(["congestion_control", "udp_relay_mode"])
+            default: throw invalid()
+            }
+            guard Set(query.keys).isSubset(of: allowed) else { throw invalid() }
+            for flag in ["allowinsecure", "insecure"] {
+                if let value = query[flag], !["0", "1", "true", "false"].contains(value) { throw invalid() }
+            }
+            if let first = query["allowinsecure"], let second = query["insecure"],
+               ["1", "true"].contains(first) != ["1", "true"].contains(second) { throw invalid() }
             let user = decode(url.user) ?? ""
             let password = decode(url.password) ?? ""
             switch scheme {
@@ -249,6 +252,8 @@ private enum URIListConverter {
                 try appendTransport(to: &fields, query: query)
                 if let encryption = query["encryption"], encryption != "none" { throw invalid() }
                 if let security = query["security"], !["none", "tls", "reality"].contains(security) { throw invalid() }
+                if query["security"] != "reality", query["pbk"] != nil || query["sid"] != nil { throw invalid() }
+                if query["security"] != "tls" && query["security"] != "reality", !Set(query.keys).isDisjoint(with: tls) { throw invalid() }
                 if let security = query["security"], security == "tls" || security == "reality" {
                     fields.append("    tls: true")
                     if let servername = query["sni"], !servername.isEmpty {
@@ -262,10 +267,14 @@ private enum URIListConverter {
                         if let shortID = query["sid"] { fields.append("      short-id: '\(yaml(shortID))'") }
                     }
                 }
-                if let flow = query["flow"], !flow.isEmpty { fields.append("    flow: '\(yaml(flow))'") }
+                if let flow = query["flow"], !flow.isEmpty {
+                    guard flow == "xtls-rprx-vision", ["tls", "reality"].contains(query["security"] ?? ""),
+                          ["tcp", ""].contains(query["type"] ?? query["network"] ?? "") else { throw invalid() }
+                    fields.append("    flow: '\(yaml(flow))'")
+                }
                 return fields.joined(separator: "\n")
             case "trojan":
-                guard !user.isEmpty else { throw invalid() }
+                guard !user.isEmpty, password.isEmpty, query["security"] == nil || query["security"] == "tls" else { throw invalid() }
                 var fields = [
                     "  - name: '\(yaml(name))'",
                     "    type: trojan",
@@ -282,8 +291,9 @@ private enum URIListConverter {
                 return fields.joined(separator: "\n")
             case "ss":
                 let rawCredential = password.isEmpty ? user : "\(user):\(password)"
-                guard let credential = decodeBase64URL(rawCredential) ?? Optional(rawCredential),
-                      let separator = credential.firstIndex(of: ":") else { throw invalid() }
+                let credential = password.isEmpty ? (decodeBase64URL(rawCredential) ?? rawCredential) : rawCredential
+                guard let separator = credential.firstIndex(of: ":"),
+                      !credential.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw invalid() }
                 let cipher = String(credential[..<separator])
                 let secret = String(credential[credential.index(after: separator)...])
                 guard !cipher.isEmpty, !secret.isEmpty, query["plugin"] == nil else { throw invalid() }
@@ -300,12 +310,14 @@ private enum URIListConverter {
                 return fields.joined(separator: "\n")
             case "hysteria2", "hy2":
                 guard !user.isEmpty else { throw invalid() }
+                let authentication = password.isEmpty ? user : user + ":" + password
+                if query["obfs"] == nil && query["obfs-password"] != nil { throw invalid() }
                 var fields = [
                     "  - name: '\(yaml(name))'",
                     "    type: hysteria2",
                     "    server: '\(yaml(host))'",
                     "    port: \(port)",
-                    "    password: '\(yaml(user))'",
+                    "    password: '\(yaml(authentication))'",
                 ]
                 if let sni = query["sni"], !sni.isEmpty { fields.append("    sni: '\(yaml(sni))'") }
                 if query["insecure"] == "1" || query["insecure"] == "true" { fields.append("    skip-cert-verify: true") }
@@ -339,9 +351,18 @@ private enum URIListConverter {
     }
 
     private static func appendTransport(to fields: inout [String], query: [String: String]) throws {
-        guard let network = query["type"] ?? query["network"], !network.isEmpty else { return }
+        let network = query["type"] ?? query["network"] ?? "tcp"
+        if let type = query["type"], let alias = query["network"], type != alias {
+            throw WeaveMacError.message("URI 的传输类型相互冲突")
+        }
         guard ["tcp", "ws", "grpc"].contains(network) else {
             throw WeaveMacError.message("暂不支持该 URI 传输方式，请使用保留完整参数的 Clash YAML")
+        }
+        let wsKeys: Set<String> = ["path", "host"]
+        let grpcKeys: Set<String> = ["servicename", "service"]
+        guard (network == "ws" || Set(query.keys).isDisjoint(with: wsKeys)),
+              (network == "grpc" || Set(query.keys).isDisjoint(with: grpcKeys)) else {
+            throw WeaveMacError.message("URI 参数与传输类型不匹配，请提供完整 Clash YAML")
         }
         fields.append("    network: '\(yaml(network))'")
         if network == "ws" {
@@ -379,34 +400,70 @@ private enum URIListConverter {
               let host = object["add"] as? String,
               let uuid = object["id"] as? String,
               let port = int(object["port"]),
-              !host.isEmpty, !uuid.isEmpty, port > 0, port <= 65_535 else { return nil }
-        let name = (object["ps"] as? String).flatMap { decode($0) } ?? "VMESS 节点 \(index + 1)"
+              !host.isEmpty, UUID(uuidString: uuid) != nil, port > 0, port <= 65_535 else { return nil }
+        guard object.values.allSatisfy({ value in
+            guard let text = value as? String else { return true }
+            return !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        }) else { return nil }
+        let allowed: Set<String> = ["v", "ps", "add", "port", "id", "aid", "scy", "net", "type", "host", "path", "tls", "sni", "fp", "alpn", "allowInsecure", "serviceName"]
+        guard Set(object.keys).isSubset(of: allowed),
+              object["type"] == nil || ["", "none"].contains(object["type"] as? String ?? "invalid"),
+              object.allSatisfy({ key, value in
+                  value is String || (["v", "port", "aid", "allowInsecure"].contains(key) && value is NSNumber)
+              }) else { return nil }
+        let name = object["ps"] as? String ?? "VMESS 节点 \(index + 1)"
         var fields = [
             "  - name: '\(yaml(name))'",
             "    type: vmess",
             "    server: '\(yaml(host))'",
             "    port: \(port)",
             "    uuid: '\(yaml(uuid))'",
-            "    cipher: auto",
+            "    cipher: '\(yaml(object["scy"] as? String ?? "auto"))'",
         ]
-        if let alterID = int(object["aid"]) { fields.append("    alterId: \(alterID)") }
+        if object["aid"] != nil {
+            guard let alterID = int(object["aid"]), (0...65_535).contains(alterID) else { return nil }
+            fields.append("    alterId: \(alterID)")
+        }
         if let network = object["net"] as? String, !network.isEmpty {
             var query = ["type": network]
-            if let path = object["path"] as? String { query["path"] = path }
-            if let hostHeader = object["host"] as? String { query["host"] = hostHeader }
+            if network == "grpc" {
+                guard (object["host"] as? String ?? "").isEmpty else { return nil }
+                if let service = object["serviceName"] as? String, let path = object["path"] as? String,
+                   !service.isEmpty, !path.isEmpty, service != path { return nil }
+                query["servicename"] = (object["serviceName"] ?? object["path"]) as? String
+            } else if network == "ws" {
+                guard (object["serviceName"] as? String ?? "").isEmpty else { return nil }
+                if let path = object["path"] as? String, !path.isEmpty { query["path"] = path }
+                if let hostHeader = object["host"] as? String, !hostHeader.isEmpty { query["host"] = hostHeader }
+            } else if ["path", "host", "serviceName"].contains(where: { (object[$0] as? String)?.isEmpty == false }) {
+                return nil
+            }
             try appendTransport(to: &fields, query: query)
+        } else if ["path", "host", "serviceName"].contains(where: { (object[$0] as? String)?.isEmpty == false }) {
+            return nil
         }
         if let tls = object["tls"] as? String, !tls.isEmpty, tls != "none" {
+            guard tls == "tls" else { return nil }
             fields.append("    tls: true")
             if let sni = object["sni"] as? String, !sni.isEmpty { fields.append("    servername: '\(yaml(sni))'") }
+            var options = Dictionary(uniqueKeysWithValues: ["fp", "alpn", "allowInsecure"].compactMap { key in
+                (object[key] as? String).map { (key.lowercased(), $0) }
+            })
+            if let flag = object["allowInsecure"] as? NSNumber {
+                guard flag == 0 || flag == 1 else { return nil }
+                options["allowinsecure"] = flag.boolValue ? "true" : "false"
+            }
+            if let flag = options["allowinsecure"], !["0", "1", "true", "false"].contains(flag) { return nil }
+            appendTLSOptions(to: &fields, query: options)
+        } else if ["sni", "fp", "alpn", "allowInsecure"].contains(where: { object[$0] != nil && (object[$0] as? String) != "" }) {
+            return nil
         }
         return fields.joined(separator: "\n")
     }
 
     private static func int(_ value: Any?) -> Int? {
-        if let value = value as? Int { return value }
-        if let value = value as? NSNumber { return value.intValue }
         if let value = value as? String { return Int(value) }
+        if let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() { return Int(value.stringValue) }
         return nil
     }
 
@@ -426,7 +483,6 @@ private enum URIListConverter {
             base64Encoded: padded
                 .replacingOccurrences(of: "-", with: "+")
                 .replacingOccurrences(of: "_", with: "/"),
-            options: [.ignoreUnknownCharacters],
         )
     }
 

@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
 
     private var transferServer: OneTimeTransferServer?
     private var nodeCache: [UUID: [String]] = [:]
+    private var nodeCachePayloads: [UUID: String] = [:]
     private var nodeCacheTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
@@ -125,14 +126,21 @@ final class AppModel: ObservableObject {
     private func rebuildNodeCache(_ values: [MacSubscription]) {
         nodeCacheTask?.cancel()
         nodeCacheLoading = true
+        let cached = nodeCache
+        let payloads = nodeCachePayloads
         nodeCacheTask = Task {
-            let parsed = await Task.detached(priority: .userInitiated) {
-                Dictionary(uniqueKeysWithValues: values.map {
-                    ($0.id, ClashNodeNames.parse($0.payload))
-                })
-            }.value
+            let worker = Task.detached(priority: .userInitiated) {
+                var parsed: [UUID: [String]] = [:]
+                for value in values {
+                    if Task.isCancelled { return parsed }
+                    parsed[value.id] = payloads[value.id] == value.payload ? cached[value.id] : ClashNodeNames.parse(value.payload)
+                }
+                return parsed
+            }
+            let parsed = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             guard !Task.isCancelled else { return }
             nodeCache = parsed
+            nodeCachePayloads = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0.payload) })
             selectedNodes = selectedSubscriptionID.flatMap { parsed[$0] } ?? []
             nodeCacheLoading = false
         }
@@ -151,7 +159,9 @@ final class AppModel: ObservableObject {
                     let imported = try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
                     try await storeDirectSubscription(imported, preferredName: name)
                 } else {
-                    let imported = try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                    let imported = try await Task.detached(priority: .userInitiated) {
+                        try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                    }.value
                     try await storeDirectSubscription(imported, preferredName: name)
                 }
             } catch {
@@ -194,7 +204,9 @@ final class AppModel: ObservableObject {
                     let imported = if trimmed.lowercased().hasPrefix("https://") {
                         try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
                     } else {
-                        try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                        try await Task.detached(priority: .userInitiated) {
+                            try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                        }.value
                     }
                     try await storeDirectSubscription(imported, preferredName: name)
                 }
@@ -214,12 +226,17 @@ final class AppModel: ObservableObject {
         name: String,
         source: String,
         payload: String,
-    ) {
+    ) async -> Bool {
+        guard !directImportBusy else { return false }
+        directImportBusy = true
+        defer { directImportBusy = false }
         do {
-            try vault.update(id: id, name: name, source: source, payload: payload)
+            try await vault.update(id: id, name: name, source: source, payload: payload)
             directImportMessage = core.state.isActive ? "订阅已更新，重新连接后生效；当前连接保持不变" : "订阅已更新"
+            return true
         } catch {
             directImportMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -234,7 +251,7 @@ final class AppModel: ObservableObject {
             defer { refreshingSubscriptionID = nil }
             do {
                 let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source)
-                try stageSubscriptionUpdate(subscription, imported: imported)
+                try await stageSubscriptionUpdate(subscription, imported: imported)
                 directImportMessage = "更新已下载，请检查变化后保存"
             } catch {
                 directImportMessage = error.localizedDescription
@@ -242,20 +259,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func stageSubscriptionUpdate(_ original: MacSubscription, imported: ImportedSubscriptionPayload) throws {
+    func stageSubscriptionUpdate(_ original: MacSubscription, imported: ImportedSubscriptionPayload) async throws {
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            try PendingSubscriptionUpdate(original: original, source: imported.source, payload: imported.payload)
+        }.value
+        try Task.checkCancellation()
         guard vault.subscriptions.first(where: { $0.id == original.id }) == original else {
             throw WeaveMacError.message("下载期间订阅已被修改，请重新刷新")
         }
-        pendingSubscriptionUpdate = try PendingSubscriptionUpdate(original: original, source: imported.source, payload: imported.payload)
+        pendingSubscriptionUpdate = prepared
     }
 
-    func applyPendingSubscriptionUpdate() {
-        guard let pending = pendingSubscriptionUpdate else { return }
+    func applyPendingSubscriptionUpdate() async {
+        guard !directImportBusy, let pending = pendingSubscriptionUpdate else { return }
+        directImportBusy = true
+        defer { directImportBusy = false }
         do {
             guard vault.subscriptions.first(where: { $0.id == pending.id }) == pending.original else {
                 throw WeaveMacError.message("预览期间订阅已被修改，已保留当前版本；请重新刷新")
             }
-            try vault.update(id: pending.id, name: pending.original.name, source: pending.source, payload: pending.payload)
+            try await vault.update(id: pending.id, name: pending.original.name, source: pending.source, payload: pending.payload)
             pendingSubscriptionUpdate = nil
             directImportMessage = core.state.isActive ? "更新已保存，重新连接后生效；当前连接保持不变" : "更新已保存"
         } catch {
@@ -268,40 +291,27 @@ final class AppModel: ObservableObject {
         _ imported: ImportedSubscriptionPayload,
         preferredName: String
     ) async throws {
-        let sanitizedPayload = try ClashProviderSanitizer.sanitize(imported.payload)
-        let nodes = await Task.detached(priority: .userInitiated) {
-            ClashNodeNames.parse(sanitizedPayload)
-        }.value
-        guard !nodes.isEmpty else {
-            throw WeaveMacError.message("没有识别到可供 Mihomo 使用的 Clash 节点")
-        }
         let trimmedName = preferredName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmedName.isEmpty ? imported.suggestedName : String(trimmedName.prefix(80))
-        try vault.importTransfer(
+        try await vault.importTransfer(
             [
                 TransferSubscription(
                     name: name,
                     source: imported.source,
-                    payload: sanitizedPayload
+                    payload: imported.payload
                 ),
-            ],
-            nodeNames: [nodes]
+            ]
         )
-        directImportMessage = "已安全导入“\(name)” · \(nodes.count) 个节点"
+        directImportMessage = "已安全导入“\(name)”"
     }
 
     private func decodeTransferResponse(
         _ response: Data,
         key: Data
-    ) async throws -> ([TransferSubscription], [[String]]) {
+    ) async throws -> [TransferSubscription] {
         try await Task.detached(priority: .userInitiated) {
             let plaintext = try TransferCodec.open(response, key: key)
-            let items = try TransferCodec.decode(plaintext)
-            let nodeNames = items.map { ClashNodeNames.parse($0.payload) }
-            guard nodeNames.allSatisfy({ !$0.isEmpty }) else {
-                throw WeaveMacError.message("传输内容包含没有有效节点的订阅")
-            }
-            return (items, nodeNames)
+            return try TransferCodec.decode(plaintext)
         }.value
     }
 
@@ -391,19 +401,11 @@ final class AppModel: ObservableObject {
                     throw WeaveMacError.message("短码不匹配：请让发送设备重新显示当前二维码和短码")
                 }
                 let response = try await LANTransferClient.fetch(link)
-                let decoded = try await Task.detached(priority: .userInitiated) {
-                    let plaintext = try TransferCodec.open(response, key: link.key)
-                    let items = try TransferCodec.decode(plaintext)
-                    let nodeNames = items.map { ClashNodeNames.parse($0.payload) }
-                    guard nodeNames.allSatisfy({ !$0.isEmpty }) else {
-                        throw WeaveMacError.message("传输内容包含没有有效节点的订阅")
-                    }
-                    return (items, nodeNames)
-                }.value
-                try vault.importTransfer(decoded.0, nodeNames: decoded.1)
+                let decoded = try await decodeTransferResponse(response, key: link.key)
+                try await vault.importTransfer(decoded)
                 importLink = ""
                 importConfirmationCode = ""
-                transferMessage = "已安全同步 \(decoded.0.count) 个订阅"
+                transferMessage = "已安全同步 \(decoded.count) 个订阅"
             } catch {
                 transferMessage = error.localizedDescription
             }

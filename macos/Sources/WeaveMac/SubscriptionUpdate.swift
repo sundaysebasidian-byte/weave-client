@@ -7,7 +7,7 @@ struct SavedConnectionSelection: Codable {
     func node(for id: UUID?) -> String? { id.flatMap { nodeNames[$0.uuidString] } }
 }
 
-struct PendingSubscriptionUpdate: Identifiable {
+struct PendingSubscriptionUpdate: Identifiable, Sendable {
     let original: MacSubscription
     let source: String
     let payload: String
@@ -19,9 +19,9 @@ struct PendingSubscriptionUpdate: Identifiable {
     init(original: MacSubscription, source: String, payload: String) throws {
         self.original = original
         self.source = source
-        self.payload = try ClashProviderSanitizer.sanitize(payload)
-        nodes = ClashNodeNames.parse(self.payload)
-        guard !nodes.isEmpty else { throw WeaveMacError.message("更新中没有有效节点，已保留原订阅") }
+        let document = try ClashProviderDocument(payload)
+        self.payload = try document.sanitized()
+        nodes = document.names
         let previous = Set(ClashNodeNames.parse(original.payload))
         let current = Set(nodes)
         added = current.subtracting(previous).sorted()

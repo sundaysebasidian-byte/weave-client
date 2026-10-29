@@ -7,9 +7,13 @@ let package = Package(
     products: [
         .executable(name: "WeaveMac", targets: ["WeaveMac"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
+    ],
     targets: [
         .executableTarget(
             name: "WeaveMac",
+            dependencies: [.product(name: "Yams", package: "Yams")],
             path: "Sources/WeaveMac",
             swiftSettings: [
                 .unsafeFlags(["-Xfrontend", "-strict-concurrency=minimal"]),

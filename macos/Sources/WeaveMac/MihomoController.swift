@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 final class MihomoController: ObservableObject {
     @Published private(set) var state: MacConnectionState = .stopped
-    @Published private(set) var message = "全设备双栈 TUN 未就绪时拒绝连接"
+    @Published private(set) var message = "尚未连接"
 
     private var process: Process?
     private var runtime: MacRuntime?
@@ -98,7 +98,7 @@ final class MihomoController: ObservableObject {
                 // IPv6 or DNS outside the selected proxy while the UI appears connected.
                 state = .failed
                 message = preferTun
-                    ? "双栈 TUN 未启用，已拒绝连接以防 IPv4/IPv6/DNS 直连 · \(error.localizedDescription)"
+                    ? "双栈 TUN 启动失败 · \(error.localizedDescription)"
                     : error.localizedDescription
                 cleanupRuntime()
             }

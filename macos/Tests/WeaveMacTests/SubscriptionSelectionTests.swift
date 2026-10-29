@@ -6,7 +6,7 @@ import Testing
 @Suite("Subscription selection and staged refresh") @MainActor
 struct SubscriptionSelectionTests {
     @Test func selectedSubscriptionAndFixedNodeSurviveRestart() async throws {
-        let fixture = try Fixture()
+        let fixture = try await Fixture()
         defer { fixture.close() }
         let model = fixture.model()
         try await settle(model)
@@ -21,7 +21,7 @@ struct SubscriptionSelectionTests {
     }
 
     @Test func cacheCompletionUsesLatestSelection() async throws {
-        let fixture = try Fixture()
+        let fixture = try await Fixture()
         defer { fixture.close() }
         let model = fixture.model()
         // Change selection while the initial cache task is suspended.
@@ -31,13 +31,13 @@ struct SubscriptionSelectionTests {
     }
 
     @Test func removedFixedNodeIsNotSilentlyChangedToAutomatic() async throws {
-        let fixture = try Fixture()
+        let fixture = try await Fixture()
         defer { fixture.close() }
         let model = fixture.model()
         try await settle(model)
         model.selectNode("Alpha")
         let original = fixture.vault.subscriptions[0]
-        try fixture.vault.update(id: original.id, name: original.name, source: original.source, payload: payload("Replacement"))
+        try await fixture.vault.update(id: original.id, name: original.name, source: original.source, payload: payload("Replacement"))
         try await settle(model)
         #expect(model.selectedNodeName == "Alpha")
         #expect(model.selectionIssue != nil)
@@ -46,28 +46,28 @@ struct SubscriptionSelectionTests {
     }
 
     @Test func refreshPreviewDoesNotWriteUntilApplied() async throws {
-        let fixture = try Fixture()
+        let fixture = try await Fixture()
         defer { fixture.close() }
         let model = fixture.model()
         let original = fixture.vault.subscriptions[0]
-        try model.stageSubscriptionUpdate(original, imported: imported("Replacement"))
+        try await model.stageSubscriptionUpdate(original, imported: imported("Replacement"))
         #expect(fixture.vault.subscriptions[0] == original)
         #expect(model.pendingSubscriptionUpdate?.added == ["Replacement"])
         #expect(model.pendingSubscriptionUpdate?.removed == ["Alpha"])
-        model.applyPendingSubscriptionUpdate()
+        await model.applyPendingSubscriptionUpdate()
         #expect(ClashNodeNames.parse(fixture.vault.subscriptions[0].payload) == ["Replacement"])
         #expect(model.pendingSubscriptionUpdate == nil)
         try await settle(model)
     }
 
     @Test func concurrentEditInvalidatesRefreshPreview() async throws {
-        let fixture = try Fixture()
+        let fixture = try await Fixture()
         defer { fixture.close() }
         let model = fixture.model()
         let original = fixture.vault.subscriptions[0]
-        try model.stageSubscriptionUpdate(original, imported: imported("Downloaded"))
-        try fixture.vault.update(id: original.id, name: "Edited", source: original.source, payload: payload("Manual"))
-        model.applyPendingSubscriptionUpdate()
+        try await model.stageSubscriptionUpdate(original, imported: imported("Downloaded"))
+        try await fixture.vault.update(id: original.id, name: "Edited", source: original.source, payload: payload("Manual"))
+        await model.applyPendingSubscriptionUpdate()
         #expect(fixture.vault.subscriptions[0].name == "Edited")
         #expect(ClashNodeNames.parse(fixture.vault.subscriptions[0].payload) == ["Manual"])
         #expect(model.directImportMessage.contains("已被修改"))
@@ -96,11 +96,11 @@ struct SubscriptionSelectionTests {
         let defaultsName = "WeaveTests.\(UUID())"
         let defaults: UserDefaults
         let vault: SubscriptionVault
-        init() throws {
+        init() async throws {
             directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defaults = UserDefaults(suiteName: defaultsName)!
             vault = SubscriptionVault(directory: directory, keyStore: Key())
-            try vault.importTransfer(["Alpha", "Beta"].map {
+            try await vault.importTransfer(["Alpha", "Beta"].map {
                 TransferSubscription(name: $0, source: "file://fixture", payload: SubscriptionSelectionTests.payload($0))
             })
         }

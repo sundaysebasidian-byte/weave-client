@@ -429,7 +429,7 @@ private struct ConnectionView: View {
                             .lineLimit(1)
                     }
                     Spacer()
-                    Text(model.core.state == .tun ? "双栈 TUN" : "等待连接")
+                    Text(model.core.state == .tun ? "双栈 TUN" : model.core.state == .localProxy ? "系统代理" : "等待连接")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.weaveMuted)
                 }
@@ -440,9 +440,7 @@ private struct ConnectionView: View {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(Color.weaveGood)
                         .padding(.top, 1)
-                    Text(model.core.state == .tun
-                         ? "全设备 IPv4/IPv6 TUN 已接管流量，DNS 请求被劫持，标准 STUN 端口已阻断。"
-                         : "默认使用双栈 TUN；如果 utun、路由或 DNS 未就绪，会拒绝连接而不是让 IPv4 直连。")
+                    Text(model.core.message)
                         .font(.system(size: 12))
                         .foregroundStyle(Color.weaveMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -464,7 +462,7 @@ private struct ConnectionView: View {
 
     private var statusLabel: String {
         switch model.core.state {
-        case .tun, .localProxy: return "已保护"
+        case .tun, .localProxy: return "已连接"
         case .starting: return "正在连接"
         case .stopping: return "正在恢复网络"
         case .failed: return "需要处理"
@@ -825,7 +823,9 @@ private struct SubscriptionUpdatePreview: View {
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存更新") { model.applyPendingSubscriptionUpdate() }.keyboardShortcut(.defaultAction)
+                Button("保存更新") { Task { await model.applyPendingSubscriptionUpdate() } }
+                    .disabled(model.directImportBusy)
+                    .keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 520)
     }
@@ -871,10 +871,13 @@ private struct SubscriptionEditorSheet: View {
                     .foregroundStyle(Color.weaveMuted)
                 Spacer()
                 Button("保存") {
-                    model.updateSubscription(id: subscription.id, name: name, source: source, payload: payload)
-                    message = model.directImportMessage
-                    if message == "订阅已更新" { dismiss() }
+                    Task {
+                        let saved = await model.updateSubscription(id: subscription.id, name: name, source: source, payload: payload)
+                        message = model.directImportMessage
+                        if saved { dismiss() }
+                    }
                 }
+                .disabled(model.directImportBusy)
                 .weavePrimaryButton()
                 .frame(width: 120)
             }
@@ -1197,10 +1200,10 @@ private struct TransferView: View {
 private struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     private let rows = [
-        ("版本", "0.1.0-alpha09", "number"),
+        ("版本", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建", "number"),
         ("架构", "Apple Silicon arm64", "cpu"),
         ("本地存储", "Keychain + AES-256-GCM", "lock.fill"),
-        ("VPN 模式", "Mihomo 原生双栈 TUN · 失败闭锁", "network"),
+        ("VPN 模式", "Mihomo 原生双栈 TUN", "network"),
     ]
 
     var body: some View {
@@ -1235,11 +1238,7 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("系统代理接管")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(model.core.state == .tun
-                             ? "全设备 IPv4/IPv6 TUN · DNS 劫持 · STUN 防泄漏"
-                             : model.core.state == .localProxy
-                             ? "HTTP/HTTPS/SOCKS → 127.0.0.1:7890；PAC 和原设置会自动恢复"
-                             : "TUN 未就绪时拒绝连接；关闭下方开关才会使用本地代理")
+                        Text(model.core.message)
                             .font(.caption)
                             .foregroundStyle(Color.weaveMuted)
                     }
@@ -1259,7 +1258,7 @@ private struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("强制全设备双栈 TUN")
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("接管 IPv4、IPv6、UDP 和 DNS；失败时拒绝连接")
+                            Text("要求 TUN 及双栈路由就绪；需要系统权限")
                                 .font(.caption)
                                 .foregroundStyle(Color.weaveMuted)
                         }
@@ -1267,7 +1266,7 @@ private struct SettingsView: View {
                     .toggleStyle(.switch)
                     .disabled(model.core.state.isActive)
 
-                    Text("关闭后才会允许本地 HTTP/HTTPS/SOCKS 代理模式；该模式不保证 IPv4、IPv6 或 DNS 全部经过 Weave。")
+                    Text("TUN 失败时不会自动切换模式。关闭后使用本地 HTTP/HTTPS/SOCKS 系统代理，仅覆盖遵循系统代理的应用。未连接时其他应用仍可能使用原网络。")
                         .font(.caption2)
                         .foregroundStyle(Color.weaveMuted)
                 }
