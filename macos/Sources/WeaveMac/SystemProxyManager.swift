@@ -6,8 +6,11 @@ import Foundation
 /// service, snapshot every value we change, and restore it on stop, crash, or app termination.
 /// `networksetup` is invoked directly (never through a shell), so service names cannot become
 /// command input.
-@MainActor
-final class SystemProxyManager {
+actor SystemProxyManager {
+    enum RestoreResult: Sendable { case restored, preservedChanges, failed }
+    private enum Field: String, Codable, CaseIterable {
+        case web, secure, socks, auto, bypass
+    }
     private struct Snapshot: Codable {
         let service: String
         let web: ProxyState
@@ -15,9 +18,12 @@ final class SystemProxyManager {
         let socks: ProxyState
         let auto: AutoProxyState
         let bypassDomains: [String]
+        let ownedPort: Int
+        var pending: Set<Field>
+        var restoring: Set<Field>
 
         private enum CodingKeys: String, CodingKey {
-            case service, web, secure, socks, auto, bypassDomains
+            case service, web, secure, socks, auto, bypassDomains, ownedPort, pending, restoring
         }
 
         init(
@@ -27,6 +33,7 @@ final class SystemProxyManager {
             socks: ProxyState,
             auto: AutoProxyState,
             bypassDomains: [String],
+            ownedPort: Int,
         ) {
             self.service = service
             self.web = web
@@ -34,6 +41,9 @@ final class SystemProxyManager {
             self.socks = socks
             self.auto = auto
             self.bypassDomains = bypassDomains
+            self.ownedPort = ownedPort
+            pending = Set(Field.allCases)
+            restoring = []
         }
 
         init(from decoder: Decoder) throws {
@@ -41,30 +51,42 @@ final class SystemProxyManager {
             service = try container.decode(String.self, forKey: .service)
             web = try container.decode(ProxyState.self, forKey: .web)
             secure = try container.decode(ProxyState.self, forKey: .secure)
-            // alpha05 transactions did not snapshot SOCKS or PAC. Disabled empty values are
-            // safe defaults and allow those transactions to be recovered on the next launch.
+            // Older journals never owned fields they did not snapshot.
             socks = try container.decodeIfPresent(ProxyState.self, forKey: .socks)
                 ?? ProxyState(enabled: false, server: "", port: 0)
             auto = try container.decodeIfPresent(AutoProxyState.self, forKey: .auto)
                 ?? AutoProxyState(enabled: false, url: "")
             bypassDomains = try container.decodeIfPresent([String].self, forKey: .bypassDomains) ?? []
+            ownedPort = try container.decodeIfPresent(Int.self, forKey: .ownedPort) ?? 7890
+            var legacy: Set<Field> = [.web, .secure]
+            if container.contains(.socks) { legacy.insert(.socks) }
+            if container.contains(.auto) { legacy.insert(.auto) }
+            if container.contains(.bypassDomains) { legacy.insert(.bypass) }
+            pending = try container.decodeIfPresent(Set<Field>.self, forKey: .pending) ?? legacy
+            restoring = try container.decodeIfPresent(Set<Field>.self, forKey: .restoring) ?? []
         }
     }
 
-    private struct ProxyState: Codable {
+    private struct ProxyState: Codable, Equatable {
         let enabled: Bool
         let server: String
         let port: Int
     }
 
-    private struct AutoProxyState: Codable {
+    private struct AutoProxyState: Codable, Equatable {
         let enabled: Bool
         let url: String
     }
 
     private var snapshots: [Snapshot] = []
+    private var unreadableTransaction = false
+    private var journalLoaded = false
+    private(set) var lastError: String?
+    private let runCommand: @Sendable (String, [String]) throws -> String
 
-    private let transactionURL: URL = {
+    private let transactionURL: URL
+
+    private static func defaultTransactionURL() -> URL {
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -74,17 +96,20 @@ final class SystemProxyManager {
             withIntermediateDirectories: true,
         )
         return support.appendingPathComponent("system-proxy-transaction.json")
-    }()
+    }
 
-    init() {
-        // A crash can happen after networksetup changes but before Process termination. Restore
-        // the last transaction on the next launch before accepting a new connection.
-        restoreOrphanedTransaction()
+    init(transactionURL: URL? = nil, runCommand: @escaping @Sendable (String, [String]) throws -> String = SystemProxyManager.executeCommand) {
+        self.transactionURL = transactionURL ?? Self.defaultTransactionURL()
+        self.runCommand = runCommand
     }
 
     var isActive: Bool { !snapshots.isEmpty }
 
     func enable(port: Int) throws {
+        loadJournalIfNeeded()
+        guard !unreadableTransaction else {
+            throw WeaveMacError.message(lastError ?? "系统代理恢复记录无法读取")
+        }
         guard port >= 1 && port <= 65_535 else {
             throw WeaveMacError.message("本地代理端口无效")
         }
@@ -106,9 +131,10 @@ final class SystemProxyManager {
             socks: try socksProxyState(service: service),
             auto: try autoProxyState(service: service),
             bypassDomains: try bypassDomains(service: service),
+            ownedPort: port,
         )
-        snapshots = [snapshot]
         try persist(snapshot)
+        snapshots = [snapshot]
         do {
             try setProxy(service: service, secure: false, server: "127.0.0.1", port: port)
             try setProxy(service: service, secure: true, server: "127.0.0.1", port: port)
@@ -123,35 +149,74 @@ final class SystemProxyManager {
         }
     }
 
-    func restore() {
-        let pending = snapshots
-        guard !pending.isEmpty else {
-            try? FileManager.default.removeItem(at: transactionURL)
-            return
-        }
-        var restored = true
-        for snapshot in pending {
+    @discardableResult
+    func restore() -> RestoreResult {
+        loadJournalIfNeeded()
+        guard !unreadableTransaction else { return .failed }
+        guard !snapshots.isEmpty else { return .restored }
+        lastError = nil
+        var preserved = false
+        for field in Field.allCases where snapshots[0].pending.contains(field) {
             do {
-                try setProxy(
-                    service: snapshot.service,
-                    secure: false,
-                    state: snapshot.web,
-                )
-                try setProxy(
-                    service: snapshot.service,
-                    secure: true,
-                    state: snapshot.secure,
-                )
-                try setSocksProxy(service: snapshot.service, state: snapshot.socks)
-                try setAutoProxy(service: snapshot.service, state: snapshot.auto)
-                try setBypassDomains(service: snapshot.service, domains: snapshot.bypassDomains)
+                if try stillOwned(field, snapshot: snapshots[0]) {
+                    // Persist intent before the first command, so a failed second command can
+                    // resume without treating our own partially restored endpoint as a new owner.
+                    snapshots[0].restoring.insert(field)
+                    try persist(snapshots[0])
+                    try restoreField(field, snapshot: snapshots[0])
+                } else {
+                    preserved = true
+                }
+                var completed = snapshots[0]
+                completed.pending.remove(field)
+                completed.restoring.remove(field)
+                try persist(completed)
+                snapshots[0] = completed
             } catch {
-                restored = false
+                lastError = error.localizedDescription
             }
         }
-        if restored {
-            snapshots.removeAll()
-            try? FileManager.default.removeItem(at: transactionURL)
+        if snapshots[0].pending.isEmpty {
+            do {
+                try FileManager.default.removeItem(at: transactionURL)
+                snapshots.removeAll()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+        guard snapshots.isEmpty else { return .failed }
+        return preserved ? .preservedChanges : .restored
+    }
+
+    private func stillOwned(_ field: Field, snapshot: Snapshot) throws -> Bool {
+        let owned = ProxyState(enabled: true, server: "127.0.0.1", port: snapshot.ownedPort)
+        let current: ProxyState
+        let original: ProxyState
+        switch field {
+        case .web, .secure:
+            current = try proxyState(service: snapshot.service, secure: field == .secure)
+            original = field == .secure ? snapshot.secure : snapshot.web
+        case .socks:
+            current = try socksProxyState(service: snapshot.service)
+            original = snapshot.socks
+        case .auto:
+            let value = try autoProxyState(service: snapshot.service)
+            return value == AutoProxyState(enabled: false, url: snapshot.auto.url)
+        case .bypass:
+            return try bypassDomains(service: snapshot.service).isEmpty
+        }
+        if current == owned { return true }
+        return snapshot.restoring.contains(field) && !original.server.isEmpty && original.port > 0 &&
+            current == ProxyState(enabled: true, server: original.server, port: original.port)
+    }
+
+    private func restoreField(_ field: Field, snapshot: Snapshot) throws {
+        switch field {
+        case .web: try setProxy(service: snapshot.service, secure: false, state: snapshot.web)
+        case .secure: try setProxy(service: snapshot.service, secure: true, state: snapshot.secure)
+        case .socks: try setSocksProxy(service: snapshot.service, state: snapshot.socks)
+        case .auto: try setAutoProxy(service: snapshot.service, state: snapshot.auto)
+        case .bypass: try setBypassDomains(service: snapshot.service, domains: snapshot.bypassDomains)
         }
     }
 
@@ -160,15 +225,22 @@ final class SystemProxyManager {
         try data.write(to: transactionURL, options: [.atomic, .completeFileProtection])
     }
 
-    private func restoreOrphanedTransaction() {
-        guard
-            let data = try? Data(contentsOf: transactionURL),
-            let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data)
-        else { return }
-        // Mark it active so restore() follows the same cleanup path, but do not expose the
-        // previous proxy as active to the UI after startup.
-        snapshots = [snapshot]
-        restore()
+    private func loadJournalIfNeeded() {
+        guard !journalLoaded else { return }
+        journalLoaded = true
+        do {
+            let data = try Data(contentsOf: transactionURL)
+            let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
+            guard (1...65_535).contains(snapshot.ownedPort), !snapshot.service.isEmpty else {
+                throw WeaveMacError.message("系统代理恢复记录无效")
+            }
+            snapshots = [snapshot]
+        } catch CocoaError.fileReadNoSuchFile {
+            return
+        } catch {
+            unreadableTransaction = true
+            lastError = "无法读取系统代理恢复记录，已禁止覆盖：\(error.localizedDescription)"
+        }
     }
 
     private func primaryService() throws -> String {
@@ -347,25 +419,10 @@ final class SystemProxyManager {
 
     @discardableResult
     private func command(executable: String, arguments: [String]) throws -> String {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = errors
-        try process.run()
-        process.waitUntilExit()
-        let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = errors.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let detail = String(data: stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let lower = detail?.lowercased() ?? ""
-            if lower.contains("root") || lower.contains("authoriz") || lower.contains("permission") {
-                throw WeaveMacError.message("macOS 拒绝修改系统代理；请允许网络设置或用有管理员权限的账户运行")
-            }
-            throw WeaveMacError.message(detail?.isEmpty == false ? detail! : "macOS 网络代理设置失败")
-        }
-        return String(data: stdout, encoding: .utf8) ?? ""
+        try runCommand(executable, arguments)
+    }
+
+    nonisolated private static func executeCommand(_ executable: String, _ arguments: [String]) throws -> String {
+        try BoundedCommand.run(executable: executable, arguments: arguments)
     }
 }

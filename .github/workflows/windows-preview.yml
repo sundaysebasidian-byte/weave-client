@@ -1,7 +1,10 @@
 name: Windows preview
 on:
   push:
-    branches: ['codex/windows-test-package', 'codex/windows-v1-preview']
+    branches: ['main', 'codex/windows-test-package', 'codex/windows-v1-preview', 'codex/product-hardening']
+    paths: ['windows/**', '.github/workflows/windows-preview.yml', 'geodata-lock.properties']
+  pull_request:
+    paths: ['windows/**', '.github/workflows/windows-preview.yml', 'geodata-lock.properties']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - uses: microsoft/setup-msbuild@v2
       - uses: actions/setup-java@v4
         with:

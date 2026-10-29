@@ -24,5 +24,6 @@ let package = Package(
                 .linkedFramework("Vision"),
             ],
         ),
+        .testTarget(name: "WeaveMacTests", dependencies: ["WeaveMac"]),
     ],
 )

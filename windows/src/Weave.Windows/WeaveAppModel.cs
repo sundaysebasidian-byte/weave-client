@@ -14,6 +14,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private readonly MihomoConfigBuilder _configBuilder = new();
     private readonly WindowsSystemProxy _systemProxy;
     private MihomoProcess? _process;
+    private RuntimeSession? _runtimeSession;
+    private bool _runtimeCleanupPending;
     public RuntimeBundle? ActiveBundle { get; private set; }
     public ConnectionHealthState Health { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
@@ -40,11 +42,12 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public bool IsConnected => _process?.IsReady == true;
 
     private string _status = "未连接";
-    public string Status { get => L.T(_status); private set => _status = value; }
+    public string Status { get => L.T(_status) + (_runtimeCleanupPending ? " · " + L.T("会话配置尚未清理") : ""); private set => _status = value; }
 
     public void Load()
     {
         _systemProxy.Recover();
+        _runtimeCleanupPending = RuntimeSession.Recover(Path.Combine(_dataDirectory, "runtime-sessions")).Retained > 0;
         Subscriptions.Clear();
         AppRoutes.Clear();
         foreach (var subscription in _vault.List())
@@ -201,7 +204,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             throw new FileNotFoundException(L.T("未找到 mihomo.exe。请将它放到 Windows 发行包的 runtime 目录，或设置 WEAVE_MIHOMO_PATH。"));
         }
 
-        var runtime = Path.Combine(_dataDirectory, "runtime", Guid.NewGuid().ToString("N"));
+        _runtimeSession = RuntimeSession.Reserve(Path.Combine(_dataDirectory, "runtime-sessions"));
+        var runtime = _runtimeSession.DirectoryPath;
         var subscriptions = Subscriptions.ToArray();
         var routes = AppRoutes.ToArray();
         var options = NetworkOptions;
@@ -213,7 +217,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             nodeId,
             options,
             runtime), cancellationToken); }
-        catch { await RemoveSessionDirectoryAsync(runtime).ConfigureAwait(false); throw; }
+        catch { await CleanupRuntimeAsync().ConfigureAwait(false); throw; }
         ActiveBundle = bundle;
         var process = new MihomoProcess(executable);
         process.Exited += (_, _) =>
@@ -329,28 +333,15 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     private async Task CleanupRuntimeAsync()
     {
-        var bundle = ActiveBundle;
         ActiveBundle = null;
-        if (bundle is not null) await RemoveSessionDirectoryAsync(bundle.Directory).ConfigureAwait(false);
-    }
-
-    private Task RemoveSessionDirectoryAsync(string path)
-    {
-        var root = Path.GetFullPath(Path.Combine(_dataDirectory, "runtime"));
-        // Only our own single GUID session, never a subscription-controlled path.
-        if (Path.GetDirectoryName(Path.GetFullPath(path)) != root ||
-            !Guid.TryParseExact(Path.GetFileName(path), "N", out _)) return Task.CompletedTask;
-        return Task.Run(async () =>
+        var session = _runtimeSession;
+        _runtimeSession = null;
+        if (session is null) return;
+        await Task.Run(() =>
         {
-            for (var attempt = 0; attempt <= 10; attempt++)
-            {
-                try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); return; }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-                {
-                    if (attempt == 10) return; // Preserve an inaccessible session; never broaden the deletion target.
-                    await Task.Delay(200).ConfigureAwait(false);
-                }
-            }
+            try { _runtimeCleanupPending |= !session.CleanupAfterCoreExit(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { _runtimeCleanupPending = true; }
+            finally { session.Dispose(); }
         });
     }
 

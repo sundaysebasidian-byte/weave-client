@@ -7,9 +7,12 @@ import Security
 @MainActor
 final class AppModel: ObservableObject {
     private static let tunEnabledKey = "weave.macos.tun-enabled"
+    private static let selectionKey = "weave.macos.connection-selection.v1"
 
-    let vault = SubscriptionVault()
-    let core = MihomoController()
+    let vault: SubscriptionVault
+    let core: MihomoController
+    private let defaults: UserDefaults
+    private var savedSelection: SavedConnectionSelection
 
     @Published var transferLink = ""
     @Published var transferConfirmationCode = ""
@@ -17,8 +20,8 @@ final class AppModel: ObservableObject {
     @Published var importConfirmationCode = ""
     @Published var transferMessage = ""
     @Published var transferBusy = false
-    @Published var selectedSubscriptionID: UUID?
-    @Published var selectedNodeName: String?
+    @Published private(set) var selectedSubscriptionID: UUID?
+    @Published private(set) var selectedNodeName: String?
     @Published var tunEnabled: Bool
     @Published var directImportBusy = false
     @Published var directImportMessage = ""
@@ -26,30 +29,43 @@ final class AppModel: ObservableObject {
     @Published private(set) var refreshingSubscriptionID: UUID?
     @Published private(set) var subscriptions: [MacSubscription] = []
     @Published private(set) var selectedNodes: [String] = []
+    @Published private(set) var nodeCacheLoading = false
+    @Published var pendingSubscriptionUpdate: PendingSubscriptionUpdate?
+    @Published private(set) var selectionNotice: String?
 
     private var transferServer: OneTimeTransferServer?
     private var nodeCache: [UUID: [String]] = [:]
     private var nodeCacheTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
-    init() {
-        tunEnabled = UserDefaults.standard.object(forKey: Self.tunEnabledKey) as? Bool ?? true
-        subscriptions = vault.subscriptions
-        selectedSubscriptionID = subscriptions.first?.id
-        vault.$subscriptions
+    init(vault: SubscriptionVault? = nil, core: MihomoController? = nil, defaults: UserDefaults = .standard) {
+        self.vault = vault ?? SubscriptionVault()
+        self.core = core ?? MihomoController()
+        self.defaults = defaults
+        tunEnabled = defaults.object(forKey: Self.tunEnabledKey) as? Bool ?? true
+        if let data = defaults.data(forKey: Self.selectionKey) {
+            do { savedSelection = try JSONDecoder().decode(SavedConnectionSelection.self, from: data) }
+            catch {
+                savedSelection = SavedConnectionSelection()
+                selectionNotice = "无法读取上次出口选择，请重新选择订阅和节点"
+            }
+        } else {
+            savedSelection = SavedConnectionSelection(subscriptionID: self.vault.subscriptions.first?.id)
+        }
+        subscriptions = self.vault.subscriptions
+        selectedSubscriptionID = savedSelection.subscriptionID
+        selectedNodeName = savedSelection.node(for: selectedSubscriptionID)
+        self.vault.$subscriptions
             .sink { [weak self] values in
                 guard let self else { return }
                 self.subscriptions = values
-                if let selectedSubscriptionID = self.selectedSubscriptionID,
-                   !values.contains(where: { $0.id == selectedSubscriptionID }) {
-                    self.selectedSubscriptionID = values.first?.id
-                    self.selectedNodeName = nil
-                } else if self.selectedSubscriptionID == nil {
-                    self.selectedSubscriptionID = values.first?.id
+                if self.selectedSubscriptionID == nil, self.selectionNotice == nil, let first = values.first {
+                    self.selectSubscription(first.id)
                 }
                 self.rebuildNodeCache(values)
             }
             .store(in: &cancellables)
+        Task { await self.core.recoverSystemProxy() }
     }
 
     var selectedSubscription: MacSubscription? {
@@ -57,20 +73,45 @@ final class AppModel: ObservableObject {
     }
 
     func selectSubscription(_ id: UUID?) {
+        savedSelection.subscriptionID = id
         selectedSubscriptionID = id
-        selectedNodeName = nil
+        selectedNodeName = savedSelection.node(for: id)
         selectedNodes = id.flatMap { nodeCache[$0] } ?? []
+        persistSelection()
+    }
+
+    func selectNode(_ name: String?) {
+        guard let selectedSubscriptionID else { return }
+        savedSelection.nodeNames[selectedSubscriptionID.uuidString] = name
+        selectedNodeName = name
+        persistSelection()
+    }
+
+    var selectionIssue: String? {
+        if selectedSubscriptionID != nil && selectedSubscription == nil { return "上次选择的订阅已不存在，请重新选择" }
+        if !nodeCacheLoading, let selectedNodeName, !selectedNodes.contains(selectedNodeName) {
+            return "固定节点“\(ClashNodeNames.display(selectedNodeName))”已不存在，请选择新节点或明确选择自动模式"
+        }
+        return nil
+    }
+
+    private func persistSelection() {
+        do {
+            defaults.set(try JSONEncoder().encode(savedSelection), forKey: Self.selectionKey)
+            selectionNotice = core.state.isActive ? "出口选择将在重新连接后生效，当前连接保持不变" : nil
+        } catch { selectionNotice = "出口选择保存失败：\(error.localizedDescription)" }
     }
 
     func setTunEnabled(_ enabled: Bool) {
         tunEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: Self.tunEnabledKey)
+        defaults.set(enabled, forKey: Self.tunEnabledKey)
     }
 
     func toggleConnection() {
         if core.state.isConnected || core.state == .starting {
-            core.stop()
+            Task { await core.stop() }
         } else {
+            guard !nodeCacheLoading, selectionIssue == nil else { return }
             core.start(
                 subscriptions: subscriptions,
                 selectedSubscriptionID: selectedSubscriptionID,
@@ -83,7 +124,7 @@ final class AppModel: ObservableObject {
 
     private func rebuildNodeCache(_ values: [MacSubscription]) {
         nodeCacheTask?.cancel()
-        let selectedID = selectedSubscriptionID
+        nodeCacheLoading = true
         nodeCacheTask = Task {
             let parsed = await Task.detached(priority: .userInitiated) {
                 Dictionary(uniqueKeysWithValues: values.map {
@@ -92,10 +133,8 @@ final class AppModel: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             nodeCache = parsed
-            selectedNodes = selectedID.flatMap { parsed[$0] } ?? []
-            if let selectedNodeName, !selectedNodes.contains(selectedNodeName) {
-                self.selectedNodeName = nil
-            }
+            selectedNodes = selectedSubscriptionID.flatMap { parsed[$0] } ?? []
+            nodeCacheLoading = false
         }
     }
 
@@ -178,14 +217,14 @@ final class AppModel: ObservableObject {
     ) {
         do {
             try vault.update(id: id, name: name, source: source, payload: payload)
-            directImportMessage = "订阅已更新"
+            directImportMessage = core.state.isActive ? "订阅已更新，重新连接后生效；当前连接保持不变" : "订阅已更新"
         } catch {
             directImportMessage = error.localizedDescription
         }
     }
 
     func refreshSubscription(_ subscription: MacSubscription) {
-        guard refreshingSubscriptionID == nil else { return }
+        guard refreshingSubscriptionID == nil, pendingSubscriptionUpdate == nil else { return }
         guard subscription.source.lowercased().hasPrefix("https://") else {
             directImportMessage = "本地文件订阅不能自动刷新，请在编辑页替换文件内容"
             return
@@ -195,28 +234,33 @@ final class AppModel: ObservableObject {
             defer { refreshingSubscriptionID = nil }
             do {
                 let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source)
-                try vault.update(
-                    id: subscription.id,
-                    name: subscription.name,
-                    source: imported.source,
-                    payload: imported.payload,
-                )
-                directImportMessage = "已刷新“\(subscription.name)”"
-                if core.state.isConnected {
-                    core.stop()
-                    let latestSubscriptions = vault.subscriptions
-                    subscriptions = latestSubscriptions
-                    core.start(
-                        subscriptions: latestSubscriptions,
-                        selectedSubscriptionID: selectedSubscriptionID,
-                        selectedNodeName: selectedNodeName,
-                        availableNodeNames: selectedNodes,
-                        preferTun: tunEnabled,
-                    )
-                }
+                try stageSubscriptionUpdate(subscription, imported: imported)
+                directImportMessage = "更新已下载，请检查变化后保存"
             } catch {
                 directImportMessage = error.localizedDescription
             }
+        }
+    }
+
+    func stageSubscriptionUpdate(_ original: MacSubscription, imported: ImportedSubscriptionPayload) throws {
+        guard vault.subscriptions.first(where: { $0.id == original.id }) == original else {
+            throw WeaveMacError.message("下载期间订阅已被修改，请重新刷新")
+        }
+        pendingSubscriptionUpdate = try PendingSubscriptionUpdate(original: original, source: imported.source, payload: imported.payload)
+    }
+
+    func applyPendingSubscriptionUpdate() {
+        guard let pending = pendingSubscriptionUpdate else { return }
+        do {
+            guard vault.subscriptions.first(where: { $0.id == pending.id }) == pending.original else {
+                throw WeaveMacError.message("预览期间订阅已被修改，已保留当前版本；请重新刷新")
+            }
+            try vault.update(id: pending.id, name: pending.original.name, source: pending.source, payload: pending.payload)
+            pendingSubscriptionUpdate = nil
+            directImportMessage = core.state.isActive ? "更新已保存，重新连接后生效；当前连接保持不变" : "更新已保存"
+        } catch {
+            pendingSubscriptionUpdate = nil
+            directImportMessage = error.localizedDescription
         }
     }
 
@@ -383,8 +427,8 @@ final class AppModel: ObservableObject {
 
     /// Called by the application termination hook so a normal quit cannot leave the
     /// previous system proxy transaction active until the next launch.
-    func shutdown() {
-        core.stop()
+    func shutdown() async {
+        await core.stop()
         stopExport()
     }
 }

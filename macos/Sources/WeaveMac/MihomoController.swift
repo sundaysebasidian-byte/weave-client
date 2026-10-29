@@ -2,17 +2,32 @@ import Combine
 import Darwin
 import Foundation
 
-private let weaveTunDevice = "utun_weave"
-
 @MainActor
 final class MihomoController: ObservableObject {
     @Published private(set) var state: MacConnectionState = .stopped
     @Published private(set) var message = "全设备双栈 TUN 未就绪时拒绝连接"
 
     private var process: Process?
+    private var runtime: MacRuntime?
     private var startTask: Task<Void, Never>?
     private var activeLaunchID: UUID?
-    private let systemProxy = SystemProxyManager()
+    private let systemProxy: SystemProxyManager
+    private let providedExecutable: URL?
+    private let runtimeRoot: URL
+
+    init(systemProxy: SystemProxyManager = SystemProxyManager(), executable: URL? = nil, runtimeRoot: URL = RuntimeDirectory.defaultRoot) {
+        self.systemProxy = systemProxy
+        providedExecutable = executable
+        self.runtimeRoot = runtimeRoot
+    }
+
+    func recoverSystemProxy() async {
+        guard !state.isActive else { return }
+        state = .stopping
+        let result = await systemProxy.restore()
+        message = await restorationMessage(result)
+        state = result == .failed ? .failed : .stopped
+    }
 
     var coreAvailable: Bool { executableURL != nil }
 
@@ -23,7 +38,7 @@ final class MihomoController: ObservableObject {
         availableNodeNames: [String],
         preferTun: Bool,
     ) {
-        guard process == nil else { return }
+        guard process == nil, !state.isActive else { return }
         guard let executableURL else {
             state = .failed
             message = "未找到 Apple Silicon Mihomo 核心；连接入口保持关闭"
@@ -48,17 +63,29 @@ final class MihomoController: ObservableObject {
         state = .starting
         message = preferTun ? "正在准备全设备 TUN" : "正在准备本地代理"
         startTask?.cancel()
+        let runtimeRoot = self.runtimeRoot
         startTask = Task {
             do {
                 let runtime = try await Task.detached(priority: .userInitiated) {
-                    try Self.prepareRuntime(
-                        subscriptions,
+                    let runtime = try Self.prepareRuntime(
                         selected: selected,
                         selectedNodeName: selectedNodeName,
                         enableTun: preferTun,
+                        root: runtimeRoot,
                     )
+                    do {
+                        _ = try BoundedCommand.run(executable: executableURL.path, arguments: ["-t", "-d", runtime.directory.url.path, "-f", runtime.directory.url.appendingPathComponent("config.yaml").path], timeout: 10)
+                        return runtime
+                    } catch {
+                        _ = try? runtime.directory.removeAfterCoreExit()
+                        throw error
+                    }
                 }.value
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    try runtime.directory.removeAfterCoreExit()
+                    return
+                }
+                self.runtime = runtime
                 try await launch(
                     executableURL: executableURL,
                     runtime: runtime,
@@ -73,15 +100,17 @@ final class MihomoController: ObservableObject {
                 message = preferTun
                     ? "双栈 TUN 未启用，已拒绝连接以防 IPv4/IPv6/DNS 直连 · \(error.localizedDescription)"
                     : error.localizedDescription
+                cleanupRuntime()
             }
         }
     }
 
-    private func launch(executableURL: URL, runtime: URL, enableTun: Bool) async throws {
+    private func launch(executableURL: URL, runtime: MacRuntime, enableTun: Bool) async throws {
         let task = Process()
         let launchID = UUID()
         task.executableURL = executableURL
-        task.arguments = ["-d", runtime.path, "-f", runtime.appendingPathComponent("config.yaml").path]
+        task.arguments = ["-d", runtime.directory.url.path, "-f", runtime.directory.url.appendingPathComponent("config.yaml").path]
+        task.standardInput = runtime.directory.lease
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
         task.terminationHandler = { [weak self] _ in
@@ -90,9 +119,10 @@ final class MihomoController: ObservableObject {
                 self.process = nil
                 self.activeLaunchID = nil
                 if self.state != .stopped {
+                    self.state = .stopping
+                    self.message = await self.restorationMessage(self.systemProxy.restore())
+                    self.cleanupRuntime()
                     self.state = .failed
-                    self.systemProxy.restore()
-                    self.message = "Mihomo 已停止，系统代理已恢复"
                 }
             }
         }
@@ -100,38 +130,75 @@ final class MihomoController: ObservableObject {
         process = task
         activeLaunchID = launchID
         do {
-            try await Self.waitUntilReady(requireTun: enableTun, device: weaveTunDevice)
+            try await Self.waitUntilReady(runtime: runtime, pid: task.processIdentifier, requireTun: enableTun)
             if !enableTun {
-                try systemProxy.enable(port: 7890)
+                try await systemProxy.enable(port: Int(runtime.mixedPort))
             }
+            try Task.checkCancellation()
+            guard activeLaunchID == launchID, task.isRunning else { throw CancellationError() }
         } catch {
-            terminateCurrentProcess()
-            systemProxy.restore()
+            if activeLaunchID == launchID { await terminateCurrentProcess() }
+            await systemProxy.restore()
+            cleanupRuntime()
             throw error
         }
         state = enableTun ? .tun : .localProxy
         message = enableTun
-            ? "全设备 TUN 已启用 · DNS 劫持 · STUN 防泄漏"
-            : "系统 HTTP/HTTPS/SOCKS 已接管 · 127.0.0.1:7890"
+            ? "双栈 TUN 路由已就绪 · 外网连通性尚未验证"
+            : "系统代理已启用 · 127.0.0.1:\(runtime.mixedPort) · 外网连通性尚未验证"
     }
 
-    func stop() {
+    func stop() async {
+        // A quit during startup recovery must wait for that transaction before exiting.
+        while state == .stopping { try? await Task.sleep(for: .milliseconds(25)) }
         startTask?.cancel()
+        let pendingStart = startTask
+        state = .stopping
+        message = "正在停止代理并恢复网络设置"
+        await terminateCurrentProcess()
+        await pendingStart?.value
         startTask = nil
-        state = .stopped
-        message = "代理已停止"
-        systemProxy.restore()
-        terminateCurrentProcess()
+        let result = await systemProxy.restore()
+        message = await restorationMessage(result)
+        cleanupRuntime()
+        state = result == .failed ? .failed : .stopped
+        if process != nil {
+            state = .failed
+            message = "核心尚未退出，会话配置已保留；请重试停止"
+        }
     }
 
-    private func terminateCurrentProcess() {
+    private func restorationMessage(_ result: SystemProxyManager.RestoreResult) async -> String {
+        switch result {
+        case .restored: "代理已停止，系统代理恢复完成"
+        case .preservedChanges: "代理已停止；已保留后来修改的网络设置"
+        case .failed: "代理已停止，但部分系统设置尚未恢复：\(await systemProxy.lastError ?? "请检查网络设置权限")"
+        }
+    }
+
+    private func terminateCurrentProcess() async {
         activeLaunchID = nil
-        process?.terminate()
-        process = nil
+        guard let task = process else { return }
+        task.terminate()
+        await Task.detached {
+            for _ in 0..<30 where task.isRunning { try? await Task.sleep(for: .milliseconds(50)) }
+            if task.isRunning { kill(task.processIdentifier, SIGKILL) }
+            for _ in 0..<20 where task.isRunning { try? await Task.sleep(for: .milliseconds(50)) }
+        }.value
+        if !task.isRunning { process = nil }
+    }
+
+    private func cleanupRuntime() {
+        guard process == nil, let runtime else { return }
+        do {
+            if try runtime.directory.removeAfterCoreExit() { self.runtime = nil }
+            else { message += " · 运行目录含未知文件，已保留" }
+        } catch { message += " · 会话配置清理失败，下次启动将重试" }
     }
 
     private var executableURL: URL? {
         let candidates = [
+            providedExecutable,
             ProcessInfo.processInfo.environment["WEAVE_MIHOMO_PATH"].map(URL.init(fileURLWithPath:)),
             Bundle.main.url(forAuxiliaryExecutable: "mihomo"),
             Bundle.main.resourceURL?.appendingPathComponent("mihomo"),
@@ -139,29 +206,33 @@ final class MihomoController: ObservableObject {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    nonisolated private static func prepareRuntime(
-        _ subscriptions: [MacSubscription],
+    nonisolated static func prepareRuntime(
         selected: MacSubscription,
         selectedNodeName: String?,
         enableTun: Bool,
-    ) throws -> URL {
-        let base = FileManager.default.urls(
-            for: .cachesDirectory,
-            in: .userDomainMask,
-        ).first!.appendingPathComponent("Weave/runtime", isDirectory: true)
-        try? FileManager.default.removeItem(at: base)
+        root: URL = RuntimeDirectory.defaultRoot,
+    ) throws -> MacRuntime {
+        _ = try RuntimeDirectory.reclaimOrphans(root: root)
+        let directory = try RuntimeDirectory(root: root)
+        var prepared = false
+        defer { if !prepared { _ = try? directory.removeAfterCoreExit() } }
+        let base = directory.url
+        let mixedPort = try unusedPort()
+        var controllerPort = try unusedPort()
+        while controllerPort == mixedPort { controllerPort = try unusedPort() }
+        let runtime = MacRuntime(directory: directory, mixedPort: mixedPort, controllerPort: controllerPort,
+                                 secret: UUID().uuidString + UUID().uuidString,
+                                 tunDevice: "utun\(Int.random(in: 1_000...60_000))")
         let providers = base.appendingPathComponent("providers", isDirectory: true)
-        try FileManager.default.createDirectory(at: providers, withIntermediateDirectories: true)
-        for subscription in subscriptions {
-            let sanitized = try ClashProviderSanitizer.sanitize(subscription.payload)
-            try sanitized.write(
-                to: providers.appendingPathComponent("\(subscription.id.uuidString).yaml"),
-                atomically: true,
-                encoding: .utf8,
-            )
-        }
+        try FileManager.default.createDirectory(at: providers, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let sanitized = try ClashProviderSanitizer.sanitize(selected.payload)
+        let provider = providers.appendingPathComponent("\(selected.id.uuidString).yaml")
+        try Data(sanitized.utf8).write(to: provider, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: provider.path)
         var yaml = """
-        mixed-port: 7890
+        mixed-port: \(mixedPort)
+        external-controller: '127.0.0.1:\(controllerPort)'
+        secret: '\(runtime.secret)'
         allow-lan: false
         mode: rule
         log-level: warning
@@ -176,7 +247,7 @@ final class MihomoController: ObservableObject {
             tun:
               enable: true
               stack: mixed
-              device: \(weaveTunDevice)
+              device: \(runtime.tunDevice)
               dns-hijack:
                 - 'any:53'
               auto-route: true
@@ -238,27 +309,22 @@ final class MihomoController: ObservableObject {
         proxy-providers:
 
         """
-        for subscription in subscriptions {
-            yaml += """
-              '\(subscription.id.uuidString)':
-                type: file
-                path: './providers/\(subscription.id.uuidString).yaml'
-                health-check:
-                  enable: true
-                  url: 'https://www.gstatic.com/generate_204'
-                  interval: 300
+        yaml += """
+          '\(selected.id.uuidString)':
+            type: file
+            path: './providers/\(selected.id.uuidString).yaml'
+        proxy-groups:
 
-            """
-        }
-        yaml += "proxy-groups:\n"
-        for subscription in subscriptions {
+        """
+        if selectedNodeName == nil {
             yaml += """
-              - name: '\(subscription.id.uuidString).auto'
+              - name: '\(selected.id.uuidString).auto'
                 type: url-test
                 use:
-                  - '\(subscription.id.uuidString)'
+                  - '\(selected.id.uuidString)'
                 url: 'https://www.gstatic.com/generate_204'
                 interval: 300
+                lazy: true
 
             """
         }
@@ -285,34 +351,46 @@ final class MihomoController: ObservableObject {
           - AND,((NETWORK,UDP),(DST-PORT,19302-19309)),REJECT
           - DOMAIN-SUFFIX,stun.l.google.com,REJECT
           - DOMAIN-SUFFIX,stun1.l.google.com,REJECT
-          - MATCH,'\(selectedTarget)'
+          - MATCH,\(selectedTarget)
         """
         try yaml.write(
             to: base.appendingPathComponent("config.yaml"),
             atomically: true,
             encoding: .utf8,
         )
-        return base
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: base.appendingPathComponent("config.yaml").path)
+        prepared = true
+        return runtime
     }
 
-    nonisolated private static func waitUntilReady(
-        requireTun: Bool,
-        device: String,
-    ) async throws {
-        for _ in 0..<80 {
+    nonisolated private static func waitUntilReady(runtime: MacRuntime, pid: Int32, requireTun: Bool) async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.connectionProxyDictionary = ["HTTPEnable": 0, "HTTPSEnable": 0, "SOCKSEnable": 0]
+        config.timeoutIntervalForRequest = 1
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        for _ in 0..<30 {
             try Task.checkCancellation()
-            if isPortOpen(7890) &&
-                (!requireTun || (isTunInterfacePresent(device) && hasDualStackRoutes(device))) {
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(runtime.controllerPort)/configs")!)
+            request.setValue("Bearer \(runtime.secret)", forHTTPHeaderField: "Authorization")
+            if let (data, response) = try? await session.data(for: request),
+               (response as? HTTPURLResponse)?.statusCode == 200,
+               let values = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               values["mixed-port"] as? Int == Int(runtime.mixedPort),
+               listenerBelongsToProcess(port: runtime.mixedPort, pid: pid),
+               (!requireTun || (isTunInterfacePresent(runtime.tunDevice) && hasDualStackRoutes(runtime.tunDevice))) {
                 return
             }
-            try await Task.sleep(for: .milliseconds(100))
+            try await Task.sleep(for: .milliseconds(200))
         }
-        if requireTun {
-            throw WeaveMacError.message(
-                "Mihomo 代理端口已启动，但 macOS 双栈 TUN 或 IPv4/IPv6 路由未就绪；已拒绝连接",
-            )
-        }
-        throw WeaveMacError.message("Mihomo 未能在本机代理端口就绪")
+        throw WeaveMacError.message(requireTun
+            ? "本会话内核、代理端口或双栈 TUN 路由未就绪，已拒绝连接"
+            : "本会话内核未能就绪，请检查端口与配置")
+    }
+
+    nonisolated private static func listenerBelongsToProcess(port: UInt16, pid: Int32) -> Bool {
+        guard let output = commandOutput(executable: "/usr/sbin/lsof", arguments: ["-nP", "-a", "-p", String(pid), "-iTCP:\(port)", "-sTCP:LISTEN", "-Fp"]) else { return false }
+        return output.split(separator: "\n").contains("p\(pid)")
     }
 
     nonisolated private static func isTunInterfacePresent(_ device: String) -> Bool {
@@ -323,11 +401,7 @@ final class MihomoController: ObservableObject {
         return output.contains("\(device):")
     }
 
-    /// A TUN device alone is not enough: a failed auto-route can leave IPv4 or IPv6 on the
-    /// physical interface while the UI says connected. Require a broad route in both family
-    /// tables before exposing a successful state. Mihomo may render /1 as `0/1`, `128.0/1`,
-    /// `8000::/1`, or a platform-specific equivalent, so the check intentionally matches any
-    /// /1 route attached to our device rather than one exact netstat spelling.
+    /// Both halves of each family must use this exact interface; a private /16 is not a /1.
     nonisolated private static func hasDualStackRoutes(_ device: String) -> Bool {
         guard
             let ipv4 = commandOutput(
@@ -340,52 +414,32 @@ final class MihomoController: ObservableObject {
             )
         else { return false }
 
-        func hasBroadRoute(_ table: String) -> Bool {
-            table.split(whereSeparator: \.isNewline).contains { line in
-                let text = String(line)
-                return text.contains(device) && (text.contains("/1") || text.contains("default"))
-            }
-        }
-        return hasBroadRoute(ipv4) && hasBroadRoute(ipv6)
+        return TunRouteCoverage.isComplete(ipv4: ipv4, ipv6: ipv6, device: device)
     }
 
     nonisolated private static func commandOutput(
         executable: String,
         arguments: [String],
     ) -> String? {
-        let task = Process()
-        let pipe = Pipe()
-        task.executableURL = URL(fileURLWithPath: executable)
-        task.arguments = arguments
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return nil
-        }
-        guard task.terminationStatus == 0 else { return nil }
-        return String(
-            data: pipe.fileHandleForReading.readDataToEndOfFile(),
-            encoding: .utf8,
-        )
+        try? BoundedCommand.run(executable: executable, arguments: arguments, timeout: 2)
     }
 
-    nonisolated private static func isPortOpen(_ port: UInt16) -> Bool {
+    nonisolated private static func unusedPort() throws -> UInt16 {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { return false }
+        guard descriptor >= 0 else { throw WeaveMacError.message("无法分配本地代理端口") }
         defer { close(descriptor) }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        "127.0.0.1".withCString { pointer in
-            _ = inet_pton(AF_INET, pointer, &address.sin_addr)
-        }
-        return withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return try withUnsafeMutablePointer(to: &address) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                guard bind(descriptor, sock, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 else {
+                    throw WeaveMacError.message("无法绑定本地代理端口")
+                }
+                var size = socklen_t(MemoryLayout<sockaddr_in>.size)
+                guard getsockname(descriptor, sock, &size) == 0 else { throw WeaveMacError.message("无法读取本地端口") }
+                return UInt16(bigEndian: pointer.pointee.sin_port)
             }
         }
     }

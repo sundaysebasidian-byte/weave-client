@@ -14,6 +14,8 @@ data class SubscriptionUsage(
     val expireEpochSeconds: Long?,
 ) {
     val usedBytes: Long get() = saturatingAdd(uploadBytes, downloadBytes)
+    val expireAtMillis: Long?
+        get() = expireEpochSeconds?.takeIf { it in 1..(Long.MAX_VALUE / 1000) }?.times(1000)
 
     fun encode(): String = "$uploadBytes,$downloadBytes,$totalBytes,${expireEpochSeconds ?: 0}"
 

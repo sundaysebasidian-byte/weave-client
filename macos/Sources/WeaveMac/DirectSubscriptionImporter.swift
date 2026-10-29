@@ -18,7 +18,7 @@ enum DirectSubscriptionImporter {
         let result = try await SubscriptionFetchOperation().fetch(url)
         return ImportedSubscriptionPayload(
             suggestedName: result.url.host ?? "远程订阅",
-            source: result.url.absoluteString,
+            source: url.absoluteString,
             payload: result.payload
         )
     }
@@ -63,7 +63,7 @@ enum DirectSubscriptionImporter {
         guard value.range(of: #"(?m)^\s*proxies\s*:"#, options: .regularExpression) != nil else {
             // QR codes commonly carry URI/Base64 subscriptions. Decode them locally and convert
             // only the supported URI forms to a minimal Clash provider.
-            if let decoded = URIListConverter.convertIfSupported(value) ?? decodeBase64Clash(value) ?? decodeBase64URIList(value) {
+            if let decoded = try URIListConverter.convertIfSupported(value) ?? decodeBase64Clash(value) ?? decodeBase64URIList(value) {
                 return ImportedSubscriptionPayload(
                     suggestedName: "二维码订阅",
                     source: "qr://inline-uri",
@@ -79,7 +79,7 @@ enum DirectSubscriptionImporter {
         )
     }
 
-    private static func decodeBase64URIList(_ value: String) -> String? {
+    private static func decodeBase64URIList(_ value: String) throws -> String? {
         let compact = value.components(separatedBy: .whitespacesAndNewlines).joined()
         guard compact.count <= maxPayloadBytes * 2 else { return nil }
         let padded = compact + String(repeating: "=", count: (4 - compact.count % 4) % 4)
@@ -92,7 +92,7 @@ enum DirectSubscriptionImporter {
                       lower.hasPrefix("hysteria") || lower.hasPrefix("tuic://") ||
                       lower.hasPrefix("socks5://")
               }) else { return nil }
-        return URIListConverter.convertIfSupported(text)
+        return try URIListConverter.convertIfSupported(text)
     }
 
     private static func decodeBase64Clash(_ value: String) -> String? {
@@ -211,17 +211,24 @@ enum DirectSubscriptionImporter {
 }
 
 private enum URIListConverter {
-    static func convertIfSupported(_ value: String) -> String? {
-        let lines = value.split(whereSeparator: \.isNewline).map(String.init)
-        let nodes = lines.enumerated().compactMap { index, raw -> String? in
-            let raw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !raw.isEmpty, !raw.hasPrefix("#") else { return nil }
-            if raw.lowercased().hasPrefix("vmess://") {
-                return vmess(raw, index: index)
+    static func convertIfSupported(_ value: String) throws -> String? {
+        let lines = value.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        guard lines.contains(where: { $0.contains("://") }) else { return nil }
+        let nodes = try lines.enumerated().map { index, raw -> String in
+            func invalid() -> WeaveMacError {
+                .message("第 \(index + 1) 个节点无效或包含暂不支持的参数，请提供完整 Clash YAML；没有导入任何节点")
             }
-            guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { return nil }
+            let decodedURI = raw.removingPercentEncoding ?? raw
+            guard !decodedURI.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw invalid() }
+            if raw.lowercased().hasPrefix("vmess://") {
+                guard let converted = try vmess(raw, index: index) else { throw invalid() }
+                return converted
+            }
+            guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { throw invalid() }
             let name = decode(url.fragment) ?? "\(scheme.uppercased()) 节点 \(index + 1)"
-            guard let host = url.host, let port = url.port, !host.isEmpty else { return nil }
+            guard let host = url.host, let port = url.port, !host.isEmpty, (1...65_535).contains(port) else { throw invalid() }
             let query = Dictionary(
                 (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
                     .compactMap { item in item.value.map { (item.name.lowercased(), $0) } },
@@ -231,7 +238,7 @@ private enum URIListConverter {
             let password = decode(url.password) ?? ""
             switch scheme {
             case "vless":
-                guard !user.isEmpty else { return nil }
+                guard UUID(uuidString: user) != nil else { throw invalid() }
                 var fields = [
                     "  - name: '\(yaml(name))'",
                     "    type: vless",
@@ -239,16 +246,26 @@ private enum URIListConverter {
                     "    port: \(port)",
                     "    uuid: '\(yaml(user))'",
                 ]
-                appendTransport(to: &fields, query: query)
+                try appendTransport(to: &fields, query: query)
+                if let encryption = query["encryption"], encryption != "none" { throw invalid() }
+                if let security = query["security"], !["none", "tls", "reality"].contains(security) { throw invalid() }
                 if let security = query["security"], security == "tls" || security == "reality" {
                     fields.append("    tls: true")
                     if let servername = query["sni"], !servername.isEmpty {
                         fields.append("    servername: '\(yaml(servername))'")
                     }
+                    appendTLSOptions(to: &fields, query: query)
+                    if security == "reality" {
+                        guard let publicKey = query["pbk"], !publicKey.isEmpty else { throw invalid() }
+                        fields.append("    reality-opts:")
+                        fields.append("      public-key: '\(yaml(publicKey))'")
+                        if let shortID = query["sid"] { fields.append("      short-id: '\(yaml(shortID))'") }
+                    }
                 }
+                if let flow = query["flow"], !flow.isEmpty { fields.append("    flow: '\(yaml(flow))'") }
                 return fields.joined(separator: "\n")
             case "trojan":
-                guard !user.isEmpty else { return nil }
+                guard !user.isEmpty else { throw invalid() }
                 var fields = [
                     "  - name: '\(yaml(name))'",
                     "    type: trojan",
@@ -260,14 +277,16 @@ private enum URIListConverter {
                 if let servername = query["sni"], !servername.isEmpty {
                     fields.append("    sni: '\(yaml(servername))'")
                 }
+                try appendTransport(to: &fields, query: query)
+                appendTLSOptions(to: &fields, query: query)
                 return fields.joined(separator: "\n")
             case "ss":
                 let rawCredential = password.isEmpty ? user : "\(user):\(password)"
                 guard let credential = decodeBase64URL(rawCredential) ?? Optional(rawCredential),
-                      let separator = credential.firstIndex(of: ":") else { return nil }
+                      let separator = credential.firstIndex(of: ":") else { throw invalid() }
                 let cipher = String(credential[..<separator])
                 let secret = String(credential[credential.index(after: separator)...])
-                guard !cipher.isEmpty, !secret.isEmpty else { return nil }
+                guard !cipher.isEmpty, !secret.isEmpty, query["plugin"] == nil else { throw invalid() }
                 return "  - name: '\(yaml(name))'\n    type: ss\n    server: '\(yaml(host))'\n    port: \(port)\n    cipher: '\(yaml(cipher))'\n    password: '\(yaml(secret))'"
             case "socks5", "socks":
                 var fields = [
@@ -280,7 +299,7 @@ private enum URIListConverter {
                 if !password.isEmpty { fields.append("    password: '\(yaml(password))'") }
                 return fields.joined(separator: "\n")
             case "hysteria2", "hy2":
-                guard !user.isEmpty else { return nil }
+                guard !user.isEmpty else { throw invalid() }
                 var fields = [
                     "  - name: '\(yaml(name))'",
                     "    type: hysteria2",
@@ -290,9 +309,14 @@ private enum URIListConverter {
                 ]
                 if let sni = query["sni"], !sni.isEmpty { fields.append("    sni: '\(yaml(sni))'") }
                 if query["insecure"] == "1" || query["insecure"] == "true" { fields.append("    skip-cert-verify: true") }
+                if let obfs = query["obfs"] {
+                    guard obfs == "salamander", let password = query["obfs-password"], !password.isEmpty else { throw invalid() }
+                    fields.append("    obfs: salamander")
+                    fields.append("    obfs-password: '\(yaml(password))'")
+                }
                 return fields.joined(separator: "\n")
             case "tuic":
-                guard !user.isEmpty, !password.isEmpty else { return nil }
+                guard UUID(uuidString: user) != nil, !password.isEmpty else { throw invalid() }
                 var fields = [
                     "  - name: '\(yaml(name))'",
                     "    type: tuic",
@@ -302,18 +326,24 @@ private enum URIListConverter {
                     "    password: '\(yaml(password))'",
                 ]
                 if let sni = query["sni"], !sni.isEmpty { fields.append("    sni: '\(yaml(sni))'") }
+                if let congestion = query["congestion_control"] { fields.append("    congestion-controller: '\(yaml(congestion))'") }
+                if let mode = query["udp_relay_mode"] { fields.append("    udp-relay-mode: '\(yaml(mode))'") }
+                appendTLSOptions(to: &fields, query: query)
                 return fields.joined(separator: "\n")
             default:
-                return nil
+                throw invalid()
             }
         }
         guard !nodes.isEmpty else { return nil }
         return "proxies:\n" + nodes.joined(separator: "\n") + "\n"
     }
 
-    private static func appendTransport(to fields: inout [String], query: [String: String]) {
+    private static func appendTransport(to fields: inout [String], query: [String: String]) throws {
         guard let network = query["type"] ?? query["network"], !network.isEmpty else { return }
-        fields.append("    network: \(yaml(network))")
+        guard ["tcp", "ws", "grpc"].contains(network) else {
+            throw WeaveMacError.message("暂不支持该 URI 传输方式，请使用保留完整参数的 Clash YAML")
+        }
+        fields.append("    network: '\(yaml(network))'")
         if network == "ws" {
             var ws = ["    ws-opts:"]
             if let path = query["path"], !path.isEmpty { ws.append("      path: '\(yaml(path))'") }
@@ -322,13 +352,27 @@ private enum URIListConverter {
                 ws.append("        Host: '\(yaml(host))'")
             }
             fields.append(contentsOf: ws)
-        } else if network == "grpc", let service = query["serviceName"] ?? query["service"], !service.isEmpty {
+        } else if network == "grpc", let service = query["servicename"] ?? query["service"], !service.isEmpty {
             fields.append("    grpc-opts:")
             fields.append("      grpc-service-name: '\(yaml(service))'")
         }
     }
 
-    private static func vmess(_ raw: String, index: Int) -> String? {
+    private static func appendTLSOptions(to fields: inout [String], query: [String: String]) {
+        if let fingerprint = query["fp"], !fingerprint.isEmpty {
+            fields.append("    client-fingerprint: '\(yaml(fingerprint))'")
+        }
+        if let alpn = query["alpn"], !alpn.isEmpty {
+            fields.append("    alpn: [" + alpn.split(separator: ",").map { "'\(yaml(String($0)))'" }.joined(separator: ", ") + "]")
+        }
+        let allowInsecure = query["allowinsecure"] ?? ""
+        let insecure = query["insecure"] ?? ""
+        if allowInsecure == "1" || allowInsecure == "true" || insecure == "1" || insecure == "true" {
+            fields.append("    skip-cert-verify: true")
+        }
+    }
+
+    private static func vmess(_ raw: String, index: Int) throws -> String? {
         let encoded = String(raw.dropFirst("vmess://".count))
         guard let data = decodeBase64Data(encoded),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -350,7 +394,7 @@ private enum URIListConverter {
             var query = ["type": network]
             if let path = object["path"] as? String { query["path"] = path }
             if let hostHeader = object["host"] as? String { query["host"] = hostHeader }
-            appendTransport(to: &fields, query: query)
+            try appendTransport(to: &fields, query: query)
         }
         if let tls = object["tls"] as? String, !tls.isEmpty, tls != "none" {
             fields.append("    tls: true")

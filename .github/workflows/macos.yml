@@ -1,0 +1,29 @@
+name: macOS integrity
+on:
+  push:
+    branches: [main, codex/product-hardening]
+    paths: ['macos/**', 'core-lock.properties', '.github/workflows/macos.yml']
+  pull_request:
+    paths: ['macos/**', 'core-lock.properties', '.github/workflows/macos.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Verify bundled Apple Silicon core
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(shasum -a 256 macos/Resources/mihomo | cut -d' ' -f1)" = "$(sed -n 's/^mihomo.darwin-arm64.sha256=//p' core-lock.properties)"
+      - name: Regression tests
+        run: bash macos/test.sh --parallel
+      - name: Optimized build
+        run: swift build --package-path macos --configuration release

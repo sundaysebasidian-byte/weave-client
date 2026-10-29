@@ -22,7 +22,7 @@ $solution = Join-Path $PSScriptRoot "Weave.Windows.sln"
 $runtime = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }
 
 Write-Host "Building $Configuration|$Platform..."
-msbuild $solution /restore /p:Configuration=$Configuration /p:Platform=$Platform
+dotnet build $solution /p:Configuration=$Configuration /p:Platform=$Platform
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 $env:WEAVE_TEST_CORE = Join-Path $PSScriptRoot 'src\Weave.Windows\runtime\mihomo.exe'
 $env:WEAVE_TEST_GEODATA = Join-Path $PSScriptRoot '..\app\src\main\assets\geodata'
@@ -36,12 +36,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Windows-to-Android wire-format verification fa
 
 $core = Join-Path $PSScriptRoot "src\Weave.Windows\runtime\mihomo.exe"
 if (-not (Test-Path $core)) {
-    Write-Warning "mihomo.exe not bundled. Put an audited Windows Mihomo binary at: $core"
+    throw "An audited Mihomo core is required before packaging: $core"
 }
 
 $output = Join-Path $PSScriptRoot "artifacts\$Platform"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
+dotnet msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
     /restore /t:Publish /p:Configuration=$Configuration /p:Platform=$Platform `
     /p:RuntimeIdentifier=$runtime /p:SelfContained=true /p:PublishDir="$output\"
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }

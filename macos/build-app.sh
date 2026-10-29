@@ -12,6 +12,16 @@ core_binary="$macos_root/Resources/mihomo"
 icon_source="$macos_root/Resources/WeaveIcon-1024.png"
 core_expected_sha="$(sed -n 's/^mihomo.darwin-arm64.sha256=//p' "$project_root/core-lock.properties")"
 
+if [[ ! -x "$core_binary" ]]; then
+  echo "Required Mihomo executable is missing: $core_binary" >&2
+  exit 1
+fi
+core_actual_sha="$(shasum -a 256 "$core_binary" | awk '{print $1}')"
+if [[ -z "$core_expected_sha" || "$core_actual_sha" != "$core_expected_sha" ]]; then
+  echo "Mihomo SHA-256 does not match core-lock.properties" >&2
+  exit 1
+fi
+
 env \
   SDKROOT="$sdk_root" \
   CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-/private/tmp/weave-swift-module-cache}" \
@@ -45,14 +55,7 @@ fi
 if [[ -f "$macos_root/Resources/WeaveImpressionTexture.webp" ]]; then
   cp "$macos_root/Resources/WeaveImpressionTexture.webp" "$app_bundle/Contents/Resources/WeaveImpressionTexture.webp"
 fi
-if [[ -x "$core_binary" ]]; then
-  core_actual_sha="$(shasum -a 256 "$core_binary" | awk '{print $1}')"
-  if [[ -z "$core_expected_sha" || "$core_actual_sha" != "$core_expected_sha" ]]; then
-    echo "Mihomo SHA-256 does not match core-lock.properties" >&2
-    exit 1
-  fi
-  cp "$core_binary" "$app_bundle/Contents/Resources/mihomo"
-fi
+cp "$core_binary" "$app_bundle/Contents/Resources/mihomo"
 
 codesign \
   --force \

@@ -564,7 +564,7 @@ class SubscriptionRepository(
             SubscriptionQuota(
                 usedBytes = usage.usedBytes,
                 totalBytes = usage.totalBytes,
-                expireAtMillis = usage.expireEpochSeconds?.let { it * 1000 },
+                expireAtMillis = usage.expireAtMillis,
             )
         },
         updatedAtMillis = record.updatedAtMillis,

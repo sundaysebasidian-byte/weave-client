@@ -26,6 +26,8 @@ private enum WeaveGlyphKind: Equatable {
 }
 
 struct ContentView: View {
+    @EnvironmentObject private var vault: SubscriptionVault
+    @EnvironmentObject private var model: AppModel
     @State private var destination: MacDestination = .connection
 
     var body: some View {
@@ -48,6 +50,27 @@ struct ContentView: View {
             }
         }
         .tint(.weaveAcid)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let error = vault.lastError {
+                Label(error, systemImage: "exclamationmark.lock.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.weaveCanvas)
+                    .accessibilityLabel("订阅存储错误：\(error)")
+            }
+            if let notice = model.selectionIssue ?? model.selectionNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.weaveCanvas)
+            }
+        }
+        .sheet(item: $model.pendingSubscriptionUpdate) { pending in
+            SubscriptionUpdatePreview(pending: pending).environmentObject(model)
+        }
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -382,7 +405,7 @@ private struct ConnectionView: View {
                             NodeSelectorPopover(
                                 nodes: model.selectedNodes,
                                 selectedNode: model.selectedNodeName,
-                                onSelect: { model.selectedNodeName = $0 }
+                                onSelect: model.selectNode
                             )
                         }
                     }
@@ -435,14 +458,15 @@ private struct ConnectionView: View {
     }
 
     private var connectDisabled: Bool {
-        model.core.state == .starting ||
-            ((!model.core.coreAvailable || model.selectedSubscription == nil) && !isRunning)
+        model.core.state == .stopping ||
+            ((!model.core.coreAvailable || model.selectedSubscription == nil || model.nodeCacheLoading || model.selectionIssue != nil) && !model.core.state.isActive)
     }
 
     private var statusLabel: String {
         switch model.core.state {
         case .tun, .localProxy: return "已保护"
         case .starting: return "正在连接"
+        case .stopping: return "正在恢复网络"
         case .failed: return "需要处理"
         case .stopped: return "未连接"
         }
@@ -773,6 +797,37 @@ private struct SubscriptionListView: View {
             SubscriptionEditorSheet(subscription: subscription)
                 .environmentObject(model)
         }
+    }
+}
+
+private struct SubscriptionUpdatePreview: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let pending: PendingSubscriptionUpdate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("检查订阅更新").font(.title2.bold())
+            Text(pending.original.name).font(.headline)
+            Text("\(pending.original.nodeCount) → \(pending.nodes.count) 个节点 · 新增 \(pending.added.count) · 移除 \(pending.removed.count)")
+            if let fixed = model.selectedNodeName, model.selectedSubscriptionID == pending.id, !pending.nodes.contains(fixed) {
+                Label("固定节点“\(ClashNodeNames.display(fixed))”将不可用，保存后需要重新选择出口。", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(pending.added, id: \.self) { Text("＋ \(ClashNodeNames.display($0))") }
+                    ForEach(pending.removed, id: \.self) { Text("－ \(ClashNodeNames.display($0))") }
+                    if pending.added.isEmpty && pending.removed.isEmpty { Text("节点名称未变，连接参数可能更新。") }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxHeight: 220)
+            Text("保存后将在下次连接时生效；当前连接保持不变。").font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存更新") { model.applyPendingSubscriptionUpdate() }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 520)
     }
 }
 
