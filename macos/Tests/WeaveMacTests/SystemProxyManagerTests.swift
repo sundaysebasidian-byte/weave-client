@@ -66,6 +66,40 @@ struct SystemProxyManagerTests {
         #expect(fixture.network.commands.isEmpty)
     }
 
+    @Test func authenticatedProxyIsNeverOverwritten() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        fixture.network.web.authenticated = true
+        let original = fixture.network.web
+        let manager = fixture.manager()
+        await #expect(throws: (any Error).self) { try await manager.enable(port: 17890) }
+        #expect(fixture.network.web == original)
+        #expect(!fixture.network.commands.contains { $0[0].hasPrefix("-set") })
+        #expect(!FileManager.default.fileExists(atPath: fixture.journal.path))
+    }
+
+    @Test func addedAuthenticationDuringSessionIsPreserved() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let manager = fixture.manager()
+        try await manager.enable(port: 17890)
+        fixture.network.web.authenticated = true
+        let changed = fixture.network.web
+        #expect(await manager.restore() == .preservedChanges)
+        #expect(fixture.network.web == changed)
+    }
+
+    @Test func incompleteProxySnapshotCannotLeadToWrites() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let manager = SystemProxyManager(transactionURL: fixture.journal, runCommand: { path, args in
+            if args[0] == "-getwebproxy" { return "Enabled: No\nServer: old.proxy\nPort: 8080\n" }
+            return try fixture.network.run(path, args)
+        })
+        await #expect(throws: (any Error).self) { try await manager.enable(port: 17890) }
+        #expect(!fixture.network.commands.contains { $0[0].hasPrefix("-set") })
+    }
+
     private struct Fixture {
         let directory: URL
         let network = FakeNetwork()
@@ -86,7 +120,8 @@ struct SystemProxyManagerTests {
             var enabled: Bool
             var server: String
             var port: Int
-            var text: String { "Enabled: \(enabled ? "Yes" : "No")\nServer: \(server)\nPort: \(port)\n" }
+            var authenticated = false
+            var text: String { "Enabled: \(enabled ? "Yes" : "No")\nServer: \(server)\nPort: \(port)\nAuthenticated Proxy Enabled: \(authenticated ? 1 : 0)\n" }
         }
         static let original = Proxy(enabled: false, server: "old.proxy", port: 8080)
         var web = original

@@ -10,6 +10,8 @@ final class MihomoController: ObservableObject {
     private var process: Process?
     private var runtime: MacRuntime?
     private var startTask: Task<Void, Never>?
+    private var stopTask: Task<Void, Never>?
+    private var operationID = UUID()
     private var activeLaunchID: UUID?
     private let systemProxy: SystemProxyManager
     private let providedExecutable: URL?
@@ -23,13 +25,18 @@ final class MihomoController: ObservableObject {
 
     func recoverSystemProxy() async {
         guard !state.isActive else { return }
+        let operation = UUID()
+        operationID = operation
         state = .stopping
         let result = await systemProxy.restore()
-        message = await restorationMessage(result)
+        let detail = await restorationMessage(result)
+        guard operationID == operation else { return }
+        message = detail
         state = result == .failed ? .failed : .stopped
     }
 
     var coreAvailable: Bool { executableURL != nil }
+    var processIdentifier: Int32? { process?.processIdentifier }
 
     func start(
         subscriptions: [MacSubscription],
@@ -61,6 +68,8 @@ final class MihomoController: ObservableObject {
             return
         }
         state = .starting
+        let operation = UUID()
+        operationID = operation
         message = preferTun ? "正在准备全设备 TUN" : "正在准备本地代理"
         startTask?.cancel()
         let runtimeRoot = self.runtimeRoot
@@ -81,7 +90,7 @@ final class MihomoController: ObservableObject {
                         throw error
                     }
                 }.value
-                guard !Task.isCancelled else {
+                guard operationID == operation, !Task.isCancelled else {
                     try runtime.directory.removeAfterCoreExit()
                     return
                 }
@@ -94,6 +103,7 @@ final class MihomoController: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
+                guard operationID == operation else { return }
                 // Never silently fall back while TUN is requested: that would leave IPv4,
                 // IPv6 or DNS outside the selected proxy while the UI appears connected.
                 state = .failed
@@ -118,12 +128,15 @@ final class MihomoController: ObservableObject {
                 guard let self, self.activeLaunchID == launchID else { return }
                 self.process = nil
                 self.activeLaunchID = nil
-                if self.state != .stopped {
-                    self.state = .stopping
-                    self.message = await self.restorationMessage(self.systemProxy.restore())
-                    self.cleanupRuntime()
-                    self.state = .failed
-                }
+                let operation = UUID()
+                self.operationID = operation
+                self.startTask?.cancel()
+                self.state = .stopping
+                let detail = await self.restorationMessage(self.systemProxy.restore())
+                guard self.operationID == operation else { return }
+                self.message = "核心意外退出 · " + detail
+                self.cleanupRuntime()
+                self.state = .failed
             }
         }
         try task.run()
@@ -131,6 +144,8 @@ final class MihomoController: ObservableObject {
         activeLaunchID = launchID
         do {
             try await Self.waitUntilReady(runtime: runtime, pid: task.processIdentifier, requireTun: enableTun)
+            try Task.checkCancellation()
+            guard activeLaunchID == launchID, task.isRunning else { throw CancellationError() }
             if !enableTun {
                 try await systemProxy.enable(port: Int(runtime.mixedPort))
             }
@@ -149,23 +164,30 @@ final class MihomoController: ObservableObject {
     }
 
     func stop() async {
-        // A quit during startup recovery must wait for that transaction before exiting.
-        while state == .stopping { try? await Task.sleep(for: .milliseconds(25)) }
+        if let stopTask { await stopTask.value; return }
+        // Shutdown is one shared, uncancelled operation. A cancelled caller must not spin on
+        // sleep or abandon restoration while another caller (including app quit) is waiting.
+        operationID = UUID()
         startTask?.cancel()
         let pendingStart = startTask
         state = .stopping
         message = "正在停止代理并恢复网络设置"
-        await terminateCurrentProcess()
-        await pendingStart?.value
-        startTask = nil
-        let result = await systemProxy.restore()
-        message = await restorationMessage(result)
-        cleanupRuntime()
-        state = result == .failed ? .failed : .stopped
-        if process != nil {
-            state = .failed
-            message = "核心尚未退出，会话配置已保留；请重试停止"
+        let shutdown = Task {
+            await terminateCurrentProcess()
+            await pendingStart?.value
+            startTask = nil
+            let result = await systemProxy.restore()
+            message = await restorationMessage(result)
+            cleanupRuntime()
+            state = result == .failed ? .failed : .stopped
+            if process != nil {
+                state = .failed
+                message = "核心尚未退出，会话配置已保留；请重试停止"
+            }
         }
+        stopTask = shutdown
+        await shutdown.value
+        stopTask = nil
     }
 
     private func restorationMessage(_ result: SystemProxyManager.RestoreResult) async -> String {

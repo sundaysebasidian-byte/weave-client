@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import WeaveMac
@@ -70,19 +71,7 @@ struct RuntimeDirectoryTests {
     @Test @MainActor func actualCoreConfigAndLocalLifecycle() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let executable = coreExecutable
-        try #require(FileManager.default.isExecutableFile(atPath: executable.path))
-        let proxy = SystemProxyManager(transactionURL: root.appendingPathComponent("proxy.json"), runCommand: { _, args in
-            // Fake the OS boundary; the real core only listens on random loopback ports.
-            switch args[0] {
-            case "-listallnetworkservices": return "Fixture\n"
-            case "-n", "-listnetworkserviceorder": return ""
-            case "-getwebproxy", "-getsecurewebproxy", "-getsocksfirewallproxy": return "Enabled: No\nServer: \nPort: 0\n"
-            case "-getautoproxyurl": return "Enabled: No\nURL: \n"
-            default: return ""
-            }
-        })
-        let core = MihomoController(systemProxy: proxy, executable: executable, runtimeRoot: root)
+        let core = try controller(root: root)
         core.start(subscriptions: [subscription], selectedSubscriptionID: subscription.id, selectedNodeName: "Fixture", availableNodeNames: ["Fixture"], preferTun: false)
         for _ in 0..<200 where core.state == .starting { try await Task.sleep(for: .milliseconds(50)) }
         let started = core.state
@@ -92,6 +81,65 @@ struct RuntimeDirectoryTests {
         #expect(core.state == .stopped)
         let sessions = try FileManager.default.contentsOfDirectory(atPath: root.path).filter { UUID(uuidString: $0) != nil }
         #expect(sessions.isEmpty)
+    }
+
+    @Test @MainActor func cancelledConcurrentStopsFinishStartupCleanup() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let core = try controller(root: root)
+        for _ in 0..<3 {
+            core.start(subscriptions: [subscription], selectedSubscriptionID: subscription.id, selectedNodeName: "Fixture", availableNodeNames: ["Fixture"], preferTun: false)
+            await Task.yield()
+            let first = Task { await core.stop() }
+            first.cancel()
+            let second = Task { await core.stop() }
+            await first.value
+            await second.value
+            #expect(core.state == .stopped)
+            #expect(core.processIdentifier == nil)
+        }
+        let sessions = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        #expect(sessions.filter { UUID(uuidString: $0) != nil }.isEmpty)
+    }
+
+    @Test @MainActor func unexpectedExitCanRecoverAndReconnect() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let core = try controller(root: root)
+        core.start(subscriptions: [subscription], selectedSubscriptionID: subscription.id, selectedNodeName: "Fixture", availableNodeNames: ["Fixture"], preferTun: false)
+        for _ in 0..<200 where core.state == .starting { try await Task.sleep(for: .milliseconds(50)) }
+        guard core.state == .localProxy, let pid = core.processIdentifier else {
+            Issue.record(Comment(rawValue: core.message))
+            await core.stop()
+            return
+        }
+        #expect(kill(pid, SIGKILL) == 0)
+        for _ in 0..<200 where core.state != .failed { try await Task.sleep(for: .milliseconds(50)) }
+        let failed = core.state
+        let failure = core.message
+        core.start(subscriptions: [subscription], selectedSubscriptionID: subscription.id, selectedNodeName: "Fixture", availableNodeNames: ["Fixture"], preferTun: false)
+        for _ in 0..<200 where core.state == .starting { try await Task.sleep(for: .milliseconds(50)) }
+        let reconnected = core.state
+        await core.stop()
+        #expect(failed == .failed)
+        #expect(failure.contains("核心意外退出"))
+        #expect(reconnected == .localProxy)
+        #expect(core.state == .stopped)
+    }
+
+    @MainActor private func controller(root: URL) throws -> MihomoController {
+        try #require(FileManager.default.isExecutableFile(atPath: coreExecutable.path))
+        let proxy = SystemProxyManager(transactionURL: root.appendingPathComponent("proxy.json"), runCommand: { _, args in
+            // Fake the OS boundary; the real core only listens on random loopback ports.
+            switch args[0] {
+            case "-listallnetworkservices": return "Fixture\n"
+            case "-n", "-listnetworkserviceorder": return ""
+            case "-getwebproxy", "-getsecurewebproxy", "-getsocksfirewallproxy": return "Enabled: No\nServer: \nPort: 0\nAuthenticated Proxy Enabled: 0\n"
+            case "-getautoproxyurl": return "Enabled: No\nURL: \n"
+            default: return ""
+            }
+        })
+        return MihomoController(systemProxy: proxy, executable: coreExecutable, runtimeRoot: root)
     }
 
     private func temporaryRoot() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }

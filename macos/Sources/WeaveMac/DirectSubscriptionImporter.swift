@@ -16,6 +16,7 @@ enum DirectSubscriptionImporter {
         let url = try validateRemoteURL(rawValue)
         try validateResolvedHost(url)
         let result = try await SubscriptionFetchOperation().fetch(url)
+        try Task.checkCancellation()
         return ImportedSubscriptionPayload(
             suggestedName: result.url.host ?? "远程订阅",
             source: url.absoluteString,
@@ -491,15 +492,21 @@ private enum URIListConverter {
     }
 }
 
-private final class SubscriptionFetchOperation: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+final class SubscriptionFetchOperation: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let queue: OperationQueue = {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
         queue.qualityOfService = .userInitiated
         return queue
     }()
+    private let configuration: URLSessionConfiguration
+
+    init(configuration: URLSessionConfiguration = .ephemeral) {
+        self.configuration = configuration
+        super.init()
+    }
+
     private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -514,22 +521,40 @@ private final class SubscriptionFetchOperation: NSObject, URLSessionDataDelegate
     private var finalURL: URL?
     private var redirects = 0
     private var finished = false
+    private var cancelled = false
+    private var started = false
 
     func fetch(_ url: URL) async throws -> (url: URL, payload: String) {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.addOperation {
-                self.continuation = continuation
-                var request = URLRequest(url: url)
-                request.httpMethod = "GET"
-                request.setValue(
-                    "Weave/0.1 (ClashMetaForAndroid compatible)",
-                    forHTTPHeaderField: "User-Agent"
-                )
-                request.setValue(
-                    "application/yaml,text/yaml,text/plain;q=0.9,*/*;q=0.1",
-                    forHTTPHeaderField: "Accept"
-                )
-                self.session.dataTask(with: request).resume()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.addOperation {
+                    guard !self.started else {
+                        continuation.resume(throwing: WeaveMacError.message("订阅请求不能重复使用"))
+                        return
+                    }
+                    self.started = true
+                    self.continuation = continuation
+                    guard !self.cancelled else {
+                        self.finish(.failure(CancellationError()))
+                        return
+                    }
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "GET"
+                    request.setValue(
+                        "Weave/0.1 (ClashMetaForAndroid compatible)",
+                        forHTTPHeaderField: "User-Agent"
+                    )
+                    request.setValue(
+                        "application/yaml,text/yaml,text/plain;q=0.9,*/*;q=0.1",
+                        forHTTPHeaderField: "Accept"
+                    )
+                    self.session.dataTask(with: request).resume()
+                }
+            }
+        } onCancel: {
+            self.queue.addOperation {
+                self.cancelled = true
+                self.finish(.failure(CancellationError()))
             }
         }
     }
@@ -622,6 +647,7 @@ private final class SubscriptionFetchOperation: NSObject, URLSessionDataDelegate
         finished = true
         self.continuation = nil
         continuation.resume(with: result)
-        session.finishTasksAndInvalidate()
+        if case .failure = result { session.invalidateAndCancel() }
+        else { session.finishTasksAndInvalidate() }
     }
 }

@@ -71,6 +71,23 @@ actor SystemProxyManager {
         let enabled: Bool
         let server: String
         let port: Int
+        let authenticated: Bool
+
+        init(enabled: Bool, server: String, port: Int, authenticated: Bool = false) {
+            self.enabled = enabled
+            self.server = server
+            self.port = port
+            self.authenticated = authenticated
+        }
+
+        private enum CodingKeys: String, CodingKey { case enabled, server, port, authenticated }
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            enabled = try values.decode(Bool.self, forKey: .enabled)
+            server = try values.decode(String.self, forKey: .server)
+            port = try values.decode(Int.self, forKey: .port)
+            authenticated = try values.decodeIfPresent(Bool.self, forKey: .authenticated) ?? false
+        }
     }
 
     private struct AutoProxyState: Codable, Equatable {
@@ -133,6 +150,11 @@ actor SystemProxyManager {
             bypassDomains: try bypassDomains(service: service),
             ownedPort: port,
         )
+        // networksetup exposes the authentication flag but cannot recover the original secret.
+        // Do not overwrite even a disabled authenticated proxy and promise an impossible restore.
+        guard ![snapshot.web, snapshot.secure, snapshot.socks].contains(where: \.authenticated) else {
+            throw WeaveMacError.message("当前网络保留了需要认证的代理配置；无法安全恢复其凭据，系统代理设置保持不变")
+        }
         try persist(snapshot)
         snapshots = [snapshot]
         do {
@@ -295,20 +317,22 @@ actor SystemProxyManager {
     private func proxyState(service: String, secure: Bool) throws -> ProxyState {
         let kind = secure ? "-getsecurewebproxy" : "-getwebproxy"
         let output = try command(executable: "/usr/sbin/networksetup", arguments: [kind, service])
-        return ProxyState(
-            enabled: value(after: "Enabled:", in: output)?.lowercased() == "yes",
-            server: value(after: "Server:", in: output) ?? "",
-            port: Int(value(after: "Port:", in: output) ?? "0") ?? 0,
-        )
+        return try parseProxyState(output)
     }
 
     private func socksProxyState(service: String) throws -> ProxyState {
         let output = try command(executable: "/usr/sbin/networksetup", arguments: ["-getsocksfirewallproxy", service])
-        return ProxyState(
-            enabled: value(after: "Enabled:", in: output)?.lowercased() == "yes",
-            server: value(after: "Server:", in: output) ?? "",
-            port: Int(value(after: "Port:", in: output) ?? "0") ?? 0,
-        )
+        return try parseProxyState(output)
+    }
+
+    private func parseProxyState(_ output: String) throws -> ProxyState {
+        guard let enabled = value(after: "Enabled:", in: output), ["Yes", "No"].contains(enabled),
+              let server = value(after: "Server:", in: output),
+              let rawPort = value(after: "Port:", in: output), let port = Int(rawPort), (0...65_535).contains(port),
+              let auth = value(after: "Authenticated Proxy Enabled:", in: output), ["0", "1"].contains(auth) else {
+            throw WeaveMacError.message("无法完整读取系统代理状态，未进行配置覆盖")
+        }
+        return ProxyState(enabled: enabled == "Yes", server: server, port: port, authenticated: auth == "1")
     }
 
     private func autoProxyState(service: String) throws -> AutoProxyState {
