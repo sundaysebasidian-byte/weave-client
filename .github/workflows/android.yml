@@ -33,18 +33,20 @@ jobs:
         run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
+        run: |
+          python3 tools/test-android-ready.py
+          ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
       - name: Android lint
-        timeout-minutes: 25
+        timeout-minutes: 15
         run: ./gradlew lintDebug --no-daemon --no-configuration-cache
       - name: Debug build
         run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
       - name: Storage transactions on a disposable Android emulator
-        timeout-minutes: 15
+        timeout-minutes: 25
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager "emulator" "system-images;android-36;google_apis;x86_64"
+          sdkmanager "emulator" "system-images;android-36;default;x86_64"
           export ANDROID_USER_HOME="$RUNNER_TEMP/weave-android-user"
           export ANDROID_EMULATOR_HOME="$RUNNER_TEMP/weave-android-emulator"
           export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-avds"
@@ -52,9 +54,10 @@ jobs:
           export ADB_MDNS_AUTO_CONNECT=''
           export WEAVE_TEST_ADB_PORT=5041
           export WEAVE_ISOLATED_EMULATOR=1
+          export WEAVE_TEST_BOOT_TIMEOUT=1080
           export WEAVE_TEST_RESULTS="$RUNNER_TEMP/weave-storage-results"
           mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" "$WEAVE_TEST_RESULTS"
-          printf 'no\n' | avdmanager create avd -n weave-storage -k 'system-images;android-36;google_apis;x86_64'
+          printf 'no\n' | avdmanager create avd -n weave-storage -k 'system-images;android-36;default;x86_64'
           adb -P 5041 --one-device weave-isolated-no-usb start-server
           emulator_pid=''
           cleanup() {
@@ -77,11 +80,7 @@ jobs:
             -gpu swiftshader -cores 2 -memory 2048 -camera-back none -camera-front none \
             > "$WEAVE_TEST_RESULTS/emulator.log" 2>&1 &
           emulator_pid=$!
-          for attempt in $(seq 1 300); do
-            kill -0 "$emulator_pid"
-            if [[ $(timeout 5 adb -P 5041 -s emulator-5580 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true) == 1 ]]; then break; fi
-            sleep 3
-          done
+          export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
           bash tools/test-android-storage.sh emulator-5580
       - name: Preserve device test evidence
         if: always()
