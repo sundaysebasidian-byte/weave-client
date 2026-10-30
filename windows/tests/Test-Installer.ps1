@@ -17,6 +17,8 @@ $sc = Join-Path $env:windir 'System32\sc.exe'
 $steps = [Collections.Generic.List[object]]::new()
 $gui = $null
 $guiLauncher = $null
+$ordinarySentinel = $null
+$ordinarySentinelHash = $null
 $testUser = $null
 $sentinel = Join-Path $env:LOCALAPPDATA 'Weave\installer-acceptance.txt'
 if (Test-Path $sentinel) { throw 'Existing user-data sentinel must not be overwritten.' }
@@ -48,6 +50,9 @@ function Service-Image {
 }
 function Assert-UserData {
     if ((Get-FileHash $sentinel -Algorithm SHA256).Hash -ne $sentinelHash) { throw 'Setup changed user data.' }
+    if ($ordinarySentinel -and (Get-FileHash $ordinarySentinel -Algorithm SHA256).Hash -ne $ordinarySentinelHash) {
+        throw 'Setup changed the ordinary GUI account data.'
+    }
 }
 function Shortcut-Hashes([string] $image) {
     $guiPath = Join-Path (Split-Path (Split-Path $image.Trim('"') -Parent) -Parent) 'Weave.Windows.exe'
@@ -137,7 +142,7 @@ try {
         '-StatePath', "`"$guiState`"", '-ExpectedSid', $testUser.Sid.Value) `
         -RedirectStandardOutput (Join-Path $results 'gui-launcher.out.txt') -RedirectStandardError (Join-Path $results 'gui-launcher.err.txt')
     $deadline = (Get-Date).AddSeconds(25)
-    while (-not (Test-Path ($env:WEAVE_UI_CAPTURE + '.ready'))) {
+    while (-not $gui -or -not (Test-Path ($env:WEAVE_UI_CAPTURE + '.ready'))) {
         if (-not $gui -and (Test-Path $guiState)) {
             $state = Get-Content $guiState -Raw | ConvertFrom-Json
             if ($state.sid -ne $testUser.Sid.Value) { throw 'GUI launcher used another account.' }
@@ -152,6 +157,10 @@ try {
     if (-not $profile -or -not (Test-Path (Join-Path $profile.LocalPath 'AppData\Local\Weave\desktop-instance.lock'))) {
         throw 'Installed GUI did not use the ordinary account profile.'
     }
+    $ordinarySentinel = Join-Path $profile.LocalPath 'AppData\Local\Weave\installer-acceptance.txt'
+    if ($state.sentinelPath -ne $ordinarySentinel) { throw 'GUI data fixture was written to another profile.' }
+    $ordinarySentinelHash = $state.sentinelHash
+    Assert-UserData
     $steps.Add(@{ name = 'ordinary-user-gui'; sid = $testUser.Sid.Value; profile = $profile.LocalPath; rendered = $true })
     Invoke-Setup $package 'upgrade'
     $second = Service-Image
@@ -177,6 +186,39 @@ try {
     if (Test-Path (Join-Path $install 'setup-pending.txt')) { throw 'Failed activation left unresolved recovery state.' }
     Assert-UserData
 
+    # An interrupted upgrade must be recoverable, while damaged evidence must block further writes.
+    $preceding = $second
+    $precedingRelease = Split-Path (Split-Path $preceding.Trim('"') -Parent) -Parent
+    $precedingHashes = @(Get-ChildItem $precedingRelease -File -Recurse | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 })
+    $interruptedId = $BuildId + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 16)
+    & (Join-Path $install 'setup\Weave.Setup.exe') begin $install $interruptedId
+    if ($LASTEXITCODE -ne 0) { throw 'Interrupted-upgrade fixture could not prepare a transaction.' }
+    $pending = Join-Path $install 'setup-pending.txt'
+    $pendingBytes = [IO.File]::ReadAllBytes($pending)
+    $pendingHash = (Get-FileHash $pending -Algorithm SHA256).Hash
+    $stopped = Get-CimInstance Win32_Service -Filter "Name='WeaveCore'"
+    if ($stopped.State -ne 'Stopped' -or $stopped.PathName -ne $preceding) { throw 'Prepared upgrade did not retain the preceding service configuration.' }
+    [IO.File]::WriteAllText($pending, 'synthetic damaged recovery fixture')
+    $damagedHash = (Get-FileHash $pending -Algorithm SHA256).Hash
+    Copy-Item $pending (Join-Path $results 'damaged-recovery-fixture.txt')
+    Invoke-Setup $package 'reject-damaged-recovery' $false
+    $unchanged = Get-CimInstance Win32_Service -Filter "Name='WeaveCore'"
+    if ((Get-FileHash $pending -Algorithm SHA256).Hash -ne $damagedHash -or
+        $unchanged.State -ne 'Stopped' -or $unchanged.PathName -ne $preceding) {
+        throw 'Setup changed damaged recovery evidence or the preceding service.'
+    }
+    # Restore only this test's exact captured bytes; the product never repairs a damaged record.
+    [IO.File]::WriteAllBytes($pending, $pendingBytes)
+    if ((Get-FileHash $pending -Algorithm SHA256).Hash -ne $pendingHash) { throw 'The test recovery snapshot was not restored exactly.' }
+    Invoke-Setup $package 'recover-interrupted-upgrade'
+    $second = Service-Image
+    if ($second -eq $preceding -or (Test-Path $pending)) { throw 'Interrupted upgrade was not recovered before the new release committed.' }
+    $null = Shortcut-Hashes $second
+    foreach ($entry in $precedingHashes) {
+        if ((Get-FileHash $entry.Path -Algorithm SHA256).Hash -ne $entry.Hash) { throw 'Recovery changed the preceding release.' }
+    }
+    Assert-UserData
+
     $unknown = Join-Path $install 'keep-unknown.txt'
     [IO.File]::WriteAllText($unknown, 'unknown application-root file must survive uninstall')
     $unknownHash = (Get-FileHash $unknown -Algorithm SHA256).Hash
@@ -194,10 +236,10 @@ try {
     if (Get-Service WeaveCore -ErrorAction SilentlyContinue) { throw 'Uninstall left the registered service.' }
     if ((Get-FileHash $unknown -Algorithm SHA256).Hash -ne $unknownHash) { throw 'Uninstall removed unknown files.' }
     Assert-UserData
-    'Protected installation, maintenance exclusion, upgrade, activation rollback, foreign-service rejection and uninstall/data preservation passed.' | Set-Content (Join-Path $results 'acceptance.txt')
+    'Protected installation, maintenance exclusion, ordinary-user GUI/data, upgrade, activation rollback, interrupted-upgrade recovery, damaged-journal rejection, foreign-service rejection and uninstall/data preservation passed.' | Set-Content (Join-Path $results 'acceptance.txt')
 }
 finally {
-    @{ sourceCommit = (git rev-parse HEAD); install = $install; userSentinel = $sentinel; sentinelHash = $sentinelHash; steps = $steps; filesRetained = $true } |
+    @{ sourceCommit = (git rev-parse HEAD); install = $install; userSentinel = $sentinel; sentinelHash = $sentinelHash; ordinaryUserSentinel = $ordinarySentinel; ordinaryUserSentinelHash = $ordinarySentinelHash; steps = $steps; filesRetained = $true } |
         ConvertTo-Json -Depth 6 | Set-Content (Join-Path $results 'manifest.json')
     if ($gui) {
         $gui.Refresh()
