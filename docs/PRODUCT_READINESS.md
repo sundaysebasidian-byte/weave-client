@@ -90,3 +90,4 @@
 - `e26ceb4` Windows 在第 20 次 TUN 启停发生连接重置（170/171），上游未收到请求；不能归因于服务权限修改，服务阶段未运行。`b725a75` 通过 171 项核心回归和 WinUI 启动，普通账户完成服务认证、进程权限拒绝检查及核心启动，但实际 TUN 请求中止，停止/崩溃验收未完成。
 - 新增回归复现合成服务上游收到空 TCP 健康连接就退出；修复后同一回环测试通过。本地最终 167 项通过、5 项 Windows 用例跳过；不能据测试夹具修复认定原生 TUN 故障已解决。合成数据测试现在使用 debug 级别并保留失败路由快照，产品日志仍脱敏。
 - `1cc60d8` Android 通过单测、lint、Debug，就绪检查等到稳定后才安装；instrumentation 随后报告 Process crashed，Release 未运行。原始设备日志已保留，具体终止原因仍需分析。
+- `1cc60d8` 的 DropBox 此次包含 ANR 主线程：`DexFileVerifier::CheckHeader` / `OpenDexFilesFromOat` / `ActivityThread.handleBindApplication`，采样时尚在加载 APK；主线程累计运行约 3.53 秒、调度等待约 28.98 秒，系统 CPU pressure avg10=90.75。现只对隔离存储测试的应用与测试 APK 提前运行有时限的 `cmd package compile -m verify -f`，两个包均明确成功后才启动 instrumentation；不关闭校验、不清用户数据、不调整系统启动超时。三个脚本回归、原七项就绪与一项失败证据回归通过；独立 API 36 ARM64 两包校验成功、87 项设备用例通过。软件模拟器远端复验仍待执行，冷启动性能和真实设备验收仍开放。依据 [AOSP ART 编译操作](https://source.android.com/docs/core/runtime/jit-compiler)。

@@ -32,6 +32,9 @@ abi=$("${target[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')
 case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported emulator ABI' >&2; exit 1 ;; esac
 "${target[@]}" install -r "$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
 "${target[@]}" install -r "$root/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+# ART verification of cold APKs can exhaust the process-start deadline under software
+# emulation. Do the same verification first, without disabling checks or clearing data.
+python3 "$root/tools/verify-android-test-code.py" "$adb" "$port" "$serial" "$results"
 classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest,io.weave.client.routing.RemoteRuleSetStoreIntegrationTest,io.weave.client.subscription.SubscriptionTransferIntegrationTest,io.weave.client.transfer.BackupRestoreIntegrationTest,io.weave.client.data.ProfileRecoveryIntegrationTest,io.weave.client.ui.StartupRecoveryIntegrationTest
 "${target[@]}" shell am instrument -w -r -e weaveIsolatedEmulator 1 -e class "$classes" \
   io.weave.client.test/androidx.test.runner.AndroidJUnitRunner > "$results/instrumentation.txt" 2>&1

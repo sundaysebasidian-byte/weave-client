@@ -36,6 +36,7 @@ jobs:
         run: |
           python3 tools/test-android-ready.py
           python3 tools/test-android-failure.py
+          python3 tools/test-android-test-code.py
           ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
       - name: Android lint
         timeout-minutes: 15
