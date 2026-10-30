@@ -70,7 +70,7 @@ def run_case(base, helper, core, mode):
     plist = case / (label + '.plist')
     policy = {'Label': label, 'ProgramArguments': [str(helper), str(core), str(root), str(report), 'wait'],
               'RunAtLoad': True, 'KeepAlive': False, 'AbandonProcessGroup': mode == 'negative-abandon',
-              'ExitTimeOut': 5, 'ProcessType': 'Interactive',
+              'ExitTimeOut': 5, 'ProcessType': 'Interactive', 'LimitLoadToSessionType': 'Background',
               'StandardOutPath': str(case / 'stdout.log'), 'StandardErrorPath': str(case / 'stderr.log')}
     plist.write_bytes(plistlib.dumps(policy))
     registered = False
@@ -78,7 +78,16 @@ def run_case(base, helper, core, mode):
     evidence = {'mode': mode, 'target': target, 'policy': policy, 'success': False}
     try:
         # No global overrides, enable/disable state, sudo or system domain operations.
-        command('/bin/launchctl', 'bootstrap', f'user/{os.getuid()}', str(plist))
+        command('/usr/bin/plutil', '-lint', str(plist))
+        domain = command('/bin/launchctl', 'print', f'user/{os.getuid()}')
+        (case / 'domain-before.log').write_text(domain.stdout[:32768])
+        try:
+            command('/bin/launchctl', 'bootstrap', f'user/{os.getuid()}', str(plist))
+        except RuntimeError:
+            diagnostic = command('/usr/bin/log', 'show', '--style', 'compact', '--last', '2m',
+                                 '--predicate', f'process == "launchd" AND eventMessage CONTAINS "{label}"', check=False)
+            (case / 'bootstrap-diagnostic.log').write_text((diagnostic.stdout + diagnostic.stderr)[-32768:])
+            raise
         registered = True
         wait_for(report.exists, 'first core readiness')
         ready = json.loads(report.read_text())

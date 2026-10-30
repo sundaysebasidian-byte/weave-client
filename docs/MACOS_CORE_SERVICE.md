@@ -87,6 +87,6 @@
 
 `CoreProcess` 显式把配置检查器和核心放入宿主当前进程组，不另建组或会话。Apple 的 [launchd.plist 手册](https://github.com/apple-oss-distributions/launchd/blob/main/man/launchd.plist.5) 指定：任务退出时清理同组剩余进程，`AbandonProcessGroup=true` 会关闭该行为。生产宿主必须保留默认清理（显式设为 false）并设置有界 `ExitTimeOut`；不能仅靠服务进程内部的异步停止处理 SIGKILL。
 
-新增未打包的 `WeaveCoreLifecycleProbe`，以普通用户运行实际 `CoreService` 和锁定 Mihomo。CI 在一次性 GitHub macOS 运行器的 user 域临时注册唯一 launchd job，验证正常 TERM、宿主 KILL、核心 STOP 后宿主 KILL、宿主 STOP 后 bootout；每次核对父子 PGID、实际核心退出、端口关闭、服务锁释放、同根目录/同锁 inode 重启与遗留目录回收。另有 `AbandonProcessGroup=true` 负对照，必须实际观察到孤儿核心仍占锁，随后仅终止该夹具精确身份的核心。结束时 bootout 自建 job，保存逐项证据。
+新增未打包的 `WeaveCoreLifecycleProbe`，以普通用户运行实际 `CoreService` 和锁定 Mihomo。CI 在一次性 GitHub macOS 运行器的 user 域临时注册唯一 launchd job，显式指定 `LimitLoadToSessionType=Background`（agent 默认的 Aqua 会话不适用于该域），验证正常 TERM、宿主 KILL、核心 STOP 后宿主 KILL、宿主 STOP 后 bootout；每次核对父子 PGID、实际核心退出、端口关闭、服务锁释放、同根目录/同锁 inode 重启与遗留目录回收。另有 `AbandonProcessGroup=true` 负对照，必须实际观察到孤儿核心仍占锁，随后仅终止该夹具精确身份的核心。结束时 bootout 自建 job，保存逐项证据。
 
 该脚本拒绝在本地或 root 身份执行，不使用 sudo/system 域或持久 enable/disable 设置。普通本地验证只运行独立 helper 的 self-check，不注册后台任务。这里验证的是实际服务后端在 launchd 生命周期下的行为，尚未构成已安装的 Developer ID/root 服务或 GUI TUN 交付；生产宿主与受保护安装仍待接入。各场景是否通过以对应提交的原生 CI 和 artifact 为准。
