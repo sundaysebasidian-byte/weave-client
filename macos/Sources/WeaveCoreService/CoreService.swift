@@ -90,7 +90,7 @@ actor CoreServiceSession: BrokerSession {
     private var ownsSlot = false
     private var machineLease: ServiceMachineLease?
     private var startup: (id: UUID, task: Task<BrokerReply, Never>)?
-    private var shutdownTask: Task<Bool, Never>?
+    private var shutdownTask: (id: UUID, task: Task<Bool, Never>)?
     private var launchID: UUID?
     private(set) var runtime: MacRuntime?
     private(set) var child: (any ServiceCoreChild)?
@@ -201,19 +201,25 @@ actor CoreServiceSession: BrokerSession {
     }
 
     private func stop() async -> Bool {
-        if let shutdownTask { return await shutdownTask.value }
-        state = .stopping
-        startup?.task.cancel()
-        let starting = startup?.task
-        // This task is created independently of caller cancellation. Start's failure path
-        // cleans its own resources; it never waits on this task, avoiding a cancellation cycle.
-        let task = Task {
-            if let starting { _ = await starting.value }
-            return await cleanUp()
+        let operation: (id: UUID, task: Task<Bool, Never>)
+        if let shutdownTask {
+            operation = shutdownTask
+        } else {
+            state = .stopping
+            startup?.task.cancel()
+            let starting = startup?.task
+            // Start cleans its own failed resources and never waits on this task.
+            let task = Task {
+                if let starting { _ = await starting.value }
+                return await cleanUp()
+            }
+            operation = (UUID(), task)
+            shutdownTask = operation
         }
-        shutdownTask = task
-        let result = await task.value
-        shutdownTask = nil
+        let result = await operation.task.value
+        // Every waiter retires the completed operation before replying. A later
+        // waiter must not clear a new stop that began after another waiter resumed.
+        if shutdownTask?.id == operation.id { shutdownTask = nil }
         return result
     }
 

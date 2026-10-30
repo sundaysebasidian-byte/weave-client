@@ -50,6 +50,30 @@ struct CoreServiceTests {
         }
     }
 
+    @Test func everyConcurrentStopWaiterCanImmediatelyStartAgain() async throws {
+        try await withService { service, _ in
+            let session = service.makeSession(for: peer)
+            for _ in 0..<5 {
+                guard case .state(.running, _) = await session.handle(.start(provider: provider, node: "fixture")) else {
+                    Issue.record("Initial core did not start"); return
+                }
+                let child = try #require(await session.child)
+                #expect(kill(child.processIdentifier, SIGSTOP) == 0)
+                let first = Task.detached(priority: .background) { await session.handle(.stop) }
+                try await waitUntil { await session.handle(.status) == .state(.stopping, mixedPort: nil) }
+                let second = Task.detached(priority: .high) {
+                    let stopped = await session.handle(.stop)
+                    let next = await session.handle(.start(provider: "invalid", node: nil))
+                    return (stopped, next)
+                }
+                let result = await second.value
+                #expect(await first.value == .state(.stopped, mixedPort: nil))
+                #expect(result.0 == .state(.stopped, mixedPort: nil))
+                #expect(result.1 == .failure(.invalidProfile))
+            }
+        }
+    }
+
     @Test func invalidProfileDoesNotLeaveRuntimeOrOwnership() async throws {
         try await withService { service, _ in
             let session = service.makeSession(for: peer)
