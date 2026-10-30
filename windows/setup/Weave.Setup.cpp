@@ -7,7 +7,10 @@
 #include <winsvc.h>
 #include <tlhelp32.h>
 #include <wrl/client.h>
+#include <shlwapi.h>
+#include <algorithm>
 #include <array>
+#include <memory>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -56,7 +59,7 @@ bool Trusted(PSID sid) {
     }();
     return EqualSid(sid, const_cast<BYTE*>(installer.data())) != FALSE;
 }
-void CheckEntry(const fs::path& path, bool ancestor = false) {
+void CheckEntry(const fs::path& path, bool ancestor = false, bool pinned = false) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     Require(attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT), "Unsafe or missing installation path");
     PSID owner = nullptr; PACL acl = nullptr; PSECURITY_DESCRIPTOR descriptor = nullptr;
@@ -73,7 +76,11 @@ void CheckEntry(const fs::path& path, bool ancestor = false) {
         if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
         if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) Fail("Unsupported installation ACL entry", ERROR_ACCESS_DENIED);
         const auto allow = static_cast<ACCESS_ALLOWED_ACE*>(entry);
-        if (!Trusted(&allow->SidStart) && (allow->Mask & (ancestor ? AncestorMutation : Mutation))) {
+        DWORD forbidden = ancestor ? AncestorMutation : Mutation;
+        // A no-delete-sharing handle prevents rename/replacement while shortcut metadata is accessed.
+        // Executable installation paths always use the stricter, unpinned policy.
+        if (pinned) forbidden &= ~(DELETE | (ancestor ? FILE_DELETE_CHILD : 0));
+        if (!Trusted(&allow->SidStart) && (allow->Mask & forbidden)) {
             std::wcerr << L"Unsafe installation ACL path: " << path.wstring() << L"; mask: " << allow->Mask << L"\n";
             Fail("An untrusted identity can change installation files", ERROR_ACCESS_DENIED);
         }
@@ -130,16 +137,49 @@ fs::path Gui(const fs::path& root, const std::wstring& id) { return root / L"ver
 std::array<fs::path, 2> Shortcuts() {
     return {KnownFolder(FOLDERID_CommonPrograms) / L"Weave" / L"Weave.lnk", KnownFolder(FOLDERID_PublicDesktop) / L"Weave.lnk"};
 }
+struct ShortcutParents {
+    std::vector<std::unique_ptr<Handle>> handles;
+    explicit ShortcutParents(const std::array<fs::path, 2>& paths) {
+        for (const auto& path : paths) {
+            std::vector<fs::path> chain;
+            for (auto folder = path.parent_path(); ; folder = folder.parent_path()) {
+                chain.push_back(folder);
+                if (folder == folder.parent_path()) break;
+            }
+            std::reverse(chain.begin(), chain.end());
+            for (const auto& folder : chain) {
+                if (!fs::exists(folder) && folder == path.parent_path() && folder.filename() == L"Weave") CreateProtected(folder);
+                auto handle = std::make_unique<Handle>(CreateFileW(folder.c_str(), FILE_READ_ATTRIBUTES,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+                Require(handle->value != INVALID_HANDLE_VALUE, "Pin shortcut directory against replacement");
+                BY_HANDLE_FILE_INFORMATION information{};
+                Require(GetFileInformationByHandle(handle->value, &information) &&
+                    (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && !(information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT),
+                    "Unsafe shortcut directory handle");
+                CheckEntry(folder, true, true);
+                handles.push_back(std::move(handle));
+            }
+        }
+    }
+};
 bool ShortcutExists(const fs::path& path) {
-    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) { CheckEntry(path); return true; }
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+        if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) Fail("Unsafe shortcut reparse point", ERROR_ACCESS_DENIED);
+        return true;
+    }
     const DWORD error = GetLastError();
     if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return false;
     Fail("Inspect shortcut path", error);
 }
 std::vector<BYTE> ReadSmallFile(const fs::path& path) {
-    CheckEntry(path);
-    Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
     Require(file.value != INVALID_HANDLE_VALUE, "Open shortcut recovery input");
+    BY_HANDLE_FILE_INFORMATION information{};
+    Require(GetFileInformationByHandle(file.value, &information) &&
+        !(information.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)), "Unsafe shortcut recovery input handle");
+    CheckEntry(path, false, true);
     LARGE_INTEGER size{};
     Require(GetFileSizeEx(file.value, &size) && size.QuadPart > 0 && size.QuadPart <= 65536, "Invalid shortcut recovery input size");
     std::vector<BYTE> bytes(static_cast<size_t>(size.QuadPart)); DWORD read = 0;
@@ -154,14 +194,17 @@ void WriteNewFile(const fs::path& path, const std::vector<BYTE>& bytes) {
         FlushFileBuffers(file.value), "Persist shortcut recovery file");
 }
 std::wstring ShortcutTarget(const fs::path& path) {
-    ReadSmallFile(path);
+    const auto bytes = ReadSmallFile(path);
     Microsoft::WRL::ComPtr<IShellLinkW> link;
     HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(link.GetAddressOf()));
     if (FAILED(result)) Fail("Open shell link reader", static_cast<DWORD>(result));
-    Microsoft::WRL::ComPtr<IPersistFile> file;
+    Microsoft::WRL::ComPtr<IPersistStream> file;
     result = link.As(&file);
     if (FAILED(result)) Fail("Open shell link persistence", static_cast<DWORD>(result));
-    result = file->Load(path.c_str(), STGM_READ);
+    Microsoft::WRL::ComPtr<IStream> stream;
+    stream.Attach(SHCreateMemStream(bytes.data(), static_cast<UINT>(bytes.size())));
+    Require(stream.Get() != nullptr, "Create bounded shortcut stream");
+    result = file->Load(stream.Get());
     if (FAILED(result)) Fail("Read installed shortcut", static_cast<DWORD>(result));
     wchar_t target[32768]{}; wchar_t arguments[32768]{};
     result = link->GetPath(target, 32768, nullptr, SLGP_RAWPATH);
@@ -177,12 +220,9 @@ void SnapshotShortcuts(const fs::path& root, const std::wstring& next, const Sta
     CreateProtected(directory);
     std::vector<BYTE> present;
     const auto paths = Shortcuts();
+    const ShortcutParents parents(paths);
     for (size_t i = 0; i < paths.size(); ++i) {
         const auto& path = paths[i];
-        if (!fs::exists(path.parent_path())) {
-            CheckAncestors(path.parent_path()); CreateProtected(path.parent_path());
-        }
-        CheckAncestors(path);
         const bool exists = ShortcutExists(path);
         if (exists) {
             if (!previous.exists || !Same(ShortcutTarget(path), Gui(root, previous.id).wstring()))
@@ -198,10 +238,10 @@ void RestoreShortcuts(const fs::path& root, const std::wstring& next, const Stat
     const auto directory = root / L"setup-shortcuts" / next;
     const auto present = ReadSmallFile(directory / L"present.txt");
     const auto paths = Shortcuts();
+    const ShortcutParents parents(paths);
     if (present.size() != paths.size()) Fail("Damaged shortcut recovery map", ERROR_INVALID_DATA);
     std::array<std::vector<BYTE>, 2> backups;
     for (size_t i = 0; i < paths.size(); ++i) {
-        CheckAncestors(paths[i]);
         const auto backup = directory / (std::to_wstring(i) + L".lnk");
         if ((present[i] != '0' && present[i] != '1') || (present[i] == '1') != fs::exists(backup))
             Fail("Incomplete shortcut recovery snapshot", ERROR_INVALID_DATA);
@@ -433,8 +473,9 @@ void Execute(const std::wstring& command, const fs::path& root, const std::wstri
     else if (command == L"commit") {
         const auto current = InspectService(manager, root);
         if (!current.exists || current.id != id || !current.running) Fail("The new service is not running", ERROR_SERVICE_NOT_ACTIVE);
-        for (const auto& path : Shortcuts()) {
-            CheckAncestors(path);
+        const auto paths = Shortcuts();
+        const ShortcutParents parents(paths);
+        for (const auto& path : paths) {
             if (!Same(ShortcutTarget(path), Gui(root, id).wstring())) Fail("The installed shortcut was not published", ERROR_INVALID_DATA);
         }
         Archive(root, transaction, L"committed");
