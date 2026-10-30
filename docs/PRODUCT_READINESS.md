@@ -109,3 +109,6 @@
 - Android `6213dc8` 单测/lint/Debug 通过，设备阶段确认当前运行账户不能访问 `/dev/kvm`，门禁失败，未执行 instrumentation 和 Release。没有修改权限或组成员；需要预授权运行器，不能用历史 ARM64 模拟器结果替代该次失败。
 
 - `638b804` 的 [macOS CI](https://github.com/sundaysebasidian-byte/weave-client/actions/runs/40992427257) 完整回归、Release 与预览打包通过，包含本机被保护文件写入限制阻断的存储/系统代理/生命周期路径。随后显式清除已取消 Network 连接的状态回调，避免保留交换对象；最终五项定向测试再次通过，新提交 CI 独立记录。
+
+- macOS 新增共享 `WeaveCoreBroker`，提供有界结构化帧和公开 XPC 签名认证。原生测试发现初版首条敏感请求早于服务身份确认，以及停止回复早于旧启动完成；现用无机密握手、按序发送、取消并等待旧启动修复。15 项定向声明通过，停止竞争重复 20 次通过；原应用 Release 构建通过。当前仅为共享通信组件，未注册 LaunchDaemon、未接入 GUI TUN，也未启动特权核心；匿名 XPC/合成后端不等于独立进程或 root 服务验收，具体剩余边界见 `MACOS_CORE_SERVICE.md`。
+- `3f4a9b1` Windows 重复 CI 完整成功，Mac 完整回归/Release/预览、依赖检查和发行审计成功；Android JVM/lint/Debug 成功、设备阶段失败且 Release 未执行。当前新提交的检查另行跟踪。

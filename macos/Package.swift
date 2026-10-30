@@ -11,6 +11,8 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
     ],
     targets: [
+        .target(name: "WeaveCoreBroker", linkerSettings: [.linkedFramework("Security")]),
+        .testTarget(name: "WeaveCoreBrokerTests", dependencies: ["WeaveCoreBroker"]),
         .target(name: "CWeaveHTTP", linkerSettings: [.linkedLibrary("curl")]),
         .executableTarget(
             name: "WeaveMac",
