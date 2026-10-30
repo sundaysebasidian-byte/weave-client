@@ -18,8 +18,8 @@ DisableProgramGroupPage=yes
 UsePreviousGroup=no
 AllowNoIcons=no
 PrivilegesRequired=admin
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64os
+ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.19041
 OutputDir=artifacts\installer
 #ifdef SyntheticServiceFailure
@@ -118,7 +118,7 @@ begin
   LastOperationError := '';
   Result := ExecAndCaptureOutput(Helper,
     Operation + ' "' + ExpandConstant('{app}') + '" "' + Id + '"',
-    ExtractFileDir(Helper), SW_SHOWNORMAL, ewWaitUntilTerminated, Code, Output);
+    ExtractFileDir(Helper), SW_HIDE, ewWaitUntilTerminated, Code, Output);
   for I := 0 to GetArrayLength(Output.StdOut) - 1 do Log(Output.StdOut[I]);
   for I := 0 to GetArrayLength(Output.StdErr) - 1 do begin
     Log(Output.StdErr[I]);

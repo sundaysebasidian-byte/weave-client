@@ -78,6 +78,9 @@ jobs:
           if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
             [[ -c /dev/kvm ]] || { echo 'The isolated runner has no KVM device.' >&2; exit 1; }
             kvm_group=$(stat -c '%g' /dev/kvm)
+            [[ $(stat -c '%G' /dev/kvm) == kvm && $kvm_group != 0 ]] || {
+              echo 'KVM must belong to its dedicated non-root device group.' >&2; exit 1;
+            }
             emulator_command=(sudo -n -u "$(id -un)" -g "#$kvm_group"
               --preserve-env=ANDROID_HOME,ANDROID_USER_HOME,ANDROID_EMULATOR_HOME,ANDROID_AVD_HOME,ANDROID_ADB_SERVER_PORT,ADB_MDNS_AUTO_CONNECT --)
           fi

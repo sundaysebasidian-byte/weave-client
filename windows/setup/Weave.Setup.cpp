@@ -73,8 +73,10 @@ void CheckEntry(const fs::path& path, bool ancestor = false) {
         if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
         if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) Fail("Unsupported installation ACL entry", ERROR_ACCESS_DENIED);
         const auto allow = static_cast<ACCESS_ALLOWED_ACE*>(entry);
-        if (!Trusted(&allow->SidStart) && (allow->Mask & (ancestor ? AncestorMutation : Mutation)))
+        if (!Trusted(&allow->SidStart) && (allow->Mask & (ancestor ? AncestorMutation : Mutation))) {
+            std::wcerr << L"Unsafe installation ACL path: " << path.wstring() << L"; mask: " << allow->Mask << L"\n";
             Fail("An untrusted identity can change installation files", ERROR_ACCESS_DENIED);
+        }
     }
 }
 void CheckTree(const fs::path& path) {

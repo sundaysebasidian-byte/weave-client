@@ -14,6 +14,20 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Validate native installer storage boundary
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_INSTALLER_TEST: '1'
+        run: |
+          ./windows/setup/Build-Setup.ps1
+          ./windows/tests/Test-SetupBoundary.ps1
+      - name: Preserve native installer boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-setup-boundary-tests
+          path: windows/artifacts/setup-boundary-tests/
+          if-no-files-found: warn
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
