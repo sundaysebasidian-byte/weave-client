@@ -107,3 +107,5 @@
 - macOS 锁定核心 `e26714a` 同样复现提前就绪：阻塞规则加载时控制 API 和 mixed 监听已可用，原实现返回成功，首个代理请求没有预期响应。现在每个会话有仅回环、固定目标的 TCP tunnel，启动时用未写入配置的随机密钥验证 32 字节挑战/HMAC；核验该监听归属核心 PID 后才接受结果。响应器最多八个连接、单交换一秒上限，成功/失败/取消均等待监听和已接受连接关闭，不在会话期间持续运行。没有改变用户规则或依赖外网测速。网络读写边界依据 [Apple NWConnection.receive](https://developer.apple.com/documentation/network/nwconnection/receive(minimumincompletelength:maximumlength:completion:))。
 - 新增 Mac 五项测试声明、八个场景全部通过：实际加载阻塞/恢复与首个请求、加载期间取消、回显/半截/无响应拒绝、取消连接、预先取消启动及端口占用。Release 构建通过。71 项完整本地回归有 12 处受保护文件写入 EPERM，独立 Foundation 程序复现普通原子写入成功而 `.completeFileProtection` 失败；相关存储代码未修改，不放宽保护。最新完整 CI 待对应提交复验。
 - Android `6213dc8` 单测/lint/Debug 通过，设备阶段确认当前运行账户不能访问 `/dev/kvm`，门禁失败，未执行 instrumentation 和 Release。没有修改权限或组成员；需要预授权运行器，不能用历史 ARM64 模拟器结果替代该次失败。
+
+- `638b804` 的 [macOS CI](https://github.com/sundaysebasidian-byte/weave-client/actions/runs/40992427257) 完整回归、Release 与预览打包通过，包含本机被保护文件写入限制阻断的存储/系统代理/生命周期路径。随后显式清除已取消 Network 连接的状态回调，避免保留交换对象；最终五项定向测试再次通过，新提交 CI 独立记录。

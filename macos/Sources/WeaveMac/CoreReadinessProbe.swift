@@ -145,6 +145,7 @@ private final class ReadinessExchange: @unchecked Sendable {
                             } else { self.receive() }
                         case let .failed(error): self.finish(.failure(error))
                         case .cancelled:
+                            self.connection.stateUpdateHandler = nil
                             let continuation = self.continuation
                             self.continuation = nil
                             continuation?.resume(with: self.result ?? .failure(CancellationError()))
