@@ -14,18 +14,14 @@ public partial class App : Application
         catch (Exception error) { RecordStartupFailure(error); throw; }
     }
 
-    protected override async void OnLaunched(LaunchActivatedEventArgs args)
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         try
         {
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave");
             Directory.CreateDirectory(directory);
-            var restarting = Environment.GetCommandLineArgs().Contains("--elevated-restart");
-            for (var attempt = 0; attempt < (restarting ? 100 : 1); attempt++)
-            {
-                try { _instanceLock = new FileStream(Path.Combine(directory, "desktop-instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
-                catch (IOException) { if (restarting) await Task.Delay(150); }
-            }
+            try { _instanceLock = new FileStream(Path.Combine(directory, "desktop-instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException) { /* Activate the existing instance below. */ }
             if (_instanceLock is null)
             {
                 var current = System.Diagnostics.Process.GetCurrentProcess();

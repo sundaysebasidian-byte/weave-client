@@ -13,7 +13,7 @@ git checkout v0.4.0-rc4
 
 ## 工具链与构建
 
-安装 JDK 17、Android SDK 36、NDK `29.0.14206865` 和 CMake `3.31.6`。
+安装 JDK 17、Android SDK 37.0（`platforms;android-37.0`）、NDK `29.0.14206865` 和 CMake `3.31.6`。SDK 命令行工具使用 `15859902` 或更新版本；旧工具不能完整识别新版 SDK 元数据。`compileSdk` 为 37，`targetSdk` 仍为 36，最低版本仍为 26。
 在未提交的 `local.properties` 中配置本机 `sdk.dir`，或设置 `ANDROID_HOME`。
 Gradle 版本与校验值以仓库 wrapper 为准。
 
@@ -26,6 +26,18 @@ bash tools/audit-local-release.sh
 默认分别构建 ARM64、ARM32、x86、x86_64；不会生成包含四套内核的 universal APK。
 只构建现代 ARM64 手机可增加 `-PweaveArm64Only=true`。
 无发行签名配置时，`assembleRelease` 输出未签名 APK，不能直接安装。
+
+CI 在可丢弃的 API 36 模拟器运行加密存储、订阅/规则集更新竞争与跨进程回归，并保留报告。
+模拟器在隔离 CI 使用 KVM；启动前以现有权限运行 `-accel-check`，不可用时明确失败。运行器已拒绝进程组 sudo 授权请求（run `40986689867`），不再尝试提权，也不修改 ACL、udev 或组成员。远端设备验收需要预先具备 KVM 权限的运行器。此前软件模拟多次造成系统服务 watchdog/ANR 或设备测试超时，不能继续用增加时限替代有效设备验收。
+本地复现时先创建独立测试模拟器；不要指定装有个人数据的现有设备。构建 `:app:assembleDebug`
+和 `:app:assembleDebugAndroidTest` 后，明确指定它的序列号运行：
+
+```sh
+WEAVE_ISOLATED_EMULATOR=1 bash tools/test-android-storage.sh emulator-5580
+```
+
+使用独立 ADB 服务时同时设置 `WEAVE_TEST_ADB_PORT`。脚本只向指定模拟器安装测试 APK，
+不会卸载已有应用、清空数据或操作其他设备；签名不匹配时直接失败。
 
 本地测试可使用 `:app:assembleLocalOptimized`：开启 R8 和资源压缩、关闭 debuggable，
 但沿用本机开发证书。本地构建不自动获得发布包的生产签名。公开 Build 106 使用开发证书，

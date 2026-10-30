@@ -1,0 +1,68 @@
+name: macOS integrity
+on:
+  push:
+    branches: [main]
+    paths: ['macos/**', 'tests/fixtures/**', 'core-lock.properties', '.github/workflows/macos.yml']
+  pull_request:
+    paths: ['macos/**', 'tests/fixtures/**', 'core-lock.properties', '.github/workflows/macos.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Toolchain
+        run: swift --version
+      - name: Verify bundled Apple Silicon core
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(shasum -a 256 macos/Resources/mihomo | cut -d' ' -f1)" = "$(sed -n 's/^mihomo.darwin-arm64.sha256=//p' core-lock.properties)"
+      - name: Regression tests
+        run: bash macos/test.sh --parallel --skip 'CoreInstallationTests|CoreServiceHostTests|ServiceMachineLeaseTests'
+      # Signing/copying fixtures block worker threads; keep them out of the timed
+      # XPC/process regression batch without changing production or test deadlines.
+      - name: Signed installation snapshots
+        run: bash macos/test.sh --filter 'CoreInstallationTests|CoreServiceHostTests'
+      # This fixture intentionally opens an inheritable unrelated descriptor. Other
+      # suites must not spawn children while it attributes that descriptor to the core.
+      - name: Isolated descriptor inheritance
+        run: bash macos/test.sh --filter ServiceMachineLeaseTests
+      - name: Native service host crash recovery
+        run: |
+          swift build --package-path macos --product WeaveCoreLifecycleProbe
+          bin_root="$(swift build --package-path macos --show-bin-path)"
+          python3 macos/test-host-lifecycle.py --helper "$bin_root/WeaveCoreLifecycleProbe" --core "$PWD/macos/Resources/mihomo" --output "$RUNNER_TEMP/weave-host-lifecycle"
+      - name: Preserve host lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-macOS-host-lifecycle
+          path: ${{ runner.temp }}/weave-host-lifecycle
+          if-no-files-found: error
+      - name: Optimized build
+        run: swift build --package-path macos --configuration release
+      - name: Package verifiable preview
+        run: bash macos/build-app.sh
+      - name: Verify packaged core with native integrity checks
+        run: |
+          bundles=(macos/build/package.*/Weave.app)
+          test "${#bundles[@]}" = 1
+          test -d "${bundles[0]}"
+          WEAVE_TEST_PACKAGED_BUNDLE="$PWD/${bundles[0]}" bash macos/test.sh --filter packagedPreviewPassesTheNativeContentVerifier
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Weave-macOS-arm64-preview
+          path: |
+            macos/build/package.*/Weave-macos-arm64.zip
+            macos/build/package.*/Weave-macos-arm64.zip.sha256
+            macos/build/package.*/manifest.json
+          if-no-files-found: error

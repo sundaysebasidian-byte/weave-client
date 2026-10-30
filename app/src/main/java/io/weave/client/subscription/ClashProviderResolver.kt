@@ -5,6 +5,8 @@ import java.util.Base64
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.regex.Pattern
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
@@ -20,14 +22,15 @@ import org.yaml.snakeyaml.resolver.Resolver
  * Download callbacks must enforce HTTPS, redirect/address policy and response-size limits.
  */
 internal class ClashProviderResolver(
-    private val fetch: (String) -> SubscriptionFetchResult,
+    private val fetch: suspend (String) -> SubscriptionFetchResult,
     private val urlPolicy: SubscriptionUrlPolicy = SubscriptionUrlPolicy(),
 ) {
     data class Resolution(val payload: String, val rootNodes: Int?, val providerNodes: Int, val collections: Int)
 
-    fun resolve(input: String, source: String): String = resolveDetailed(input, source).payload
+    suspend fun resolve(input: String, source: String): String = resolveDetailed(input, source).payload
 
-    fun resolveDetailed(input: String, source: String): Resolution {
+    suspend fun resolveDetailed(input: String, source: String): Resolution {
+        currentCoroutineContext().ensureActive()
         val document = documentWithProviders(input) ?: return Resolution(input, null, 0, 0)
         val root = ClashYamlCodec.read(document)
         val providers = root["proxy-providers"] as? Map<*, *>
@@ -41,6 +44,7 @@ internal class ClashProviderResolver(
         var totalBytes = document.toByteArray(Charsets.UTF_8).size
 
         providers.values.forEach { value ->
+            currentCoroutineContext().ensureActive()
             val provider = value as? Map<*, *>
                 ?: throw SubscriptionImportException("订阅节点集合格式无效")
             // These need native regexp/override semantics. Do not silently alter the selected

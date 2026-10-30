@@ -10,12 +10,21 @@ class AppRouteStore(context: Context) {
     private val appContext = context.applicationContext
     private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
 
-    fun load(): List<AppRoute> =
+    fun load(): List<AppRoute> = ProfileStorage.access(appContext) {
         preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty()
             .mapNotNull(::read)
             .sortedBy { it.appName.lowercase() }
+    }
 
-    fun save(routes: List<AppRoute>) {
+    internal fun snapshot(): List<AppRoute> = ProfileStorage.access(appContext) {
+        load().also { records ->
+            check(records.mapTo(linkedSetOf()) { it.packageName } == preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty()) {
+                "应用分流无法完整读取，已停止备份"
+            }
+        }
+    }
+
+    fun save(routes: List<AppRoute>) = ProfileStorage.access(appContext) {
         val packages = routes.mapTo(linkedSetOf()) { it.packageName }
         val removedPackages = preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty() - packages
         preferences.edit(commit = true) {

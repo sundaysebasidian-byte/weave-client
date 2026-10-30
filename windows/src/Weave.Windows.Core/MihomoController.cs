@@ -68,6 +68,45 @@ public sealed class MihomoController : IDisposable
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<IPAddress[]> ResolveHostAsync(string host, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var families = await Task.WhenAll(QueryAsync("A", 1), QueryAsync("AAAA", 28)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var addresses = families.SelectMany(value => value).Distinct().ToArray();
+        if (addresses.Length == 0) throw new HttpRequestException(L.T("核心 DNS 没有返回可用地址，请检查网络或节点"));
+        return addresses;
+
+        async Task<IPAddress[]> QueryAsync(string type, int code)
+        {
+            try
+            {
+                using var response = await _client.GetAsync($"dns/query?name={Uri.EscapeDataString(host)}&type={type}",
+                    HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                await response.Content.LoadIntoBufferAsync(65_536, timeout.Token).ConfigureAwait(false);
+                using var json = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false));
+                var root = json.RootElement;
+                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("Status", out var status) ||
+                    status.ValueKind != JsonValueKind.Number || !status.TryGetInt32(out var statusCode) || statusCode != 0 ||
+                    !root.TryGetProperty("Answer", out var answer) || answer.ValueKind != JsonValueKind.Array) return [];
+                if (answer.GetArrayLength() > 64) return [];
+                var values = new List<IPAddress>();
+                foreach (var item in answer.EnumerateArray())
+                    if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out var recordType) &&
+                        recordType.ValueKind == JsonValueKind.Number && recordType.TryGetInt32(out var recordCode) && recordCode == code &&
+                        item.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.String && IPAddress.TryParse(data.GetString(), out var ip))
+                        values.Add(ip);
+                return values.ToArray();
+            }
+            catch (Exception error) when (error is HttpRequestException or JsonException or OperationCanceledException or ObjectDisposedException)
+            {
+                return []; // The other address family may still succeed; never fall back to OS DNS.
+            }
+        }
+    }
+
     public async Task<int?> ProbeNodeAsync(string nodeName, CancellationToken cancellationToken)
     {
         var path = $"proxies/{Uri.EscapeDataString(nodeName)}/delay?timeout=5000&url={Uri.EscapeDataString("https://www.gstatic.com/generate_204")}";

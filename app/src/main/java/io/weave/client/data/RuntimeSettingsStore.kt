@@ -38,7 +38,11 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit(commit = true) { putStringSet("favorite_node_ids", ids.take(512).toSet()) }
     }
 
-    fun networkPreferences(): NetworkPreferences {
+    fun networkPreferences(): NetworkPreferences = readNetworkPreferences(strictSecrets = false)
+
+    internal fun networkPreferencesForBackup(): NetworkPreferences = readNetworkPreferences(strictSecrets = true)
+
+    private fun readNetworkPreferences(strictSecrets: Boolean): NetworkPreferences {
         val preferences = preferences
         return NetworkPreferences(
             automaticStrategy = enumPreference(preferences,
@@ -56,7 +60,7 @@ class RuntimeSettingsStore(context: Context) {
             // domestic resolver can return blocked/poisoned answers and make a healthy proxy look
             // offline. Users who need one resolver for every domain can still choose "统一解析".
             dnsRoutingMode = enumPreference(preferences, KEY_DNS_ROUTING_MODE, DnsRoutingMode.SMART),
-            customDnsEndpoint = readCustomDnsEndpoint(preferences),
+            customDnsEndpoint = readCustomDnsEndpoint(preferences, strictSecrets),
             ipv6Mode = enumPreference(preferences, KEY_IPV6_MODE, Ipv6Mode.DUAL_STACK),
             blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
             domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
@@ -72,12 +76,14 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
-        require(hours in AUTO_UPDATE_CHOICES) { "unsupported interval" }
+        require(supportsAutoUpdateHours(hours)) { "unsupported interval" }
         preferences.edit(commit = true) {
             putInt(KEY_AUTO_UPDATE_HOURS, hours)
             putBoolean(KEY_AUTO_UPDATE_UNMETERED, unmeteredOnly)
         }
     }
+
+    internal fun supportsAutoUpdateHours(hours: Int): Boolean = hours in AUTO_UPDATE_CHOICES
 
     fun setBypassDirectApps(enabled: Boolean) {
         preferences.edit(commit = true) { putBoolean(KEY_BYPASS_DIRECT_APPS, enabled) }
@@ -250,12 +256,12 @@ class RuntimeSettingsStore(context: Context) {
             ?: WeavePalette.MINIMAL_LIGHT
     }
 
-    private fun readCustomDnsEndpoint(preferences: SharedPreferences): String {
+    private fun readCustomDnsEndpoint(preferences: SharedPreferences, strict: Boolean): String {
         val encrypted = preferences.getString(KEY_CUSTOM_DNS_ENDPOINT_ENCRYPTED, null)
         if (encrypted != null) {
             return runCatching {
                 secretBox.decrypt(encrypted, CUSTOM_DNS_AAD).toString(Charsets.UTF_8)
-            }.getOrDefault("")
+            }.getOrElse { if (strict) throw IllegalStateException("DNS 设置无法解密，已停止备份") else "" }
         }
         // Migrate the pre-alpha43 plaintext preference at first read, then remove it.
         val legacy = preferences.getString(KEY_CUSTOM_DNS_ENDPOINT, "").orEmpty()

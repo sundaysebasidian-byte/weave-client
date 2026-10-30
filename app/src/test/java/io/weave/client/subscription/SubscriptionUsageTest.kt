@@ -40,6 +40,16 @@ class SubscriptionUsageTest {
         assertEquals(Long.MAX_VALUE, SubscriptionUsage(Long.MAX_VALUE, 5, 0, null).usedBytes)
     }
 
+    @Test fun `expiry header conversion rejects overflowing seconds`() {
+        val maximum = Long.MAX_VALUE / 1000
+        assertEquals(1671815872000L, SubscriptionUsage.parse("expire=1671815872")!!.expireAtMillis)
+        assertEquals(maximum * 1000, SubscriptionUsage.parse("expire=$maximum")!!.expireAtMillis)
+        for (raw in listOf("${maximum + 1}", "${Long.MAX_VALUE}", "9.223372036854776e15", "1e30", "0")) {
+            assertNull("Invalid expiry: $raw", SubscriptionUsage.parse("expire=$raw")!!.expireAtMillis)
+        }
+        assertNull(SubscriptionUsage.decode("0,0,0,${Long.MAX_VALUE}")!!.expireAtMillis)
+    }
+
     @Test fun `profile update interval is clamped`() {
         assertEquals(24, ProfileUpdateInterval.parse(" 24 "))
         assertNull(ProfileUpdateInterval.parse("0"))

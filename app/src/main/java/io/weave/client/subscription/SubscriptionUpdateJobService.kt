@@ -16,6 +16,7 @@ import io.weave.client.MainActivity
 import io.weave.client.R
 import io.weave.client.WeaveLocales
 import io.weave.client.core.vpn.WeaveVpnService
+import io.weave.client.core.ipc.CoreClient
 import io.weave.client.data.AppRouteStore
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.RouteKind
@@ -25,8 +26,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Optional scheduled refresh of HTTPS subscriptions; off unless the user enables it. */
 object SubscriptionUpdateScheduler {
@@ -113,6 +116,19 @@ internal class SubscriptionAutoUpdater(private val context: Context) {
                     now - subscription.updatedAtMillis >= TimeUnit.HOURS.toMillis(hours.toLong()) - EARLY_TOLERANCE_MS)
         }
         if (due.isEmpty()) return
+
+        // A background-only UI process has no mirrored VPN state until it binds to :vpn.
+        // Obtain that state before choosing the subscription DNS route.
+        withContext(Dispatchers.Main.immediate) { CoreClient.attach(context) }
+        try {
+            if (!CoreClient.awaitConnected()) throw SubscriptionImportException("无法确认 VPN 状态，已推迟订阅更新")
+            refreshDue(due)
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) { CoreClient.detach() }
+        }
+    }
+
+    private suspend fun refreshDue(due: List<io.weave.client.domain.Subscription>) {
 
         val pinned = pinnedNodeIds()
         var failed = 0

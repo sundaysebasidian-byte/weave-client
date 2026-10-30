@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import AppKit
 import Combine
 import CryptoKit
@@ -7,9 +8,12 @@ import Security
 @MainActor
 final class AppModel: ObservableObject {
     private static let tunEnabledKey = "weave.macos.tun-enabled"
+    private static let selectionKey = "weave.macos.connection-selection.v1"
 
-    let vault = SubscriptionVault()
-    let core = MihomoController()
+    let vault: SubscriptionVault
+    let core: MihomoController
+    private let defaults: UserDefaults
+    private var savedSelection: SavedConnectionSelection
 
     @Published var transferLink = ""
     @Published var transferConfirmationCode = ""
@@ -17,8 +21,8 @@ final class AppModel: ObservableObject {
     @Published var importConfirmationCode = ""
     @Published var transferMessage = ""
     @Published var transferBusy = false
-    @Published var selectedSubscriptionID: UUID?
-    @Published var selectedNodeName: String?
+    @Published private(set) var selectedSubscriptionID: UUID?
+    @Published private(set) var selectedNodeName: String?
     @Published var tunEnabled: Bool
     @Published var directImportBusy = false
     @Published var directImportMessage = ""
@@ -26,30 +30,47 @@ final class AppModel: ObservableObject {
     @Published private(set) var refreshingSubscriptionID: UUID?
     @Published private(set) var subscriptions: [MacSubscription] = []
     @Published private(set) var selectedNodes: [String] = []
+    @Published private(set) var nodeCacheLoading = false
+    @Published var pendingSubscriptionUpdate: PendingSubscriptionUpdate?
+    @Published private(set) var selectionNotice: String?
 
     private var transferServer: OneTimeTransferServer?
     private var nodeCache: [UUID: [String]] = [:]
+    private var nodeCachePayloads: [UUID: String] = [:]
     private var nodeCacheTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
-    init() {
-        tunEnabled = UserDefaults.standard.object(forKey: Self.tunEnabledKey) as? Bool ?? true
-        subscriptions = vault.subscriptions
-        selectedSubscriptionID = subscriptions.first?.id
-        vault.$subscriptions
+    init(vault: SubscriptionVault? = nil, core: MihomoController? = nil, defaults: UserDefaults = .standard) {
+        self.vault = vault ?? SubscriptionVault()
+        self.core = core ?? MihomoController()
+        self.defaults = defaults
+        tunEnabled = defaults.object(forKey: Self.tunEnabledKey) as? Bool ?? true
+        if let data = defaults.data(forKey: Self.selectionKey) {
+            do { savedSelection = try JSONDecoder().decode(SavedConnectionSelection.self, from: data) }
+            catch {
+                savedSelection = SavedConnectionSelection()
+                selectionNotice = "无法读取上次出口选择，请重新选择订阅和节点"
+            }
+        } else {
+            savedSelection = SavedConnectionSelection(subscriptionID: self.vault.subscriptions.first?.id)
+        }
+        subscriptions = self.vault.subscriptions
+        selectedSubscriptionID = savedSelection.subscriptionID
+        selectedNodeName = savedSelection.node(for: selectedSubscriptionID)
+        self.core.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        self.vault.$subscriptions
             .sink { [weak self] values in
                 guard let self else { return }
                 self.subscriptions = values
-                if let selectedSubscriptionID = self.selectedSubscriptionID,
-                   !values.contains(where: { $0.id == selectedSubscriptionID }) {
-                    self.selectedSubscriptionID = values.first?.id
-                    self.selectedNodeName = nil
-                } else if self.selectedSubscriptionID == nil {
-                    self.selectedSubscriptionID = values.first?.id
+                if self.selectedSubscriptionID == nil, self.selectionNotice == nil, let first = values.first {
+                    self.selectSubscription(first.id)
                 }
                 self.rebuildNodeCache(values)
             }
             .store(in: &cancellables)
+        Task { await self.core.recoverSystemProxy() }
     }
 
     var selectedSubscription: MacSubscription? {
@@ -57,20 +78,45 @@ final class AppModel: ObservableObject {
     }
 
     func selectSubscription(_ id: UUID?) {
+        savedSelection.subscriptionID = id
         selectedSubscriptionID = id
-        selectedNodeName = nil
+        selectedNodeName = savedSelection.node(for: id)
         selectedNodes = id.flatMap { nodeCache[$0] } ?? []
+        persistSelection()
+    }
+
+    func selectNode(_ name: String?) {
+        guard let selectedSubscriptionID else { return }
+        savedSelection.nodeNames[selectedSubscriptionID.uuidString] = name
+        selectedNodeName = name
+        persistSelection()
+    }
+
+    var selectionIssue: String? {
+        if selectedSubscriptionID != nil && selectedSubscription == nil { return "上次选择的订阅已不存在，请重新选择" }
+        if !nodeCacheLoading, let selectedNodeName, !selectedNodes.contains(selectedNodeName) {
+            return "固定节点“\(ClashNodeNames.display(selectedNodeName))”已不存在，请选择新节点或明确选择自动模式"
+        }
+        return nil
+    }
+
+    private func persistSelection() {
+        do {
+            defaults.set(try JSONEncoder().encode(savedSelection), forKey: Self.selectionKey)
+            selectionNotice = core.state.isActive ? "出口选择将在重新连接后生效，当前连接保持不变" : nil
+        } catch { selectionNotice = "出口选择保存失败：\(error.localizedDescription)" }
     }
 
     func setTunEnabled(_ enabled: Bool) {
         tunEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: Self.tunEnabledKey)
+        defaults.set(enabled, forKey: Self.tunEnabledKey)
     }
 
     func toggleConnection() {
-        if core.state.isConnected || core.state == .starting {
-            core.stop()
+        if core.hasOwnedSession || core.state == .starting {
+            Task { await core.stop() }
         } else {
+            guard !nodeCacheLoading, selectionIssue == nil else { return }
             core.start(
                 subscriptions: subscriptions,
                 selectedSubscriptionID: selectedSubscriptionID,
@@ -83,19 +129,24 @@ final class AppModel: ObservableObject {
 
     private func rebuildNodeCache(_ values: [MacSubscription]) {
         nodeCacheTask?.cancel()
-        let selectedID = selectedSubscriptionID
+        nodeCacheLoading = true
+        let cached = nodeCache
+        let payloads = nodeCachePayloads
         nodeCacheTask = Task {
-            let parsed = await Task.detached(priority: .userInitiated) {
-                Dictionary(uniqueKeysWithValues: values.map {
-                    ($0.id, ClashNodeNames.parse($0.payload))
-                })
-            }.value
+            let worker = Task.detached(priority: .userInitiated) {
+                var parsed: [UUID: [String]] = [:]
+                for value in values {
+                    if Task.isCancelled { return parsed }
+                    parsed[value.id] = payloads[value.id] == value.payload ? cached[value.id] : ClashNodeNames.parse(value.payload)
+                }
+                return parsed
+            }
+            let parsed = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
             guard !Task.isCancelled else { return }
             nodeCache = parsed
-            selectedNodes = selectedID.flatMap { parsed[$0] } ?? []
-            if let selectedNodeName, !selectedNodes.contains(selectedNodeName) {
-                self.selectedNodeName = nil
-            }
+            nodeCachePayloads = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0.payload) })
+            selectedNodes = selectedSubscriptionID.flatMap { parsed[$0] } ?? []
+            nodeCacheLoading = false
         }
     }
 
@@ -109,10 +160,12 @@ final class AppModel: ObservableObject {
                 if trimmed.lowercased().hasPrefix("weave://lan/") {
                     throw WeaveMacError.message("局域网链接请在“局域网互传”页面输入发送端 6 位短码")
                 } else if trimmed.lowercased().hasPrefix("https://") {
-                    let imported = try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
+                    let imported = try await DirectSubscriptionImporter.fetchHTTPS(trimmed, hostResolver: core.subscriptionHostResolver)
                     try await storeDirectSubscription(imported, preferredName: name)
                 } else {
-                    let imported = try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                    let imported = try await Task.detached(priority: .userInitiated) {
+                        try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                    }.value
                     try await storeDirectSubscription(imported, preferredName: name)
                 }
             } catch {
@@ -153,9 +206,11 @@ final class AppModel: ObservableObject {
                     throw WeaveMacError.message("局域网二维码请在“局域网互传”页面输入发送端 6 位短码")
                 } else {
                     let imported = if trimmed.lowercased().hasPrefix("https://") {
-                        try await DirectSubscriptionImporter.fetchHTTPS(trimmed)
+                        try await DirectSubscriptionImporter.fetchHTTPS(trimmed, hostResolver: core.subscriptionHostResolver)
                     } else {
-                        try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                        try await Task.detached(priority: .userInitiated) {
+                            try DirectSubscriptionImporter.inlinePayload(from: trimmed)
+                        }.value
                     }
                     try await storeDirectSubscription(imported, preferredName: name)
                 }
@@ -175,17 +230,22 @@ final class AppModel: ObservableObject {
         name: String,
         source: String,
         payload: String,
-    ) {
+    ) async -> Bool {
+        guard !directImportBusy else { return false }
+        directImportBusy = true
+        defer { directImportBusy = false }
         do {
-            try vault.update(id: id, name: name, source: source, payload: payload)
-            directImportMessage = "订阅已更新"
+            try await vault.update(id: id, name: name, source: source, payload: payload)
+            directImportMessage = core.state.isActive ? "订阅已更新，重新连接后生效；当前连接保持不变" : "订阅已更新"
+            return true
         } catch {
             directImportMessage = error.localizedDescription
+            return false
         }
     }
 
     func refreshSubscription(_ subscription: MacSubscription) {
-        guard refreshingSubscriptionID == nil else { return }
+        guard refreshingSubscriptionID == nil, pendingSubscriptionUpdate == nil else { return }
         guard subscription.source.lowercased().hasPrefix("https://") else {
             directImportMessage = "本地文件订阅不能自动刷新，请在编辑页替换文件内容"
             return
@@ -194,29 +254,40 @@ final class AppModel: ObservableObject {
         Task {
             defer { refreshingSubscriptionID = nil }
             do {
-                let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source)
-                try vault.update(
-                    id: subscription.id,
-                    name: subscription.name,
-                    source: imported.source,
-                    payload: imported.payload,
-                )
-                directImportMessage = "已刷新“\(subscription.name)”"
-                if core.state.isConnected {
-                    core.stop()
-                    let latestSubscriptions = vault.subscriptions
-                    subscriptions = latestSubscriptions
-                    core.start(
-                        subscriptions: latestSubscriptions,
-                        selectedSubscriptionID: selectedSubscriptionID,
-                        selectedNodeName: selectedNodeName,
-                        availableNodeNames: selectedNodes,
-                        preferTun: tunEnabled,
-                    )
-                }
+                let imported = try await DirectSubscriptionImporter.fetchHTTPS(subscription.source, hostResolver: core.subscriptionHostResolver)
+                try await stageSubscriptionUpdate(subscription, imported: imported)
+                directImportMessage = "更新已下载，请检查变化后保存"
             } catch {
                 directImportMessage = error.localizedDescription
             }
+        }
+    }
+
+    func stageSubscriptionUpdate(_ original: MacSubscription, imported: ImportedSubscriptionPayload) async throws {
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            try PendingSubscriptionUpdate(original: original, source: imported.source, payload: imported.payload)
+        }.value
+        try Task.checkCancellation()
+        guard vault.subscriptions.first(where: { $0.id == original.id }) == original else {
+            throw WeaveMacError.message("下载期间订阅已被修改，请重新刷新")
+        }
+        pendingSubscriptionUpdate = prepared
+    }
+
+    func applyPendingSubscriptionUpdate() async {
+        guard !directImportBusy, let pending = pendingSubscriptionUpdate else { return }
+        directImportBusy = true
+        defer { directImportBusy = false }
+        do {
+            guard vault.subscriptions.first(where: { $0.id == pending.id }) == pending.original else {
+                throw WeaveMacError.message("预览期间订阅已被修改，已保留当前版本；请重新刷新")
+            }
+            try await vault.update(id: pending.id, name: pending.original.name, source: pending.source, payload: pending.payload)
+            pendingSubscriptionUpdate = nil
+            directImportMessage = core.state.isActive ? "更新已保存，重新连接后生效；当前连接保持不变" : "更新已保存"
+        } catch {
+            pendingSubscriptionUpdate = nil
+            directImportMessage = error.localizedDescription
         }
     }
 
@@ -224,40 +295,27 @@ final class AppModel: ObservableObject {
         _ imported: ImportedSubscriptionPayload,
         preferredName: String
     ) async throws {
-        let sanitizedPayload = try ClashProviderSanitizer.sanitize(imported.payload)
-        let nodes = await Task.detached(priority: .userInitiated) {
-            ClashNodeNames.parse(sanitizedPayload)
-        }.value
-        guard !nodes.isEmpty else {
-            throw WeaveMacError.message("没有识别到可供 Mihomo 使用的 Clash 节点")
-        }
         let trimmedName = preferredName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmedName.isEmpty ? imported.suggestedName : String(trimmedName.prefix(80))
-        try vault.importTransfer(
+        try await vault.importTransfer(
             [
                 TransferSubscription(
                     name: name,
                     source: imported.source,
-                    payload: sanitizedPayload
+                    payload: imported.payload
                 ),
-            ],
-            nodeNames: [nodes]
+            ]
         )
-        directImportMessage = "已安全导入“\(name)” · \(nodes.count) 个节点"
+        directImportMessage = "已安全导入“\(name)”"
     }
 
     private func decodeTransferResponse(
         _ response: Data,
         key: Data
-    ) async throws -> ([TransferSubscription], [[String]]) {
+    ) async throws -> [TransferSubscription] {
         try await Task.detached(priority: .userInitiated) {
             let plaintext = try TransferCodec.open(response, key: key)
-            let items = try TransferCodec.decode(plaintext)
-            let nodeNames = items.map { ClashNodeNames.parse($0.payload) }
-            guard nodeNames.allSatisfy({ !$0.isEmpty }) else {
-                throw WeaveMacError.message("传输内容包含没有有效节点的订阅")
-            }
-            return (items, nodeNames)
+            return try TransferCodec.decode(plaintext)
         }.value
     }
 
@@ -347,19 +405,11 @@ final class AppModel: ObservableObject {
                     throw WeaveMacError.message("短码不匹配：请让发送设备重新显示当前二维码和短码")
                 }
                 let response = try await LANTransferClient.fetch(link)
-                let decoded = try await Task.detached(priority: .userInitiated) {
-                    let plaintext = try TransferCodec.open(response, key: link.key)
-                    let items = try TransferCodec.decode(plaintext)
-                    let nodeNames = items.map { ClashNodeNames.parse($0.payload) }
-                    guard nodeNames.allSatisfy({ !$0.isEmpty }) else {
-                        throw WeaveMacError.message("传输内容包含没有有效节点的订阅")
-                    }
-                    return (items, nodeNames)
-                }.value
-                try vault.importTransfer(decoded.0, nodeNames: decoded.1)
+                let decoded = try await decodeTransferResponse(response, key: link.key)
+                try await vault.importTransfer(decoded)
                 importLink = ""
                 importConfirmationCode = ""
-                transferMessage = "已安全同步 \(decoded.0.count) 个订阅"
+                transferMessage = "已安全同步 \(decoded.count) 个订阅"
             } catch {
                 transferMessage = error.localizedDescription
             }
@@ -383,8 +433,8 @@ final class AppModel: ObservableObject {
 
     /// Called by the application termination hook so a normal quit cannot leave the
     /// previous system proxy transaction active until the next launch.
-    func shutdown() {
-        core.stop()
+    func shutdown() async {
+        await core.stop()
         stopExport()
     }
 }

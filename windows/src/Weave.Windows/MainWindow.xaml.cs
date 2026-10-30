@@ -25,7 +25,7 @@ public sealed partial class MainWindow : Window
     private bool _hiddenToTray;
     private int _idleTrafficSamples;
     private bool _trafficBusy;
-    private RuntimeBundle? _observedBundle;
+    private ConnectionEndpoint? _observedBundle;
     private long _observedRevision;
     private bool _observedConnected;
     private bool _diagnosticsStale;
@@ -290,22 +290,6 @@ public sealed partial class MainWindow : Window
         }
 
         SavePreferences();
-        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        if (TunToggle.IsOn && !new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
-        {
-            var dialog = new ContentDialog { Title = L.T("允许启动 Windows TUN？"),
-                Content = L.T("需要以当前 Windows 用户的管理员权限重新打开 Weave。订阅会保留；重开后点击连接。若你使用标准账户，请勿换成其他用户，否则无法读取本账户的加密订阅。"),
-                PrimaryButtonText = L.T("重新打开并申请权限"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--elevated-restart") { UseShellExecute = true, Verb = "runas" });
-                await ShutdownAsync(closeWindow: true);
-            }
-            catch (System.ComponentModel.Win32Exception) { MessageText.Text = L.T("管理员授权未完成，未改变系统网络。"); }
-            return;
-        }
-
         await RunActionAsync(async () =>
         {
             using var connection = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -350,7 +334,7 @@ public sealed partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            MessageText.Text = L.T("操作已取消或超时。连接超时请检查管理员权限及防火墙；订阅超时请检查当前网络。");
+            MessageText.Text = L.T("操作已取消或超时。连接超时请检查核心服务及防火墙；订阅超时请检查当前网络。");
         }
         catch (HttpRequestException)
         {
@@ -377,7 +361,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStatus()
     {
-        if (!ReferenceEquals(_observedBundle, _model.ActiveBundle) || _observedRevision != _model.NetworkRevision ||
+        if (!ReferenceEquals(_observedBundle, _model.ActiveConnection) || _observedRevision != _model.NetworkRevision ||
             _observedConnected != _model.IsConnected)
         {
             _probeCancellation?.Cancel();
@@ -388,7 +372,7 @@ public sealed partial class MainWindow : Window
                 SubscriptionNodesList.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
                 NodeTestText.Text = L.T("网络已变化，请重新测速");
             }
-            _observedBundle = _model.ActiveBundle;
+            _observedBundle = _model.ActiveConnection;
             _observedRevision = _model.NetworkRevision;
             _observedConnected = _model.IsConnected;
         }
@@ -674,7 +658,7 @@ public sealed partial class MainWindow : Window
 
     private async void TestNodes_Click(object sender, RoutedEventArgs e)
     {
-        if (_model.ActiveBundle is not { } bundle || !_model.IsConnected ||
+        if (_model.ActiveConnection is not { } bundle || !_model.IsConnected ||
             SubscriptionComboBox.SelectedItem is not SubscriptionRecord record)
         { MessageText.Text = L.T("请先连接，再测试当前订阅节点"); return; }
         if (!bundle.ProviderNodeCounts.ContainsKey("provider-" + record.Id))
@@ -686,13 +670,12 @@ public sealed partial class MainWindow : Window
             var revision = _model.NetworkRevision;
             try
             {
-                using var controller = new MihomoController(bundle);
                 using var gate = new SemaphoreSlim(3);
                 var results = await Task.WhenAll(record.Nodes.Select(async node =>
                 {
                     await gate.WaitAsync(cancellation.Token);
-                    try { return new NodeResult(node, await controller.ProbeNodeAsync(MihomoConfigBuilder.NodePrefix(record.Id) + node.RawName, cancellation.Token)); }
-                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
+                    try { return new NodeResult(node, await _model.ProbeNodeAsync(bundle, MihomoConfigBuilder.NodePrefix(record.Id) + node.RawName, cancellation.Token)); }
+                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException)
                     { cancellation.Token.ThrowIfCancellationRequested(); return new NodeResult(node, null); }
                     finally { gate.Release(); }
                 }));
@@ -708,7 +691,7 @@ public sealed partial class MainWindow : Window
     private async void RunDiagnostics_Click(object sender, RoutedEventArgs e)
     {
         if (DiagnosticConsent.IsChecked != true) { MessageText.Text = L.T("请先允许本次检测访问测试网站"); return; }
-        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
+        if (!_model.IsConnected || _model.ActiveConnection is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
         await RunActionAsync(async () =>
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -747,8 +730,8 @@ public sealed partial class MainWindow : Window
             finally { acceptingProgress = false; _probeCancellation = null; DiagnosticConsent.IsChecked = false; }
         });
     }
-    private bool EvidenceStillCurrent(RuntimeBundle bundle, long revision) => !_closed && _model.IsConnected &&
-        ReferenceEquals(bundle, _model.ActiveBundle) && revision == _model.NetworkRevision;
+    private bool EvidenceStillCurrent(ConnectionEndpoint bundle, long revision) => !_closed && _model.IsConnected &&
+        ReferenceEquals(bundle, _model.ActiveConnection) && revision == _model.NetworkRevision;
     private void StopDiagnostics_Click(object sender, RoutedEventArgs e) => _probeCancellation?.Cancel();
 
     private sealed record Preferences(string? SubscriptionId, string? NodeId, int Mode, int Dns, bool Ipv6, bool Stun, string CustomDns,
@@ -844,14 +827,13 @@ public sealed partial class MainWindow : Window
     private async void TrafficTick(object? sender, object e)
     {
         // No polling while hidden/minimized; back off after three idle samples.
-        if (_closed || _hiddenToTray || _trafficBusy || !_model.IsConnected || _model.ActiveBundle is not { } bundle ||
+        if (_closed || _hiddenToTray || _trafficBusy || !_model.IsConnected || _model.ActiveConnection is not { } bundle ||
             (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)) return;
         _trafficBusy = true;
         try
         {
-            using var controller = new MihomoController(bundle);
-            var traffic = await controller.ReadTrafficAsync(_lifetime.Token);
-            if (_closed || !_model.IsConnected || !ReferenceEquals(bundle, _model.ActiveBundle)) return;
+            var traffic = await _model.ReadTrafficAsync(bundle, _lifetime.Token);
+            if (_closed || !_model.IsConnected || !ReferenceEquals(bundle, _model.ActiveConnection)) return;
             DownloadRate.Text = Rate(traffic.Down); UploadRate.Text = Rate(traffic.Up);
             _idleTrafficSamples = traffic.Down == 0 && traffic.Up == 0 ? Math.Min(3, _idleTrafficSamples + 1) : 0;
             _trafficTimer.Interval = TimeSpan.FromSeconds(_idleTrafficSamples >= 3 ? 10 : 2);

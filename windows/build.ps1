@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($Platform -ne 'x64') { throw 'The core service currently requires the pinned Windows x64 core. ARM64 release validation is still pending.' }
 
 # Wrap the existing 256px Android-matching PNG in an ICO container without changing pixels.
 $png = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'src\Weave.Windows\Assets\Weave.png'))
@@ -22,33 +23,42 @@ $solution = Join-Path $PSScriptRoot "Weave.Windows.sln"
 $runtime = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }
 
 Write-Host "Building $Configuration|$Platform..."
-msbuild $solution /restore /p:Configuration=$Configuration /p:Platform=$Platform
+dotnet build $solution /p:Configuration=$Configuration /p:Platform=$Platform
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 $env:WEAVE_TEST_CORE = Join-Path $PSScriptRoot 'src\Weave.Windows\runtime\mihomo.exe'
 $env:WEAVE_TEST_GEODATA = Join-Path $PSScriptRoot '..\app\src\main\assets\geodata'
 $env:WEAVE_INTEROP_FIXTURE = Join-Path ([IO.Path]::GetTempPath()) 'weave-android-reference.bin'
 java '-Dfile.encoding=UTF-8' (Join-Path $PSScriptRoot 'tests\AndroidTransferInterop.java') $env:WEAVE_INTEROP_FIXTURE
 if ($LASTEXITCODE -ne 0) { throw 'Android wire-format fixture failed' }
-dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration
+dotnet build (Join-Path $PSScriptRoot 'tests\Weave.BrokerProbe\Weave.BrokerProbe.csproj') -c $Configuration
+if ($LASTEXITCODE -ne 0) { throw 'Broker lifecycle probe build failed' }
+$env:WEAVE_TEST_BROKER_PROBE = Join-Path $PSScriptRoot "tests\Weave.BrokerProbe\bin\$Configuration\net10.0\Weave.BrokerProbe.exe"
+dotnet test (Join-Path $PSScriptRoot "src\Weave.Windows.Core\Weave.Windows.Core.Tests\Weave.Windows.Core.Tests.csproj") -c $Configuration `
+    --logger 'trx;LogFileName=core-tests.trx' --results-directory (Join-Path $PSScriptRoot 'artifacts\test-results')
 if ($LASTEXITCODE -ne 0) { throw "Core tests failed" }
 java '-Dfile.encoding=UTF-8' (Join-Path $PSScriptRoot 'tests\AndroidTransferInterop.java') ($env:WEAVE_INTEROP_FIXTURE + '.windows') verify
 if ($LASTEXITCODE -ne 0) { throw 'Windows-to-Android wire-format verification failed' }
 
 $core = Join-Path $PSScriptRoot "src\Weave.Windows\runtime\mihomo.exe"
 if (-not (Test-Path $core)) {
-    Write-Warning "mihomo.exe not bundled. Put an audited Windows Mihomo binary at: $core"
+    throw "An audited Mihomo core is required before packaging: $core"
 }
 
 $output = Join-Path $PSScriptRoot "artifacts\$Platform"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
+dotnet msbuild (Join-Path $PSScriptRoot "src\Weave.Windows\Weave.Windows.csproj") `
     /restore /t:Publish /p:Configuration=$Configuration /p:Platform=$Platform `
     /p:RuntimeIdentifier=$runtime /p:SelfContained=true /p:PublishDir="$output\"
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
+dotnet publish (Join-Path $PSScriptRoot 'src\Weave.Core.Service\Weave.Core.Service.csproj') `
+    -c $Configuration -r win-x64 --self-contained true -o (Join-Path $output 'service')
+if ($LASTEXITCODE -ne 0) { throw 'Core service publish failed' }
 Copy-Item (Join-Path $PSScriptRoot 'START-HERE.txt') $output
 Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY.md') $output
 Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $output 'LICENSE-Weave.txt')
 Copy-Item (Join-Path $PSScriptRoot '..\geodata-lock.properties') $output
 Invoke-WebRequest 'https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.30/LICENSE' -OutFile (Join-Path $output 'LICENSE-Mihomo.txt')
+
+& (Join-Path $PSScriptRoot 'setup\Build-Setup.ps1')
 
 Write-Host "Published to $output"

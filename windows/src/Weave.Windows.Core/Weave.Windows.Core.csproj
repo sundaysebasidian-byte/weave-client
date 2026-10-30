@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Weave.Windows.Core.Tests" />
+    <InternalsVisibleTo Include="Weave.Core.Service" />
     <EmbeddedResource Include="Strings.en.json" WithCulture="false" LogicalName="Weave.Windows.Core.Strings.en.json" />
     <Compile Remove="Weave.Windows.Core.Tests/**/*.cs" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />

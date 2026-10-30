@@ -5,6 +5,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class KaringBackupSourceTest {
     private val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = { error("No remote fixture fetch") }), SubscriptionPayloadParser())
@@ -15,7 +16,7 @@ class KaringBackupSourceTest {
     private fun group(id: String = "one", options: String = "") = """{"groupid":"$id","remark":"Synthetic","servers":[{"type":"socks","tag":"Fixture","server":"127.0.0.1","server_port":1080$options}]}"""
     private fun backup(items: String): ByteArray = zip("karing_subscribe.json" to "{\"items\":[$items]}".toByteArray())
 
-    @Test fun verifiedOfficialExportShapeYieldsRealGroupsAndOneExactNode() {
+    @Test fun verifiedOfficialExportShapeYieldsRealGroupsAndOneExactNode() = runBlocking<Unit> {
         val records = KaringBackupSource().catalogue(official().inputStream())
         assertEquals(2, records.size)
         assertEquals("Custom", records.first().entry.name)
@@ -32,7 +33,7 @@ class KaringBackupSourceTest {
         assertFalse(imported.read().contains("data/user"))
     }
 
-    @Test fun multipleActualGroupsCanBeSelectedWithoutReadingOtherContentsOrFetchingUrls() {
+    @Test fun multipleActualGroupsCanBeSelectedWithoutReadingOtherContentsOrFetchingUrls() = runBlocking<Unit> {
         val records = KaringBackupSource().catalogue(backup(group("one") + "," + group("two")).inputStream())
         val session = ClientSourceSession(); val list = session.prepare("Karing", records)
         val selected = session.select(list.token, records.map { it.entry.id }.toSet())

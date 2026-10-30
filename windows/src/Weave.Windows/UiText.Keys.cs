@@ -35,7 +35,7 @@ public sealed partial class UiText
     public string RouteByAppAndDomainUseThe => L.T("按应用与域名规则分流，其余走默认出口。");
     public string TUNDeviceWideRouting => L.T("TUN 全设备接管");
     public string SystemProxyCompatibleAppsOnly => L.T("系统代理 · 仅支持代理的应用");
-    public string TUNAdministratorAccessRequired => L.T("TUN · 需要管理员权限");
+    public string TUNManagedByCoreService => L.T("TUN · 由核心服务接管");
     public string ProxyChain => L.T("链式代理");
     public string EntryCurrentExit => L.T("入口 → 当前出口");
     public string Off => L.T("关闭");
@@ -82,7 +82,7 @@ public sealed partial class UiText
     public string CustomEncryptedDNS => L.T("自订加密 DNS");
     public string BlockCommonSTUNPorts => L.T("阻止常见 STUN 端口");
     public string OnMayAffectCalls => L.T("开启（可能影响通话）");
-    public string NetworkSettingsApplyOnTheNextConnection => L.T("网络设置在下次连接时生效。过滤依赖 DNS 服务，并非拦截所有广告。TUN 需要管理员权限。");
+    public string NetworkSettingsApplyOnTheNextConnection => L.T("网络设置在下次连接时生效。过滤依赖 DNS 服务，并非拦截所有广告。TUN 需要先安装核心服务。");
     public string PrivacyBoundaries => L.T("隐私边界");
     public string SubscriptionsAreEncryptedWithWindowsDPAPIEncrypted => L.T("订阅由 Windows DPAPI 加密保存。加密 DNS 的首次解析使用明文引导 DNS；不宣称零泄漏。端口拦截不等于完整 WebRTC 防泄漏。");
     public string SubscriptionNodes => L.T("订阅节点");

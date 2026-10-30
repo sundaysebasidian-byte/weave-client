@@ -1,7 +1,10 @@
 name: Windows preview
 on:
   push:
-    branches: ['codex/windows-test-package', 'codex/windows-v1-preview']
+    branches: ['main', 'codex/windows-test-package', 'codex/windows-v1-preview']
+    paths: ['windows/**', 'tests/fixtures/**', '.github/workflows/windows-preview.yml', 'geodata-lock.properties']
+  pull_request:
+    paths: ['windows/**', 'tests/fixtures/**', '.github/workflows/windows-preview.yml', 'geodata-lock.properties']
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,9 +14,23 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Validate native installer storage boundary
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_INSTALLER_TEST: '1'
+        run: |
+          ./windows/setup/Build-Setup.ps1
+          ./windows/tests/Test-SetupBoundary.ps1
+      - name: Preserve native installer boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-setup-boundary-tests
+          path: windows/artifacts/setup-boundary-tests/
+          if-no-files-found: warn
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - uses: microsoft/setup-msbuild@v2
       - uses: actions/setup-java@v4
         with:
@@ -34,7 +51,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Core cannot execute' }
       - name: Build and test x64 preview
         shell: pwsh
+        env:
+          # Only the disposable CI host opts into tests that change real network routes.
+          WEAVE_TEST_TUN: '1'
         run: ./windows/build.ps1 -Platform x64 -Configuration Release
+      - name: Preserve core test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-core-test-results
+          path: windows/artifacts/test-results/
+          if-no-files-found: warn
       - name: Check packaged app starts
         shell: pwsh
         run: |
@@ -117,19 +144,52 @@ jobs:
             throw 'Live language switching failed'
           }
           Stop-Process -Id $app.Id
+      - name: Validate isolated Windows core service
+        id: service
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_SERVICE_TEST: '1'
+          WEAVE_TEST_TUN: '1'
+        run: ./windows/tests/Test-Service.ps1
+      - name: Capture isolated service failure reproduction
+        if: failure() && steps.service.outcome == 'failure'
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_SERVICE_TEST: '1'
+          WEAVE_TEST_TUN: '1'
+        run: ./windows/tests/Test-Service.ps1 -SyntheticDiagnostics
+      - name: Preserve service acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-service-tests
+          path: windows/artifacts/service-tests/
+          if-no-files-found: warn
       - name: Package Windows installer
         shell: pwsh
         run: |
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $compiler)) { choco install innosetup --no-progress -y }
           if (-not (Test-Path $compiler)) { throw 'Inno Setup unavailable' }
-          & $compiler windows/installer.iss
+          & $compiler "/DBuildId=$env:GITHUB_SHA" windows/installer.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
           Get-FileHash windows/artifacts/installer/*.exe -Algorithm SHA256 | Format-List
+      - name: Validate machine installer transactions
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_INSTALLER_TEST: '1'
+        run: ./windows/tests/Test-Installer.ps1 -Compiler "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -BuildId $env:GITHUB_SHA
+      - name: Preserve installer acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-installer-tests
+          path: windows/artifacts/installer-tests/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: Weave-Windows-v3-Setup-x64
-          path: windows/artifacts/installer/*.exe
+          path: windows/artifacts/installer/*-Setup.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:

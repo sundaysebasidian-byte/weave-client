@@ -2,6 +2,9 @@ package io.weave.client.subscription
 
 import java.math.BigDecimal
 
+/** Null fields clear obsolete provider headers; a null metadata object preserves them. */
+data class SubscriptionRemoteMetadata(val usage: SubscriptionUsage?, val updateIntervalHours: Int?)
+
 /**
  * Parsed `subscription-userinfo` response header, e.g.
  * `upload=455727941; download=6174315083; total=1073741824000; expire=1671815872`.
@@ -14,6 +17,8 @@ data class SubscriptionUsage(
     val expireEpochSeconds: Long?,
 ) {
     val usedBytes: Long get() = saturatingAdd(uploadBytes, downloadBytes)
+    val expireAtMillis: Long?
+        get() = expireEpochSeconds?.takeIf { it in 1..(Long.MAX_VALUE / 1000) }?.times(1000)
 
     fun encode(): String = "$uploadBytes,$downloadBytes,$totalBytes,${expireEpochSeconds ?: 0}"
 

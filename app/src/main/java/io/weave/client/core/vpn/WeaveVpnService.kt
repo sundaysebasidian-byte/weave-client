@@ -559,14 +559,14 @@ class WeaveVpnService : VpnService() {
         }
     }
 
-    private fun prepareCurrentRuntime(): PreparedRuntime {
+    private fun prepareCurrentRuntime(): PreparedRuntime = io.weave.client.data.ProfileStorage.access(this) {
         val routes = routeStore.load()
         val installedApps = installedAppMappings(routes.map { it.packageName })
         val probeId = probeSubscriptionId.also { probeSubscriptionId = null }
         val networkPreferences = settingsStore.networkPreferences()
         val mode = settingsStore.routingMode()
         val installedPackages = installedApps.mapTo(mutableSetOf()) { it.second }
-        return PreparedRuntime(
+        return@access PreparedRuntime(
             assembled = configAssembler.assemble(
                 routes = routes,
                 mode = mode,
