@@ -67,10 +67,11 @@ package final class RuntimeDirectory: @unchecked Sendable {
         guard let items = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey]) else { return false }
         for item in items {
             guard let values = try? item.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey]), values.isSymbolicLink != true else { return false }
-            if item.lastPathComponent == "providers" {
+            if ["providers", "tls-materials"].contains(item.lastPathComponent) {
+                let fileExtension = item.lastPathComponent == "providers" ? "yaml" : "pem"
                 guard let providers = try? FileManager.default.contentsOfDirectory(at: item, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
                 for provider in providers {
-                    guard provider.pathExtension == "yaml", UUID(uuidString: provider.deletingPathExtension().lastPathComponent) != nil,
+                    guard provider.pathExtension == fileExtension, UUID(uuidString: provider.deletingPathExtension().lastPathComponent) != nil,
                           let metadata = try? provider.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
                           metadata.isRegularFile == true, metadata.isSymbolicLink != true else { return false }
                 }

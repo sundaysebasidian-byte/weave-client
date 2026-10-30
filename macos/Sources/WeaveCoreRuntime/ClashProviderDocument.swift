@@ -4,9 +4,9 @@ import Yams
 package struct ClashProviderDocument {
     package static let maxPayloadBytes = 5 * 1024 * 1024
     package let names: [String]
-    private let proxies: Node
+    let proxies: Node
 
-    package init(_ payload: String) throws {
+    package init(_ payload: String, providerOnly: Bool = false) throws {
         try YAMLResourceLimits.validate(payload)
         let root: Node
         do {
@@ -14,6 +14,9 @@ package struct ClashProviderDocument {
             root = try Self.expanded(parsed)
         } catch let error as WeaveMacError { throw error }
         catch { throw WeaveMacError.message("无法解析 YAML 订阅；请检查格式和重复配置键") }
+        if providerOnly, root.mapping?.count != 1 || root["proxies"] == nil {
+            throw WeaveMacError.message("运行时 provider 只能包含 proxies 节点列表")
+        }
         guard let sequence = root["proxies"]?.sequence, !sequence.isEmpty else {
             throw WeaveMacError.message("Clash 订阅缺少有效的 proxies 节点列表")
         }

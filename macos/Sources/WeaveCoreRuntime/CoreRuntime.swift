@@ -8,11 +8,10 @@ package enum CoreRuntime {
         enableTun: Bool,
         root: URL = RuntimeDirectory.defaultRoot,
     ) throws -> MacRuntime {
-        let document = try ClashProviderDocument(provider)
+        let document = try ProviderSecurity.prepare(provider)
         if let selectedNodeName, !document.names.contains(selectedNodeName) {
             throw WeaveMacError.message("所选节点已不存在，请重新选择")
         }
-        let sanitized = try document.sanitized()
         let providerID = UUID().uuidString
         _ = try RuntimeDirectory.reclaimOrphans(root: root)
         let directory = try RuntimeDirectory(root: root)
@@ -30,11 +29,9 @@ package enum CoreRuntime {
                                  secret: UUID().uuidString + UUID().uuidString,
                                  tunDevice: "utun\(Int.random(in: 1_000...60_000))",
                                  readinessListenPort: readinessListenPort, readinessTargetPort: readinessTargetPort)
-        let providers = base.appendingPathComponent("providers", isDirectory: true)
-        try FileManager.default.createDirectory(at: providers, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let provider = providers.appendingPathComponent("\(providerID).yaml")
-        try Data(sanitized.utf8).write(to: provider, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: provider.path)
+        try document.writeMaterials(to: directory)
+        let groupNames = selectedNodeName.map { [$0] } ?? document.names
+        let groupList = String(decoding: try JSONSerialization.data(withJSONObject: groupNames), as: UTF8.self)
         var yaml = """
         mixed-port: \(mixedPort)
         external-controller: '127.0.0.1:\(controllerPort)'
@@ -117,22 +114,15 @@ package enum CoreRuntime {
               ports: [80, 8080-8880]
             QUIC:
               ports: [443, 8443]
-        proxy-providers:
-
         """
-        yaml += """
-          '\(providerID)':
-            type: file
-            path: './providers/\(providerID).yaml'
-        proxy-groups:
-
-        """
+        // Inline nodes ensure -t actually constructs each adapter; file providers can defer
+        // their parsing until after startup and silently skip invalid nodes.
+        yaml += "\n" + document.yaml + "\nproxy-groups:\n"
         if selectedNodeName == nil {
             yaml += """
               - name: '\(providerID).auto'
                 type: url-test
-                use:
-                  - '\(providerID)'
+                proxies: \(groupList)
                 url: 'https://www.gstatic.com/generate_204'
                 interval: 300
                 lazy: true
@@ -140,14 +130,12 @@ package enum CoreRuntime {
             """
         }
         let selectedTarget: String
-        if let selectedNodeName {
+        if selectedNodeName != nil {
             selectedTarget = "\(providerID).fixed"
             yaml += """
               - name: '\(selectedTarget)'
                 type: select
-                use:
-                  - '\(providerID)'
-                filter: '\(yamlSingleQuoted(exactRegex(selectedNodeName)))'
+                proxies: \(groupList)
 
             """
         } else {
@@ -270,14 +258,4 @@ package enum CoreRuntime {
         }
     }
 
-    private static func exactRegex(_ value: String) -> String {
-        let meta = CharacterSet(charactersIn: "\\.^$|?*+()[]{}")
-        return "^" + value.unicodeScalars.map {
-            meta.contains($0) ? "\\\($0)" : String($0)
-        }.joined() + "$"
-    }
-
-    private static func yamlSingleQuoted(_ value: String) -> String {
-        value.replacingOccurrences(of: "'", with: "''")
-    }
 }

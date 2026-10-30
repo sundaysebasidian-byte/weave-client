@@ -114,3 +114,7 @@
 - `3f4a9b1` Windows 重复 CI 完整成功，Mac 完整回归/Release/预览、依赖检查和发行审计成功；Android JVM/lint/Debug 成功、设备阶段失败且 Release 未执行。当前新提交的检查另行跟踪。
 - `a610e33` Mac 的 86 项完整回归、Release 和预览打包成功，Windows 完整工作流成功。Android JVM/lint/Debug 成功；日志再次确认当前账户无 `/dev/kvm` 访问权限，设备门禁失败、Release 未执行，没有修改权限或组成员。
 - Mac 提取 `WeaveCoreRuntime`，GUI 已复用 YAML/配置、目录租约、就绪、DNS 与进程生命周期；配置写盘前核验实际节点选择。并发停止共享不随调用方取消的任务，真实核心 SIGSTOP 后强制终止与退出确认通过；40 项定向声明执行通过，1 项性能基准按默认策略跳过。该模块尚未接入 Broker，不具备 root provider/安装路径安全边界，高权限服务仍未启用。`bd8c04f` 的 [完整 macOS CI](https://github.com/sundaysebasidian-byte/weave-client/actions/runs/40998863961) 已通过回归、Release 构建与预览打包；本次记录更新只修改文档，代码与该验收版本相同。
+
+- Mac 增加锁定核心的 provider 封闭能力校验：14 类协议、7 类 SS 插件的已核验字段，未知能力、系统接口/路由覆盖和调用方文件路径在写盘前拒绝。TLS 内容写入私有生成文件，SSH 保持内联；协议、传输路径和 HTTP 头的数据语义保留。节点改为内联，使实际核心 `-t` 不再跳过文件 provider 的适配器语义；无效 VMess UUID 的旧实现放行已复现并修复。
+- 新增 16 项测试声明、64 个场景，相关定向回归共 67 项执行通过；三种证书算法通过真实双向 TLS 回环转发及证书指纹核验，缺证书被拒绝。本机旧 LibreSSL 测试端及同步进程退出等待的问题分别定位并修正；CI 显式使用 Python 3.13，完整远端结果按新提交独立记录。没有启用高权限服务、TUN、系统代理或更改证书信任。
+- `fb1746c` 的 Mac 完整回归/Release/预览、Windows 完整工作流、依赖和发行审计成功；Android 单测/lint/Debug 成功，设备门禁失败、Release 未执行。当前 provider 改动只涉及 Mac 及其测试/文档，不能沿用历史 Mac CI 作为新版本通过证明。

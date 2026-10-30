@@ -16,6 +16,7 @@
 在 Apple Silicon Mac 上使用 Swift 6 / Xcode 16+：
 
 ```bash
+# Test fixtures need python3 on PATH with OpenSSL >= 1.1.1 (CI uses Python 3.13).
 bash macos/test.sh --jobs 4
 bash macos/build-app.sh
 ```

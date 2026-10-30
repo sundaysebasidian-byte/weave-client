@@ -83,7 +83,7 @@ final class MihomoController: ObservableObject {
             do {
                 let runtime = try await Task.detached(priority: .userInitiated) {
                     let runtime = try CoreRuntime.prepare(
-                        provider: selected.payload,
+                        provider: try ClashProviderSanitizer.sanitize(selected.payload),
                         selectedNodeName: selectedNodeName,
                         enableTun: preferTun,
                         root: runtimeRoot,
