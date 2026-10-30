@@ -149,7 +149,7 @@ struct ShortcutParents {
             std::reverse(chain.begin(), chain.end());
             for (const auto& folder : chain) {
                 if (!fs::exists(folder) && folder == path.parent_path() && folder.filename() == L"Weave") CreateProtected(folder);
-                auto handle = std::make_unique<Handle>(CreateFileW(folder.c_str(), FILE_READ_ATTRIBUTES,
+                auto handle = std::make_unique<Handle>(CreateFileW(folder.c_str(), GENERIC_READ,
                     FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
                 Require(handle->value != INVALID_HANDLE_VALUE, "Pin shortcut directory against replacement");
