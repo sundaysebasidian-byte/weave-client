@@ -59,4 +59,6 @@ Copy-Item (Join-Path $PSScriptRoot '..\LICENSE') (Join-Path $output 'LICENSE-Wea
 Copy-Item (Join-Path $PSScriptRoot '..\geodata-lock.properties') $output
 Invoke-WebRequest 'https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.30/LICENSE' -OutFile (Join-Path $output 'LICENSE-Mihomo.txt')
 
+& (Join-Path $PSScriptRoot 'setup\Build-Setup.ps1')
+
 Write-Host "Published to $output"

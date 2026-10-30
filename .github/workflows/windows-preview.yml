@@ -157,13 +157,25 @@ jobs:
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $compiler)) { choco install innosetup --no-progress -y }
           if (-not (Test-Path $compiler)) { throw 'Inno Setup unavailable' }
-          & $compiler windows/installer.iss
+          & $compiler "/DBuildId=$env:GITHUB_SHA" windows/installer.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
           Get-FileHash windows/artifacts/installer/*.exe -Algorithm SHA256 | Format-List
+      - name: Validate machine installer transactions
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_INSTALLER_TEST: '1'
+        run: ./windows/tests/Test-Installer.ps1 -Compiler "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -BuildId $env:GITHUB_SHA
+      - name: Preserve installer acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-installer-tests
+          path: windows/artifacts/installer-tests/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: Weave-Windows-v3-Setup-x64
-          path: windows/artifacts/installer/*.exe
+          path: windows/artifacts/installer/*-Setup.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
