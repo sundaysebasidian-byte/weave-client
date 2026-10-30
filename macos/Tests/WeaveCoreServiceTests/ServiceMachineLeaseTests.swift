@@ -20,6 +20,7 @@ struct ServiceMachineLeaseTests {
         let child = try CoreProcess(executable: coreURL, runtime: runtime, environment: .isolated, onExit: {})
         do {
             try await CoreRuntime.waitUntilReady(runtime: runtime, pid: child.processIdentifier, requireTun: false)
+            #expect(getpgid(child.processIdentifier) == getpgrp())
             try lease.close()
             try runtime.directory.lease.close()
             try unrelatedHandle.close()

@@ -81,9 +81,12 @@ package final class CoreProcess: @unchecked Sendable {
         sigemptyset(&mask)
         sigemptyset(&defaults)
         for signal in [SIGTERM, SIGINT, SIGHUP, SIGPIPE] { sigaddset(&defaults, signal) }
+        // Keep checker and core in the service job group so launchd can reap them
+        // even when the host is killed before its asynchronous cleanup runs.
+        try check(posix_spawnattr_setpgroup(&attributes, getpgrp()))
         try check(posix_spawnattr_setsigmask(&attributes, &mask))
         try check(posix_spawnattr_setsigdefault(&attributes, &defaults))
-        try check(posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF)))
+        try check(posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETPGROUP)))
         var pid: pid_t = 0
         try check(posix_spawn(&pid, arguments[0], &actions, &attributes, &argv, &envp))
         return pid

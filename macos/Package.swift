@@ -16,6 +16,7 @@ let package = Package(
         .testTarget(name: "WeaveCoreBrokerTests", dependencies: ["WeaveCoreBroker"]),
         .target(name: "WeaveCoreService", dependencies: ["WeaveCoreBroker", "WeaveCoreRuntime"]),
         .testTarget(name: "WeaveCoreServiceTests", dependencies: ["WeaveCoreService", "WeaveCoreBroker", "WeaveCoreRuntime"]),
+        .executableTarget(name: "WeaveCoreLifecycleProbe", dependencies: ["WeaveCoreService", "WeaveCoreBroker"], path: "Tests/Fixtures/CoreLifecycleProbe"),
         .target(name: "CWeaveHTTP", linkerSettings: [.linkedLibrary("curl")]),
         .executableTarget(
             name: "WeaveMac",

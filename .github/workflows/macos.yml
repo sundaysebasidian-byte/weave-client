@@ -28,6 +28,18 @@ jobs:
           test "$(shasum -a 256 macos/Resources/mihomo | cut -d' ' -f1)" = "$(sed -n 's/^mihomo.darwin-arm64.sha256=//p' core-lock.properties)"
       - name: Regression tests
         run: bash macos/test.sh --parallel
+      - name: Native service host crash recovery
+        run: |
+          swift build --package-path macos --product WeaveCoreLifecycleProbe
+          bin_root="$(swift build --package-path macos --show-bin-path)"
+          python3 macos/test-host-lifecycle.py --helper "$bin_root/WeaveCoreLifecycleProbe" --core "$PWD/macos/Resources/mihomo" --output "$RUNNER_TEMP/weave-host-lifecycle"
+      - name: Preserve host lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-macOS-host-lifecycle
+          path: ${{ runner.temp }}/weave-host-lifecycle
+          if-no-files-found: error
       - name: Optimized build
         run: swift build --package-path macos --configuration release
       - name: Package verifiable preview
