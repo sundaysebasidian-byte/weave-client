@@ -14,6 +14,7 @@ public sealed class MihomoProcess : IAsyncDisposable
     private CancellationTokenSource? _logCancellation;
     private ChildProcessLifetime? _childLifetime;
     private MihomoController? _controller;
+    private CoreReadinessProbe? _readinessProbe;
     private volatile bool _ready;
     // Only synthetic integration fixtures consume raw lines; the app receives redacted diagnostics.
     internal Action<string>? TestLogObserver { get; init; }
@@ -104,6 +105,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         {
             if (OperatingSystem.IsWindows()) _childLifetime = new ChildProcessLifetime(process);
             _controller = new MihomoController(bundle);
+            _readinessProbe = new(bundle.ReadinessTargetPort);
             await WaitForReadyAsync(bundle, process, cancellationToken).ConfigureAwait(false);
             if (process.HasExited) throw new InvalidOperationException(L.T("内核已退出"));
             _ready = true;
@@ -221,6 +223,11 @@ public sealed class MihomoProcess : IAsyncDisposable
             _controller = null;
             _childLifetime?.Dispose();
             _childLifetime = null;
+            if (_readinessProbe is { } probe)
+            {
+                _readinessProbe = null;
+                await probe.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -255,7 +262,8 @@ public sealed class MihomoProcess : IAsyncDisposable
                     NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
                         adapter.Name.Equals(bundle.TunDevice, StringComparison.OrdinalIgnoreCase) &&
                         adapter.OperationalStatus == OperationalStatus.Up));
-                if (tunReady && await _controller!.IsReadyAsync(bundle, timeout.Token).ConfigureAwait(false)) return;
+                if (tunReady && await _controller!.IsReadyAsync(bundle, timeout.Token).ConfigureAwait(false) &&
+                    await _readinessProbe!.IsForwardingAsync(bundle.ReadinessListenPort, timeout.Token).ConfigureAwait(false)) return;
             }
             catch (Exception error) when (error is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException or NetworkInformationException)
             {

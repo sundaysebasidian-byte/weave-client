@@ -35,7 +35,7 @@ public sealed class BrokerSessionTests
                 await running.WaitAsync(TimeSpan.FromSeconds(2));
             }
         }
-        finally { stream.ClientClosed.TrySetResult(0); await running.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
+        finally { stream.ClientClosed.TrySetResult(0); await running.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext); }
     }
 
     private sealed class HeldStopReplyStream(byte[] request) : MemoryStream(request)

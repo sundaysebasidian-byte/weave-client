@@ -43,8 +43,9 @@ public sealed class MihomoConfigBuilder
         ProxyProviderSecurity.CheckTotalSize(usable);
         var providers = usable.ToDictionary(item => item.Id, ProxyProviderSecurity.Validate, StringComparer.Ordinal);
         var mixedPort = AvailablePort();
-        var controllerPort = AvailablePort();
-        while (controllerPort == mixedPort) controllerPort = AvailablePort();
+        var controllerPort = AvailablePort(mixedPort);
+        var readinessListenPort = AvailablePort(mixedPort, controllerPort);
+        var readinessTargetPort = AvailablePort(mixedPort, controllerPort, readinessListenPort);
         var secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
         var providersDirectory = Path.Combine(runtimeDirectory, "providers");
@@ -69,7 +70,8 @@ public sealed class MihomoConfigBuilder
         }
 
         var configPath = Path.Combine(runtimeDirectory, "config.yaml");
-        var yaml = BuildYaml(usable, byId, activeRoutes, selectedSubscription, selectedNodeId, options, mixedPort, controllerPort, secret);
+        var yaml = BuildYaml(usable, byId, activeRoutes, selectedSubscription, selectedNodeId, options, mixedPort, controllerPort, secret)
+            + ReadinessTunnel(readinessListenPort, readinessTargetPort);
         File.WriteAllText(configPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         var requiredSelections = new Dictionary<string, string>
         {
@@ -91,6 +93,8 @@ public sealed class MihomoConfigBuilder
             MixedPort = mixedPort,
             ControllerPort = controllerPort,
             ControllerSecret = secret,
+            ReadinessListenPort = readinessListenPort,
+            ReadinessTargetPort = readinessTargetPort,
             RequiresTun = options.EnableTun,
             ProviderNodeCounts = usable.ToDictionary(ProviderName, subscription => subscription.Nodes.Count),
             RequiredSelections = requiredSelections,
@@ -284,8 +288,9 @@ public sealed class MihomoConfigBuilder
     {
         if (Directory.Exists(directory)) throw new InvalidDataException(L.T("运行目录已存在"));
         var mixedPort = AvailablePort();
-        var controllerPort = AvailablePort();
-        while (controllerPort == mixedPort) controllerPort = AvailablePort();
+        var controllerPort = AvailablePort(mixedPort);
+        var readinessListenPort = AvailablePort(mixedPort, controllerPort);
+        var readinessTargetPort = AvailablePort(mixedPort, controllerPort, readinessListenPort);
         var secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var builder = new StringBuilder();
         AppendNetworkSettings(builder, options, mixedPort, controllerPort, secret);
@@ -296,11 +301,13 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine("  - DST-PORT,19302-19309,REJECT");
         }
         builder.AppendLine("  - MATCH,DIRECT");
+        builder.Append(ReadinessTunnel(readinessListenPort, readinessTargetPort));
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "config.yaml");
         File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
         return new RuntimeBundle { Directory = directory, ConfigPath = path, MixedPort = mixedPort,
-            ControllerPort = controllerPort, ControllerSecret = secret, RequiresTun = options.EnableTun };
+            ControllerPort = controllerPort, ControllerSecret = secret, RequiresTun = options.EnableTun,
+            ReadinessListenPort = readinessListenPort, ReadinessTargetPort = readinessTargetPort };
     }
 
     private static IEnumerable<string> DnsEndpoints(WindowsNetworkOptions options)
@@ -320,11 +327,20 @@ public sealed class MihomoConfigBuilder
         };
     }
 
-    private static int AvailablePort()
+    private static string ReadinessTunnel(int listenPort, int targetPort) =>
+        // A fixed loopback target tests the normal forwarding pipeline without DNS,
+        // an external health service, or any exception to the user's routing rules.
+        $"tunnels:\n  - network: [tcp]\n    address: 127.0.0.1:{listenPort}\n    target: 127.0.0.1:{targetPort}\n    proxy: DIRECT\n";
+
+    private static int AvailablePort(params int[] excluded)
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        while (true)
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            if (!excluded.Contains(port)) return port;
+        }
     }
 
     private static string ProviderName(SubscriptionRecord subscription) => $"provider-{subscription.Id}";

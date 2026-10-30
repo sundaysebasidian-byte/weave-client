@@ -146,6 +146,8 @@ public sealed class RuntimeBundle
     public required int MixedPort { get; init; }
     public int ControllerPort { get; init; }
     public string ControllerSecret { get; init; } = "";
+    internal int ReadinessListenPort { get; init; }
+    internal int ReadinessTargetPort { get; init; }
     public bool RequiresTun { get; init; }
     public string TunDevice { get; init; } = "WeaveTun";
     public IReadOnlyDictionary<string, int> ProviderNodeCounts { get; init; } = new Dictionary<string, int>();
