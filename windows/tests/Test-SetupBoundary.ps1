@@ -24,8 +24,23 @@ try {
     & $helper begin $install $id 2>&1 | Tee-Object (Join-Path $results 'begin.txt')
     if ($LASTEXITCODE -ne 0) { throw 'Native setup could not prepare its protected storage.' }
     if (-not (Test-Path (Join-Path $install 'setup-pending.txt'))) { throw 'Setup did not persist its recovery record.' }
+    # Simulate interruption after first-install shortcuts were written, before service activation.
+    $shortcuts = @((Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Weave\Weave.lnk'),
+        (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Weave.lnk'))
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        foreach ($path in $shortcuts) {
+            if (Test-Path $path) { throw 'An existing shortcut must not be overwritten by setup acceptance.' }
+            $link = $shell.CreateShortcut($path)
+            try {
+                $link.TargetPath = Join-Path $install "versions\$id\Weave.Windows.exe"
+                $link.Save()
+            } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
+        }
+    } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
     & $helper rollback $install $id 2>&1 | Tee-Object (Join-Path $results 'rollback.txt')
     if ($LASTEXITCODE -ne 0) { throw 'Native setup could not recover its prepared transaction.' }
+    foreach ($path in $shortcuts) { if (Test-Path $path) { throw 'Recovery left an incomplete first-install shortcut.' } }
     if ((Test-Path (Join-Path $install 'setup-pending.txt')) -or (Get-Service WeaveCore -ErrorAction SilentlyContinue)) {
         throw 'Native preparation recovery left active state.'
     }

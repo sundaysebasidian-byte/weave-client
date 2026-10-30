@@ -79,7 +79,7 @@ void CheckEntry(const fs::path& path, bool ancestor = false, bool pinned = false
         DWORD forbidden = ancestor ? AncestorMutation : Mutation;
         // A no-delete-sharing handle prevents rename/replacement while shortcut metadata is accessed.
         // Executable installation paths always use the stricter, unpinned policy.
-        if (pinned) forbidden &= ~(DELETE | (ancestor ? FILE_DELETE_CHILD : 0));
+        if (pinned) forbidden &= ~(DELETE | FILE_DELETE_CHILD);
         if (!Trusted(&allow->SidStart) && (allow->Mask & forbidden)) {
             std::wcerr << L"Unsafe installation ACL path: " << path.wstring() << L"; mask: " << allow->Mask << L"\n";
             Fail("An untrusted identity can change installation files", ERROR_ACCESS_DENIED);
