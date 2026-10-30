@@ -16,6 +16,7 @@ $package = $packages[0].FullName
 $sc = Join-Path $env:windir 'System32\sc.exe'
 $steps = [Collections.Generic.List[object]]::new()
 $gui = $null
+$guiLauncher = $null
 $testUser = $null
 $sentinel = Join-Path $env:LOCALAPPDATA 'Weave\installer-acceptance.txt'
 if (Test-Path $sentinel) { throw 'Existing user-data sentinel must not be overwritten.' }
@@ -127,14 +128,26 @@ try {
     } finally { $maintenance.Dispose() }
     $env:WEAVE_UI_CAPTURE = Join-Path $results 'installed-gui.png'
     $env:WEAVE_STARTUP_DIAGNOSTIC = Join-Path $results 'installed-gui-error.txt'
-    # Alternate credentials must not inherit the administrator's APPDATA/USERPROFILE.
-    $gui = Start-Process $firstGui -Credential $credential -LoadUserProfile -UseNewEnvironment -PassThru -WorkingDirectory $firstRelease `
-        -Environment @{ WEAVE_UI_CAPTURE = $env:WEAVE_UI_CAPTURE; WEAVE_STARTUP_DIAGNOSTIC = $env:WEAVE_STARTUP_DIAGNOSTIC }
+    # With alternate credentials, PowerShell discards Environment overrides when UseNewEnvironment is set.
+    # Set capture variables inside the new user's environment, before starting the actual GUI.
+    $guiState = Join-Path $results 'ordinary-user-gui.json'
+    $guiLauncher = Start-Process (Join-Path $PSHOME 'pwsh.exe') -Credential $credential -LoadUserProfile -UseNewEnvironment -PassThru `
+        -WorkingDirectory $firstRelease -ArgumentList @('-NoProfile', '-NonInteractive', '-File', "`"$(Join-Path $PSScriptRoot 'Start-InstalledGui.ps1')`"", `
+        '-GuiPath', "`"$firstGui`"", '-CapturePath', "`"$env:WEAVE_UI_CAPTURE`"", '-DiagnosticPath', "`"$env:WEAVE_STARTUP_DIAGNOSTIC`"", `
+        '-StatePath', "`"$guiState`"", '-ExpectedSid', $testUser.Sid.Value) `
+        -RedirectStandardOutput (Join-Path $results 'gui-launcher.out.txt') -RedirectStandardError (Join-Path $results 'gui-launcher.err.txt')
     $deadline = (Get-Date).AddSeconds(25)
     while (-not (Test-Path ($env:WEAVE_UI_CAPTURE + '.ready'))) {
-        if ($gui.HasExited -or (Get-Date) -ge $deadline) { throw 'Installed ordinary GUI failed to render.' }
+        if (-not $gui -and (Test-Path $guiState)) {
+            $state = Get-Content $guiState -Raw | ConvertFrom-Json
+            if ($state.sid -ne $testUser.Sid.Value) { throw 'GUI launcher used another account.' }
+            $gui = Get-Process -Id $state.pid
+            if ($gui.MainModule.FileName -ne $firstGui) { throw 'GUI launcher returned another executable.' }
+        }
+        if ($guiLauncher.HasExited -or ($gui -and $gui.HasExited) -or (Get-Date) -ge $deadline) { throw 'Installed ordinary GUI failed to render.' }
         Start-Sleep -Milliseconds 100
     }
+    if (-not $gui) { throw 'Rendered GUI process ownership was not recorded.' }
     $profile = Get-CimInstance Win32_UserProfile -Filter "SID='$($testUser.Sid.Value)'"
     if (-not $profile -or -not (Test-Path (Join-Path $profile.LocalPath 'AppData\Local\Weave\desktop-instance.lock'))) {
         throw 'Installed GUI did not use the ordinary account profile.'
@@ -145,11 +158,13 @@ try {
     $secondShortcuts = @(Shortcut-Hashes $second)
     if ($first -eq $second) { throw 'Upgrade did not stage a distinct version.' }
     if (-not $gui.WaitForExit(10000)) { throw 'Upgrade left the previous GUI running.' }
+    if (-not $guiLauncher.WaitForExit(10000)) { throw 'Ordinary-user GUI launcher did not exit.' }
     foreach ($entry in $firstHashes) {
         if ((Get-FileHash $entry.Path -Algorithm SHA256).Hash -ne $entry.Hash) { throw 'Upgrade overwrote the rollback version.' }
     }
     Assert-UserData
     $gui.Dispose(); $gui = $null
+    $guiLauncher.Dispose(); $guiLauncher = $null
 
     & $Compiler "/DBuildId=$BuildId" '/DSyntheticServiceFailure=1' (Join-Path $root 'installer.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Failure fixture installer compilation failed.' }
@@ -191,6 +206,10 @@ finally {
             if (-not $gui.WaitForExit(10000)) { $gui.Kill($true); $gui.WaitForExit(10000) | Out-Null }
         }
         $gui.Dispose()
+    }
+    if ($guiLauncher) {
+        if (-not $guiLauncher.WaitForExit(10000)) { $guiLauncher.Kill($true); $guiLauncher.WaitForExit(10000) | Out-Null }
+        $guiLauncher.Dispose()
     }
     if ($testUser -and (Get-LocalUser $testUser.Name).Sid.Value -eq $testUser.Sid.Value) {
         Remove-LocalUser -SID $testUser.Sid
