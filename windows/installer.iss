@@ -18,7 +18,6 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19041
-SetupMutex=Global\WeaveMachineSetup
 OutputDir=artifacts\installer
 #ifdef SyntheticServiceFailure
 OutputBaseFilename=Weave-Windows-synthetic-failure-test
@@ -58,6 +57,42 @@ var
   TransactionStarted: Boolean;
   TransactionCommitted: Boolean;
   LastOperationError: String;
+  MaintenanceMutex: THandle;
+
+function CreateMaintenanceMutex(Attributes: ULONG_PTR; InitialOwner: BOOL; Name: String): THandle;
+  external 'CreateMutexW@kernel32.dll stdcall';
+function CloseMaintenanceMutex(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function AcquireMaintenanceMutex: Boolean;
+var
+  ErrorCode: LongInt;
+begin
+  // The same atomic existence lock covers both setup and uninstall, across user sessions.
+  MaintenanceMutex := CreateMaintenanceMutex(0, False, 'Global\WeaveMachineSetup');
+  ErrorCode := DLLGetLastError;
+  Result := (MaintenanceMutex <> 0) and (ErrorCode <> 183);
+  if not Result then begin
+    if MaintenanceMutex <> 0 then CloseMaintenanceMutex(MaintenanceMutex);
+    MaintenanceMutex := 0;
+    SuppressibleMsgBox('Weave maintenance is already running or its lock is unavailable. Close the other installer or uninstaller, then retry.' + #13#10 + SysErrorMessage(ErrorCode), mbError, MB_OK, IDOK);
+  end;
+end;
+
+function InitializeSetup: Boolean;
+begin
+  Result := AcquireMaintenanceMutex;
+end;
+
+function InitializeUninstall: Boolean;
+begin
+  Result := AcquireMaintenanceMutex;
+end;
+
+procedure DeinitializeUninstall;
+begin
+  if MaintenanceMutex <> 0 then CloseMaintenanceMutex(MaintenanceMutex);
+end;
 
 function GetReleaseId: String;
 begin
@@ -155,6 +190,7 @@ begin
     if not SetupOperation('rollback', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then
       Log('Recovery remains pending: ' + LastOperationError);
   end;
+  if MaintenanceMutex <> 0 then CloseMaintenanceMutex(MaintenanceMutex);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

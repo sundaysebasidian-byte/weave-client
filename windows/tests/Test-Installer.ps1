@@ -94,14 +94,35 @@ try {
     $firstGui = Join-Path $firstRelease 'Weave.Windows.exe'
     $firstHashes = @(Get-ChildItem $firstRelease -File -Recurse | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 })
     Assert-UserData
+    $uninstaller = Join-Path $install 'unins000.exe'
+    if (-not (Test-Path $uninstaller)) { throw 'Machine uninstaller is missing.' }
+    $created = $false
+    $maintenance = [Threading.Mutex]::new($false, 'Global\WeaveMachineSetup', [ref] $created)
+    try {
+        if (-not $created) { throw 'Another maintenance process owns the test installation.' }
+        Invoke-Setup $package 'reject-concurrent-install' $false
+        Invoke-Setup $uninstaller 'reject-concurrent-uninstall' $false
+        if ((Service-Image) -ne $first -or (Test-Path (Join-Path $install 'setup-pending.txt')) -or
+            @(Get-ChildItem (Join-Path $install 'versions') -Directory).Count -ne 1) {
+            throw 'Concurrent maintenance changed the installed service or staged a transaction.'
+        }
+        Assert-UserData
+    } finally { $maintenance.Dispose() }
     $env:WEAVE_UI_CAPTURE = Join-Path $results 'installed-gui.png'
     $env:WEAVE_STARTUP_DIAGNOSTIC = Join-Path $results 'installed-gui-error.txt'
-    $gui = Start-Process $firstGui -Credential $credential -LoadUserProfile -PassThru -WorkingDirectory $firstRelease
+    # Alternate credentials must not inherit the administrator's APPDATA/USERPROFILE.
+    $gui = Start-Process $firstGui -Credential $credential -LoadUserProfile -UseNewEnvironment -PassThru -WorkingDirectory $firstRelease `
+        -Environment @{ WEAVE_UI_CAPTURE = $env:WEAVE_UI_CAPTURE; WEAVE_STARTUP_DIAGNOSTIC = $env:WEAVE_STARTUP_DIAGNOSTIC }
     $deadline = (Get-Date).AddSeconds(25)
     while (-not (Test-Path ($env:WEAVE_UI_CAPTURE + '.ready'))) {
         if ($gui.HasExited -or (Get-Date) -ge $deadline) { throw 'Installed ordinary GUI failed to render.' }
         Start-Sleep -Milliseconds 100
     }
+    $profile = Get-CimInstance Win32_UserProfile -Filter "SID='$($testUser.Sid.Value)'"
+    if (-not $profile -or -not (Test-Path (Join-Path $profile.LocalPath 'AppData\Local\Weave\desktop-instance.lock'))) {
+        throw 'Installed GUI did not use the ordinary account profile.'
+    }
+    $steps.Add(@{ name = 'ordinary-user-gui'; sid = $testUser.Sid.Value; profile = $profile.LocalPath; rendered = $true })
     Invoke-Setup $package 'upgrade'
     $second = Service-Image
     if ($first -eq $second) { throw 'Upgrade did not stage a distinct version.' }
@@ -119,8 +140,6 @@ try {
     if (Test-Path (Join-Path $install 'setup-pending.txt')) { throw 'Failed activation left unresolved recovery state.' }
     Assert-UserData
 
-    $uninstaller = Join-Path $install 'unins000.exe'
-    if (-not (Test-Path $uninstaller)) { throw 'Machine uninstaller is missing.' }
     $unknown = Join-Path $install 'keep-unknown.txt'
     [IO.File]::WriteAllText($unknown, 'unknown application-root file must survive uninstall')
     $unknownHash = (Get-FileHash $unknown -Algorithm SHA256).Hash
@@ -138,7 +157,7 @@ try {
     if (Get-Service WeaveCore -ErrorAction SilentlyContinue) { throw 'Uninstall left the registered service.' }
     if ((Get-FileHash $unknown -Algorithm SHA256).Hash -ne $unknownHash) { throw 'Uninstall removed unknown files.' }
     Assert-UserData
-    'Protected installation, upgrade, activation rollback, foreign-service rejection and uninstall/data preservation passed.' | Set-Content (Join-Path $results 'acceptance.txt')
+    'Protected installation, maintenance exclusion, upgrade, activation rollback, foreign-service rejection and uninstall/data preservation passed.' | Set-Content (Join-Path $results 'acceptance.txt')
 }
 finally {
     @{ sourceCommit = (git rev-parse HEAD); install = $install; userSentinel = $sentinel; sentinelHash = $sentinelHash; steps = $steps; filesRetained = $true } |
