@@ -15,8 +15,14 @@ package final class ManagedCoreInstallation: Sendable {
     let runtimeRoot: URL
     let lease: FileHandle
     private let ownership: ServiceMachineLease
+    private let bundle: URL
+    private let owner: uid_t
+    private let authorizesRoot: Bool
 
-    private init(bundle: URL, runtimeRoot: URL, ownership: ServiceMachineLease) {
+    private init(bundle: URL, runtimeRoot: URL, ownership: ServiceMachineLease, authorizesRoot: Bool = false) {
+        self.bundle = bundle
+        owner = geteuid()
+        self.authorizesRoot = authorizesRoot
         coreURL = bundle.appendingPathComponent("Contents/Resources/mihomo")
         self.runtimeRoot = runtimeRoot
         self.ownership = ownership
@@ -26,16 +32,31 @@ package final class ManagedCoreInstallation: Sendable {
     /// Only a root host with a valid Developer ID identity may prepare this fixed store.
     /// No broker request supplies a destination, UID, signing requirement or core path.
     package static func prepare(sourceBundle: URL) throws -> ManagedCoreInstallation {
-        guard geteuid() == 0 else { throw BrokerFailure.unauthorized }
-        let appRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.appIdentifier)
-        let coreRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: CoreIntegrityManifest.identifier)
+        try CoreHostEnvironment.validateCurrentProcess()
+        let appRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.appIdentifier, ownIdentifier: BrokerIdentity.serviceName)
+        let coreRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: CoreIntegrityManifest.identifier, ownIdentifier: BrokerIdentity.serviceName)
         let library = try ProtectedInstallationPath.openValidated(URL(fileURLWithPath: "/Library"))
         defer { close(library) }
         let helpers = try directory(parent: library, name: "PrivilegedHelperTools", owner: 0, mode: 0o755, privateOnly: false)
         close(helpers)
-        return try prepare(sourceBundle: sourceBundle,
+        let snapshot = try prepare(sourceBundle: sourceBundle,
                            storeRoot: URL(fileURLWithPath: "/Library/PrivilegedHelperTools/io.weave.client.macos", isDirectory: true),
                            owner: 0, appRequirement: appRequirement, coreRequirement: coreRequirement)
+        try CoreHostBundle.validate(snapshot.bundle)
+        let hostRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.serviceName,
+                                                                       ownIdentifier: BrokerIdentity.serviceName)
+        try CoreInstallation.validateSignature(snapshot.bundle.appendingPathComponent(CoreHostBundle.program), requirement: hostRequirement)
+        return ManagedCoreInstallation(bundle: snapshot.bundle, runtimeRoot: snapshot.runtimeRoot,
+                                       ownership: snapshot.ownership, authorizesRoot: true)
+    }
+
+    func validateExecutionAuthority() throws {
+        guard geteuid() == owner, lease.fileDescriptor >= 0,
+              fcntl(lease.fileDescriptor, F_GETFD) >= 0 else { throw BrokerFailure.unauthorized }
+        if owner == 0 {
+            guard authorizesRoot else { throw BrokerFailure.unauthorized }
+            try CoreHostEnvironment.validateCurrentProcess()
+        }
     }
 
     // Internal only: ordinary-user tests supply their own private root and ad-hoc requirements.
@@ -75,13 +96,15 @@ package final class ManagedCoreInstallation: Sendable {
             try copyDirectory(source, to: stage, depth: 0, count: &count, bytes: &bytes)
             try ProtectedInstallationPath.validateTree(stageURL, owner: owner)
             let manifest = try CoreInstallation.validateContents(stageURL, appRequirement: appRequirement, coreRequirement: coreRequirement)
-            let name = manifest.signedCoreSHA256 + ".app"
+            let key = try CoreInstallation.snapshotKey(stageURL)
+            let name = key + ".app"
             installed = storeRoot.appendingPathComponent("versions/" + name, isDirectory: true)
             var existing = stat()
             if fstatat(versions, name, &existing, AT_SYMLINK_NOFOLLOW) == 0 {
                 // Preserve and reject a corrupt/unknown existing version; never overwrite it.
                 try ProtectedInstallationPath.validateTree(installed, owner: owner)
-                guard try CoreInstallation.validateContents(installed, appRequirement: appRequirement, coreRequirement: coreRequirement) == manifest else {
+                guard try CoreInstallation.validateContents(installed, appRequirement: appRequirement, coreRequirement: coreRequirement) == manifest,
+                      try CoreInstallation.snapshotKey(installed) == key else {
                     throw InstallationError.changedCore
                 }
             } else {

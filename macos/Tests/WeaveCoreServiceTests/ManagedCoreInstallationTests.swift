@@ -67,6 +67,26 @@ struct ManagedCoreInstallationTests {
         }
     }
 
+    @Test func anAppUpdateWithTheSameCoreGetsItsOwnSealedSnapshot() throws {
+        try CoreInstallationTests().withSignedFixture { app in
+            let root = app.deletingLastPathComponent().appendingPathComponent("store")
+            let first = try prepare(app, root)
+            let before = try Data(contentsOf: first.coreURL)
+            try first.lease.close()
+            let plist = app.appendingPathComponent("Contents/Info.plist")
+            var values = try #require(PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
+            values["CFBundleVersion"] = "2"
+            try PropertyListSerialization.data(fromPropertyList: values, format: .xml, options: 0).write(to: plist)
+            _ = try BoundedCommand.run(executable: "/usr/bin/codesign", arguments: ["--force", "--sign", "-", "--identifier", BrokerIdentity.appIdentifier, app.path])
+            let second = try prepare(app, root)
+            #expect(first.coreURL != second.coreURL)
+            #expect(try Data(contentsOf: first.coreURL) == before)
+            #expect(try Data(contentsOf: second.coreURL) == before)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("versions").path).count == 2)
+            try second.lease.close()
+        }
+    }
+
     @Test(arguments: ["symlink", "hardlink", "fifo", "bytes", "depth", "entries"])
     func untrustedSourceIsBoundedAndNeverPublished(_ kind: String) throws {
         try CoreInstallationTests().withSignedFixture { app in

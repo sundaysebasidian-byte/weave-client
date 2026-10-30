@@ -142,6 +142,9 @@ struct CoreInstallationTests {
     func packagedPreviewPassesTheNativeContentVerifier() throws {
         let path = try #require(ProcessInfo.processInfo.environment["WEAVE_TEST_PACKAGED_BUNDLE"])
         let manifest = try validate(URL(fileURLWithPath: path))
+        try CoreHostBundle.validate(URL(fileURLWithPath: path))
+        try CoreInstallation.validateSignature(URL(fileURLWithPath: path).appendingPathComponent(CoreHostBundle.program),
+                                               requirement: "identifier \"\(BrokerIdentity.serviceName)\"")
         #expect(manifest.sourceCoreSHA256 == "0cf93bb94fdb322e91120b8c6b67e35997a0962ba7cea7fe1f988a1c7060ee1a")
         let version = try BoundedCommand.run(executable: path + "/Contents/Resources/mihomo", arguments: ["-v"])
         #expect(version.contains("Mihomo"))

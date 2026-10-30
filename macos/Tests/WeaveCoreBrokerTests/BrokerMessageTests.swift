@@ -66,6 +66,6 @@ struct BrokerMessageTests {
         #expect(throws: BrokerFailure.self) { try BrokerIdentity.developerIDRequirement(team: "0123456789", identifier: "app\" or true") }
         #expect(throws: BrokerFailure.self) { try BrokerIdentity.validate("malformed signing requirement") }
         // Test runners are ad-hoc; production must not turn their missing team into a wildcard.
-        #expect(throws: BrokerFailure.self) { try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.serviceName) }
+        #expect(throws: BrokerFailure.self) { try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.serviceName, ownIdentifier: BrokerIdentity.appIdentifier) }
     }
 }

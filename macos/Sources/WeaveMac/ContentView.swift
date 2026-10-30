@@ -288,6 +288,7 @@ private struct ConnectionView: View {
     @State private var showNodeSelector = false
 
     private var isRunning: Bool { model.core.state.isConnected }
+    private var canStop: Bool { model.core.hasOwnedSession || model.core.state == .starting }
     private var statusColor: Color {
         switch model.core.state {
         case .tun, .localProxy: return .weaveGood
@@ -349,8 +350,8 @@ private struct ConnectionView: View {
                         model.toggleConnection()
                     } label: {
                         HStack(spacing: 9) {
-                            Image(systemName: isRunning ? "stop.fill" : "power")
-                            Text(isRunning ? "断开" : "连接")
+                            Image(systemName: canStop ? "stop.fill" : "power")
+                            Text(model.core.state == .starting ? "取消连接" : canStop ? "停止连接" : "连接")
                             Spacer()
                             Image(systemName: "arrow.right")
                         }
@@ -457,7 +458,7 @@ private struct ConnectionView: View {
 
     private var connectDisabled: Bool {
         model.core.state == .stopping ||
-            ((!model.core.coreAvailable || model.selectedSubscription == nil || model.nodeCacheLoading || model.selectionIssue != nil) && !model.core.state.isActive)
+            ((!model.core.coreAvailable || model.selectedSubscription == nil || model.nodeCacheLoading || model.selectionIssue != nil) && !model.core.state.isActive && !model.core.hasOwnedSession)
     }
 
     private var statusLabel: String {
@@ -1266,6 +1267,8 @@ private struct SettingsView: View {
                     .toggleStyle(.switch)
                     .disabled(model.core.state.isActive)
 
+                    CoreServiceSettingsView(core: model.core, manager: model.core.serviceManager)
+
                     Text("TUN 失败时不会自动切换模式。关闭后使用本地 HTTP/HTTPS/SOCKS 系统代理，仅覆盖遵循系统代理的应用。未连接时其他应用仍可能使用原网络。")
                         .font(.caption2)
                         .foregroundStyle(Color.weaveMuted)
@@ -1423,4 +1426,33 @@ private extension Color {
     ))
     static let weaveGood = Color(red: 61 / 255, green: 111 / 255, blue: 99 / 255)
     static let weaveError = Color(red: 186 / 255, green: 26 / 255, blue: 26 / 255)
+}
+
+private struct CoreServiceSettingsView: View {
+    @ObservedObject var core: MihomoController
+    @ObservedObject var manager: CoreServiceManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(manager.message).font(.caption).foregroundStyle(Color.weaveMuted)
+            if manager.status == .enabled {
+                Text("停用服务会影响本机所有已登录用户的 TUN 连接。")
+                    .font(.caption2).foregroundStyle(Color.weaveMuted)
+            }
+            HStack {
+                if manager.status == .notRegistered {
+                    Button("启用 TUN 服务") { manager.enable() }
+                        .disabled(!manager.identityValid || manager.busy || core.state.isActive)
+                } else {
+                    Button("系统授权设置") { manager.openSettings() }
+                    Button("停用 TUN 服务") { Task { await core.disableService() } }
+                        .disabled(manager.busy || core.state == .starting || core.state == .stopping)
+                }
+                Button("刷新状态") { manager.refresh() }.disabled(manager.busy)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            manager.refresh()
+        }
+    }
 }

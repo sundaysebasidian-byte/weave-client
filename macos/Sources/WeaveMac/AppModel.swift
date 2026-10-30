@@ -57,6 +57,9 @@ final class AppModel: ObservableObject {
         subscriptions = self.vault.subscriptions
         selectedSubscriptionID = savedSelection.subscriptionID
         selectedNodeName = savedSelection.node(for: selectedSubscriptionID)
+        self.core.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         self.vault.$subscriptions
             .sink { [weak self] values in
                 guard let self else { return }
@@ -110,7 +113,7 @@ final class AppModel: ObservableObject {
     }
 
     func toggleConnection() {
-        if core.state.isConnected || core.state == .starting {
+        if core.hasOwnedSession || core.state == .starting {
             Task { await core.stop() }
         } else {
             guard !nodeCacheLoading, selectionIssue == nil else { return }

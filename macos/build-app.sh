@@ -38,8 +38,11 @@ mkdir -p "$output_root"
 package_root="$(mktemp -d "$output_root/package.XXXXXX")"
 app_bundle="$package_root/Weave.app"
 mkdir -p "$app_bundle/Contents/MacOS" "$app_bundle/Contents/Resources"
+mkdir -p "$app_bundle/Contents/Library/LaunchDaemons"
 cp "$macos_root/Resources/Info.plist" "$app_bundle/Contents/Info.plist"
 cp "$bin_root/WeaveMac" "$app_bundle/Contents/MacOS/WeaveMac"
+cp "$bin_root/WeaveCoreServiceHost" "$app_bundle/Contents/MacOS/WeaveCoreServiceHost"
+cp "$macos_root/Resources/io.weave.client.macos.core-service.plist" "$app_bundle/Contents/Library/LaunchDaemons/"
 cp "$macos_root/Resources/Weave.icns" "$app_bundle/Contents/Resources/Weave.icns"
 cp "$macos_root/Resources/WeaveImpressionTexture.webp" "$app_bundle/Contents/Resources/WeaveImpressionTexture.webp"
 cp "$core_binary" "$app_bundle/Contents/Resources/mihomo"
@@ -57,6 +60,8 @@ PY
 sign_flags=(--force --sign "$identity")
 if [[ "$identity" != - ]]; then sign_flags+=(--options runtime --timestamp); fi
 core_identifier='io.weave.client.macos.mihomo'
+host_identifier='io.weave.client.macos.core-service'
+codesign "${sign_flags[@]}" --identifier "$host_identifier" "$app_bundle/Contents/MacOS/WeaveCoreServiceHost"
 codesign "${sign_flags[@]}" --identifier "$core_identifier" "$app_bundle/Contents/Resources/mihomo"
 core_signed_sha="$(shasum -a 256 "$app_bundle/Contents/Resources/mihomo" | awk '{print $1}')"
 core_commit="$(sed -n 's/^mihomo.commit=//p' "$project_root/core-lock.properties")"
@@ -69,6 +74,7 @@ PY
 codesign "${sign_flags[@]}" --entitlements "$macos_root/WeaveMac.entitlements" "$app_bundle"
 codesign --verify --deep --strict "$app_bundle"
 codesign --verify --strict -R "=identifier \"$core_identifier\"" "$app_bundle/Contents/Resources/mihomo"
+codesign --verify --strict -R "=identifier \"$host_identifier\"" "$app_bundle/Contents/MacOS/WeaveCoreServiceHost"
 
 if [[ "$release" == 1 ]]; then
   ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$package_root/notarization-submission.zip"

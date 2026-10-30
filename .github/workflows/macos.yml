@@ -27,11 +27,15 @@ jobs:
           test "$(uname -m)" = arm64
           test "$(shasum -a 256 macos/Resources/mihomo | cut -d' ' -f1)" = "$(sed -n 's/^mihomo.darwin-arm64.sha256=//p' core-lock.properties)"
       - name: Regression tests
-        run: bash macos/test.sh --parallel --skip CoreInstallationTests
+        run: bash macos/test.sh --parallel --skip 'CoreInstallationTests|CoreServiceHostTests|ServiceMachineLeaseTests'
       # Signing/copying fixtures block worker threads; keep them out of the timed
       # XPC/process regression batch without changing production or test deadlines.
       - name: Signed installation snapshots
-        run: bash macos/test.sh --filter CoreInstallationTests
+        run: bash macos/test.sh --filter 'CoreInstallationTests|CoreServiceHostTests'
+      # This fixture intentionally opens an inheritable unrelated descriptor. Other
+      # suites must not spawn children while it attributes that descriptor to the core.
+      - name: Isolated descriptor inheritance
+        run: bash macos/test.sh --filter ServiceMachineLeaseTests
       - name: Native service host crash recovery
         run: |
           swift build --package-path macos --product WeaveCoreLifecycleProbe

@@ -29,12 +29,12 @@ struct CoreIntegrityManifest: Codable, Equatable {
 }
 
 /// An installation check, not an execution lease. The host must serialize updates and
-/// retain machine/runtime ownership before launching. Root service entry remains closed.
+/// retain machine/runtime ownership before launching; the host uses a sealed capability.
 package enum CoreInstallation {
     package static func validateManagedBundle(_ bundle: URL) throws -> URL {
         try ProtectedInstallationPath.validateTree(bundle)
-        let appRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.appIdentifier)
-        let coreRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: CoreIntegrityManifest.identifier)
+        let appRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.appIdentifier, ownIdentifier: BrokerIdentity.serviceName)
+        let coreRequirement = try BrokerIdentity.productionRequirement(peerIdentifier: CoreIntegrityManifest.identifier, ownIdentifier: BrokerIdentity.serviceName)
         _ = try validateContents(bundle, appRequirement: appRequirement, coreRequirement: coreRequirement)
         return bundle.appendingPathComponent("Contents/Resources/mihomo")
     }
@@ -88,12 +88,24 @@ package enum CoreInstallation {
         return data
     }
 
-    private static func validateSignature(_ url: URL, requirement: String) throws {
+    static func validateSignature(_ url: URL, requirement: String) throws {
         var code: SecStaticCode?; var parsed: SecRequirement?
         let flags = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSRestrictSymlinks)
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
               SecRequirementCreateWithString(requirement as CFString, [], &parsed) == errSecSuccess, let parsed,
               SecStaticCodeCheckValidity(code, flags, parsed) == errSecSuccess else { throw InstallationError.invalidSignature }
+    }
+
+    /// Called only after full validation of the private copy. The OS identifier
+    /// covers this signed application version, including its sealed helper/policy.
+    static func snapshotKey(_ bundle: URL) throws -> String {
+        var code: SecStaticCode?
+        var info: CFDictionary?
+        guard SecStaticCodeCreateWithPath(bundle as CFURL, [], &code) == errSecSuccess, let code,
+              SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
+              let values = info as? [String: Any], let identity = values[kSecCodeInfoUnique as String] as? Data,
+              !identity.isEmpty else { throw InstallationError.invalidSignature }
+        return "app-" + SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
     }
 }
 

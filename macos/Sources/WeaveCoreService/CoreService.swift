@@ -14,8 +14,8 @@ extension CoreProcess: ServiceCoreChild {}
 typealias ServiceCoreFactory = @Sendable (MacRuntime, CoreProcess.Mode, @escaping @Sendable () -> Void) throws -> any ServiceCoreChild
 
 /// Owns one core across all authenticated connections to this service instance.
-/// Root construction remains closed until installation/path integrity and daemon-wide
-/// process ownership are integrated. No executable/daemon is registered by this module.
+/// Root execution requires a sealed production installation capability; arbitrary
+/// executable paths and injected factories remain restricted to ordinary processes.
 package final class CoreService: Sendable {
     private let ownership = ServiceOwnership()
     private let root: URL
@@ -29,7 +29,8 @@ package final class CoreService: Sendable {
     }
 
     package convenience init(installation: ManagedCoreInstallation, enableTun: Bool) throws {
-        try self.init(runtimeRoot: installation.runtimeRoot, enableTun: enableTun) { runtime, mode, onExit in
+        try installation.validateExecutionAuthority()
+        self.init(validatedRoot: installation.runtimeRoot, enableTun: enableTun) { runtime, mode, onExit in
             var inherited = runtime
             inherited.additionalInheritedLeases.append(installation.lease)
             return try CoreProcess(executable: installation.coreURL, runtime: inherited, mode: mode,
@@ -37,9 +38,13 @@ package final class CoreService: Sendable {
         }
     }
 
-    init(runtimeRoot: URL, enableTun: Bool, factory: @escaping ServiceCoreFactory) throws {
+    convenience init(runtimeRoot: URL, enableTun: Bool, factory: @escaping ServiceCoreFactory) throws {
         guard geteuid() != 0 else { throw BrokerFailure.unauthorized }
-        root = runtimeRoot
+        self.init(validatedRoot: runtimeRoot, enableTun: enableTun, factory: factory)
+    }
+
+    private init(validatedRoot: URL, enableTun: Bool, factory: @escaping ServiceCoreFactory) {
+        root = validatedRoot
         self.enableTun = enableTun
         self.factory = factory
     }

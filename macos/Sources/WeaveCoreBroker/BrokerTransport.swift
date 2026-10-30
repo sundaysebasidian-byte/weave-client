@@ -20,7 +20,7 @@ public final class BrokerClient: @unchecked Sendable {
     private var pendingOrder: [UUID] = []
 
     public convenience init(onDisconnect: @escaping @Sendable () -> Void = {}) throws {
-        let requirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.serviceName)
+        let requirement = try BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.serviceName, ownIdentifier: BrokerIdentity.appIdentifier)
         try self.init(connection: NSXPCConnection(machServiceName: BrokerIdentity.serviceName, options: .privileged), requirement: requirement, onDisconnect: onDisconnect)
     }
 
@@ -207,7 +207,7 @@ public final class BrokerListener: NSObject, NSXPCListenerDelegate, @unchecked S
 
     public convenience init(factory: @escaping @Sendable (BrokerPeer) -> any BrokerSession) throws {
         try self.init(listener: NSXPCListener(machServiceName: BrokerIdentity.serviceName),
-                      requirement: BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.appIdentifier), factory: factory)
+                      requirement: BrokerIdentity.productionRequirement(peerIdentifier: BrokerIdentity.appIdentifier, ownIdentifier: BrokerIdentity.serviceName), factory: factory)
     }
 
     public init(listener: NSXPCListener, requirement: String, factory: @escaping @Sendable (BrokerPeer) -> any BrokerSession) throws {

@@ -14,13 +14,7 @@ import WeaveCoreService
         let service = try CoreService(executable: core, runtimeRoot: root, enableTun: false)
         let session = service.session(for: BrokerPeer(userID: getuid(), sessionID: 1, processID: getpid()))
         // Install the signal source before startup, including the configuration checker.
-        signal(SIGTERM, SIG_IGN)
-        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
-        let (signals, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        // async main is MainActor-isolated; the Dispatch callback runs off that actor.
-        source.setEventHandler { @Sendable in continuation.yield(()) }
-        source.activate()
-        defer { source.cancel(); continuation.finish() }
+        let termination = ServiceTermination()
         do {
             let reply = await session.handle(.start(provider: "proxies: [{name: fixture, type: http, server: 127.0.0.1, port: 9}]", node: "fixture"))
             guard case .state(.running, let port) = reply, let port else {
@@ -30,7 +24,13 @@ import WeaveCoreService
             }
             try JSONSerialization.data(withJSONObject: ["pid": getpid(), "pgid": getpgrp(), "mixedPort": port])
                 .write(to: report, options: .atomic)
-            if arguments[4] == "wait" { for await _ in signals { break } }
+            if arguments[4] == "wait" {
+                // This unexported endpoint exercises the production host runner's
+                // listener/signal teardown. Cross-process authentication is separate.
+                let listener = try BrokerListener(listener: NSXPCListener.anonymous(),
+                    requirement: "identifier \"io.weave.lifecycle.unexported-fixture\"") { service.session(for: $0) }
+                try await CoreServiceHost.serve(service: service, listener: listener, termination: termination)
+            }
             guard await service.shutdown() else { exit(2) }
             try Data("stopped".utf8).write(to: report.appendingPathExtension("stopped"), options: .atomic)
         } catch {

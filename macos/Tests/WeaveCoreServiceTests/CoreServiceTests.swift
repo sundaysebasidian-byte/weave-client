@@ -54,8 +54,9 @@ struct CoreServiceTests {
         try await withService { service, _ in
             let session = service.makeSession(for: peer)
             for _ in 0..<5 {
-                guard case .state(.running, _) = await session.handle(.start(provider: provider, node: "fixture")) else {
-                    Issue.record("Initial core did not start"); return
+                let response = await session.handle(.start(provider: provider, node: "fixture"))
+                guard case .state(.running, _) = response else {
+                    Issue.record("Initial core did not start: \(response)"); return
                 }
                 let child = try #require(await session.child)
                 #expect(kill(child.processIdentifier, SIGSTOP) == 0)

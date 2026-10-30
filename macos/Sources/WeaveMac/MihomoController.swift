@@ -1,4 +1,5 @@
 import WeaveCoreRuntime
+import WeaveCoreBroker
 import Combine
 import Foundation
 
@@ -10,17 +11,27 @@ final class MihomoController: ObservableObject {
     private var process: CoreProcess?
     private var runtime: MacRuntime?
     private var startTask: Task<Void, Never>?
-    private var stopTask: Task<Void, Never>?
+    private var stopTask: (id: UUID, task: Task<Void, Never>)?
     private var operationID = UUID()
     private var activeLaunchID: UUID?
     private let systemProxy: SystemProxyManager
     private let providedExecutable: URL?
     private let runtimeRoot: URL
+    let serviceManager: CoreServiceManager
+    private let brokerFactory: (@escaping @Sendable () -> Void) throws -> any TunBrokerChannel
+    private var broker: (any TunBrokerChannel)?
+    private var brokerID: UUID?
+    private var serviceMonitor: Task<Void, Never>?
+    private var serviceStopUnconfirmed = false
 
-    init(systemProxy: SystemProxyManager = SystemProxyManager(), executable: URL? = nil, runtimeRoot: URL = RuntimeDirectory.defaultRoot) {
+    init(systemProxy: SystemProxyManager = SystemProxyManager(), executable: URL? = nil, runtimeRoot: URL = RuntimeDirectory.defaultRoot,
+         serviceManager: CoreServiceManager? = nil,
+         brokerFactory: @escaping (@escaping @Sendable () -> Void) throws -> any TunBrokerChannel = { try BrokerClient(onDisconnect: $0) }) {
         self.systemProxy = systemProxy
         providedExecutable = executable
         self.runtimeRoot = runtimeRoot
+        self.serviceManager = serviceManager ?? CoreServiceManager()
+        self.brokerFactory = brokerFactory
     }
 
     func recoverSystemProxy() async {
@@ -35,10 +46,21 @@ final class MihomoController: ObservableObject {
         state = result == .failed ? .failed : .stopped
     }
 
+    var hasOwnedSession: Bool { process != nil || broker != nil }
+
     var coreAvailable: Bool { executableURL != nil }
     var processIdentifier: Int32? { process?.processIdentifier }
 
     var subscriptionHostResolver: SubscriptionHostResolver? {
+        if state == .tun, let broker {
+            return { host in
+                switch try await broker.send(.resolve(host: host)) {
+                case let .addresses(addresses): return addresses
+                case let .failure(error): throw error
+                default: throw BrokerTransportError.invalidReply
+                }
+            }
+        }
         guard state.isConnected, let runtime, let process, process.isRunning else { return nil }
         let resolver = CoreDNSResolver(controllerPort: runtime.controllerPort, secret: runtime.secret, processID: process.processIdentifier)
         return { host in try await resolver.resolve(host) }
@@ -51,12 +73,7 @@ final class MihomoController: ObservableObject {
         availableNodeNames: [String],
         preferTun: Bool,
     ) {
-        guard process == nil, !state.isActive else { return }
-        guard let executableURL else {
-            state = .failed
-            message = "未找到 Apple Silicon Mihomo 核心；连接入口保持关闭"
-            return
-        }
+        guard process == nil, broker == nil, stopTask == nil, !state.isActive else { return }
         guard !subscriptions.isEmpty else {
             state = .failed
             message = "请先导入至少一个 Clash 订阅"
@@ -71,6 +88,20 @@ final class MihomoController: ObservableObject {
            !availableNodeNames.contains(selectedNodeName) {
             state = .failed
             message = "所选节点已不存在，请重新选择"
+            return
+        }
+        if serviceStopUnconfirmed && !preferTun {
+            state = .failed
+            message = "上一 TUN 会话尚未确认停止，请先检查后台服务后再切换模式"
+            return
+        }
+        if preferTun {
+            startService(provider: selected.payload, node: selectedNodeName)
+            return
+        }
+        guard let executableURL else {
+            state = .failed
+            message = "未找到 Apple Silicon Mihomo 核心；连接入口保持关闭"
             return
         }
         state = .starting
@@ -162,31 +193,149 @@ final class MihomoController: ObservableObject {
             : "系统代理已启用 · 127.0.0.1:\(runtime.mixedPort) · 外网连通性尚未验证"
     }
 
-    func stop() async {
-        if let stopTask { await stopTask.value; return }
-        // Shutdown is one shared, uncancelled operation. A cancelled caller must not spin on
-        // sleep or abandon restoration while another caller (including app quit) is waiting.
-        operationID = UUID()
-        startTask?.cancel()
-        let pendingStart = startTask
-        state = .stopping
-        message = "正在停止代理并恢复网络设置"
-        let shutdown = Task {
-            await terminateCurrentProcess()
-            await pendingStart?.value
-            startTask = nil
-            let result = await systemProxy.restore()
-            message = await restorationMessage(result)
-            cleanupRuntime()
-            state = result == .failed ? .failed : .stopped
-            if process != nil {
+    private func startService(provider: String, node: String?) {
+        do { try serviceManager.requireEnabled() }
+        catch { state = .failed; message = error.localizedDescription; return }
+        state = .starting
+        message = "正在通过已授权服务建立双栈 TUN"
+        let operation = UUID()
+        operationID = operation
+        let identity = UUID()
+        brokerID = identity
+        startTask = Task {
+            do {
+                let channel = try brokerFactory { [weak self] in
+                    Task { @MainActor in self?.serviceDisconnected(identity) }
+                }
+                broker = channel
+                let provider = try await Task.detached(priority: .userInitiated) {
+                    try ClashProviderSanitizer.sanitize(provider)
+                }.value
+                try Task.checkCancellation()
+                let reply = try await channel.send(.start(provider: provider, node: node))
+                try Task.checkCancellation()
+                guard operationID == operation, brokerID == identity else { return }
+                switch reply {
+                case .state(.running, _):
+                    serviceStopUnconfirmed = false
+                    state = .tun
+                    message = "双栈 TUN 路由已就绪 · 外网连通性尚未验证"
+                    serviceMonitor = Task { [weak self] in
+                        while !Task.isCancelled {
+                            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                            guard let self, self.brokerID == identity else { return }
+                            await self.checkServiceConnection()
+                        }
+                    }
+                case let .failure(error): throw error
+                default: throw BrokerTransportError.invalidReply
+                }
+            } catch {
+                guard operationID == operation, brokerID == identity else { return }
+                // Transport failure may precede remote cleanup; never claim it is stopped.
+                if error as? BrokerFailure == .stopFailed {
+                    serviceStopUnconfirmed = true
+                } else {
+                    serviceStopUnconfirmed = !(error is BrokerFailure)
+                    closeBroker()
+                }
                 state = .failed
-                message = "核心尚未退出，会话配置已保留；请重试停止"
+                message = "TUN 启动失败 · " + error.localizedDescription
             }
         }
-        stopTask = shutdown
-        await shutdown.value
-        stopTask = nil
+    }
+
+    func checkServiceConnection() async {
+        guard state == .tun, let broker, let identity = brokerID else { return }
+        do {
+            let reply = try await broker.send(.status)
+            guard brokerID == identity, state == .tun else { return }
+            guard case .state(.running, _) = reply else {
+                serviceStopUnconfirmed = reply != .state(.stopped, mixedPort: nil)
+                serviceMonitor?.cancel()
+                serviceMonitor = nil
+                if !serviceStopUnconfirmed { closeBroker() }
+                state = .failed
+                message = "TUN 核心已停止或发生故障，请检查服务后重新连接"
+                return
+            }
+        } catch {
+            // Stopping cancels this query while preserving the channel for the stop RPC.
+            guard !Task.isCancelled, state == .tun, brokerID == identity else { return }
+            serviceDisconnected(identity)
+        }
+    }
+
+    private func serviceDisconnected(_ identity: UUID) {
+        guard brokerID == identity else { return }
+        serviceStopUnconfirmed = true
+        closeBroker()
+        state = .failed
+        serviceManager.refresh()
+        message = "TUN 服务连接中断，停止结果尚未确认；请检查后台服务状态"
+    }
+
+    private func closeBroker() {
+        brokerID = nil
+        let channel = broker
+        broker = nil
+        serviceMonitor?.cancel()
+        serviceMonitor = nil
+        channel?.close()
+    }
+
+    func stop() async {
+        let operation: (id: UUID, task: Task<Void, Never>)
+        if let stopTask { operation = stopTask }
+        else {
+            operationID = UUID()
+            startTask?.cancel()
+            let pendingStart = startTask
+            serviceMonitor?.cancel()
+            state = .stopping
+            message = "正在停止代理并恢复网络设置"
+            let shutdown = Task {
+                await terminateCurrentProcess()
+                await pendingStart?.value
+                startTask = nil
+                if let channel = broker {
+                    do {
+                        let reply = try await channel.send(.stop)
+                        guard reply == .state(.stopped, mixedPort: nil) else {
+                            state = .failed
+                            message = "TUN 核心尚未确认退出，请重试停止"
+                            return
+                        }
+                        serviceStopUnconfirmed = false
+                        closeBroker()
+                    } catch {
+                        serviceStopUnconfirmed = true
+                        closeBroker()
+                    }
+                }
+                let result = await systemProxy.restore()
+                message = await restorationMessage(result)
+                cleanupRuntime()
+                state = result == .failed ? .failed : .stopped
+                if process != nil || serviceStopUnconfirmed {
+                    state = .failed
+                    message = "核心尚未确认退出；请检查服务状态或重试停止"
+                }
+            }
+            operation = (UUID(), shutdown)
+            stopTask = operation
+        }
+        await operation.task.value
+        if stopTask?.id == operation.id { stopTask = nil }
+    }
+
+    func disableService() async {
+        await stop()
+        guard state == .stopped else {
+            message = "请先确认当前核心已停止，再停用 TUN 服务"
+            return
+        }
+        await serviceManager.disable()
     }
 
     private func restorationMessage(_ result: SystemProxyManager.RestoreResult) async -> String {

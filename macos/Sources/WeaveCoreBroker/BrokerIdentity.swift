@@ -7,7 +7,7 @@ public enum BrokerIdentity {
 
     /// Only Developer ID applications from this executable's validated signer may communicate.
     /// Ad-hoc previews never invent a team identity or relax the requirement.
-    public static func productionRequirement(peerIdentifier: String) throws -> String {
+    public static func productionRequirement(peerIdentifier: String, ownIdentifier: String) throws -> String {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { throw BrokerFailure.unauthorized }
         var staticCode: SecStaticCode?
@@ -18,7 +18,7 @@ public enum BrokerIdentity {
             throw BrokerFailure.unauthorized
         }
         let requirement = try developerIDRequirement(team: team, identifier: peerIdentifier)
-        let ownRequirement = try developerIDRequirement(team: team, identifier: info[kSecCodeInfoIdentifier as String] as? String ?? "")
+        let ownRequirement = try developerIDRequirement(team: team, identifier: ownIdentifier)
         var parsed: SecRequirement?
         guard SecRequirementCreateWithString(ownRequirement as CFString, [], &parsed) == errSecSuccess, let parsed,
               SecCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), parsed) == errSecSuccess else { throw BrokerFailure.unauthorized }
