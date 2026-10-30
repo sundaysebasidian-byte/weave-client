@@ -33,7 +33,7 @@ enum YAMLResourceLimits {
 
     static func validate(_ payload: String) throws {
         let bytes = Array(payload.utf8)
-        guard !bytes.isEmpty, bytes.count <= DirectSubscriptionImporter.maxPayloadBytes else {
+        guard !bytes.isEmpty, bytes.count <= ClashProviderDocument.maxPayloadBytes else {
             throw WeaveMacError.message("订阅内容为空或超过 5 MiB 限制")
         }
         var parser = yaml_parser_t()

@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import CWeaveHTTP
 import Darwin
 import Foundation
@@ -112,7 +113,7 @@ struct SubscriptionFetchTests {
         let selected = MacSubscription(id: UUID(), name: "DNS fixture", source: "file://fixture",
                                        payload: "proxies: [{name: Fixture, type: socks5, server: 127.0.0.1, port: 9}]",
                                        nodeCount: 1, updatedAt: .distantPast)
-        let runtime = try MihomoController.prepareRuntime(selected: selected, selectedNodeName: "Fixture", enableTun: false, root: root)
+        let runtime = try CoreRuntime.prepare(provider: selected.payload, selectedNodeName: "Fixture", enableTun: false, root: root)
         defer { _ = try? runtime.directory.removeAfterCoreExit() }
         let config = runtime.directory.url.appendingPathComponent("config.yaml")
         var yaml = try String(contentsOf: config, encoding: .utf8)
@@ -131,7 +132,7 @@ struct SubscriptionFetchTests {
         core.standardError = FileHandle.nullDevice
         try core.run()
         defer { if core.isRunning { core.terminate(); core.waitUntilExit() } }
-        try await MihomoController.waitUntilReady(runtime: runtime, pid: core.processIdentifier, requireTun: false)
+        try await CoreRuntime.waitUntilReady(runtime: runtime, pid: core.processIdentifier, requireTun: false)
         let resolver = CoreDNSResolver(controllerPort: runtime.controllerPort, secret: runtime.secret, processID: core.processIdentifier)
         #expect(try Set(await resolver.resolve("resolved.fixture.invalid")) == ["8.8.8.8", "2606:4700:4700::1111"])
         let unauthorized = CoreDNSResolver(controllerPort: runtime.controllerPort, secret: "wrong", processID: core.processIdentifier)

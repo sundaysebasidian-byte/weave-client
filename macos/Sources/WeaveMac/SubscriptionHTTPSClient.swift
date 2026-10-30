@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import CWeaveHTTP
 import Foundation
 

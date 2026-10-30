@@ -1,11 +1,12 @@
 import Foundation
 import Yams
 
-struct ClashProviderDocument {
-    let names: [String]
+package struct ClashProviderDocument {
+    package static let maxPayloadBytes = 5 * 1024 * 1024
+    package let names: [String]
     private let proxies: Node
 
-    init(_ payload: String) throws {
+    package init(_ payload: String) throws {
         try YAMLResourceLimits.validate(payload)
         let root: Node
         do {
@@ -32,11 +33,11 @@ struct ClashProviderDocument {
         proxies = Node(Array(sequence), Tag(.seq), .block)
     }
 
-    func sanitized() throws -> String {
+    package func sanitized() throws -> String {
         do {
             let result = try Yams.serialize(node: Node([(Node("proxies", Tag(.str)), proxies)]),
                                             indent: 2, width: -1, allowUnicode: true)
-            guard result.utf8.count <= DirectSubscriptionImporter.maxPayloadBytes else {
+            guard result.utf8.count <= ClashProviderDocument.maxPayloadBytes else {
                 throw WeaveMacError.message("锚点展开后的订阅超过 5 MiB 限制")
             }
             return result

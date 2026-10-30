@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
@@ -9,7 +10,7 @@ struct ImportedSubscriptionPayload: Sendable {
 }
 
 enum DirectSubscriptionImporter {
-    static let maxPayloadBytes = 5 * 1024 * 1024
+    static let maxPayloadBytes = ClashProviderDocument.maxPayloadBytes
 
     static func fetchHTTPS(_ rawValue: String, hostResolver: SubscriptionHostResolver? = nil) async throws -> ImportedSubscriptionPayload {
         let url = try validateRemoteURL(rawValue)

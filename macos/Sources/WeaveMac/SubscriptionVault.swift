@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import CryptoKit
 import Combine
 import Foundation

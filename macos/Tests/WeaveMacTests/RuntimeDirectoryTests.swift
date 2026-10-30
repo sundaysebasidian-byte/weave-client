@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Darwin
 import Foundation
 import Testing
@@ -8,7 +9,7 @@ struct RuntimeDirectoryTests {
     @Test(arguments: [true, false]) func coreAcceptsGeneratedConfiguration(fixed: Bool) throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = try MihomoController.prepareRuntime(selected: subscription, selectedNodeName: fixed ? "Fixture" : nil, enableTun: false, root: root)
+        let runtime = try CoreRuntime.prepare(provider: subscription.payload, selectedNodeName: fixed ? "Fixture" : nil, enableTun: false, root: root)
         defer { _ = try? runtime.directory.removeAfterCoreExit() }
         let process = Process()
         let output = Pipe()
@@ -24,7 +25,7 @@ struct RuntimeDirectoryTests {
     @Test func sessionsArePrivateAndActiveLeasesCannotBeReclaimed() throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = try MihomoController.prepareRuntime(selected: subscription, selectedNodeName: "Fixture", enableTun: false, root: root)
+        let runtime = try CoreRuntime.prepare(provider: subscription.payload, selectedNodeName: "Fixture", enableTun: false, root: root)
         #expect(try RuntimeDirectory.reclaimOrphans(root: root) == 0)
         #expect(runtime.mixedPort != runtime.controllerPort)
         let config = runtime.directory.url.appendingPathComponent("config.yaml")

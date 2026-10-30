@@ -3,18 +3,18 @@ import Foundation
 
 /// The core inherits the lease on stdin. A live orphan therefore cannot be reclaimed by
 /// another app instance after its parent crashes. Unknown files and legacy runtimes stay intact.
-final class RuntimeDirectory: @unchecked Sendable {
-    let url: URL
-    let lease: FileHandle
+package final class RuntimeDirectory: @unchecked Sendable {
+    package let url: URL
+    package let lease: FileHandle
     private let lock = NSLock()
     private var closed = false
 
-    static var defaultRoot: URL {
+    package static var defaultRoot: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Weave/runtime-sessions", isDirectory: true)
     }
 
-    init(root: URL = defaultRoot) throws {
+    package init(root: URL = defaultRoot) throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         guard try root.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
             throw WeaveMacError.message("运行目录不能使用符号链接")
@@ -30,7 +30,7 @@ final class RuntimeDirectory: @unchecked Sendable {
     }
 
     @discardableResult
-    func removeAfterCoreExit() throws -> Bool {
+    package func removeAfterCoreExit() throws -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard !closed else { return true }
@@ -42,7 +42,7 @@ final class RuntimeDirectory: @unchecked Sendable {
     }
 
     /// Only versioned, exclusively lockable sessions are eligible. No PID/name/time heuristic.
-    static func reclaimOrphans(root: URL = defaultRoot) throws -> Int {
+    package static func reclaimOrphans(root: URL = defaultRoot) throws -> Int {
         guard FileManager.default.fileExists(atPath: root.path) else { return 0 }
         guard try root.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { return 0 }
         let root = root.resolvingSymlinksInPath().standardizedFileURL
@@ -82,12 +82,12 @@ final class RuntimeDirectory: @unchecked Sendable {
     }
 }
 
-struct MacRuntime: Sendable {
-    let directory: RuntimeDirectory
-    let mixedPort: UInt16
-    let controllerPort: UInt16
-    let secret: String
-    let tunDevice: String
-    let readinessListenPort: UInt16
-    let readinessTargetPort: UInt16
+package struct MacRuntime: Sendable {
+    package let directory: RuntimeDirectory
+    package let mixedPort: UInt16
+    package let controllerPort: UInt16
+    package let secret: String
+    package let tunDevice: String
+    package let readinessListenPort: UInt16
+    package let readinessTargetPort: UInt16
 }

@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Foundation
 
 struct SavedConnectionSelection: Codable {

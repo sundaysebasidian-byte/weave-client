@@ -1,7 +1,7 @@
 import Foundation
 
-enum TunRouteCoverage {
-    static func isComplete(ipv4: String, ipv6: String, device: String) -> Bool {
+package enum TunRouteCoverage {
+    package static func isComplete(ipv4: String, ipv6: String, device: String) -> Bool {
         let v4 = destinations(in: ipv4, device: device)
         let v6 = destinations(in: ipv6, device: device)
         let lowerV4 = !v4.isDisjoint(with: ["0/1", "0.0/1", "0.0.0/1", "0.0.0.0/1"])

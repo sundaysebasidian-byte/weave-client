@@ -11,12 +11,13 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
     ],
     targets: [
+        .target(name: "WeaveCoreRuntime", dependencies: [.product(name: "Yams", package: "Yams")]),
         .target(name: "WeaveCoreBroker", linkerSettings: [.linkedFramework("Security")]),
         .testTarget(name: "WeaveCoreBrokerTests", dependencies: ["WeaveCoreBroker"]),
         .target(name: "CWeaveHTTP", linkerSettings: [.linkedLibrary("curl")]),
         .executableTarget(
             name: "WeaveMac",
-            dependencies: ["CWeaveHTTP", .product(name: "Yams", package: "Yams")],
+            dependencies: ["CWeaveHTTP", "WeaveCoreRuntime"],
             path: "Sources/WeaveMac",
             swiftSettings: [
                 .unsafeFlags(["-Xfrontend", "-strict-concurrency=minimal"]),
@@ -31,6 +32,6 @@ let package = Package(
                 .linkedFramework("Vision"),
             ],
         ),
-        .testTarget(name: "WeaveMacTests", dependencies: ["WeaveMac"]),
+        .testTarget(name: "WeaveMacTests", dependencies: ["WeaveMac", "WeaveCoreRuntime"]),
     ],
 )

@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
 
-enum BoundedCommand {
-    static func run(executable: String, arguments: [String], timeout: TimeInterval = 5) throws -> String {
+package enum BoundedCommand {
+    package static func run(executable: String, arguments: [String], timeout: TimeInterval = 5) throws -> String {
         // An anonymous file avoids pipe-buffer deadlocks, including a child holding stdout open.
         guard let output = tmpfile() else { throw WeaveMacError.message("无法创建命令输出缓冲区") }
         defer { fclose(output) }

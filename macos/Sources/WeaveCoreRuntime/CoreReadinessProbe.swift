@@ -3,7 +3,7 @@ import Foundation
 import Network
 
 /// A startup-only loopback responder. Its key never enters the core configuration.
-final class CoreReadinessProbe: @unchecked Sendable {
+package final class CoreReadinessProbe: @unchecked Sendable {
     private let key = SymmetricKey(size: .bits256)
     private let queue = DispatchQueue(label: "io.weave.core-readiness")
     private let listener: NWListener
@@ -14,13 +14,13 @@ final class CoreReadinessProbe: @unchecked Sendable {
     private var exchanges: [UUID: ReadinessExchange] = [:]
     private var stopped: [CheckedContinuation<Void, Never>] = []
 
-    init(port: UInt16) throws {
+    package init(port: UInt16) throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         listener = try NWListener(using: parameters)
     }
 
-    func start() async throws {
+    package func start() async throws {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
@@ -68,7 +68,7 @@ final class CoreReadinessProbe: @unchecked Sendable {
         } onCancel: { self.queue.async { self.cancelOnQueue() } }
     }
 
-    func isForwarding(port: UInt16) async throws -> Bool {
+    package func isForwarding(port: UInt16) async throws -> Bool {
         try Task.checkCancellation()
         let challenge = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
         let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
@@ -82,7 +82,7 @@ final class CoreReadinessProbe: @unchecked Sendable {
         }
     }
 
-    func stop() async {
+    package func stop() async {
         await withCheckedContinuation { continuation in
             queue.async {
                 self.stopped.append(continuation)

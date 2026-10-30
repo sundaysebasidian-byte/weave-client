@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Darwin
 import Foundation
 import Testing
@@ -15,7 +16,7 @@ struct CoreReadinessTests {
         var finished = false
         let starting = Task {
             defer { finished = true }
-            try await MihomoController.waitUntilReady(runtime: runtime, pid: core.processIdentifier, requireTun: false)
+            try await CoreRuntime.waitUntilReady(runtime: runtime, pid: core.processIdentifier, requireTun: false)
         }
         do {
             try await fixture.waitForRules()
@@ -33,11 +34,11 @@ struct CoreReadinessTests {
             if cancel {
                 starting.cancel()
                 await #expect(throws: CancellationError.self) { try await starting.value }
-                #expect(!MihomoController.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
+                #expect(!CoreRuntime.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
             } else {
                 try Data().write(to: fixture.root.appendingPathComponent("release"))
                 try await starting.value
-                #expect(!MihomoController.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
+                #expect(!CoreRuntime.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
                 // Explicit proxy use keeps the synthetic destination inside the loopback fixture.
                 let result = try await Task.detached {
                     try BoundedCommand.run(executable: "/usr/bin/curl", arguments: ["--silent", "--show-error", "--max-time", "3", "--noproxy", "", "--proxy", "http://127.0.0.1:\(runtime.mixedPort)", "http://198.51.100.42/check"], timeout: 5)
@@ -63,7 +64,7 @@ struct CoreReadinessTests {
         await probe.stop()
         #expect(!result)
         #expect(began.duration(to: .now) < .seconds(3))
-        #expect(!MihomoController.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
+        #expect(!CoreRuntime.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
     }
 
     @Test func cancelPendingExchangeClosesBothSockets() async throws {
@@ -80,7 +81,7 @@ struct CoreReadinessTests {
         await #expect(throws: CancellationError.self) { try await pending.value }
         await probe.stop()
         #expect(began.duration(to: .now) < .seconds(2))
-        #expect(!MihomoController.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
+        #expect(!CoreRuntime.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
     }
 
     @Test func alreadyCancelledStartStillCleansUp() async throws {
@@ -94,7 +95,7 @@ struct CoreReadinessTests {
         }
         await #expect(throws: CancellationError.self) { try await pending.value }
         await probe.stop()
-        #expect(!MihomoController.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
+        #expect(!CoreRuntime.listenerBelongsToProcess(port: runtime.readinessTargetPort, pid: getpid()))
     }
 
     @Test func occupiedResponderPortFailsWithoutClaimingTheOtherListener() async throws {
@@ -145,7 +146,7 @@ struct CoreReadinessTests {
             let subscription = MacSubscription(id: UUID(), name: "Fixture", source: "file://fixture",
                 payload: "proxies: [{name: Fixture, type: http, server: 127.0.0.1, port: \(upstream)}]",
                 nodeCount: 1, updatedAt: .distantPast)
-            let runtime = try MihomoController.prepareRuntime(selected: subscription, selectedNodeName: "Fixture", enableTun: false, root: root.appendingPathComponent("sessions"))
+            let runtime = try CoreRuntime.prepare(provider: subscription.payload, selectedNodeName: "Fixture", enableTun: false, root: root.appendingPathComponent("sessions"))
             let config = runtime.directory.url.appendingPathComponent("config.yaml")
             var yaml = try String(contentsOf: config, encoding: .utf8)
             yaml += "\nrule-providers:\n  startup-gate:\n    type: http\n    behavior: domain\n    format: yaml\n    url: http://127.0.0.1:\(rules)/rules\n    path: ./startup-gate.yaml\n    proxy: DIRECT\n    interval: 86400\n"

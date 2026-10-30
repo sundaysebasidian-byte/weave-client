@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Foundation
 import Testing
 @testable import WeaveMac
@@ -107,7 +108,7 @@ struct SubscriptionImportTests {
         let selected = MacSubscription(id: UUID(), name: "Protocol fixtures", source: "file://fixture", payload: converted.payload, nodeCount: names.count, updatedAt: .distantPast)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = try MihomoController.prepareRuntime(selected: selected, selectedNodeName: nil, enableTun: false, root: root)
+        let runtime = try CoreRuntime.prepare(provider: selected.payload, selectedNodeName: nil, enableTun: false, root: root)
         defer { _ = try? runtime.directory.removeAfterCoreExit() }
         let executable = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Resources/mihomo")

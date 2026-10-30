@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import AppKit
 @preconcurrency import Vision
 

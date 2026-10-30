@@ -1,14 +1,20 @@
 import Foundation
 
-struct CoreDNSResolver: Sendable {
-    let controllerPort: UInt16
-    let secret: String
-    let processID: Int32
+package struct CoreDNSResolver: Sendable {
+    package let controllerPort: UInt16
+    package let secret: String
+    package let processID: Int32
 
-    func resolve(_ host: String) async throws -> [String] {
+    package init(controllerPort: UInt16, secret: String, processID: Int32) {
+        self.controllerPort = controllerPort
+        self.secret = secret
+        self.processID = processID
+    }
+
+    package func resolve(_ host: String) async throws -> [String] {
         try Task.checkCancellation()
         let owned = await Task.detached(priority: .utility) {
-            MihomoController.listenerBelongsToProcess(port: controllerPort, pid: processID)
+            CoreRuntime.listenerBelongsToProcess(port: controllerPort, pid: processID)
         }.value
         guard owned else { throw WeaveMacError.message("本会话核心已停止，无法完成订阅 DNS 查询") }
         async let ipv4 = query(host, type: "A")

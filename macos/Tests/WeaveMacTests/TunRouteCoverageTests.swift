@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Testing
 @testable import WeaveMac
 

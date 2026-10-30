@@ -112,3 +112,5 @@
 
 - macOS 新增共享 `WeaveCoreBroker`，提供有界结构化帧和公开 XPC 签名认证。原生测试发现初版首条敏感请求早于服务身份确认，以及停止回复早于旧启动完成；现用无机密握手、按序发送、取消并等待旧启动修复。15 项定向声明通过，停止竞争重复 20 次通过；原应用 Release 构建通过。当前仅为共享通信组件，未注册 LaunchDaemon、未接入 GUI TUN，也未启动特权核心；匿名 XPC/合成后端不等于独立进程或 root 服务验收，具体剩余边界见 `MACOS_CORE_SERVICE.md`。
 - `3f4a9b1` Windows 重复 CI 完整成功，Mac 完整回归/Release/预览、依赖检查和发行审计成功；Android JVM/lint/Debug 成功、设备阶段失败且 Release 未执行。当前新提交的检查另行跟踪。
+- `a610e33` Mac 的 86 项完整回归、Release 和预览打包成功，Windows 完整工作流成功。Android JVM/lint/Debug 成功；日志再次确认当前账户无 `/dev/kvm` 访问权限，设备门禁失败、Release 未执行，没有修改权限或组成员。
+- Mac 提取 `WeaveCoreRuntime`，GUI 已复用 YAML/配置、目录租约、就绪、DNS 与进程生命周期；配置写盘前核验实际节点选择。并发停止共享不随调用方取消的任务，真实核心 SIGSTOP 后强制终止与退出确认通过；41 项定向声明通过。该模块尚未接入 Broker，不具备 root provider/安装路径安全边界；高权限服务仍未启用，完整 CI 另行记录。

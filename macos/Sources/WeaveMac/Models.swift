@@ -24,16 +24,6 @@ enum MacConnectionState: String {
     case failed = "错误"
 }
 
-enum WeaveMacError: LocalizedError {
-    case message(String)
-
-    var errorDescription: String? {
-        switch self {
-        case let .message(message): message
-        }
-    }
-}
-
 extension MacConnectionState {
     var isActive: Bool { isConnected || self == .starting || self == .stopping }
 

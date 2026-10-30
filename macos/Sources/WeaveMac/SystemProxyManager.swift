@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Foundation
 
 /// Owns the macOS system HTTP/HTTPS proxy transaction used by the private desktop build.
