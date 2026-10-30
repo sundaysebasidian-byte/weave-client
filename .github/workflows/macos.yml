@@ -32,6 +32,12 @@ jobs:
         run: swift build --package-path macos --configuration release
       - name: Package verifiable preview
         run: bash macos/build-app.sh
+      - name: Verify packaged core with native integrity checks
+        run: |
+          bundles=(macos/build/package.*/Weave.app)
+          test "${#bundles[@]}" = 1
+          test -d "${bundles[0]}"
+          WEAVE_TEST_PACKAGED_BUNDLE="$PWD/${bundles[0]}" bash macos/test.sh --filter packagedPreviewPassesTheNativeContentVerifier
       - uses: actions/upload-artifact@v4
         with:
           name: Weave-macOS-arm64-preview

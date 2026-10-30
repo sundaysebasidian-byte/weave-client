@@ -62,3 +62,13 @@
 3. 全机 TUN 独占租约与用户/连接归属；处理启动取消、GUI/服务退出、系统停止与核心崩溃，真实转发就绪后才报告连接成功。
 4. Bundled LaunchDaemon、SMAppService 注册/授权/撤销状态、普通用户 GUI 接入、签名打包和更新/卸载恢复。测试包不得弱化生产签名要求。
 5. 在明确可丢弃环境中完成两个实际进程的认证和服务生命周期、不同用户隔离、真实 TUN 与升级/撤销；随后做真机网络切换和耐久。
+
+## 安装完整性校验
+
+打包先固定核心签名 identifier，再生成包含来源 SHA-256、签名后 SHA-256、上游 commit 和架构的 `core-integrity.json`，最后签名整个应用，使清单纳入资源封印。来源哈希仍对应 `core-lock.properties`；代码签名会改变 Mach-O 字节，已安装文件不能直接与签名前哈希比较。
+
+新增 `CoreInstallation.validateManagedBundle` 使用 Security.framework 检查外层应用的全部架构、资源及严格签名规则，并单独核验核心的精确 identifier 和同一 Developer ID 团队，再流式核对签名后哈希和来源锁定记录。生产入口不接受调用方签名规则或 UID，ad-hoc 包不能满足它；测试中的 ad-hoc 规则仅用于验证资源封印和字节绑定。
+
+路径检查从 `/` 逐级以目录描述符打开，拒绝符号链接、非 root 所有者、组/其他用户写权限、扩展 ACL 写入/删除/权限授予、硬链接和特殊文件。还核验整个包树；仅接受本地文件系统，并限制深度、数量和总字节。测试使用自有目录验证权限、ACL、链接、FIFO 和稀疏文件边界，不改系统目录权限。不存在扩展 ACL 的 Darwin `ENOENT` 已通过实际文件描述符探针确认；其他 ACL 读取错误保持拒绝。
+
+**这项校验尚未接入特权执行。** `/Applications` 可能允许 admin 组写入，叶文件归 root 所有也不能防止父目录中的替换，因此没有为它豁免权限检查。受保护的安装位置/复制流程、更新互斥、机器级租约和服务崩溃归属仍需实现；静态签名检查不是执行租约。Apple 的 [SecStaticCodeCheckValidity](https://developer.apple.com/documentation/security/secstaticcodecheckvalidity(_:_:_:)) 同样要求验证期间及之后代码不发生并发修改。root 初始化继续硬拒绝，未注册后台服务或启用 GUI TUN。

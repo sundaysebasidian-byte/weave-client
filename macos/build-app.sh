@@ -56,9 +56,19 @@ PY
 
 sign_flags=(--force --sign "$identity")
 if [[ "$identity" != - ]]; then sign_flags+=(--options runtime --timestamp); fi
-codesign "${sign_flags[@]}" "$app_bundle/Contents/Resources/mihomo"
+core_identifier='io.weave.client.macos.mihomo'
+codesign "${sign_flags[@]}" --identifier "$core_identifier" "$app_bundle/Contents/Resources/mihomo"
+core_signed_sha="$(shasum -a 256 "$app_bundle/Contents/Resources/mihomo" | awk '{print $1}')"
+core_commit="$(sed -n 's/^mihomo.commit=//p' "$project_root/core-lock.properties")"
+python3 - "$app_bundle/Contents/Resources/core-integrity.json" "$core_actual_sha" "$core_signed_sha" "$core_commit" "$core_identifier" <<'PY'
+import json,sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({'schema':1,'architecture':'arm64','coreIdentifier':sys.argv[5],
+ 'sourceCoreSHA256':sys.argv[2],'signedCoreSHA256':sys.argv[3],'coreCommit':sys.argv[4]},indent=2)+'\n')
+PY
 codesign "${sign_flags[@]}" --entitlements "$macos_root/WeaveMac.entitlements" "$app_bundle"
 codesign --verify --deep --strict "$app_bundle"
+codesign --verify --strict -R "=identifier \"$core_identifier\"" "$app_bundle/Contents/Resources/mihomo"
 
 if [[ "$release" == 1 ]]; then
   ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$package_root/notarization-submission.zip"
@@ -74,11 +84,11 @@ fi
 archive="$package_root/Weave-macos-arm64.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$archive"
 (cd "$package_root" && shasum -a 256 Weave-macos-arm64.zip > Weave-macos-arm64.zip.sha256)
-python3 - "$package_root/manifest.json" "$source_commit" "$source_dirty" "$version" "$core_actual_sha" "$identity" "$release" <<'PY'
+python3 - "$package_root/manifest.json" "$source_commit" "$source_dirty" "$version" "$core_actual_sha" "$identity" "$release" "$core_signed_sha" <<'PY'
 import json,sys
 from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({'source_commit':sys.argv[2],'source_dirty':sys.argv[3]=='true','version':sys.argv[4],
- 'architecture':'arm64','source_core_sha256':sys.argv[5],'signing':'ad-hoc-preview' if sys.argv[6]=='-' else 'identity-signed',
+ 'architecture':'arm64','source_core_sha256':sys.argv[5],'signed_core_sha256':sys.argv[8],'signing':'ad-hoc-preview' if sys.argv[6]=='-' else 'identity-signed',
  'notarized':sys.argv[7]=='1','source_url':'https://github.com/sundaysebasidian-byte/weave-client/tree/'+sys.argv[2]},indent=2)+'\n')
 PY
 printf '%s\n' "$app_bundle" "$archive"
