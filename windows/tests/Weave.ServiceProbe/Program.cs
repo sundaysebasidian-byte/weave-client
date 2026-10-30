@@ -35,7 +35,7 @@ try
     var profile = BrokerProfile.FromLocal([subscription], [], subscription.Id, subscription.Nodes[0].Id,
         new() { EnableTun = true, RoutingMode = RoutingMode.Global, Ipv6Enabled = false });
     await client.StartAsync(profile, timeout.Token);
-    Console.WriteLine("SERVICE_CORE_STARTED");
+    Console.WriteLine($"SERVICE_CORE_STARTED {DateTime.UtcNow:O}");
     using var http = new HttpClient(new SocketsHttpHandler { UseProxy = false });
     try
     {

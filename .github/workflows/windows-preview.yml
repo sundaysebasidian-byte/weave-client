@@ -131,11 +131,19 @@ jobs:
           }
           Stop-Process -Id $app.Id
       - name: Validate isolated Windows core service
+        id: service
         shell: pwsh
         env:
           WEAVE_ISOLATED_SERVICE_TEST: '1'
           WEAVE_TEST_TUN: '1'
         run: ./windows/tests/Test-Service.ps1
+      - name: Capture isolated service failure reproduction
+        if: failure() && steps.service.outcome == 'failure'
+        shell: pwsh
+        env:
+          WEAVE_ISOLATED_SERVICE_TEST: '1'
+          WEAVE_TEST_TUN: '1'
+        run: ./windows/tests/Test-Service.ps1 -SyntheticDiagnostics
       - name: Preserve service acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

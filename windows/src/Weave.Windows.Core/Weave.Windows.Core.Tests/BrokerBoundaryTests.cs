@@ -191,6 +191,39 @@ public sealed class BrokerBoundaryTests : IDisposable
             Path.Combine(Path.GetTempPath(), "not-the-client.exe"), timeout.Token));
     }
 
+    [WindowsPipeFact, SupportedOSPlatform("windows")]
+    public async Task SlowPipeReaderReceivesStopBeforeTheInstanceIsReused()
+    {
+        var name = "weave-stop-ack-" + Guid.NewGuid().ToString("N");
+        using var server = BrokerWindowsPipe.CreateServer(name);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        for (var cycle = 0; cycle < 20; cycle++)
+        {
+            using var client = BrokerWindowsPipe.CreateClient(name);
+            var accepted = server.WaitForConnectionAsync(timeout.Token);
+            await client.ConnectAsync(timeout.Token);
+            await accepted;
+            await using var session = new BrokerSession("unused", "not-executed", "not-used");
+            var serving = ServeAsync();
+            try
+            {
+                await BrokerWire.WriteAsync<BrokerRequest>(client, new BrokerStop(1), timeout.Token);
+                await Task.Delay(25, timeout.Token); // Deliberately leave the reply unread.
+                Assert.False(serving.IsCompleted);
+                var reply = await BrokerWire.ReadAsync<BrokerReply>(client, timeout.Token);
+                Assert.Equal(1, reply!.Id);
+                Assert.False(reply.Ready);
+            }
+            finally { client.Dispose(); await serving; }
+
+            async Task ServeAsync()
+            {
+                try { await BrokerConnection.RunAsync(server, session, timeout.Token); }
+                finally { server.Disconnect(); }
+            }
+        }
+    }
+
     private static MemoryStream Frame(byte[] payload, int? length = null, int version = BrokerWire.Version)
     {
         var bytes = new byte[8 + payload.Length];

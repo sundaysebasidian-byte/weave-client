@@ -6,6 +6,49 @@ namespace Weave.Windows.Core.Tests;
 
 public sealed class BrokerSessionTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StopReplyRemainsAvailableUntilClientClosesOrServiceStops(bool serviceStopping)
+    {
+        using var request = new MemoryStream();
+        await BrokerWire.WriteAsync<BrokerRequest>(request, new BrokerStop(1), CancellationToken.None);
+        using var stream = new HeldStopReplyStream(request.ToArray());
+        await using var session = new BrokerSession("unused", "not-executed", "not-used");
+        using var stopping = new CancellationTokenSource();
+        var running = BrokerConnection.RunAsync(stream, session, stopping.Token);
+        try
+        {
+            Assert.False(running.IsCompleted, "Disconnecting now could discard the unread stop acknowledgement.");
+            stream.Reply.Position = 0;
+            var reply = await BrokerWire.ReadAsync<BrokerReply>(stream.Reply, CancellationToken.None);
+            Assert.Equal(1, reply!.Id);
+            Assert.False(reply.Ready);
+            if (serviceStopping)
+            {
+                stopping.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+            }
+            else
+            {
+                stream.ClientClosed.TrySetResult(0);
+                await running.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+        }
+        finally { stream.ClientClosed.TrySetResult(0); await running.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
+    }
+
+    private sealed class HeldStopReplyStream(byte[] request) : MemoryStream(request)
+    {
+        public MemoryStream Reply { get; } = new();
+        public TaskCompletionSource<int> ClientClosed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            Position < Length ? base.ReadAsync(buffer, cancellationToken) : new(ClientClosed.Task.WaitAsync(cancellationToken));
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
+            Reply.WriteAsync(buffer, cancellationToken);
+        protected override void Dispose(bool disposing) { if (disposing) Reply.Dispose(); base.Dispose(disposing); }
+    }
+
     [BrokerProbeTheory]
     [InlineData(false)]
     [InlineData(true)]

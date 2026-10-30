@@ -42,6 +42,12 @@ public static class BrokerConnection
             using var acknowledgement = CancellationTokenSource.CreateLinkedTokenSource(stopping);
             acknowledgement.CancelAfter(TimeSpan.FromSeconds(5));
             await BrokerWire.WriteAsync(stream, new BrokerReply(acknowledgedId, Ready: false), acknowledgement.Token).ConfigureAwait(false);
+            // DisconnectNamedPipe discards unread replies. The client closes after
+            // consuming this acknowledgement; wait for that EOF with a deadline.
+            // FlushFileBuffers/WaitForPipeDrain could block the service indefinitely.
+            var trailing = new byte[1];
+            if (await stream.ReadAsync(trailing, acknowledgement.Token).ConfigureAwait(false) != 0)
+                throw new InvalidDataException("Unexpected data after service stop.");
         }
 
         async Task HandleAsync(BrokerRequest request)

@@ -1,3 +1,5 @@
+param([switch] $SyntheticDiagnostics)
+
 $ErrorActionPreference = 'Stop'
 if ($env:WEAVE_ISOLATED_SERVICE_TEST -ne '1' -or $env:WEAVE_TEST_TUN -ne '1' -or $env:GITHUB_ACTIONS -ne 'true') {
     throw 'Service installation tests require explicit opt-in on a disposable GitHub Windows runner.'
@@ -9,27 +11,32 @@ if (Get-Service $serviceName -ErrorAction SilentlyContinue) { throw 'An existing
 $suffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $install = Join-Path $env:ProgramFiles "Weave-CI-$suffix"
 $results = Join-Path $root 'artifacts\service-tests'
+if ($SyntheticDiagnostics) { $results = Join-Path $results 'diagnostic-reproduction' }
 $probePublish = Join-Path $root 'artifacts\service-probe'
 $diagnosticPublish = Join-Path $root 'artifacts\synthetic-service'
 New-Item -ItemType Directory -Path $results -Force | Out-Null
 dotnet publish (Join-Path $PSScriptRoot 'Weave.ServiceProbe\Weave.ServiceProbe.csproj') -c Release -r win-x64 --self-contained true -o $probePublish
 if ($LASTEXITCODE -ne 0) { throw 'Service test client build failed' }
-dotnet publish (Join-Path $root 'src\Weave.Core.Service\Weave.Core.Service.csproj') -c Release -r win-x64 --self-contained true `
-    -p:WeaveSyntheticDiagnostics=true -o $diagnosticPublish
-if ($LASTEXITCODE -ne 0) { throw 'Synthetic service diagnostic build failed' }
 $packagedAssembly = Join-Path $root 'artifacts\x64\service\Weave.Core.Service.dll'
 if ([Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($packagedAssembly)).Contains('SyntheticDiagnostics')) {
     throw 'Synthetic diagnostics must never enter the packaged service'
 }
-if (-not [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $diagnosticPublish 'Weave.Core.Service.dll'))).Contains('SyntheticDiagnostics')) {
-    throw 'Diagnostic service did not include its bounded test observer'
+$serviceSource = Join-Path $root 'artifacts\x64\service'
+if ($SyntheticDiagnostics) {
+    dotnet publish (Join-Path $root 'src\Weave.Core.Service\Weave.Core.Service.csproj') -c Release -r win-x64 --self-contained true `
+        -p:WeaveSyntheticDiagnostics=true -o $diagnosticPublish
+    if ($LASTEXITCODE -ne 0) { throw 'Synthetic service diagnostic build failed' }
+    if (-not [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $diagnosticPublish 'Weave.Core.Service.dll'))).Contains('SyntheticDiagnostics')) {
+        throw 'Diagnostic service did not include its bounded test observer'
+    }
+    $serviceSource = $diagnosticPublish
 }
 if (Test-Path $install) { throw 'Unexpected existing installation path' }
 New-Item -ItemType Directory -Path $install | Out-Null
 Copy-Item "$probePublish\*" $install -Recurse
 Copy-Item (Join-Path $probePublish 'Weave.ServiceProbe.exe') (Join-Path $install 'Weave.Windows.exe')
 Copy-Item (Join-Path $probePublish 'Weave.ServiceProbe.exe') (Join-Path $install 'Unapproved.exe')
-Copy-Item $diagnosticPublish (Join-Path $install 'service') -Recurse
+Copy-Item $serviceSource (Join-Path $install 'service') -Recurse
 foreach ($folder in @('runtime', 'geodata')) {
     Copy-Item (Join-Path $root "artifacts\x64\$folder") (Join-Path $install $folder) -Recurse
 }
@@ -121,7 +128,7 @@ finally {
         Where-Object { $_.ProviderName -in @('WeaveCore', '.NET Runtime') } |
         Select-Object TimeCreated, ProviderName, Id, LevelDisplayName, Message |
         ConvertTo-Json -Depth 4 | Set-Content (Join-Path $results 'service-events.json')
-    @{ install = $install; service = $serviceExe; userSid = $createdUser.Sid.Value; sourceCommit = (git rev-parse HEAD); filesRetained = $true } |
+    @{ install = $install; service = $serviceExe; userSid = $createdUser.Sid.Value; sourceCommit = (git rev-parse HEAD); filesRetained = $true; diagnosticBuild = [bool]$SyntheticDiagnostics } |
         ConvertTo-Json | Set-Content (Join-Path $results 'cleanup-manifest.json')
     foreach ($process in $processes) {
         $process.Refresh()
