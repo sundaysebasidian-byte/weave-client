@@ -28,6 +28,15 @@ package final class CoreService: Sendable {
         }
     }
 
+    package convenience init(installation: ManagedCoreInstallation, enableTun: Bool) throws {
+        try self.init(runtimeRoot: installation.runtimeRoot, enableTun: enableTun) { runtime, mode, onExit in
+            var inherited = runtime
+            inherited.additionalInheritedLeases.append(installation.lease)
+            return try CoreProcess(executable: installation.coreURL, runtime: inherited, mode: mode,
+                                   environment: .isolated, onExit: onExit)
+        }
+    }
+
     init(runtimeRoot: URL, enableTun: Bool, factory: @escaping ServiceCoreFactory) throws {
         guard geteuid() != 0 else { throw BrokerFailure.unauthorized }
         root = runtimeRoot

@@ -71,7 +71,7 @@
 
 路径检查从 `/` 逐级以目录描述符打开，拒绝符号链接、非 root 所有者、组/其他用户写权限、扩展 ACL 写入/删除/权限授予、硬链接和特殊文件。还核验整个包树；仅接受本地文件系统，并限制深度、数量和总字节。测试使用自有目录验证权限、ACL、链接、FIFO 和稀疏文件边界，不改系统目录权限。不存在扩展 ACL 的 Darwin `ENOENT` 已通过实际文件描述符探针确认；其他 ACL 读取错误保持拒绝。
 
-**这项校验尚未接入特权执行。** `/Applications` 可能允许 admin 组写入，叶文件归 root 所有也不能防止父目录中的替换，因此没有为它豁免权限检查。受保护的安装位置/复制流程、更新互斥、机器级固定目录接入和服务崩溃后的核心终止仍需实现；静态签名检查不是执行租约。Apple 的 [SecStaticCodeCheckValidity](https://developer.apple.com/documentation/security/secstaticcodecheckvalidity(_:_:_:)) 同样要求验证期间及之后代码不发生并发修改。root 初始化继续硬拒绝，未注册后台服务或启用 GUI TUN。
+**这项校验尚未接入特权执行。** `/Applications` 可能允许 admin 组写入，叶文件归 root 所有也不能防止父目录中的替换，因此没有为它豁免权限检查。下述私有快照已经实现复制与安装互斥；生产宿主的固定目录接入、安装升级编排和服务崩溃后的完整恢复仍需验证。静态签名检查本身不是执行租约。Apple 的 [SecStaticCodeCheckValidity](https://developer.apple.com/documentation/security/secstaticcodecheckvalidity(_:_:_:)) 同样要求验证期间及之后代码不发生并发修改。root 初始化继续硬拒绝，未注册后台服务或启用 GUI TUN。
 
 ## 跨进程租约与退出确认
 
@@ -90,3 +90,13 @@
 新增未打包的 `WeaveCoreLifecycleProbe`，以普通用户运行实际 `CoreService` 和锁定 Mihomo。CI 在一次性 GitHub macOS 运行器的 user 域临时注册唯一 launchd job，显式指定 `LimitLoadToSessionType=Background`（agent 默认的 Aqua 会话不适用于该域），验证正常 TERM、宿主 KILL、核心 STOP 后宿主 KILL、宿主 STOP 后 bootout；每次核对父子 PGID、实际核心退出、端口关闭、服务锁释放、同根目录/同锁 inode 重启与遗留目录回收。另有 `AbandonProcessGroup=true` 负对照，必须实际观察到孤儿核心仍占锁，随后仅终止该夹具精确身份的核心。结束时 bootout 自建 job，保存逐项证据。
 
 该脚本拒绝在本地或 root 身份执行，不使用 sudo/system 域或持久 enable/disable 设置。普通本地验证只运行独立 helper 的 self-check，不注册后台任务。这里验证的是实际服务后端在 launchd 生命周期下的行为，尚未构成已安装的 Developer ID/root 服务或 GUI TUN 交付；生产宿主与受保护安装仍待接入。各场景是否通过以对应提交的原生 CI 和 artifact 为准。
+
+## 私有核心快照与安装互斥
+
+`ManagedCoreInstallation` 的生产入口先要求 root 和有效 Developer ID 身份，再使用固定的 `/Library/PrivilegedHelperTools/io.weave.client.macos` 私有目录。普通用户入口在任何系统目录操作前拒绝；内部测试只能使用测试进程自己的目录和签名要求。没有放宽 `/Applications` 的祖先权限检查：来源应用被视为不可信输入，通过 no-follow 描述符有界复制到独占暂存目录后，才检查完整资源封印、独立核心身份、锁文件与签名后哈希。
+
+验证成功后以不覆盖的原子重命名发布核心哈希对应的版本；已有版本须重新通过完整检查并具有相同核心清单，损坏或未知内容原样保留并拒绝使用。复制不继承来源 ACL 或写权限，拒绝链接、特殊文件、超深目录和超量内容。文件及目录同步后才发布；本次创建的暂存目录在失败或缓存复用后移除，清理失败明确携带路径及原始错误返回，不默默忽略。真实断电持久性尚未验收。
+
+快照持有独立安装租约，`CoreService(installation:)` 固定使用该快照、私有运行根目录，并把安装锁传给每一个检查器与核心。真实签名 Mihomo 在来源应用删除后仍能检查配置及启动；关闭父句柄后，核心仍阻止重新取得安装/服务/会话目录锁，确认退出后释放。另有实际会话后端回归核验自动继承安装锁。安装锁与既有运行租约分开，旧版本不会被此次准备操作覆盖或自动删除。
+
+**生产 root 会话构造仍拒绝。** 此组件及普通用户验收不代表 SMAppService、签名宿主、真实跨用户升级或 GUI TUN 已交付；ad-hoc 测试要求也不会进入生产入口。

@@ -101,11 +101,20 @@ enum ProtectedInstallationPath {
     // The owner override is internal to ordinary-user filesystem tests. Production
     // calls use root and never accept a UID or path from a broker request.
     static func validateTree(_ url: URL, owner: uid_t = 0) throws {
+        let descriptor = try openValidated(url, owner: owner)
+        defer { close(descriptor) }
+        var count = 0; var bytes: Int64 = 0
+        try walk(descriptor, owner: owner, depth: 0, count: &count, bytes: &bytes)
+    }
+
+    /// The caller owns the returned descriptor; every ancestor has been checked.
+    static func openValidated(_ url: URL, owner: uid_t = 0) throws -> Int32 {
         guard url.isFileURL, url.host == nil || url.host == "localhost",
               url.path == url.standardizedFileURL.path, url.path.utf8.count <= 4096 else { throw InstallationError.unsafePath }
         var descriptor = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard descriptor >= 0 else { throw InstallationError.unsafePath }
-        defer { close(descriptor) }
+        var transferred = false
+        defer { if !transferred { close(descriptor) } }
         try validateMetadata(descriptor, owner: owner)
         let components = url.pathComponents.dropFirst()
         guard !components.isEmpty, components.count <= 64 else { throw InstallationError.unsafePath }
@@ -116,8 +125,8 @@ enum ProtectedInstallationPath {
             close(descriptor); descriptor = next
             try validateMetadata(descriptor, owner: owner)
         }
-        var count = 0; var bytes: Int64 = 0
-        try walk(descriptor, owner: owner, depth: 0, count: &count, bytes: &bytes)
+        transferred = true
+        return descriptor
     }
 
     private static func walk(_ descriptor: Int32, owner: uid_t, depth: Int, count: inout Int, bytes: inout Int64) throws {

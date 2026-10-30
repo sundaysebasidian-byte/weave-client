@@ -145,6 +145,13 @@ struct CoreInstallationTests {
         #expect(manifest.sourceCoreSHA256 == "0cf93bb94fdb322e91120b8c6b67e35997a0962ba7cea7fe1f988a1c7060ee1a")
         let version = try BoundedCommand.run(executable: path + "/Contents/Resources/mihomo", arguments: ["-v"])
         #expect(version.contains("Mihomo"))
+        try withDirectory { root in
+            let snapshot = try ManagedCoreInstallation.prepare(sourceBundle: URL(fileURLWithPath: path),
+                storeRoot: root.appendingPathComponent("store"), owner: geteuid(),
+                appRequirement: "identifier \"\(appID)\"", coreRequirement: "identifier \"\(coreID)\"")
+            #expect(try BoundedCommand.run(executable: snapshot.coreURL.path, arguments: ["-v"]) == version)
+            try snapshot.lease.close()
+        }
         print("Verified packaged core: \(version.trimmingCharacters(in: .whitespacesAndNewlines))")
     }
 
@@ -156,7 +163,7 @@ struct CoreInstallationTests {
         _ = try BoundedCommand.run(executable: "/usr/bin/codesign", arguments: ["--force", "--sign", "-", "--identifier", identifier, url.path])
     }
 
-    private func withSignedFixture(_ body: (URL) throws -> Void) throws {
+    func withSignedFixture(coreExecutable: URL = URL(fileURLWithPath: "/usr/bin/true"), _ body: (URL) throws -> Void) throws {
         try withDirectory { root in
             let app = root.appendingPathComponent("Weave.app")
             let resources = app.appendingPathComponent("Contents/Resources")
@@ -167,7 +174,7 @@ struct CoreInstallationTests {
             try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
             try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: macOS.appendingPathComponent("WeaveMac").path)
             let core = resources.appendingPathComponent("mihomo")
-            try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: core.path)
+            try FileManager.default.copyItem(at: coreExecutable, to: core)
             let sourceHash = try hash(core)
             try sign(core, identifier: coreID)
             let commit = String(repeating: "a", count: 40)
