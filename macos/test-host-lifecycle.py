@@ -94,6 +94,7 @@ def run_case(base, helper, core, mode):
         table = processes()
         host = ready['pid']
         assert host in table and table[host]['pgid'] == host == ready['pgid']
+        owned[host] = table[host]
         children = {pid: info for pid, info in table.items() if info['ppid'] == host}
         assert len(children) == 1, children
         child, identity = next(iter(children.items()))
@@ -146,16 +147,25 @@ def run_case(base, helper, core, mode):
         assert service_lease.stat().st_ino == lease_inode
         assert not old_runtime.exists()
         table = processes()
+        assert restarted['pid'] in table
+        owned[restarted['pid']] = table[restarted['pid']]
         restarted_children = {pid: info for pid, info in table.items() if info['ppid'] == restarted['pid']}
         assert len(restarted_children) == 1
         for pid, info in restarted_children.items():
             assert info['command'].startswith(str(core) + ' -d ' + str(root) + '/')
             assert info['pgid'] == restarted['pid']
             owned[pid] = info
+        evidence.update(restarted_host=restarted['pid'], restarted_ready=restarted)
         command('/bin/launchctl', 'bootout', target)
         registered = False
-        wait_for(lambda: all(pid not in processes() for pid in owned), 'final core cleanup')
-        assert can_lock(service_lease) and port_closed(restarted['mixedPort'])
+        # bootout can return while the host is still completing cleanup after its
+        # core exits. Wait for both owners before asserting that the lease is free.
+        evidence['after_final_bootout'] = {'host_present': restarted['pid'] in processes(),
+                                          'lease_available': can_lock(service_lease),
+                                          'port_closed': port_closed(restarted['mixedPort'])}
+        wait_for(lambda: all(pid not in processes() for pid in owned), 'final host and core cleanup')
+        assert can_lock(service_lease), 'Installation host exited but service lease remains held'
+        assert port_closed(restarted['mixedPort']), 'Host/core exited but proxy port remains open'
         assert not [p for p in root.iterdir() if p.is_dir()]
         evidence.update(success=True, restarted_host=restarted['pid'], restarted_ready=restarted, final_lease_inode=service_lease.stat().st_ino)
     finally:
@@ -167,7 +177,7 @@ def run_case(base, helper, core, mode):
         for pid, info in processes().items():
             if info['command'].startswith(str(core) + ' -d ' + str(root) + '/'):
                 owned.setdefault(pid, info)
-        # Only stop exact core identities this case observed, never a matching name alone.
+        # Only stop exact host/core identities observed here, never a matching name alone.
         for pid, expected in owned.items():
             current = processes().get(pid)
             if current and current['command'] == expected['command'] and current['started'] == expected['started']:
