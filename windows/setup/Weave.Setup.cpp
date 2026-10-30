@@ -6,6 +6,8 @@
 #include <shlobj.h>
 #include <winsvc.h>
 #include <tlhelp32.h>
+#include <wrl/client.h>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -97,12 +99,14 @@ void CreateProtected(const fs::path& path) {
     Require(CreateDirectoryW(path.c_str(), &attributes), "Create protected installation directory");
     CheckEntry(path);
 }
+fs::path KnownFolder(REFKNOWNFOLDERID id) {
+    PWSTR value = nullptr;
+    const HRESULT result = SHGetKnownFolderPath(id, 0, nullptr, &value);
+    if (FAILED(result)) Fail("Resolve installation folder", static_cast<DWORD>(result));
+    const fs::path path(value); CoTaskMemFree(value); return path;
+}
 fs::path MachineRoot(const wchar_t* supplied) {
-    PWSTR programFiles = nullptr;
-    const HRESULT result = SHGetKnownFolderPath(FOLDERID_ProgramFilesX64, 0, nullptr, &programFiles);
-    if (FAILED(result)) Fail("Resolve Program Files", static_cast<DWORD>(result));
-    const fs::path root = fs::path(programFiles) / L"Weave";
-    CoTaskMemFree(programFiles);
+    const fs::path root = KnownFolder(FOLDERID_ProgramFilesX64) / L"Weave";
     if (!Same(root.wstring(), supplied)) Fail("Only the fixed machine installation directory is supported", ERROR_ACCESS_DENIED);
     CheckAncestors(root);
     if (fs::exists(root)) CheckTree(root);
@@ -120,6 +124,109 @@ std::wstring ImageId(const fs::path& root, const std::wstring& image) {
     return id;
 }
 struct State { bool exists = false; std::wstring id; DWORD start = SERVICE_AUTO_START; bool running = false; };
+fs::path Gui(const fs::path& root, const std::wstring& id) { return root / L"versions" / id / L"Weave.Windows.exe"; }
+std::array<fs::path, 2> Shortcuts() {
+    return {KnownFolder(FOLDERID_CommonPrograms) / L"Weave" / L"Weave.lnk", KnownFolder(FOLDERID_PublicDesktop) / L"Weave.lnk"};
+}
+bool ShortcutExists(const fs::path& path) {
+    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) { CheckEntry(path); return true; }
+    const DWORD error = GetLastError();
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return false;
+    Fail("Inspect shortcut path", error);
+}
+std::vector<BYTE> ReadSmallFile(const fs::path& path) {
+    CheckEntry(path);
+    Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    Require(file.value != INVALID_HANDLE_VALUE, "Open shortcut recovery input");
+    LARGE_INTEGER size{};
+    Require(GetFileSizeEx(file.value, &size) && size.QuadPart > 0 && size.QuadPart <= 65536, "Invalid shortcut recovery input size");
+    std::vector<BYTE> bytes(static_cast<size_t>(size.QuadPart)); DWORD read = 0;
+    Require(ReadFile(file.value, bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr) && read == bytes.size(), "Read shortcut recovery input");
+    return bytes;
+}
+void WriteNewFile(const fs::path& path, const std::vector<BYTE>& bytes) {
+    Handle file(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+    Require(file.value != INVALID_HANDLE_VALUE, "Create shortcut recovery file");
+    DWORD written = 0;
+    Require(WriteFile(file.value, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr) && written == bytes.size() &&
+        FlushFileBuffers(file.value), "Persist shortcut recovery file");
+}
+std::wstring ShortcutTarget(const fs::path& path) {
+    ReadSmallFile(path);
+    Microsoft::WRL::ComPtr<IShellLinkW> link;
+    HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(link.GetAddressOf()));
+    if (FAILED(result)) Fail("Open shell link reader", static_cast<DWORD>(result));
+    Microsoft::WRL::ComPtr<IPersistFile> file;
+    result = link.As(&file);
+    if (FAILED(result)) Fail("Open shell link persistence", static_cast<DWORD>(result));
+    result = file->Load(path.c_str(), STGM_READ);
+    if (FAILED(result)) Fail("Read installed shortcut", static_cast<DWORD>(result));
+    wchar_t target[32768]{}; wchar_t arguments[32768]{};
+    result = link->GetPath(target, 32768, nullptr, SLGP_RAWPATH);
+    if (FAILED(result) || !target[0]) Fail("Invalid installed shortcut target", ERROR_INVALID_DATA);
+    result = link->GetArguments(arguments, 32768);
+    if (FAILED(result) || arguments[0]) Fail("Unexpected installed shortcut arguments", ERROR_INVALID_DATA);
+    return target;
+}
+void SnapshotShortcuts(const fs::path& root, const std::wstring& next, const State& previous) {
+    const auto directory = root / L"setup-shortcuts" / next;
+    CreateProtected(directory.parent_path());
+    if (fs::exists(directory)) Fail("Shortcut recovery snapshot already exists", ERROR_ALREADY_EXISTS);
+    CreateProtected(directory);
+    std::vector<BYTE> present;
+    const auto paths = Shortcuts();
+    for (size_t i = 0; i < paths.size(); ++i) {
+        const auto& path = paths[i];
+        if (!fs::exists(path.parent_path())) {
+            CheckAncestors(path.parent_path()); CreateProtected(path.parent_path());
+        }
+        CheckAncestors(path);
+        const bool exists = ShortcutExists(path);
+        if (exists) {
+            if (!previous.exists || !Same(ShortcutTarget(path), Gui(root, previous.id).wstring()))
+                Fail("An existing shortcut belongs to another installation", ERROR_ACCESS_DENIED);
+            WriteNewFile(directory / (std::to_wstring(i) + L".lnk"), ReadSmallFile(path));
+        }
+        present.push_back(exists ? '1' : '0');
+    }
+    // Publish the setup journal only after both snapshots and this presence map are durable.
+    WriteNewFile(directory / L"present.txt", present);
+}
+void RestoreShortcuts(const fs::path& root, const std::wstring& next, const State& previous) {
+    const auto directory = root / L"setup-shortcuts" / next;
+    const auto present = ReadSmallFile(directory / L"present.txt");
+    const auto paths = Shortcuts();
+    if (present.size() != paths.size()) Fail("Damaged shortcut recovery map", ERROR_INVALID_DATA);
+    std::array<std::vector<BYTE>, 2> backups;
+    for (size_t i = 0; i < paths.size(); ++i) {
+        CheckAncestors(paths[i]);
+        const auto backup = directory / (std::to_wstring(i) + L".lnk");
+        if ((present[i] != '0' && present[i] != '1') || (present[i] == '1') != fs::exists(backup))
+            Fail("Incomplete shortcut recovery snapshot", ERROR_INVALID_DATA);
+        if (present[i] == '1') {
+            if (!previous.exists || !Same(ShortcutTarget(backup), Gui(root, previous.id).wstring()))
+                Fail("Shortcut recovery target changed", ERROR_INVALID_DATA);
+            backups[i] = ReadSmallFile(backup);
+        }
+        if (ShortcutExists(paths[i])) {
+            const auto target = ShortcutTarget(paths[i]);
+            if (!Same(target, Gui(root, next).wstring()) && (!previous.exists || !Same(target, Gui(root, previous.id).wstring())))
+                Fail("A shortcut changed during installation; recovery snapshot retained", ERROR_ACCESS_DENIED);
+        }
+    }
+    for (size_t i = 0; i < paths.size(); ++i) {
+        if (present[i] == '1') {
+            const fs::path temp = paths[i].wstring() + L".weave-" + next + L".new";
+            // Resume a fully written recovery file only when its protected bytes match.
+            if (fs::exists(temp)) {
+                if (ReadSmallFile(temp) != backups[i]) Fail("Incomplete shortcut recovery write retained", ERROR_INVALID_DATA);
+            }
+            else WriteNewFile(temp, backups[i]);
+            Require(MoveFileExW(temp.c_str(), paths[i].c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH), "Restore previous shortcut");
+        }
+        else if (ShortcutExists(paths[i])) Require(DeleteFileW(paths[i].c_str()), "Remove incomplete installation shortcut");
+    }
+}
 SERVICE_STATUS_PROCESS Status(SC_HANDLE service) {
     SERVICE_STATUS_PROCESS status{}; DWORD needed = 0;
     Require(QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, reinterpret_cast<BYTE*>(&status), sizeof status, &needed), "Query core service status");
@@ -217,7 +324,7 @@ void RemoveService(SC_HANDLE manager, const fs::path& root, const std::wstring& 
 struct Transaction { std::wstring next; State previous; };
 fs::path Journal(const fs::path& root) { return root / L"setup-pending.txt"; }
 void Save(const fs::path& root, const Transaction& transaction) {
-    const std::wstring data = L"weave-setup-v1\n" + transaction.next + L"\n" + (transaction.previous.exists ? transaction.previous.id : L"-") + L"\n" +
+    const std::wstring data = L"weave-setup-v2\n" + transaction.next + L"\n" + (transaction.previous.exists ? transaction.previous.id : L"-") + L"\n" +
         std::to_wstring(transaction.previous.start) + L"\n" + (transaction.previous.running ? L"1\n" : L"0\n");
     const auto temp = root / L"setup-pending.new";
     Handle file(CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
@@ -237,7 +344,7 @@ Transaction Read(const fs::path& root) {
     Require(ReadFile(file.value, data.data(), static_cast<DWORD>(size.QuadPart), &read, nullptr) && read == static_cast<DWORD>(size.QuadPart), "Read setup recovery record");
     std::vector<std::wstring> lines; size_t start = 0;
     for (size_t at = 0; (at = data.find(L'\n', start)) != std::wstring::npos; start = at + 1) lines.push_back(data.substr(start, at - start));
-    if (lines.size() != 5 || data.back() != L'\n' || lines[0] != L"weave-setup-v1" || !ReleaseId(lines[1]) ||
+    if (lines.size() != 5 || data.back() != L'\n' || lines[0] != L"weave-setup-v2" || !ReleaseId(lines[1]) ||
         (lines[2] != L"-" && !ReleaseId(lines[2])) || (lines[3] != L"2" && lines[3] != L"3") || (lines[4] != L"0" && lines[4] != L"1"))
         Fail("Damaged setup recovery record; original files retained", ERROR_INVALID_DATA);
     return {lines[1], {lines[2] != L"-", lines[2], static_cast<DWORD>(lines[3][0] - L'0'), lines[4] == L"1"}};
@@ -260,6 +367,7 @@ void Rollback(SC_HANDLE manager, const fs::path& root) {
     else if (!current.exists && transaction.previous.exists)
         Configure(manager, root, transaction.previous.id, transaction.previous.start, true);
     if (transaction.previous.exists && transaction.previous.running) Start(manager, root, transaction.previous.id);
+    RestoreShortcuts(root, transaction.next, transaction.previous);
     Archive(root, transaction, L"rolled-back");
 }
 void RequireClosedGui(const fs::path& root) {
@@ -292,6 +400,7 @@ void Execute(const std::wstring& command, const fs::path& root, const std::wstri
         const auto next = root / L"versions" / id;
         if (fs::exists(next)) Fail("This staged release already exists", ERROR_ALREADY_EXISTS);
         CreateProtected(next);
+        SnapshotShortcuts(root, id, previous);
         Save(root, {id, previous});
         if (previous.exists) Stop(manager, root, previous.id);
         return;
@@ -322,6 +431,10 @@ void Execute(const std::wstring& command, const fs::path& root, const std::wstri
     else if (command == L"commit") {
         const auto current = InspectService(manager, root);
         if (!current.exists || current.id != id || !current.running) Fail("The new service is not running", ERROR_SERVICE_NOT_ACTIVE);
+        for (const auto& path : Shortcuts()) {
+            CheckAncestors(path);
+            if (!Same(ShortcutTarget(path), Gui(root, id).wstring())) Fail("The installed shortcut was not published", ERROR_INVALID_DATA);
+        }
         Archive(root, transaction, L"committed");
     }
     else Fail("Unknown setup operation", ERROR_INVALID_PARAMETER);
@@ -335,6 +448,9 @@ int wmain(int argc, wchar_t** argv) {
         BYTE admins[SECURITY_MAX_SID_SIZE]; DWORD size = sizeof admins; BOOL elevated = FALSE;
         Require(CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, admins, &size) && CheckTokenMembership(nullptr, admins, &elevated) && elevated,
             "Administrator authorization is required");
+        const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        if (FAILED(com)) Fail("Initialize shell link reader", static_cast<DWORD>(com));
+        struct ComScope { ~ComScope() { CoUninitialize(); } } comScope;
         const auto root = MachineRoot(argv[2]);
         ServiceHandle manager(OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE));
         Require(manager.value != nullptr, "Open service manager");

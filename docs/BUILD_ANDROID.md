@@ -28,7 +28,7 @@ bash tools/audit-local-release.sh
 无发行签名配置时，`assembleRelease` 输出未签名 APK，不能直接安装。
 
 CI 在可丢弃的 API 36 模拟器运行加密存储、订阅/规则集更新竞争与跨进程回归，并保留报告。
-模拟器只使用 runner 已有权限；无 KVM 访问权时采用软件模拟，不修改设备 ACL 或用户组。
+模拟器在隔离 CI 使用 KVM；当前账户不能访问设备时，仅该进程通过 runner 的现有 sudo 授权使用设备所属组，保持原用户身份，不修改设备 ACL、udev 或账户组成员。启动前运行 `-accel-check`；不可用时明确失败。此前软件模拟多次造成系统服务 watchdog/ANR 或设备测试超时，不能继续用增加时限替代有效设备验收。
 本地复现时先创建独立测试模拟器；不要指定装有个人数据的现有设备。构建 `:app:assembleDebug`
 和 `:app:assembleDebugAndroidTest` 后，明确指定它的序列号运行：
 

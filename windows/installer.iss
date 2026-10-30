@@ -14,6 +14,9 @@ DefaultDirName={autopf}\Weave
 UsePreviousAppDir=no
 DisableDirPage=yes
 DefaultGroupName=Weave
+DisableProgramGroupPage=yes
+UsePreviousGroup=no
+AllowNoIcons=no
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -48,7 +51,7 @@ Name: "{group}\Weave"; Filename: "{code:GetReleaseDir}\Weave.Windows.exe"; Worki
 Name: "{autodesktop}\Weave"; Filename: "{code:GetReleaseDir}\Weave.Windows.exe"; WorkingDir: "{code:GetReleaseDir}"
 
 [Run]
-Filename: "{code:GetReleaseDir}\Weave.Windows.exe"; WorkingDir: "{code:GetReleaseDir}"; Description: "Launch Weave"; Flags: postinstall nowait skipifsilent unchecked runasoriginaluser
+Filename: "{code:GetReleaseDir}\Weave.Windows.exe"; WorkingDir: "{code:GetReleaseDir}"; Description: "Launch Weave"; Check: InstallationCommitted; Flags: postinstall nowait skipifsilent unchecked runasoriginaluser
 
 [Code]
 var
@@ -58,10 +61,11 @@ var
   TransactionCommitted: Boolean;
   LastOperationError: String;
   MaintenanceMutex: THandle;
+  InstallationError: String;
 
-function CreateMaintenanceMutex(Attributes: ULONG_PTR; InitialOwner: BOOL; Name: String): THandle;
+function CreateMaintenanceMutex(Attributes: THandle; InitialOwner: Integer; Name: String): THandle;
   external 'CreateMutexW@kernel32.dll stdcall';
-function CloseMaintenanceMutex(Handle: THandle): BOOL;
+function CloseMaintenanceMutex(Handle: THandle): Integer;
   external 'CloseHandle@kernel32.dll stdcall';
 
 function AcquireMaintenanceMutex: Boolean;
@@ -69,7 +73,7 @@ var
   ErrorCode: LongInt;
 begin
   // The same atomic existence lock covers both setup and uninstall, across user sessions.
-  MaintenanceMutex := CreateMaintenanceMutex(0, False, 'Global\WeaveMachineSetup');
+  MaintenanceMutex := CreateMaintenanceMutex(0, 0, 'Global\WeaveMachineSetup');
   ErrorCode := DLLGetLastError;
   Result := (MaintenanceMutex <> 0) and (ErrorCode <> 183);
   if not Result then begin
@@ -127,6 +131,10 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  if CompareText(ExpandConstant('{group}'), ExpandConstant('{commonprograms}\Weave')) <> 0 then begin
+    Result := 'Weave requires its fixed machine Start Menu folder.';
+    Exit;
+  end;
   ExtractTemporaryFile('Weave.Setup.exe');
   Attempt := Attempt + 1;
   ReleaseId := '';
@@ -168,18 +176,41 @@ begin
   if SetupOperation('rollback', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then
     TransactionStarted := False
   else OriginalError := OriginalError + #13#10 + 'Recovery is pending: ' + LastOperationError;
-  RaiseException(OriginalError);
+  InstallationError := OriginalError;
+  Log(InstallationError);
+  SuppressibleMsgBox(InstallationError, mbError, MB_OK, IDOK);
+end;
+
+function InstallationCommitted: Boolean;
+begin
+  Result := TransactionCommitted;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  // Inno handles exceptions in ssPostInstall/ssDone without failing the exit code.
+  if TransactionCommitted then Result := 0 else Result := 1;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and not TransactionCommitted then begin
+    WizardForm.FinishedLabel.Caption := 'Weave installation failed.' + #13#10 + InstallationError;
+    WizardForm.RunList.Visible := False;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then begin
-    if not SetupOperation('activate', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then
+    if not SetupOperation('activate', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then begin
       RecoverAfterFailure;
-  end;
-  if CurStep = ssDone then begin
-    if not SetupOperation('commit', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then
+      Exit;
+    end;
+    if not SetupOperation('commit', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then begin
       RecoverAfterFailure;
+      Exit;
+    end;
     TransactionCommitted := True;
   end;
 end;

@@ -48,6 +48,22 @@ function Service-Image {
 function Assert-UserData {
     if ((Get-FileHash $sentinel -Algorithm SHA256).Hash -ne $sentinelHash) { throw 'Setup changed user data.' }
 }
+function Shortcut-Hashes([string] $image) {
+    $guiPath = Join-Path (Split-Path (Split-Path $image.Trim('"') -Parent) -Parent) 'Weave.Windows.exe'
+    $paths = @((Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Weave\Weave.lnk'),
+        (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Weave.lnk'))
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        foreach ($path in $paths) {
+            if (-not (Test-Path $path)) { throw "Installed shortcut is missing: $path" }
+            $link = $shell.CreateShortcut($path)
+            try {
+                if ($link.TargetPath -ne $guiPath -or $link.Arguments) { throw 'Installed shortcut targets a different version.' }
+                Get-FileHash $path -Algorithm SHA256
+            } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
+        }
+    } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
+}
 function Invoke-Sc([string[]] $Arguments) {
     & $sc @Arguments
     if ($LASTEXITCODE -ne 0) { throw "SCM test operation failed: $LASTEXITCODE" }
@@ -90,6 +106,7 @@ try {
     Set-Acl $results $resultsAcl
     Invoke-Setup $package 'install' 
     $first = Service-Image
+    $null = Shortcut-Hashes $first
     $firstRelease = Split-Path (Split-Path $first.Trim('"') -Parent) -Parent
     $firstGui = Join-Path $firstRelease 'Weave.Windows.exe'
     $firstHashes = @(Get-ChildItem $firstRelease -File -Recurse | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 })
@@ -125,6 +142,7 @@ try {
     $steps.Add(@{ name = 'ordinary-user-gui'; sid = $testUser.Sid.Value; profile = $profile.LocalPath; rendered = $true })
     Invoke-Setup $package 'upgrade'
     $second = Service-Image
+    $secondShortcuts = @(Shortcut-Hashes $second)
     if ($first -eq $second) { throw 'Upgrade did not stage a distinct version.' }
     if (-not $gui.WaitForExit(10000)) { throw 'Upgrade left the previous GUI running.' }
     foreach ($entry in $firstHashes) {
@@ -137,6 +155,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Failure fixture installer compilation failed.' }
     Invoke-Setup (Join-Path $root 'artifacts\installer\Weave-Windows-synthetic-failure-test.exe') 'activation-failure' $false
     if ((Service-Image) -ne $second) { throw 'Failed activation did not restore the preceding service.' }
+    $restoredShortcuts = @(Shortcut-Hashes $second)
+    for ($i = 0; $i -lt $secondShortcuts.Count; $i++) {
+        if ($secondShortcuts[$i].Hash -ne $restoredShortcuts[$i].Hash) { throw 'Failed activation changed a preceding shortcut.' }
+    }
     if (Test-Path (Join-Path $install 'setup-pending.txt')) { throw 'Failed activation left unresolved recovery state.' }
     Assert-UserData
 
