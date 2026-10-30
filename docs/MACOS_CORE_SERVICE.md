@@ -27,7 +27,7 @@
 
 `CoreProcess` 固定核心命令参数并继承目录租约。并发停止共享一个不随等待方取消的任务；先 SIGTERM，再有界升级 SIGKILL，只有确认进程退出才允许调用方释放目录。停止失败仍保留对象和资源，后续可重试。系统代理设置和恢复仍属于原用户 GUI。
 
-41 项定向声明通过，含原有核心/导入/转发回归，以及实际核心被 SIGSTOP 后，已取消的首个等待方与另两个停止等待方共同完成强制终止、租约保留和退出确认。测试只使用随机回环端口与合成订阅；没有启用 TUN 或改写用户代理。
+定向运行实际执行通过 40 项声明，另 1 项性能基准按默认策略跳过。覆盖原有核心/导入/转发回归，以及实际核心被 SIGSTOP 后，已取消的首个等待方与另两个停止等待方共同完成强制终止、租约保留和退出确认。测试只使用随机回环端口与合成订阅；没有启用 TUN 或改写用户代理。
 
 **共享运行模块不是服务安全策略。** 现有 `prepare` 仍为普通 GUI 清洗顶层配置，没有封闭节点能力校验；目录工具也未成为 root 安装/运行路径边界。锁定版本 `e26714a` 的 [TLS 加载器](https://github.com/MetaCubeX/mihomo/blob/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb/component/ca/keypair.go) 在内联解析失败后尝试文件读取，[SSH 加载器](https://github.com/MetaCubeX/mihomo/blob/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb/adapter/outbound/ssh.go) 同样接受私钥路径。核心另有 [路径安全检查](https://github.com/MetaCubeX/mihomo/blob/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb/constant/path.go)；这里没有证明任意系统文件读取或提权。服务入口仍须独立验证 provider、环境、固定核心及完整路径权限，并管理配置检查子进程的存活/清理，不能直接把共享调用暴露给客户端。
 
