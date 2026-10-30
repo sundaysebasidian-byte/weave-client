@@ -27,7 +27,12 @@ function Invoke-Setup($file, $name, [bool] $success = $true) {
     $args = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/LOG=`"$log`"")
     $process = Start-Process -FilePath $file -ArgumentList $args -PassThru -WorkingDirectory (Split-Path $file -Parent)
     try {
-        if (-not $process.WaitForExit(240000)) { throw "$name setup timed out; process and files retained." }
+        if (-not $process.WaitForExit(240000)) {
+            $steps.Add(@{ name = $name; timedOut = $true; pid = $process.Id })
+            $process.Kill($true)
+            if (-not $process.WaitForExit(10000)) { throw "$name setup exit is unconfirmed; files retained." }
+            throw "$name setup timed out; recovery files retained."
+        }
         $process.Refresh()
         $steps.Add(@{ name = $name; exitCode = $process.ExitCode; expectedSuccess = $success })
         if (($process.ExitCode -eq 0) -ne $success) { Get-Content $log -Tail 70; throw "$name returned unexpected exit code $($process.ExitCode)" }
@@ -61,6 +66,19 @@ try {
     $retained = Join-Path $env:ProgramFiles ('Weave-rejected-' + [Guid]::NewGuid().ToString('N'))
     Move-Item $install $retained
     $steps.Add(@{ retainedRejectedDirectory = $retained })
+    $junctionTarget = Join-Path $env:ProgramFiles ('Weave-junction-target-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory $junctionTarget | Out-Null
+    $junctionMarker = Join-Path $junctionTarget 'untouched.txt'
+    [IO.File]::WriteAllText($junctionMarker, 'junction target must remain untouched')
+    $junctionHash = (Get-FileHash $junctionMarker -Algorithm SHA256).Hash
+    New-Item -ItemType Junction -Path $install -Target $junctionTarget | Out-Null
+    Invoke-Setup $package 'reject-junction-root' $false
+    if ((Get-FileHash $junctionMarker -Algorithm SHA256).Hash -ne $junctionHash -or @(Get-ChildItem $junctionTarget).Count -ne 1) {
+        throw 'Setup traversed or changed a rejected junction.'
+    }
+    $junctionBackup = Join-Path $env:ProgramFiles ('Weave-rejected-junction-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::Move($install, $junctionBackup)
+    $steps.Add(@{ retainedJunction = $junctionBackup; target = $junctionTarget })
 
     $username = 'WeaveInstall' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $password = ConvertTo-SecureString ('Weave!' + [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))) -AsPlainText -Force
@@ -74,7 +92,7 @@ try {
     $first = Service-Image
     $firstRelease = Split-Path (Split-Path $first.Trim('"') -Parent) -Parent
     $firstGui = Join-Path $firstRelease 'Weave.Windows.exe'
-    $firstHash = (Get-FileHash $firstGui -Algorithm SHA256).Hash
+    $firstHashes = @(Get-ChildItem $firstRelease -File -Recurse | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 })
     Assert-UserData
     $env:WEAVE_UI_CAPTURE = Join-Path $results 'installed-gui.png'
     $env:WEAVE_STARTUP_DIAGNOSTIC = Join-Path $results 'installed-gui-error.txt'
@@ -88,7 +106,9 @@ try {
     $second = Service-Image
     if ($first -eq $second) { throw 'Upgrade did not stage a distinct version.' }
     if (-not $gui.WaitForExit(10000)) { throw 'Upgrade left the previous GUI running.' }
-    if ((Get-FileHash $firstGui -Algorithm SHA256).Hash -ne $firstHash) { throw 'Upgrade overwrote the rollback version.' }
+    foreach ($entry in $firstHashes) {
+        if ((Get-FileHash $entry.Path -Algorithm SHA256).Hash -ne $entry.Hash) { throw 'Upgrade overwrote the rollback version.' }
+    }
     Assert-UserData
     $gui.Dispose(); $gui = $null
 
@@ -125,7 +145,10 @@ finally {
         ConvertTo-Json -Depth 6 | Set-Content (Join-Path $results 'manifest.json')
     if ($gui) {
         $gui.Refresh()
-        if (-not $gui.HasExited) { $gui.CloseMainWindow() | Out-Null; $gui.WaitForExit(10000) | Out-Null }
+        if (-not $gui.HasExited) {
+            $gui.CloseMainWindow() | Out-Null
+            if (-not $gui.WaitForExit(10000)) { $gui.Kill($true); $gui.WaitForExit(10000) | Out-Null }
+        }
         $gui.Dispose()
     }
     if ($testUser -and (Get-LocalUser $testUser.Name).Sid.Value -eq $testUser.Sid.Value) {

@@ -7,7 +7,6 @@
 #include <winsvc.h>
 #include <tlhelp32.h>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -281,6 +280,7 @@ void RequireClosedGui(const fs::path& root) {
         if (_wcsnicmp(image, prefix.c_str(), prefix.size()) == 0)
             Fail("Close Weave in every user session, then retry setup", ERROR_INSTALL_ALREADY_RUNNING);
     } while (Process32NextW(snapshot.value, &entry));
+    if (GetLastError() != ERROR_NO_MORE_FILES) Fail("Application enumeration was interrupted");
 }
 void Execute(const std::wstring& command, const fs::path& root, const std::wstring& id, SC_HANDLE manager) {
     if (command == L"inspect") { InspectService(manager, root); return; }

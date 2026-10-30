@@ -54,6 +54,7 @@ Filename: "{code:GetReleaseDir}\Weave.Windows.exe"; WorkingDir: "{code:GetReleas
 [Code]
 var
   ReleaseId: String;
+  Attempt: Integer;
   TransactionStarted: Boolean;
   TransactionCommitted: Boolean;
   LastOperationError: String;
@@ -61,7 +62,7 @@ var
 function GetReleaseId: String;
 begin
   if ReleaseId = '' then
-    ReleaseId := '{#BuildId}-' + Copy(Lowercase(GetSHA256OfString(ExpandConstant('{tmp}'))), 1, 16);
+    ReleaseId := '{#BuildId}-' + Copy(Lowercase(GetSHA256OfString(ExpandConstant('{tmp}') + IntToStr(Attempt))), 1, 16);
   Result := ReleaseId;
 end;
 
@@ -92,6 +93,8 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   ExtractTemporaryFile('Weave.Setup.exe');
+  Attempt := Attempt + 1;
+  ReleaseId := '';
   TransactionStarted := True;
   if SetupOperation('begin', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then Result := ''
   else Result := LastOperationError;
@@ -105,7 +108,7 @@ begin
   if FindFirst(ExpandConstant('{app}\versions\*'), Entry) then begin
     try
       repeat
-        if Entry.Attributes and FILE_ATTRIBUTE_DIRECTORY <> 0 then begin
+        if (Entry.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then begin
           Path := ExpandConstant('{app}\versions\') + Entry.Name + '\Weave.Windows.exe';
           if FileExists(Path) then begin
 #if VER >= 0x07000000
@@ -162,4 +165,4 @@ begin
   end;
 end;
 
-; LocalAppData/Weave, ProgramData recovery files and unknown files are never removed here.
+// LocalAppData/Weave, ProgramData recovery files and unknown files are never removed here.
