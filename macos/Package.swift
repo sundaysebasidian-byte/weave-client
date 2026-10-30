@@ -14,6 +14,8 @@ let package = Package(
         .target(name: "WeaveCoreRuntime", dependencies: [.product(name: "Yams", package: "Yams")]),
         .target(name: "WeaveCoreBroker", linkerSettings: [.linkedFramework("Security")]),
         .testTarget(name: "WeaveCoreBrokerTests", dependencies: ["WeaveCoreBroker"]),
+        .target(name: "WeaveCoreService", dependencies: ["WeaveCoreBroker", "WeaveCoreRuntime"]),
+        .testTarget(name: "WeaveCoreServiceTests", dependencies: ["WeaveCoreService", "WeaveCoreBroker", "WeaveCoreRuntime"]),
         .target(name: "CWeaveHTTP", linkerSettings: [.linkedLibrary("curl")]),
         .executableTarget(
             name: "WeaveMac",

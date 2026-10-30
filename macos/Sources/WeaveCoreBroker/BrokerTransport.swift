@@ -183,6 +183,12 @@ public struct BrokerPeer: Sendable {
     public let userID: uid_t
     public let sessionID: au_asid_t
     public let processID: pid_t
+
+    package init(userID: uid_t, sessionID: au_asid_t, processID: pid_t) {
+        self.userID = userID
+        self.sessionID = sessionID
+        self.processID = processID
+    }
 }
 
 public protocol BrokerSession: Sendable {

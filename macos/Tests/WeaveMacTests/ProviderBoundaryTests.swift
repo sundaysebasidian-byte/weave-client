@@ -46,7 +46,7 @@ struct ProviderBoundaryTests {
     @Test func actualGeneratedConfigurationRejectsInvalidNodeSemantics() throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let runtime = try prepare(node("vmess", "uuid: invalid, cipher: auto"), root: root)
+        let runtime = try prepare(node("vmess", "uuid: 11111111-1111-4111-8111-111111111111, cipher: auto"), root: root)
         #expect(throws: (any Error).self) { try validate(runtime) }
     }
 
