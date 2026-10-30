@@ -73,19 +73,12 @@ jobs:
             adb -P 5041 kill-server || true
           }
           trap cleanup EXIT
-          # Only this process gets the device's existing group; no chmod, udev rule or account membership change.
-          emulator_command=()
-          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
-            [[ -c /dev/kvm ]] || { echo 'The isolated runner has no KVM device.' >&2; exit 1; }
-            kvm_group=$(stat -c '%g' /dev/kvm)
-            [[ $(stat -c '%G' /dev/kvm) == kvm && $kvm_group != 0 ]] || {
-              echo 'KVM must belong to its dedicated non-root device group.' >&2; exit 1;
-            }
-            emulator_command=(sudo -n -u "$(id -un)" -g "#$kvm_group"
-              --preserve-env=ANDROID_HOME,ANDROID_USER_HOME,ANDROID_EMULATOR_HOME,ANDROID_AVD_HOME,ANDROID_ADB_SERVER_PORT,ADB_MDNS_AUTO_CONNECT --)
+          # Device acceptance requires an already authorized hardware accelerator.
+          if ! "$ANDROID_HOME/emulator/emulator" -accel-check 2>&1 | tee "$WEAVE_TEST_RESULTS/acceleration.txt"; then
+            echo 'Android device acceptance needs a runner with existing KVM access. No permission changes were attempted.' >&2
+            exit 1
           fi
-          "${emulator_command[@]}" "$ANDROID_HOME/emulator/emulator" -accel-check | tee "$WEAVE_TEST_RESULTS/acceleration.txt"
-          "${emulator_command[@]}" "$ANDROID_HOME/emulator/emulator" -avd weave-storage -port 5580 -accel on \
+          "$ANDROID_HOME/emulator/emulator" -avd weave-storage -port 5580 -accel on \
             -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
             -gpu swiftshader -cores 2 -memory 2048 -camera-back none -camera-front none \
             > "$WEAVE_TEST_RESULTS/emulator.log" 2>&1 &
