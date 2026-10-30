@@ -18,6 +18,7 @@ public sealed class MihomoProcess : IAsyncDisposable
     private volatile bool _ready;
     // Only synthetic integration fixtures consume raw lines; the app receives redacted diagnostics.
     internal Action<string>? TestLogObserver { get; init; }
+    internal Func<Process, Task>? TestTerminateAsync { get; init; }
     public bool IsReady => _ready && IsRunning;
 
     public MihomoProcess(string executablePath)
@@ -52,15 +53,15 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public async Task StartAsync(RuntimeBundle bundle, CancellationToken cancellationToken = default)
     {
-        _ready = false;
-        LastDiagnostics = string.Empty;
         lock (_gate)
         {
             if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
-            if (_process is { HasExited: false })
+            if (_process is not null)
             {
                 throw new InvalidOperationException(L.T("Mihomo 已经在运行"));
             }
+            _ready = false;
+            LastDiagnostics = string.Empty;
         }
 
         if (!File.Exists(_executablePath))
@@ -150,7 +151,7 @@ public sealed class MihomoProcess : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                await TerminateAndWaitAsync(process).ConfigureAwait(false);
+                await TerminateOwnedAsync(process).ConfigureAwait(false);
                 try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
                 cancellationToken.ThrowIfCancellationRequested();
@@ -175,7 +176,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         if (validation is not null)
         {
             // Keep the handle and fail cleanup if termination cannot be confirmed.
-            await TerminateAndWaitAsync(validation).ConfigureAwait(false);
+            await TerminateOwnedAsync(validation).ConfigureAwait(false);
             lock (_gate) if (ReferenceEquals(_pendingValidationExit, validation)) _pendingValidationExit = null;
             validation.Dispose();
         }
@@ -184,54 +185,42 @@ public sealed class MihomoProcess : IAsyncDisposable
         lock (_gate)
         {
             process = _process;
-            _process = null;
             cancellation = _logCancellation;
-            _logCancellation = null;
         }
+        if (process is null) return;
 
+        if (!process.HasExited && _controller is not null)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try { await _controller.DisableTunAsync(timeout.Token).ConfigureAwait(false); }
+            catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
+        }
+        // A failed kill or wait must retain ownership. A retry must never treat an
+        // uncertain live core as already stopped and release its session files.
+        await TerminateOwnedAsync(process).ConfigureAwait(false);
         cancellation?.Cancel();
-        if (process is null)
+        _controller?.Dispose();
+        _controller = null;
+        _childLifetime?.Dispose();
+        _childLifetime = null;
+        if (_readinessProbe is { } probe)
         {
-            cancellation?.Dispose();
-            return;
+            await probe.DisposeAsync().ConfigureAwait(false);
+            _readinessProbe = null;
         }
-
-        try
+        lock (_gate)
         {
-            if (!process.HasExited)
-            {
-                if (_controller is not null)
-                {
-                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    try { await _controller.DisableTunAsync(timeout.Token).ConfigureAwait(false); }
-                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
-                }
-                process.Kill(entireProcessTree: true);
-                using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await process.WaitForExitAsync(exitTimeout.Token).ConfigureAwait(false);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // The process exited between the checks.
-        }
-        finally
-        {
+            _process = null;
+            _logCancellation = null;
             process.Dispose();
             cancellation?.Dispose();
-            _controller?.Dispose();
-            _controller = null;
-            _childLifetime?.Dispose();
-            _childLifetime = null;
-            if (_readinessProbe is { } probe)
-            {
-                _readinessProbe = null;
-                await probe.DisposeAsync().ConfigureAwait(false);
-            }
         }
     }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
+
+    private Task TerminateOwnedAsync(Process process) =>
+        TestTerminateAsync is { } terminate ? terminate(process) : TerminateAndWaitAsync(process);
 
     private static async Task TerminateAndWaitAsync(Process process)
     {

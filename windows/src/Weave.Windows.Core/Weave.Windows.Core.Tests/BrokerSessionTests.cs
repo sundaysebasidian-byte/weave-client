@@ -121,6 +121,62 @@ public sealed class BrokerSessionTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => session.HandleAsync(new BrokerStatus(2), CancellationToken.None));
     }
 
+    [BrokerProbeTheory]
+    [InlineData(true)]
+    public async Task UnconfirmedValidationExitRetainsTheLeaseAcrossStopRetries(bool failTermination)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "weave-broker-session-" + Guid.NewGuid().ToString("N"));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var startCancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        await using var session = new BrokerSession(root, Environment.GetEnvironmentVariable("WEAVE_TEST_BROKER_PROBE")!, "not-used")
+        {
+            TestTerminateAsync = async process =>
+            {
+                if (failTermination) throw new IOException("Injected unconfirmed termination.");
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        };
+        Process? child = null;
+        Task<BrokerReply>? starting = null;
+        try
+        {
+            var profile = new BrokerProfile([], [], null, null,
+                new(RoutingMode.Direct, false, false, false, DnsProfile.Privacy, null, "", null, null));
+            starting = session.HandleAsync(new BrokerStart(1, profile), startCancellation.Token);
+            var marker = Path.Combine(root, "probe.pid");
+            while (!File.Exists(marker)) await Task.Delay(25, timeout.Token);
+            child = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(marker, timeout.Token)));
+            startCancellation.Cancel();
+            await Assert.ThrowsAsync<IOException>(() => starting);
+            Assert.True(session.CleanupPending);
+            Assert.False(child.HasExited);
+            Assert.Equal((0, 1), RuntimeSession.Recover(root));
+            await Assert.ThrowsAsync<IOException>(() => session.DisposeAsync().AsTask());
+            Assert.Equal((0, 1), RuntimeSession.Recover(root));
+            failTermination = false;
+            await session.DisposeAsync();
+            Assert.True(child.HasExited);
+            Assert.False(session.CleanupPending);
+            Assert.Empty(Directory.GetDirectories(root));
+            Assert.Empty(Directory.GetFiles(root, "*.session"));
+        }
+        finally
+        {
+            failTermination = false;
+            startCancellation.Cancel();
+            if (starting is not null) await ((Task)starting).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            if (child is not null)
+            {
+                if (!child.HasExited) child.Kill(entireProcessTree: true);
+                await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                child.Dispose();
+            }
+            await session.DisposeAsync();
+            await NativeSessionCleanup.DeleteAsync(root);
+        }
+    }
+
     private sealed class BrokerProbeTheoryAttribute : TheoryAttribute
     {
         public BrokerProbeTheoryAttribute()

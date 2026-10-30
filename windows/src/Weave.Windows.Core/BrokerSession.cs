@@ -13,6 +13,7 @@ public sealed class BrokerSession(string runtimeRoot, string coreExecutable, str
     private bool _closed;
     internal Action<RuntimeBundle>? TestBundleObserver { get; init; }
     internal Action<string>? TestLogObserver { get; init; }
+    internal Func<System.Diagnostics.Process, Task>? TestTerminateAsync { get; init; }
     public bool CleanupPending { get; private set; }
     public bool IsReady => _core?.IsReady == true;
     public event EventHandler? Exited;
@@ -65,7 +66,7 @@ public sealed class BrokerSession(string runtimeRoot, string coreExecutable, str
                 var bundle = await Task.Run(() => profile.Build(_runtime.DirectoryPath, geoDataDirectory), timeout.Token).ConfigureAwait(false);
                 timeout.Token.ThrowIfCancellationRequested();
                 TestBundleObserver?.Invoke(bundle);
-                _core = new(coreExecutable) { TestLogObserver = TestLogObserver };
+                _core = new(coreExecutable) { TestLogObserver = TestLogObserver, TestTerminateAsync = TestTerminateAsync };
                 _core.Exited += CoreExited;
                 var validation = await _core.ValidateConfigAsync(bundle, timeout.Token).ConfigureAwait(false);
                 if (!validation.IsValid) throw new InvalidDataException("The core rejected the service configuration.");
@@ -86,34 +87,34 @@ public sealed class BrokerSession(string runtimeRoot, string coreExecutable, str
     private async Task StopCoreAsync()
     {
         var core = _core;
-        _core = null;
         _controller?.Dispose();
         _controller = null;
         _nodes = new(StringComparer.Ordinal);
-        var exited = core is null;
         try
         {
             if (core is not null)
             {
                 core.Exited -= CoreExited;
                 await core.DisposeAsync().ConfigureAwait(false);
-                exited = true;
+                _core = null;
             }
         }
-        finally
+        catch
         {
-            var runtime = _runtime;
-            _runtime = null;
-            if (runtime is not null)
+            // Keep both the process handle and exclusive lease until a later stop
+            // confirms exit; recovery must not remove an uncertain core's files.
+            CleanupPending = true;
+            throw;
+        }
+        var runtime = _runtime;
+        if (runtime is not null)
+        {
+            try
             {
-                try
-                {
-                    if (exited) CleanupPending |= !runtime.CleanupAfterCoreExit();
-                    else CleanupPending = true;
-                }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { CleanupPending = true; }
-                finally { runtime.Dispose(); }
+                CleanupPending = !runtime.CleanupAfterCoreExit();
             }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { CleanupPending = true; }
+            finally { _runtime = null; runtime.Dispose(); }
         }
     }
 
