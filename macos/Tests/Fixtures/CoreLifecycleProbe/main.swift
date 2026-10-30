@@ -17,7 +17,8 @@ import WeaveCoreService
         signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
         let (signals, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        source.setEventHandler { continuation.yield(()) }
+        // async main is MainActor-isolated; the Dispatch callback runs off that actor.
+        source.setEventHandler { @Sendable in continuation.yield(()) }
         source.activate()
         defer { source.cancel(); continuation.finish() }
         do {
