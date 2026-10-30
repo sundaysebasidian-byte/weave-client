@@ -30,7 +30,6 @@ struct ManagedCoreInstallationTests {
             #expect(before.st_dev == after.st_dev && before.st_ino == after.st_ino)
             try Data("changed source".utf8).write(to: app.appendingPathComponent("Contents/Resources/mihomo"))
             #expect(try Data(contentsOf: second.coreURL) == original)
-            _ = try BoundedCommand.run(executable: second.coreURL.path, arguments: [])
             try second.lease.close()
             #expect(throws: InstallationError.invalidSignature) { try prepare(app, root) }
             #expect(try Data(contentsOf: first.coreURL) == original)

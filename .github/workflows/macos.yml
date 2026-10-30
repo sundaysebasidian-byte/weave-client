@@ -27,7 +27,11 @@ jobs:
           test "$(uname -m)" = arm64
           test "$(shasum -a 256 macos/Resources/mihomo | cut -d' ' -f1)" = "$(sed -n 's/^mihomo.darwin-arm64.sha256=//p' core-lock.properties)"
       - name: Regression tests
-        run: bash macos/test.sh --parallel
+        run: bash macos/test.sh --parallel --skip CoreInstallationTests
+      # Signing/copying fixtures block worker threads; keep them out of the timed
+      # XPC/process regression batch without changing production or test deadlines.
+      - name: Signed installation snapshots
+        run: bash macos/test.sh --filter CoreInstallationTests
       - name: Native service host crash recovery
         run: |
           swift build --package-path macos --product WeaveCoreLifecycleProbe
