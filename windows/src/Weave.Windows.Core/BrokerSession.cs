@@ -11,6 +11,8 @@ public sealed class BrokerSession(string runtimeRoot, string coreExecutable, str
     private HashSet<string> _nodes = new(StringComparer.Ordinal);
     private bool _started;
     private bool _closed;
+    internal Action<RuntimeBundle>? TestBundleObserver { get; init; }
+    internal Action<string>? TestLogObserver { get; init; }
     public bool CleanupPending { get; private set; }
     public bool IsReady => _core?.IsReady == true;
     public event EventHandler? Exited;
@@ -62,7 +64,8 @@ public sealed class BrokerSession(string runtimeRoot, string coreExecutable, str
                 _runtime = RuntimeSession.Reserve(runtimeRoot);
                 var bundle = await Task.Run(() => profile.Build(_runtime.DirectoryPath, geoDataDirectory), timeout.Token).ConfigureAwait(false);
                 timeout.Token.ThrowIfCancellationRequested();
-                _core = new(coreExecutable);
+                TestBundleObserver?.Invoke(bundle);
+                _core = new(coreExecutable) { TestLogObserver = TestLogObserver };
                 _core.Exited += CoreExited;
                 var validation = await _core.ValidateConfigAsync(bundle, timeout.Token).ConfigureAwait(false);
                 if (!validation.IsValid) throw new InvalidDataException("The core rejected the service configuration.");

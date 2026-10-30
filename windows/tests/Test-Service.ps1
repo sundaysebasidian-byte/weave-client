@@ -10,15 +10,27 @@ $suffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $install = Join-Path $env:ProgramFiles "Weave-CI-$suffix"
 $results = Join-Path $root 'artifacts\service-tests'
 $probePublish = Join-Path $root 'artifacts\service-probe'
+$diagnosticPublish = Join-Path $root 'artifacts\synthetic-service'
 New-Item -ItemType Directory -Path $results -Force | Out-Null
 dotnet publish (Join-Path $PSScriptRoot 'Weave.ServiceProbe\Weave.ServiceProbe.csproj') -c Release -r win-x64 --self-contained true -o $probePublish
 if ($LASTEXITCODE -ne 0) { throw 'Service test client build failed' }
+dotnet publish (Join-Path $root 'src\Weave.Core.Service\Weave.Core.Service.csproj') -c Release -r win-x64 --self-contained true `
+    -p:WeaveSyntheticDiagnostics=true -o $diagnosticPublish
+if ($LASTEXITCODE -ne 0) { throw 'Synthetic service diagnostic build failed' }
+$packagedAssembly = Join-Path $root 'artifacts\x64\service\Weave.Core.Service.dll'
+if ([Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($packagedAssembly)).Contains('SyntheticDiagnostics')) {
+    throw 'Synthetic diagnostics must never enter the packaged service'
+}
+if (-not [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $diagnosticPublish 'Weave.Core.Service.dll'))).Contains('SyntheticDiagnostics')) {
+    throw 'Diagnostic service did not include its bounded test observer'
+}
 if (Test-Path $install) { throw 'Unexpected existing installation path' }
 New-Item -ItemType Directory -Path $install | Out-Null
 Copy-Item "$probePublish\*" $install -Recurse
 Copy-Item (Join-Path $probePublish 'Weave.ServiceProbe.exe') (Join-Path $install 'Weave.Windows.exe')
 Copy-Item (Join-Path $probePublish 'Weave.ServiceProbe.exe') (Join-Path $install 'Unapproved.exe')
-foreach ($folder in @('service', 'runtime', 'geodata')) {
+Copy-Item $diagnosticPublish (Join-Path $install 'service') -Recurse
+foreach ($folder in @('runtime', 'geodata')) {
     Copy-Item (Join-Path $root "artifacts\x64\$folder") (Join-Path $install $folder) -Recurse
 }
 # Installed binaries are administrator-owned and writable only by administrators/SYSTEM.
@@ -103,6 +115,8 @@ try {
     'Ordinary-user TUN forwarding, authenticated endpoint, stop/reconnect and service-crash cleanup passed.' | Set-Content (Join-Path $results 'acceptance.txt')
 }
 finally {
+    $coreLog = Join-Path $install 'synthetic-core.log'
+    if (Test-Path $coreLog) { Copy-Item $coreLog (Join-Path $results 'synthetic-core.log') }
     Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$startedAt} -ErrorAction SilentlyContinue |
         Where-Object { $_.ProviderName -in @('WeaveCore', '.NET Runtime') } |
         Select-Object TimeCreated, ProviderName, Id, LevelDisplayName, Message |

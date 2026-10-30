@@ -44,6 +44,7 @@ try
     catch
     {
         Console.Error.WriteLine($"Synthetic upstream task: {server.Status}; {server.Exception}");
+        await SyntheticNetworkSnapshot.RecordAsync(Console.Error.WriteLine);
         throw;
     }
     var header = await server;

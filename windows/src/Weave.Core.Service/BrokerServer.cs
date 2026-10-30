@@ -10,11 +10,17 @@ internal sealed class BrokerServer : IDisposable
     private readonly BrokerInstallation _installation;
     private readonly string _runtimeRoot;
     private readonly NamedPipeServerStream _pipe;
+#if WEAVE_SYNTHETIC_DIAGNOSTICS
+    private readonly SyntheticDiagnostics _diagnostics;
+#endif
 
     public BrokerServer(BrokerInstallation installation, string runtimeRoot)
     {
         _installation = installation;
         _runtimeRoot = runtimeRoot;
+#if WEAVE_SYNTHETIC_DIAGNOSTICS
+        _diagnostics = new(installation.Root);
+#endif
         RuntimeSession.Recover(runtimeRoot);
         _pipe = BrokerWindowsPipe.CreateServer(BrokerWindowsPipe.PipeName);
     }
@@ -24,7 +30,13 @@ internal sealed class BrokerServer : IDisposable
         while (!stopping.IsCancellationRequested)
         {
             await _pipe.WaitForConnectionAsync(stopping).ConfigureAwait(false);
-            await using var session = new BrokerSession(_runtimeRoot, _installation.CoreExecutable, _installation.GeoDataDirectory);
+            await using var session = new BrokerSession(_runtimeRoot, _installation.CoreExecutable, _installation.GeoDataDirectory)
+            {
+#if WEAVE_SYNTHETIC_DIAGNOSTICS
+                TestBundleObserver = _diagnostics.Configure,
+                TestLogObserver = _diagnostics.Record,
+#endif
+            };
             try
             {
                 await BrokerWindowsPipe.AuthenticateClientAsync(_pipe, _installation.GuiExecutable, stopping).ConfigureAwait(false);
@@ -43,5 +55,11 @@ internal sealed class BrokerServer : IDisposable
         }
     }
 
-    public void Dispose() => _pipe.Dispose();
+    public void Dispose()
+    {
+        _pipe.Dispose();
+#if WEAVE_SYNTHETIC_DIAGNOSTICS
+        _diagnostics.Dispose();
+#endif
+    }
 }

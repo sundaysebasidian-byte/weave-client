@@ -8,6 +8,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(WeaveSyntheticDiagnostics)' == 'true'">
+    <DefineConstants>$(DefineConstants);WEAVE_SYNTHETIC_DIAGNOSTICS</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Weave.Windows.Core\Weave.Windows.Core.csproj" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.14" />

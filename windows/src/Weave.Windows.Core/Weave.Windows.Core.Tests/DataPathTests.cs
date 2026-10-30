@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Collections.Concurrent;
 using Xunit.Abstractions;
+using Weave.Windows.TestFixtures;
 using YamlDotNet.RepresentationModel;
 
 namespace Weave.Windows.Core.Tests;
@@ -82,10 +83,7 @@ public sealed class DataPathTests(ITestOutputHelper output)
                 output.WriteLine("Upstream request targets: " + string.Join(" | ", requests));
                 output.WriteLine($"Upstream fixture status: {server.Status}; error: {server.Exception}");
                 output.WriteLine("Synthetic fixture core log:\n" + string.Join("\n", coreLog));
-                foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
-                    output.WriteLine($"Adapter {adapter.Name}: {adapter.OperationalStatus}; " +
-                        string.Join(", ", adapter.GetIPProperties().UnicastAddresses.Select(item => item.Address)));
-                if (tun) await RecordRoutesAsync();
+                if (tun) await SyntheticNetworkSnapshot.RecordAsync(output.WriteLine);
                 throw;
             }
             Assert.Equal("weave-upstream-reached", body);
@@ -98,39 +96,6 @@ public sealed class DataPathTests(ITestOutputHelper output)
             timeout.Cancel(); listener.Stop();
             await server;
             await NativeSessionCleanup.DeleteAsync(folder);
-        }
-    }
-
-    private async Task RecordRoutesAsync()
-    {
-        using var process = new System.Diagnostics.Process { StartInfo = new()
-        {
-            FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "route.exe"),
-            Arguments = "PRINT -4", UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardOutput = true, RedirectStandardError = true,
-        } };
-        var started = false;
-        try
-        {
-            started = process.Start();
-            if (!started) return;
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
-            var stderr = process.StandardError.ReadToEndAsync(deadline.Token);
-            await process.WaitForExitAsync(deadline.Token);
-            var text = await stdout + await stderr;
-            output.WriteLine("IPv4 routes at failure:\n" + text[..Math.Min(text.Length, 16_384)]);
-        }
-        catch (Exception error) when (error is OperationCanceledException or System.ComponentModel.Win32Exception or IOException)
-        { output.WriteLine("Route snapshot unavailable: " + error.GetType().Name); }
-        finally
-        {
-            if (started && !process.HasExited)
-            {
-                try { process.Kill(); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
-                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
-                { output.WriteLine("Route snapshot process cleanup unconfirmed: " + error.GetType().Name); }
-            }
         }
     }
 
