@@ -88,4 +88,6 @@ struct MacRuntime: Sendable {
     let controllerPort: UInt16
     let secret: String
     let tunDevice: String
+    let readinessListenPort: UInt16
+    let readinessTargetPort: UInt16
 }

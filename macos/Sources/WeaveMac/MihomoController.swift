@@ -248,9 +248,14 @@ final class MihomoController: ObservableObject {
         let mixedPort = try unusedPort()
         var controllerPort = try unusedPort()
         while controllerPort == mixedPort { controllerPort = try unusedPort() }
+        var readinessListenPort = try unusedPort()
+        while [mixedPort, controllerPort].contains(readinessListenPort) { readinessListenPort = try unusedPort() }
+        var readinessTargetPort = try unusedPort()
+        while [mixedPort, controllerPort, readinessListenPort].contains(readinessTargetPort) { readinessTargetPort = try unusedPort() }
         let runtime = MacRuntime(directory: directory, mixedPort: mixedPort, controllerPort: controllerPort,
                                  secret: UUID().uuidString + UUID().uuidString,
-                                 tunDevice: "utun\(Int.random(in: 1_000...60_000))")
+                                 tunDevice: "utun\(Int.random(in: 1_000...60_000))",
+                                 readinessListenPort: readinessListenPort, readinessTargetPort: readinessTargetPort)
         let providers = base.appendingPathComponent("providers", isDirectory: true)
         try FileManager.default.createDirectory(at: providers, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let sanitized = try ClashProviderSanitizer.sanitize(selected.payload)
@@ -268,6 +273,11 @@ final class MihomoController: ObservableObject {
         find-process-mode: strict
         unified-delay: true
         tcp-concurrent: true
+        tunnels:
+          - network: [tcp]
+            address: 127.0.0.1:\(readinessListenPort)
+            target: 127.0.0.1:\(readinessTargetPort)
+            proxy: DIRECT
 
         """
         if enableTun {
@@ -392,9 +402,23 @@ final class MihomoController: ObservableObject {
     }
 
     nonisolated static func waitUntilReady(runtime: MacRuntime, pid: Int32, requireTun: Bool) async throws {
+        let probe = try CoreReadinessProbe(port: runtime.readinessTargetPort)
+        do {
+            try await probe.start()
+            try await waitForForwarding(runtime: runtime, pid: pid, requireTun: requireTun, probe: probe)
+            await probe.stop()
+        } catch {
+            await probe.stop()
+            try Task.checkCancellation()
+            throw error
+        }
+    }
+
+    nonisolated private static func waitForForwarding(runtime: MacRuntime, pid: Int32, requireTun: Bool, probe: CoreReadinessProbe) async throws {
         let config = URLSessionConfiguration.ephemeral
         config.connectionProxyDictionary = ["HTTPEnable": 0, "HTTPSEnable": 0, "SOCKSEnable": 0]
         config.timeoutIntervalForRequest = 1
+        config.timeoutIntervalForResource = 1
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
         for _ in 0..<30 {
@@ -406,8 +430,9 @@ final class MihomoController: ObservableObject {
                let values = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                values["mixed-port"] as? Int == Int(runtime.mixedPort),
                listenerBelongsToProcess(port: runtime.mixedPort, pid: pid),
+               listenerBelongsToProcess(port: runtime.readinessListenPort, pid: pid),
                (!requireTun || (isTunInterfacePresent(runtime.tunDevice) && hasDualStackRoutes(runtime.tunDevice))) {
-                return
+                if try await probe.isForwarding(port: runtime.readinessListenPort) { return }
             }
             try await Task.sleep(for: .milliseconds(200))
         }
