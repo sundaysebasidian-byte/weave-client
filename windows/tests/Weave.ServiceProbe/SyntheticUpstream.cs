@@ -5,29 +5,39 @@ namespace Weave.Windows.TestFixtures;
 
 internal static class SyntheticUpstream
 {
-    public static async Task<string> ServeAsync(TcpListener listener, CancellationToken token)
+    public static async Task<string> ServeAsync(TcpListener listener, CancellationToken token,
+        string target = "198.51.100.42:80", string body = "weave-service-upstream", Action<string>? observeHeader = null)
     {
         while (true)
         {
             using var connection = await listener.AcceptTcpClientAsync(token);
             Console.WriteLine("UPSTREAM_TCP_ACCEPTED");
             await using var stream = connection.GetStream();
-            var header = await ReadHeaderAsync(stream, token);
-            if (!header.StartsWith("CONNECT 198.51.100.42:80 ", StringComparison.Ordinal)) continue;
+            var header = await ReadHeaderAsync(stream, token, allowEmptyProbe: true);
+            observeHeader?.Invoke(header);
+            if (!header.StartsWith($"CONNECT {target} ", StringComparison.Ordinal)) continue;
             await stream.WriteAsync("HTTP/1.1 200 Connection established\r\n\r\n"u8.ToArray(), token);
             if ((await ReadHeaderAsync(stream, token)).Length == 0) throw new EndOfStreamException("Missing synthetic HTTP request.");
-            const string body = "weave-service-upstream";
             await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), token);
             return header;
         }
     }
 
-    private static async Task<string> ReadHeaderAsync(Stream stream, CancellationToken token)
+    internal static async Task<string> ReadHeaderAsync(Stream stream, CancellationToken token, bool allowEmptyProbe = false)
     {
         var bytes = new byte[8192];
         for (var length = 0; length < bytes.Length;)
         {
-            if (await stream.ReadAsync(bytes.AsMemory(length, 1), token) == 0)
+            int read;
+            try { read = await stream.ReadAsync(bytes.AsMemory(length, 1), token); }
+            catch (IOException error) when (allowEmptyProbe && length == 0 && !token.IsCancellationRequested &&
+                error.InnerException is SocketException { SocketErrorCode: SocketError.ConnectionReset or SocketError.ConnectionAborted })
+            {
+                // A TCP-only health probe may close with RST instead of FIN. Once
+                // any request byte arrives, a reset must remain a test failure.
+                return "";
+            }
+            if (read == 0)
             {
                 // A core TCP health check may connect and close without sending HTTP.
                 if (length == 0) return "";

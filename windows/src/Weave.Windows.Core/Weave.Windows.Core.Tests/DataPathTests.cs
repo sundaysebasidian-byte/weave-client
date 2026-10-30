@@ -41,13 +41,15 @@ public sealed class DataPathTests(ITestOutputHelper output)
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var requests = new ConcurrentQueue<string>();
-        var server = ServeProxyAsync(listener, received, requests, timeout.Token);
+        var target = tun ? "198.51.100.42:80" : "weave-data-path.invalid:80";
+        var server = SyntheticUpstream.ServeAsync(listener, timeout.Token, target, "weave-upstream-reached",
+            header => requests.Enqueue(header.Split('\r', '\n')[0]));
         using var importer = new SubscriptionImporter();
         var subscription = importer.ImportText("wire-test", "inline://wire-test",
             $"proxies:\n- {{name: '東京 HTTP', type: http, server: 127.0.0.1, port: {port}, username: test-user, password: test-pass}}\n");
         var folder = Path.Combine(Path.GetTempPath(), "weave-wire-" + Guid.NewGuid().ToString("N"));
+        Exception? primaryFailure = null;
         try
         {
             var bundle = new MihomoConfigBuilder().Build([subscription], [], subscription.Id,
@@ -87,55 +89,27 @@ public sealed class DataPathTests(ITestOutputHelper output)
                 throw;
             }
             Assert.Equal("weave-upstream-reached", body);
-            var request = await received.Task.WaitAsync(timeout.Token);
-            Assert.Contains(tun ? "198.51.100.42:80" : "weave-data-path.invalid:80", request);
+            var request = await server.WaitAsync(timeout.Token);
+            Assert.StartsWith($"CONNECT {target} ", request);
             Assert.Contains("Proxy-Authorization: Basic " + Convert.ToBase64String(Encoding.ASCII.GetBytes("test-user:test-pass")), request, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception error)
+        {
+            primaryFailure = error;
+            throw;
         }
         finally
         {
             timeout.Cancel(); listener.Stop();
-            await server;
-            await NativeSessionCleanup.DeleteAsync(folder);
-        }
-    }
-
-    private static async Task ServeProxyAsync(TcpListener listener, TaskCompletionSource<string> received,
-        ConcurrentQueue<string> requests, CancellationToken token)
-    {
-        // Mihomo's HTTP outbound uses CONNECT even for an HTTP destination.
-        // Handle health checks too; only capture the explicit .invalid request.
-        try
-        {
-            while (!token.IsCancellationRequested)
+            // Success already awaited the complete target exchange above. A
+            // cancelled/faulted fixture must not replace a request/assertion error.
+            await ((Task)server).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            try { await NativeSessionCleanup.DeleteAsync(folder); }
+            catch (Exception error) when (primaryFailure is not null)
             {
-                using var socket = await listener.AcceptTcpClientAsync(token);
-                await using var stream = socket.GetStream();
-                var header = await ReadHeaderAsync(stream, token);
-                requests.Enqueue(header.Split('\r', '\n')[0]);
-                if (!header.Contains("weave-data-path.invalid", StringComparison.Ordinal) && !header.Contains("198.51.100.42", StringComparison.Ordinal)) continue;
-                received.TrySetResult(header);
-                if (header.StartsWith("CONNECT ", StringComparison.Ordinal))
-                {
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection established\r\n\r\n"), token);
-                    await ReadHeaderAsync(stream, token);
-                }
-                var body = "weave-upstream-reached";
-                await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), token);
+                output.WriteLine($"Session cleanup also failed; preserving the original test failure: {error}");
             }
         }
-        catch (Exception error) when (token.IsCancellationRequested && error is OperationCanceledException or SocketException or IOException) { }
-    }
-
-    private static async Task<string> ReadHeaderAsync(Stream stream, CancellationToken token)
-    {
-        var buffer = new byte[8192]; var length = 0;
-        while (length < buffer.Length)
-        {
-            if (await stream.ReadAsync(buffer.AsMemory(length, 1), token) == 0) break;
-            length++;
-            if (length >= 4 && buffer[length - 4] == 13 && buffer[length - 3] == 10 && buffer[length - 2] == 13 && buffer[length - 1] == 10) break;
-        }
-        return Encoding.ASCII.GetString(buffer, 0, length);
     }
 
     [Theory]
