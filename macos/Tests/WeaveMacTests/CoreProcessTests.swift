@@ -97,6 +97,30 @@ struct CoreProcessTests {
         try FileManager.default.removeItem(at: root)
     }
 
+    @Test(arguments: [Int32(0), 1, 9])
+    func immediateAndSignalledExitsAreReapedWithTheirActualStatus(_ status: Int32) async throws {
+        let root = temporaryRoot()
+        let runtime = try CoreRuntime.prepare(provider: provider, selectedNodeName: "Fixture", enableTun: false, root: root)
+        let script = root.appendingPathComponent("exit.sh")
+        let command = status == 9 ? "kill -KILL $$" : "exit \(status)"
+        try "#!/bin/sh\n\(command)\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let child = try CoreProcess(executable: script, runtime: runtime, mode: .checkConfiguration, onExit: {})
+        do {
+            #expect(try await child.waitForExit(timeout: .seconds(3)) == status)
+            #expect(!child.isRunning)
+            #expect(await child.stop())
+            var ignored: Int32 = 0
+            #expect(waitpid(child.processIdentifier, &ignored, WNOHANG) == -1)
+            #expect(errno == ECHILD)
+            #expect(try runtime.directory.removeAfterCoreExit())
+        } catch {
+            if await child.stop() { try? FileManager.default.removeItem(at: root) }
+            throw error
+        }
+        try FileManager.default.removeItem(at: root)
+    }
+
     @Test func absentSelectionIsRejectedBeforeCreatingRuntimeFiles() throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

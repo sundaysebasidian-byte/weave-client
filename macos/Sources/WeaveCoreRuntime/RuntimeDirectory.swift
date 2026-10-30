@@ -91,4 +91,5 @@ package struct MacRuntime: Sendable {
     package let tunDevice: String
     package let readinessListenPort: UInt16
     package let readinessTargetPort: UInt16
+    package var additionalInheritedLeases: [FileHandle] = []
 }

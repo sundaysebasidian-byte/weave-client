@@ -79,6 +79,7 @@ actor CoreServiceSession: BrokerSession {
     private var desiredState: BrokerState = .stopped
     private var closed = false
     private var ownsSlot = false
+    private var machineLease: ServiceMachineLease?
     private var startup: (id: UUID, task: Task<BrokerReply, Never>)?
     private var shutdownTask: Task<Bool, Never>?
     private var launchID: UUID?
@@ -145,12 +146,17 @@ actor CoreServiceSession: BrokerSession {
             try Task.checkCancellation()
             try await ownership.acquire(self)
             ownsSlot = true
+            let acquiredLease = try ServiceMachineLease(root: root)
+            machineLease = acquiredLease
             try Task.checkCancellation()
             let root = root, enableTun = enableTun
             let prepared = await Task.detached {
                 Result { try CoreRuntime.prepare(provider: provider, selectedNodeName: node, enableTun: enableTun, root: root) }
             }.value
-            do { runtime = try prepared.get() } catch { throw BrokerFailure.invalidProfile }
+            do {
+                runtime = try prepared.get()
+                runtime?.additionalInheritedLeases = [acquiredLease.handle]
+            } catch { throw BrokerFailure.invalidProfile }
             try Task.checkCancellation()
             guard let runtime else { throw BrokerFailure.startFailed }
             let checker = try factory(runtime, .checkConfiguration, {})
@@ -212,6 +218,8 @@ actor CoreServiceSession: BrokerSession {
             guard (try? runtime.directory.removeAfterCoreExit()) == true else { state = .failed; return false }
             self.runtime = nil
         }
+        do { try machineLease?.close() } catch { state = .failed; return false }
+        machineLease = nil
         if ownsSlot {
             await ownership.release(id)
             ownsSlot = false

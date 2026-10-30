@@ -155,7 +155,7 @@ enum ProtectedInstallationPath {
         }
     }
 
-    private static func validateMetadata(_ descriptor: Int32, owner: uid_t) throws {
+    static func validateMetadata(_ descriptor: Int32, owner: uid_t) throws {
         var info = stat(); var filesystem = statfs()
         guard fstat(descriptor, &info) == 0, fstatfs(descriptor, &filesystem) == 0,
               filesystem.f_flags & UInt32(MNT_LOCAL) != 0,

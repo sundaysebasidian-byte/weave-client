@@ -23,6 +23,33 @@ struct CoreServiceTests {
         }
     }
 
+    @Test func independentServicesShareTheLeaseAndReleaseItAfterConfirmedCleanup() async throws {
+        try await withService { first, root in
+            let second = try CoreService(executable: coreURL, runtimeRoot: root, enableTun: false)
+            let owner = first.makeSession(for: peer)
+            let contender = second.makeSession(for: peer)
+            do {
+                let firstReply = await owner.handle(.start(provider: provider, node: "fixture"))
+                guard case .state(.running, _) = firstReply else {
+                    Issue.record("First service did not start: \(firstReply)"); return
+                }
+                let heldRuntime = try #require(await owner.runtime)
+                #expect(await contender.handle(.start(provider: provider, node: "fixture")) == .failure(.busy))
+                let unknown = heldRuntime.directory.url.appendingPathComponent("retained-fixture")
+                try Data("retain".utf8).write(to: unknown)
+                #expect(await owner.handle(.stop) == .failure(.stopFailed))
+                #expect(await contender.handle(.start(provider: provider, node: "fixture")) == .failure(.busy))
+                try FileManager.default.removeItem(at: unknown)
+                #expect(await owner.handle(.stop) == .state(.stopped, mixedPort: nil))
+                // Holding an old runtime value must not keep the parent's lease open.
+                let restarted = await contender.handle(.start(provider: provider, node: "fixture"))
+                if case .state(.running, _) = restarted {} else { Issue.record("Independent service could not acquire the released lease: \(restarted)") }
+                #expect(!FileManager.default.fileExists(atPath: heldRuntime.directory.url.path))
+            } catch { _ = await second.shutdown(); throw error }
+            #expect(await second.shutdown())
+        }
+    }
+
     @Test func invalidProfileDoesNotLeaveRuntimeOrOwnership() async throws {
         try await withService { service, _ in
             let session = service.makeSession(for: peer)
@@ -77,7 +104,7 @@ struct CoreServiceTests {
             #expect(!child.isRunning)
             #expect(await session.child == nil)
             #expect(await session.runtime == nil)
-            #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["checker.sh"])
+            #expect(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)) == ["checker.sh", ".service-lease"])
         }
     }
 
