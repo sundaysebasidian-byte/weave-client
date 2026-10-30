@@ -17,7 +17,15 @@ private final class SystemCoreServiceRegistration: CoreServiceRegistration {
     private let service = SMAppService.daemon(plistName: BrokerIdentity.serviceName + ".plist")
     var status: SMAppService.Status { service.status }
     func register() throws { try service.register() }
-    func unregister() async throws { try await service.unregister() }
+    func unregister() async throws {
+        // Keep the non-Sendable framework object on MainActor on older SDKs too.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            service.unregister { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
+    }
     func openSettings() { SMAppService.openSystemSettingsLoginItems() }
 }
 

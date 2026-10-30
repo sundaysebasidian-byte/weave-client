@@ -150,3 +150,5 @@
 - 本轮最终本地常规组报告 126 项声明（含默认跳过的性能项），12 项受保护文件写入以 Cocoa 513 / POSIX EPERM 失败。独立 Foundation 探针确认普通原子写入成功而 `.completeFileProtection` 被拒绝；未降低保护或修改环境权限。这轮不能记为完整通过。签名快照/宿主边界组 21 项声明中 20 项执行通过、打包专项等待实际包路径；独立继承组 3 项通过；Release 和 ad-hoc 打包通过。生产服务和 GUI 新路径在普通用户隔离环境通过，最终版本完整回归仍以新 CI 为准。
 
 - 新 GUI 健康检查竞态已复现：停止操作取消在途状态查询时，原处理把 CancellationError 当作服务失联，关闭了仍需发送停止请求的通道；异步停止夹具在修复前失败。现在取消或已经进入停止状态的健康查询不会关闭通道，真实连接错误仍报告失联；新增定向回归保留。
+
+- `6214e1e` 的 macOS CI 在旧 SDK 编译阶段拒绝把 MainActor 持有的非 Sendable SMAppService 发送给 nonisolated 异步 unregister。改用同一官方 API 的 completion handler，再以 checked continuation 等待完成；框架对象保持在主线程隔离域，不添加 unchecked Sendable 或降低并发检查。修正后 9 项 GUI/原生集成声明本地通过，新 CI 单独跟踪。
