@@ -177,6 +177,39 @@ public sealed class BrokerSessionTests
         }
     }
 
+    [BrokerProbeTheory]
+    [InlineData(true)]
+    public async Task ProcessStopWaitsForInFlightValidationAndConcurrentStops(bool concurrentStops)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "weave-broker-session-" + Guid.NewGuid().ToString("N"));
+        var directory = Directory.CreateDirectory(Path.Combine(root, "session"));
+        var bundle = new RuntimeBundle { Directory = directory.FullName, ConfigPath = Path.Combine(directory.FullName, "config.yaml"), MixedPort = 1 };
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var process = new MihomoProcess(Environment.GetEnvironmentVariable("WEAVE_TEST_BROKER_PROBE")!);
+        var validation = process.ValidateConfigAsync(bundle, cancellation.Token);
+        try
+        {
+            var marker = Path.Combine(root, "probe.pid");
+            while (!File.Exists(marker) || new FileInfo(marker).Length == 0) await Task.Delay(25, cancellation.Token);
+            using var child = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(marker, cancellation.Token)));
+            var stop = process.StopAsync();
+            var second = concurrentStops ? process.StopAsync() : Task.CompletedTask;
+            Assert.False(stop.IsCompleted, "Stop must not report completion while validation still owns a live child.");
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => validation);
+            await Task.WhenAll(stop, second).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(child.HasExited);
+            Assert.False(process.IsRunning);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await ((Task)validation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            await process.StopAsync();
+            Directory.Delete(root, true);
+        }
+    }
+
     private sealed class BrokerProbeTheoryAttribute : TheoryAttribute
     {
         public BrokerProbeTheoryAttribute()

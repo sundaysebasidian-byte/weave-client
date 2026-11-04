@@ -9,9 +9,11 @@ public sealed class MihomoProcess : IAsyncDisposable
 {
     private readonly string _executablePath;
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private Process? _process;
     private Process? _pendingValidationExit;
     private CancellationTokenSource? _logCancellation;
+    private Task _logReaders = Task.CompletedTask;
     private ChildProcessLifetime? _childLifetime;
     private MihomoController? _controller;
     private CoreReadinessProbe? _readinessProbe;
@@ -53,6 +55,14 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public async Task StartAsync(RuntimeBundle bundle, CancellationToken cancellationToken = default)
     {
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await Task.Run(() => StartCoreAsync(bundle, cancellationToken), cancellationToken).ConfigureAwait(false); }
+        finally { _lifecycle.Release(); }
+    }
+
+    private async Task StartCoreAsync(RuntimeBundle bundle, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
             if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
@@ -86,11 +96,11 @@ public sealed class MihomoProcess : IAsyncDisposable
             // Retain the exited handle until StopAsync disposes it and its log readers.
             Exited?.Invoke(this, EventArgs.Empty);
         };
-        if (!process.Start())
+        try
         {
-            process.Dispose();
-            throw new InvalidOperationException(L.T("无法启动 Mihomo"));
+            if (!process.Start()) throw new InvalidOperationException(L.T("无法启动 Mihomo"));
         }
+        catch { process.Dispose(); throw; }
 
         CancellationTokenSource logCancellation;
         lock (_gate)
@@ -99,8 +109,8 @@ public sealed class MihomoProcess : IAsyncDisposable
             _logCancellation = new CancellationTokenSource();
             logCancellation = _logCancellation;
         }
-        _ = DrainAsync(process.StandardOutput, logCancellation.Token);
-        _ = DrainAsync(process.StandardError, logCancellation.Token);
+        _logReaders = Task.WhenAll(DrainAsync(process.StandardOutput, logCancellation.Token),
+            DrainAsync(process.StandardError, logCancellation.Token));
 
         try
         {
@@ -113,7 +123,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         }
         catch
         {
-            await StopAsync().ConfigureAwait(false);
+            await StopCoreAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -122,6 +132,15 @@ public sealed class MihomoProcess : IAsyncDisposable
         RuntimeBundle bundle,
         CancellationToken cancellationToken = default)
     {
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { return await Task.Run(() => ValidateCoreAsync(bundle, cancellationToken), cancellationToken).ConfigureAwait(false); }
+        finally { _lifecycle.Release(); }
+    }
+
+    private async Task<(bool IsValid, string Diagnostics)> ValidateCoreAsync(
+        RuntimeBundle bundle, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
             if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
         var startInfo = new ProcessStartInfo
@@ -170,6 +189,13 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public async Task StopAsync()
     {
+        await _lifecycle.WaitAsync().ConfigureAwait(false);
+        try { await Task.Run(StopCoreAsync).ConfigureAwait(false); }
+        finally { _lifecycle.Release(); }
+    }
+
+    private async Task StopCoreAsync()
+    {
         _ready = false;
         Process? validation;
         lock (_gate) validation = _pendingValidationExit;
@@ -199,6 +225,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         // uncertain live core as already stopped and release its session files.
         await TerminateOwnedAsync(process).ConfigureAwait(false);
         cancellation?.Cancel();
+        await _logReaders.ConfigureAwait(false);
         _controller?.Dispose();
         _controller = null;
         _childLifetime?.Dispose();

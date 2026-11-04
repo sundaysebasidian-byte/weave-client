@@ -20,6 +20,7 @@ public sealed class BrokerClient : IAsyncDisposable
     private readonly SemaphoreSlim _slots = new(3, 3);
     private readonly SemaphoreSlim _writes = new(1, 1);
     private readonly Task _reader;
+    private readonly TimeSpan _responseTimeout;
     private long _sequence;
     private bool _closed;
     private int _stopping, _disposeRequested, _startAttempted;
@@ -28,8 +29,9 @@ public sealed class BrokerClient : IAsyncDisposable
     public bool IsReady { get { lock (_gate) return !_closed && _runtime is not null; } }
     public event EventHandler? Exited;
 
-    internal BrokerClient(Stream authenticatedStream)
+    internal BrokerClient(Stream authenticatedStream, TimeSpan? responseTimeout = null)
     {
+        _responseTimeout = responseTimeout ?? TimeSpan.FromSeconds(10);
         _stream = authenticatedStream;
         _reader = ReadRepliesAsync();
     }
@@ -131,7 +133,9 @@ public sealed class BrokerClient : IAsyncDisposable
                     _pending.Add(id, pending);
                     slotOwned = false; // The reader/abort path now owns this slot.
                 }
-                completion = pending.Completion.Task;
+                _ = pending.Completion.Task.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                completion = AwaitReplyAsync(pending.Completion.Task, timeout ?? _responseTimeout);
                 // A cancelled caller may stop awaiting a reply that the reader must still drain.
                 _ = completion.ContinueWith(task => _ = task.Exception, CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -139,9 +143,7 @@ public sealed class BrokerClient : IAsyncDisposable
                 catch { Abort(); throw; } // A partial frame cannot be reused.
             }
             finally { _writes.Release(); }
-            BrokerReply reply;
-            try { reply = await completion.WaitAsync(timeout ?? TimeSpan.FromSeconds(10), token).ConfigureAwait(false); }
-            catch (TimeoutException) { Abort(); throw new IOException("The core service response timed out."); }
+            var reply = await completion.WaitAsync(token).ConfigureAwait(false);
             if (reply.Error is { } error)
             {
                 if (error is not ("invalid-profile" or "timeout" or "query-failed" or "core-unavailable")) throw InvalidReply();
@@ -150,6 +152,18 @@ public sealed class BrokerClient : IAsyncDisposable
             return reply;
         }
         finally { if (slotOwned) _slots.Release(); }
+    }
+
+    // The wire request outlives a cancelled caller: keep its deadline active until
+    // the reply is drained, otherwise abandoned requests can consume every slot.
+    private async Task<BrokerReply> AwaitReplyAsync(Task<BrokerReply> completion, TimeSpan timeout)
+    {
+        try { return await completion.WaitAsync(timeout).ConfigureAwait(false); }
+        catch (TimeoutException)
+        {
+            Abort();
+            throw new IOException("The core service response timed out.");
+        }
     }
 
     private async Task ReadRepliesAsync()

@@ -38,7 +38,7 @@ public sealed class ProcessLifetimeTests
             using var stillOwned = new TcpListener(IPAddress.Loopback, bundle.ReadinessTargetPort);
             Assert.Throws<SocketException>(() => stillOwned.Start());
             failTermination = false;
-            await core.StopAsync();
+            await Task.WhenAll(core.StopAsync(), core.StopAsync(), core.StopAsync());
             Assert.False(core.IsRunning);
             using var released = new TcpListener(IPAddress.Loopback, bundle.ReadinessTargetPort);
             released.Start();
