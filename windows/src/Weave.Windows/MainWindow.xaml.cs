@@ -48,6 +48,8 @@ public sealed partial class MainWindow : Window
     // The preview window's outer width includes ~16 px of frame, so 640 lands at ~624 and stays under the threshold.
     private const double CompactLayoutThreshold = 720;
     private const double CompactPreviewWidth = 640;
+    // The home tiles sit side by side once each column keeps its 330 px minimum: rail 72 + page padding 34 + gap 12 + 2.4 x 330.
+    private const double HomeSideBySideMinWidth = 910;
 
     public MainWindow()
     {
@@ -86,6 +88,9 @@ public sealed partial class MainWindow : Window
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(1400 * scale), (int)(900 * scale)));
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_COMPACT") == "1")
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(CompactPreviewWidth * scale), (int)(760 * scale)));
+        // Outer width in effective pixels, to reproduce a given screen (a 1024 px display gives ~968 of client width).
+        if (int.TryParse(Environment.GetEnvironmentVariable("WEAVE_PREVIEW_WIDTH"), out var previewWidth) && previewWidth is >= 400 and <= 3000)
+            AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(previewWidth * scale), (int)(780 * scale)));
         // Connecting is disabled until the encrypted library has been read (see InitializeDataAsync).
         ConnectButton.IsEnabled = false;
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
