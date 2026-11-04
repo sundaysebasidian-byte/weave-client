@@ -76,7 +76,7 @@ jobs:
               [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
               static extern bool Get(uint action, uint parameter, out int value, uint flags);
               public static void Enable() {
-                  if (!Set(0x1043, 0, new IntPtr(1), 0) || !Get(0x1042, 0, out int enabled) || enabled == 0)
+                  if (!Set(0x1043, 0, new IntPtr(1), 0) || !Get(0x1042, 0, out int enabled, 0) || enabled == 0)
                       throw new Win32Exception(Marshal.GetLastWin32Error(), "Client animations must be enabled for startup acceptance.");
               }
           }
