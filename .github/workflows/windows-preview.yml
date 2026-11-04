@@ -67,7 +67,8 @@ jobs:
         run: |
           $env:WEAVE_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP/weave-startup.txt"
           function Wait-WeaveFrame($process) {
-            $deadline = (Get-Date).AddSeconds(20)
+            $started = Get-Date
+            $deadline = $started.AddSeconds(20)
             do {
               $process.Refresh()
               if ($process.HasExited) { break }
@@ -75,7 +76,19 @@ jobs:
               Start-Sleep -Milliseconds 200
             } while ((Get-Date) -lt $deadline)
             if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
-            throw "Window did not render a frame within 20 seconds: $env:WEAVE_UI_CAPTURE"
+            if ($process.HasExited) {
+              $code = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$process.ExitCode), 0)
+              Write-Host ("Preview process {0} exited: {1} (0x{2:X8})" -f $process.Id, $process.ExitCode, $code)
+            } else {
+              Write-Host "Preview process $($process.Id) is still running after the frame deadline"
+              Stop-Process -Id $process.Id
+            }
+            # WER events can arrive shortly after process termination.
+            Start-Sleep -Seconds 3
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$started.AddSeconds(-5)} -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProviderName -in @('Application Error', '.NET Runtime', 'Windows Error Reporting') } |
+              Format-List TimeCreated,ProviderName,Id,Message
+            throw "Window did not render a frame: $env:WEAVE_UI_CAPTURE"
           }
           $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
           $env:WEAVE_PREVIEW_DIAGNOSTICS = '1'
@@ -192,9 +205,12 @@ jobs:
           path: windows/artifacts/installer/*-Setup.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Weave-Windows-UI-preview
-          path: ${{ runner.temp }}/weave-desktop*.png
+          path: |
+            ${{ runner.temp }}/weave-desktop*.png
+            ${{ runner.temp }}/weave-startup.txt
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:

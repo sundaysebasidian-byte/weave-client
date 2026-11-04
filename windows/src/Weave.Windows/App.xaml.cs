@@ -48,7 +48,7 @@ public partial class App : Application
         catch (Exception error) { RecordStartupFailure(error); throw; }
     }
 
-    private static void RecordStartupFailure(Exception error)
+    internal static void RecordStartupFailure(Exception error)
     {
         // Opt-in build diagnostic only; normal users do not create a crash report.
         var path = Environment.GetEnvironmentVariable("WEAVE_STARTUP_DIAGNOSTIC");

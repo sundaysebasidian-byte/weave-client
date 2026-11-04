@@ -752,6 +752,19 @@ public sealed partial class MainWindow : Window
         // Explicit CI-only render capture, never enabled during normal use.
         var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
         if (string.IsNullOrEmpty(path)) return;
+        try
+        {
+            await CapturePreviewAsync(path);
+        }
+        catch (Exception error)
+        {
+            try { App.RecordStartupFailure(new InvalidOperationException($"Preview capture failed: {path}", error)); }
+            finally { Environment.Exit(1); }
+        }
+    }
+
+    private async Task CapturePreviewAsync(string path)
+    {
         await _dataReady.Task;
         if (_page == "4" && Environment.GetEnvironmentVariable("WEAVE_PREVIEW_DIAGNOSTICS") == "1")
         {
