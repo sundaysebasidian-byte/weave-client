@@ -38,6 +38,12 @@ try {
             } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
         }
     } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
+    $desktopAcl = Get-Acl $shortcuts[1]
+    foreach ($sid in @('S-1-5-32-545', 'S-1-5-11')) {
+        $desktopAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new($sid), 'Modify', 'Allow'))
+    }
+    Set-Acl $shortcuts[1] $desktopAcl
     & $helper rollback $install $id 2>&1 | Tee-Object (Join-Path $results 'rollback.txt')
     if ($LASTEXITCODE -ne 0) { throw 'Native setup could not recover its prepared transaction.' }
     foreach ($path in $shortcuts) { if (Test-Path $path) { throw 'Recovery left an incomplete first-install shortcut.' } }

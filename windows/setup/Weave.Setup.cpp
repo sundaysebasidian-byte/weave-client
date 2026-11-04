@@ -173,13 +173,14 @@ bool ShortcutExists(const fs::path& path) {
     if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return false;
     Fail("Inspect shortcut path", error);
 }
-std::vector<BYTE> ReadSmallFile(const fs::path& path) {
+std::vector<BYTE> ReadSmallFile(const fs::path& path, bool trusted = true) {
     Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
     Require(file.value != INVALID_HANDLE_VALUE, "Open shortcut recovery input");
     BY_HANDLE_FILE_INFORMATION information{};
     Require(GetFileInformationByHandle(file.value, &information) &&
         !(information.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)), "Unsafe shortcut recovery input handle");
-    CheckEntry(path, false, true);
+    // Public shell links are untrusted UI data, never executable recovery instructions.
+    if (trusted) CheckEntry(path, false, true);
     LARGE_INTEGER size{};
     Require(GetFileSizeEx(file.value, &size) && size.QuadPart > 0 && size.QuadPart <= 65536, "Invalid shortcut recovery input size");
     std::vector<BYTE> bytes(static_cast<size_t>(size.QuadPart)); DWORD read = 0;
@@ -187,14 +188,18 @@ std::vector<BYTE> ReadSmallFile(const fs::path& path) {
     return bytes;
 }
 void WriteNewFile(const fs::path& path, const std::vector<BYTE>& bytes) {
-    Handle file(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    Require(ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        L"O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;BU)", SDDL_REVISION_1, &descriptor, nullptr), "Create recovery file ACL");
+    LocalMemory memory; memory.value = descriptor;
+    SECURITY_ATTRIBUTES attributes{sizeof attributes, descriptor, FALSE};
+    Handle file(CreateFileW(path.c_str(), GENERIC_WRITE, 0, &attributes, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
     Require(file.value != INVALID_HANDLE_VALUE, "Create shortcut recovery file");
     DWORD written = 0;
     Require(WriteFile(file.value, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr) && written == bytes.size() &&
         FlushFileBuffers(file.value), "Persist shortcut recovery file");
 }
-std::wstring ShortcutTarget(const fs::path& path) {
-    const auto bytes = ReadSmallFile(path);
+std::wstring ShortcutTarget(const std::vector<BYTE>& bytes) {
     Microsoft::WRL::ComPtr<IShellLinkW> link;
     HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(link.GetAddressOf()));
     if (FAILED(result)) Fail("Open shell link reader", static_cast<DWORD>(result));
@@ -225,9 +230,10 @@ void SnapshotShortcuts(const fs::path& root, const std::wstring& next, const Sta
         const auto& path = paths[i];
         const bool exists = ShortcutExists(path);
         if (exists) {
-            if (!previous.exists || !Same(ShortcutTarget(path), Gui(root, previous.id).wstring()))
+            const auto bytes = ReadSmallFile(path, false);
+            if (!previous.exists || !Same(ShortcutTarget(bytes), Gui(root, previous.id).wstring()))
                 Fail("An existing shortcut belongs to another installation", ERROR_ACCESS_DENIED);
-            WriteNewFile(directory / (std::to_wstring(i) + L".lnk"), ReadSmallFile(path));
+            WriteNewFile(directory / (std::to_wstring(i) + L".lnk"), bytes);
         }
         present.push_back(exists ? '1' : '0');
     }
@@ -246,12 +252,12 @@ void RestoreShortcuts(const fs::path& root, const std::wstring& next, const Stat
         if ((present[i] != '0' && present[i] != '1') || (present[i] == '1') != fs::exists(backup))
             Fail("Incomplete shortcut recovery snapshot", ERROR_INVALID_DATA);
         if (present[i] == '1') {
-            if (!previous.exists || !Same(ShortcutTarget(backup), Gui(root, previous.id).wstring()))
+            if (!previous.exists || !Same(ShortcutTarget(ReadSmallFile(backup)), Gui(root, previous.id).wstring()))
                 Fail("Shortcut recovery target changed", ERROR_INVALID_DATA);
             backups[i] = ReadSmallFile(backup);
         }
         if (ShortcutExists(paths[i])) {
-            const auto target = ShortcutTarget(paths[i]);
+            const auto target = ShortcutTarget(ReadSmallFile(paths[i], false));
             if (!Same(target, Gui(root, next).wstring()) && (!previous.exists || !Same(target, Gui(root, previous.id).wstring())))
                 Fail("A shortcut changed during installation; recovery snapshot retained", ERROR_ACCESS_DENIED);
         }
@@ -290,6 +296,31 @@ State InspectService(SC_HANDLE manager, const fs::path& root, bool verifyFiles =
     if (verifyFiles) CheckTree(root / L"versions" / id);
     return {true, id, config->dwStartType, Status(service.value).dwCurrentState != SERVICE_STOPPED};
 }
+HANDLE RetainServiceProcess(DWORD pid) {
+    constexpr DWORD access = SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION;
+    HANDLE process = OpenProcess(access, FALSE, pid);
+    if (process || GetLastError() != ERROR_ACCESS_DENIED) return process;
+    // SCM stop permission does not imply SYNCHRONIZE on a LocalSystem process.
+    // Enable only for this open, then restore the caller's exact privilege state.
+    Handle token(nullptr);
+    Require(OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token.value), "Open setup privilege token");
+    TOKEN_PRIVILEGES requested{}, previous{};
+    requested.PrivilegeCount = 1;
+    Require(LookupPrivilegeValueW(nullptr, SE_DEBUG_NAME, &requested.Privileges[0].Luid), "Resolve debug privilege");
+    requested.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    DWORD size = sizeof previous;
+    Require(AdjustTokenPrivileges(token.value, FALSE, &requested, sizeof previous, &previous, &size), "Enable service inspection privilege");
+    const DWORD enabled = GetLastError();
+    if (enabled != ERROR_SUCCESS) Fail("Service inspection privilege unavailable", enabled);
+    process = OpenProcess(access, FALSE, pid);
+    const DWORD error = GetLastError();
+    if (!AdjustTokenPrivileges(token.value, FALSE, &previous, 0, nullptr, nullptr)) {
+        if (process) CloseHandle(process);
+        Fail("Restore setup privilege state");
+    }
+    SetLastError(error);
+    return process;
+}
 void Stop(SC_HANDLE manager, const fs::path& root, const std::wstring& id) {
     const auto state = InspectService(manager, root, false);
     if (!state.exists) return;
@@ -297,7 +328,7 @@ void Stop(SC_HANDLE manager, const fs::path& root, const std::wstring& id) {
     ServiceHandle service(OpenServiceW(manager, ServiceName, SERVICE_QUERY_STATUS | SERVICE_STOP));
     Require(service.value != nullptr, "Open core service for stop");
     auto status = Status(service.value);
-    Handle process(status.dwProcessId ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, status.dwProcessId) : nullptr);
+    Handle process(status.dwProcessId ? RetainServiceProcess(status.dwProcessId) : nullptr);
     if (status.dwProcessId) {
         Require(process.value != nullptr, "Retain core service process");
         wchar_t image[32768]; DWORD length = 32768;
@@ -476,7 +507,7 @@ void Execute(const std::wstring& command, const fs::path& root, const std::wstri
         const auto paths = Shortcuts();
         const ShortcutParents parents(paths);
         for (const auto& path : paths) {
-            if (!Same(ShortcutTarget(path), Gui(root, id).wstring())) Fail("The installed shortcut was not published", ERROR_INVALID_DATA);
+            if (!Same(ShortcutTarget(ReadSmallFile(path, false)), Gui(root, id).wstring())) Fail("The installed shortcut was not published", ERROR_INVALID_DATA);
         }
         Archive(root, transaction, L"committed");
     }
