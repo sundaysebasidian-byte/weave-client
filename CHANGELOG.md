@@ -5,6 +5,7 @@ configuration changes may still occur before 1.0.
 
 ## Unreleased
 
+- Windows `0.5.0-rc1`：界面整体重做——图标侧栏与首页仪表盘、六套主题（各含浅色/深色，可跟随 Windows）、订阅“健康环”头像与地区筛选、节点趋势线、拖入导入与右键菜单。只改界面与展示逻辑，连接、订阅、加密与分流行为不变；未签名预览包，仍需 Windows 真机验收 TUN、系统代理与睡眠恢复。
 - 将 RC4 / Build 110 的代码与测试通过正常三方合并整合到 main；保留既有 main 修复、SDK CI 配置及最近的发布、构建和安全文档。已发布标签、APK 与附件不变。
 
 ## Android `0.4.0-rc4` (Build 110, public prerelease)
