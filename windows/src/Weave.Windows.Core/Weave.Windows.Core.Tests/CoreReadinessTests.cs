@@ -47,7 +47,7 @@ public sealed class CoreReadinessTests
             Assert.False(process.IsReady);
             if (cancelWhileLoading)
             {
-                startingCancellation.Cancel();
+                await process.StopAsync().WaitAsync(TimeSpan.FromSeconds(3));
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starting);
                 Assert.False(process.IsRunning);
                 Assert.False(process.IsReady);

@@ -6,6 +6,21 @@ namespace Weave.Windows.Core.Tests;
 public sealed class BrokerClientTests
 {
     [Fact]
+    public async Task CancelledRequestsStillExpireAndReleaseTheLease()
+    {
+        await using var pair = await Pair.CreateAsync(TimeSpan.FromSeconds(1));
+        using var cancellation = new CancellationTokenSource();
+        var queries = Enumerable.Range(0, 3).Select(_ => pair.Client.CheckReadyAsync(cancellation.Token)).ToArray();
+        for (var i = 0; i < 3; i++) await pair.ReadAsync();
+        cancellation.Cancel();
+        foreach (var query in queries) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query);
+        var queued = pair.Client.CheckReadyAsync(pair.Token);
+        var failure = await Record.ExceptionAsync(() => queued.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.True(failure is IOException or OperationCanceledException, failure?.ToString());
+        Assert.Null(await BrokerWire.ReadAsync<BrokerRequest>(pair.Server.GetStream(), pair.Token));
+    }
+
+    [Fact]
     public async Task ConcurrentRepliesAreMatchedByIdAndQueryFailuresDoNotCloseTheLease()
     {
         await using var pair = await Pair.CreateAsync();
@@ -134,23 +149,23 @@ public sealed class BrokerClientTests
     private static BrokerProfile Profile() => new([], [], null, null,
         new(RoutingMode.Direct, false, false, false, DnsProfile.Privacy, null, "", null, null));
 
-    private sealed class Pair(TcpClient socket, TcpClient server) : IAsyncDisposable
+    private sealed class Pair(TcpClient socket, TcpClient server, TimeSpan? responseTimeout) : IAsyncDisposable
     {
         private readonly CancellationTokenSource _timeout = new(TimeSpan.FromSeconds(15));
         public CancellationToken Token => _timeout.Token;
-        public BrokerClient Client { get; } = new(socket.GetStream());
+        public BrokerClient Client { get; } = new(socket.GetStream(), responseTimeout);
         public TcpClient Server { get; } = server;
         public async Task<BrokerRequest> ReadAsync() => Assert.IsAssignableFrom<BrokerRequest>(
             await BrokerWire.ReadAsync<BrokerRequest>(Server.GetStream(), Token));
         public Task ReplyAsync(BrokerReply reply) => BrokerWire.WriteAsync(Server.GetStream(), reply, Token);
-        public static async Task<Pair> CreateAsync()
+        public static async Task<Pair> CreateAsync(TimeSpan? responseTimeout = null)
         {
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             var accept = listener.AcceptTcpClientAsync();
             var client = new TcpClient();
             await client.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port);
-            return new(client, await accept);
+            return new(client, await accept, responseTimeout);
         }
         public async ValueTask DisposeAsync()
         {

@@ -35,7 +35,7 @@ public sealed partial class MainWindow
             foreach (var route in _model.AppRoutes) route.RefreshLanguage();
             if (DiagnosticResults.ItemsSource is IEnumerable<ProbeResult> probes)
                 foreach (var probe in probes) probe.RefreshLanguage();
-            if (SubscriptionNodesList.ItemsSource is IEnumerable<NodeResult> nodes)
+            if (SubscriptionNodesList.ItemsSource is IEnumerable<NodeRow> nodes)
                 foreach (var node in nodes) node.RefreshLanguage();
             UpdateStatus(); UpdateNavigation(); RoutingMode_Changed(this, e);
             // Test rows and selections remain intact; transient notices are not stale-language history.

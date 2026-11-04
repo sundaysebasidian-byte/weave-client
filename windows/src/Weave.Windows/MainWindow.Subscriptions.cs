@@ -35,7 +35,7 @@ public sealed partial class MainWindow
             var dialog = new ContentDialog {
                 Title = L.T("订阅更新预览"),
                 Content = new ScrollViewer { MaxHeight = 420, Content = new TextBlock { Text = text.ToString(), TextWrapping = TextWrapping.Wrap } },
-                PrimaryButtonText = L.T("确认替换"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot,
+                PrimaryButtonText = L.T("确认替换"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
                 DefaultButton = ContentDialogButton.Close,
             };
             return await dialog.ShowAsync() == ContentDialogResult.Primary;
@@ -47,7 +47,7 @@ public sealed partial class MainWindow
             NodeComboBox.SelectedItem = updated.Nodes.FirstOrDefault(node => node.Id == nodeId);
             _missingFixedNodeId = nodeId is not null && NodeComboBox.SelectedItem is null ? nodeId : null;
             NodeComboBox.PlaceholderText = L.T(_missingFixedNodeId is null ? "自动选择 · 最低延迟" : "原固定节点已移除，请重新选择；不会自动切换出口");
-            SubscriptionNodesList.ItemsSource = updated.Nodes;
+            ShowNodes(updated.Nodes);
         }
         return changed;
     }
@@ -55,5 +55,6 @@ public sealed partial class MainWindow
     private void DefaultNode_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (NodeComboBox.SelectedItem is ProxyNode) _missingFixedNodeId = null;
+        MarkSettingsDirty();
     }
 }

@@ -116,7 +116,9 @@ public sealed class MihomoController : IDisposable
         using var response = await _client.GetAsync(path, timeout.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return null;
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
-        return json.RootElement.TryGetProperty("delay", out var delay) && delay.TryGetInt32(out var value) &&
+        return json.RootElement.ValueKind == JsonValueKind.Object &&
+            json.RootElement.TryGetProperty("delay", out var delay) && delay.ValueKind == JsonValueKind.Number &&
+            delay.TryGetInt32(out var value) &&
             value is > 0 and <= 10_000 ? value : null;
     }
 

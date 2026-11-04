@@ -110,13 +110,50 @@ public sealed class SubscriptionImporter : IDisposable
         throw new InvalidDataException(L.T("订阅重定向过多"));
     }
 
-    public SubscriptionRecord ImportFile(string name, string path)
+    public SubscriptionRecord ImportFile(string name, string path) => ImportFileCore(name, path, CancellationToken.None);
+
+    private SubscriptionRecord ImportFileCore(string name, string path, CancellationToken token)
     {
-        var info = new FileInfo(path);
-        if (!info.Exists || info.Length > MaxBytes) throw new InvalidDataException(L.T("文件不存在或超过 5 MiB"));
+        using var stream = File.OpenRead(path);
+        var payload = ReadFilePayload(stream, token);
         return ImportText(string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
-            path, File.ReadAllText(path, new UTF8Encoding(false, true)));
+            path, payload);
     }
+
+    internal static string ReadFilePayload(Stream stream, CancellationToken token = default)
+    {
+        using var memory = new MemoryStream();
+        var buffer = new byte[16384];
+        int count;
+        while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            token.ThrowIfCancellationRequested();
+            if (memory.Length + count > MaxBytes)
+                throw new InvalidDataException(L.T("文件不存在或超过 5 MiB"));
+            memory.Write(buffer, 0, count);
+        }
+        memory.Position = 0;
+        using var reader = new StreamReader(memory, new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
+    public Task<SubscriptionRecord> ImportTextAsync(string name, string source, string payload,
+        CancellationToken token = default) => Task.Run(() =>
+    {
+        token.ThrowIfCancellationRequested();
+        var record = ImportText(name, source, payload);
+        token.ThrowIfCancellationRequested();
+        return record;
+    }, token);
+
+    public Task<SubscriptionRecord> ImportFileAsync(string name, string path,
+        CancellationToken token = default) => Task.Run(() =>
+    {
+        token.ThrowIfCancellationRequested();
+        var record = ImportFileCore(name, path, token);
+        token.ThrowIfCancellationRequested();
+        return record;
+    }, token);
 
     private static SubscriptionRecord MakeRecord(string name, string source, YamlMappingNode root)
     {

@@ -11,6 +11,8 @@ if ($Platform -ne 'x64') { throw 'The core service currently requires the pinned
 # Wrap the existing 256px Android-matching PNG in an ICO container without changing pixels.
 $png = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'src\Weave.Windows\Assets\Weave.png'))
 $iconPath = Join-Path $PSScriptRoot 'src\Weave.Windows\Assets\Weave.ico'
+# A committed multi-size ICO (Assets/make-ico.py) is preferred; only fall back when it is missing.
+if (-not (Test-Path $iconPath)) {
 $icon = [IO.BinaryWriter]::new([IO.File]::Create($iconPath))
 try {
     $icon.Write([uint16]0); $icon.Write([uint16]1); $icon.Write([uint16]1)
@@ -18,6 +20,7 @@ try {
     $icon.Write([uint16]1); $icon.Write([uint16]32)
     $icon.Write([uint32]$png.Length); $icon.Write([uint32]22); $icon.Write($png)
 } finally { $icon.Dispose() }
+}
 
 $solution = Join-Path $PSScriptRoot "Weave.Windows.sln"
 $runtime = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }
