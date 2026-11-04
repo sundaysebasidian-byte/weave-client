@@ -7,6 +7,55 @@ namespace Weave.Windows.Core.Tests;
 [Collection("Native data path")]
 public sealed class ProcessLifetimeTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task StopInterruptsPendingOperation(bool validate, bool dispose)
+    {
+        if (OperatingSystem.IsWindows()) return; // Unix fixture; native readiness coverage also runs on Windows.
+        var folder = Path.Combine(Path.GetTempPath(), "weave-cancel-operation-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var executable = Path.Combine(folder, "blocked-core");
+        await File.WriteAllTextAsync(executable, "#!/bin/sh\ntouch started\nexec sleep 30\n");
+        File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        await using var core = new MihomoProcess(executable);
+        Task? operation = null;
+        try
+        {
+            var bundle = new MihomoConfigBuilder().Build([], [], null, null,
+                new() { EnableTun = false, RoutingMode = RoutingMode.Direct }, Path.Combine(folder, "runtime"));
+            operation = validate ? core.ValidateConfigAsync(bundle) : core.StartAsync(bundle);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (!File.Exists(Path.Combine(folder, "runtime", "started"))) await Task.Delay(10, deadline.Token);
+            Assert.False(operation.IsCompleted);
+            var elapsed = Stopwatch.StartNew();
+            await (dispose ? core.DisposeAsync().AsTask() : core.StopAsync()).WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(3));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+            Assert.False(core.IsRunning);
+            Assert.False(core.IsReady);
+            await core.StopAsync();
+        }
+        finally
+        {
+            await core.StopAsync();
+            if (operation is not null) await operation.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            await NativeSessionCleanup.DeleteAsync(folder);
+        }
+    }
+
+    [Fact]
+    public async Task StopHonoursPreCancelledToken()
+    {
+        await using var core = new MihomoProcess("unused");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => core.StopAsync(cancellation.Token));
+        await core.StopAsync();
+    }
+
     [Fact]
     public async Task FailedTerminationRetainsTheOwnedCoreForRetry()
     {

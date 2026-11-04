@@ -67,6 +67,16 @@ public sealed class SubscriptionVault
         }
     }
 
+    // Once the transaction acquires the lock, let the atomic write finish despite cancellation.
+    public Task<bool> RemoveAsync(string id, CancellationToken cancellationToken = default) => Task.Run(() =>
+    {
+        lock (_gate)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Remove(id);
+        }
+    }, cancellationToken);
+
     public bool Remove(string id)
     {
         lock (_gate)

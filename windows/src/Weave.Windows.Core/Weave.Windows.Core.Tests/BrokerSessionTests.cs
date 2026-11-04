@@ -179,7 +179,7 @@ public sealed class BrokerSessionTests
 
     [BrokerProbeTheory]
     [InlineData(true)]
-    public async Task ProcessStopWaitsForInFlightValidationAndConcurrentStops(bool concurrentStops)
+    public async Task ProcessStopCancelsInFlightValidationAndConcurrentStops(bool concurrentStops)
     {
         var root = Path.Combine(Path.GetTempPath(), "weave-broker-session-" + Guid.NewGuid().ToString("N"));
         var directory = Directory.CreateDirectory(Path.Combine(root, "session"));
@@ -194,10 +194,8 @@ public sealed class BrokerSessionTests
             using var child = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(marker, cancellation.Token)));
             var stop = process.StopAsync();
             var second = concurrentStops ? process.StopAsync() : Task.CompletedTask;
-            Assert.False(stop.IsCompleted, "Stop must not report completion while validation still owns a live child.");
-            cancellation.Cancel();
+            await Task.WhenAll(stop, second).WaitAsync(TimeSpan.FromSeconds(3));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => validation);
-            await Task.WhenAll(stop, second).WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(child.HasExited);
             Assert.False(process.IsRunning);
         }

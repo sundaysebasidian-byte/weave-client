@@ -17,14 +17,16 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private BrokerClient? _broker;
     private RuntimeBundle? _activeBundle;
     private RuntimeSession? _runtimeSession;
-    private bool _runtimeCleanupPending;
+    private volatile bool _runtimeCleanupPending;
     public ConnectionEndpoint? ActiveConnection { get; private set; }
-    public ConnectionHealthState Health { get; private set; }
+    private volatile ConnectionHealthState _health;
+    public ConnectionHealthState Health { get => _health; private set => _health = value; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
     private readonly SemaphoreSlim _routeSaveGate = new(1, 1);
     private long _routeSaveVersion;
     private long _networkRevision;
     public long NetworkRevision => Interlocked.Read(ref _networkRevision);
+    /// <summary>May be raised on a worker thread; subscribers must marshal to the UI thread.</summary>
     public event EventHandler? StatusChanged;
     public WindowsNetworkOptions NetworkOptions { get; set; } = new();
 
@@ -54,7 +56,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public bool IsConnected => _broker?.IsReady == true || _process?.IsReady == true;
 
-    private string _status = "未连接";
+    private volatile string _status = "未连接";
     public string Status { get => L.T(_status) + (_runtimeCleanupPending ? " · " + L.T("会话配置尚未清理") : ""); private set => _status = value; }
 
     /// <summary>Registry recovery, DPAPI and vault reads run on a worker; only the collections are filled on the caller's (UI) thread.</summary>
@@ -127,19 +129,31 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public bool Remove(string id)
     {
+        EnsureSubscriptionCanBeRemoved(id);
+        var removed = _vault.Remove(id);
+        if (removed) RemoveFromCollection(id);
+        return removed;
+    }
+
+    // Call on the UI thread and retain its context for the collection update.
+    public async Task<bool> RemoveAsync(string id, CancellationToken cancellationToken = default)
+    {
+        EnsureSubscriptionCanBeRemoved(id);
+        var removed = await _vault.RemoveAsync(id, cancellationToken);
+        if (removed) RemoveFromCollection(id);
+        return removed;
+    }
+
+    private void EnsureSubscriptionCanBeRemoved(string id)
+    {
         if (AppRoutes.Any(route => route.Target.SubscriptionId == id))
             throw new InvalidOperationException(L.T("请先删除引用此订阅的应用分流，避免应用意外改走其他出口。"));
-        var removed = _vault.Remove(id);
-        if (removed)
-        {
-            var item = Subscriptions.FirstOrDefault(subscription => subscription.Id == id);
-            if (item is not null)
-            {
-                Subscriptions.Remove(item);
-            }
-        }
+    }
 
-        return removed;
+    private void RemoveFromCollection(string id)
+    {
+        var item = Subscriptions.FirstOrDefault(subscription => subscription.Id == id);
+        if (item is not null) Subscriptions.Remove(item);
     }
 
     public async Task<bool> EditAsync(SubscriptionRecord existing, string name, string source, CancellationToken token,

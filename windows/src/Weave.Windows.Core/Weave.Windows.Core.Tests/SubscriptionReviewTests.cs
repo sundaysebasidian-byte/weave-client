@@ -16,6 +16,27 @@ public sealed class SubscriptionReviewTests
     };
 
     [Fact]
+    public async Task AsyncRemovalPersistsAndHonoursCancellation()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "weave-remove-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var path = Path.Combine(folder, "test.vault");
+            var vault = new SubscriptionVault(path, new TestProtector());
+            vault.Upsert(Record("original"));
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => vault.RemoveAsync("test", cancellation.Token));
+            Assert.Single(vault.List());
+            var removals = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => vault.RemoveAsync("test")));
+            Assert.Single(removals, removed => removed);
+            Assert.Empty(new SubscriptionVault(path, new TestProtector()).List());
+            Assert.Empty(Directory.GetFiles(folder, "*.pending"));
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    }
+
+    [Fact]
     public void ReviewedReplacementCommitsOnlyTheExpectedVersion()
     {
         var folder = Path.Combine(Path.GetTempPath(), "weave-review-" + Guid.NewGuid().ToString("N"));
