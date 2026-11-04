@@ -482,9 +482,9 @@
             <ProgressBar x:Name="BusyBar" Grid.Row="2" VerticalAlignment="Top" Margin="32,0" MaxWidth="960" IsIndeterminate="True" Visibility="Collapsed"/>
 
             <!-- Status messages float above the content so they never shift the layout. Hidden by opacity, not
-                 visibility, to keep the polite live region in the accessibility tree. -->
+                 visibility, to keep the polite live region in the accessibility tree. Do not attach an OpacityTransition:
+                 startup can change this value before WinUI creates its composition object. -->
             <Border x:Name="MessageBar" Grid.Row="2" Margin="32,0,32,16" Padding="16,12" MaxWidth="960" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" CornerRadius="12" Opacity="0" IsHitTestVisible="False" Background="{ThemeResource WeaveCardBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1">
-                <Border.OpacityTransition><ScalarTransition Duration="0:0:0.2"/></Border.OpacityTransition>
                 <TextBlock x:Name="MessageText" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
             </Border>
         </Grid>
