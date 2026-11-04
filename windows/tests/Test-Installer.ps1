@@ -162,7 +162,19 @@ try {
     $ordinarySentinelHash = $state.sentinelHash
     Assert-UserData
     $steps.Add(@{ name = 'ordinary-user-gui'; sid = $testUser.Sid.Value; profile = $profile.LocalPath; rendered = $true })
-    Invoke-Setup $package 'upgrade'
+    $desktopLink = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Weave.lnk'
+    $linkAcl = Get-Acl $desktopLink
+    foreach ($sid in @('S-1-5-32-545', 'S-1-5-11')) {
+        $linkAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new($sid), 'Modify', 'Allow'))
+    }
+    Set-Acl $desktopLink $linkAcl
+    $oldService = Get-CimInstance Win32_Service -Filter "Name='WeaveCore'"
+    if ($oldService.State -ne 'Running') { throw 'Upgrade fixture requires the preceding running service.' }
+    & (Join-Path $PSScriptRoot 'Set-RestrictedServiceProcess.ps1') -ServiceProcessId $oldService.ProcessId |
+        Tee-Object (Join-Path $results 'restricted-service-process.txt')
+    Invoke-Setup $package 'upgrade-writable-shortcut-restricted-running-service'
+    if (Test-Path (Join-Path $install 'setup-pending.txt')) { throw 'Upgrade left recovery pending.' }
     $second = Service-Image
     $secondShortcuts = @(Shortcut-Hashes $second)
     if ($first -eq $second) { throw 'Upgrade did not stage a distinct version.' }
@@ -185,6 +197,25 @@ try {
     }
     if (Test-Path (Join-Path $install 'setup-pending.txt')) { throw 'Failed activation left unresolved recovery state.' }
     Assert-UserData
+
+    # Reproduce rollback after activation with a process DACL that denies administrator synchronization.
+    $rollbackId = $BuildId + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 16)
+    $helper = Join-Path $install 'setup\Weave.Setup.exe'
+    & $helper begin $install $rollbackId
+    if ($LASTEXITCODE -ne 0) { throw 'Restricted rollback fixture could not begin.' }
+    $rollbackRelease = Join-Path $install "versions\$rollbackId"
+    Copy-Item (Join-Path (Split-Path (Split-Path $second.Trim('"') -Parent) -Parent) '*') $rollbackRelease -Recurse
+    & $helper activate $install $rollbackId
+    if ($LASTEXITCODE -ne 0) { throw 'Restricted rollback fixture could not activate.' }
+    $active = Get-CimInstance Win32_Service -Filter "Name='WeaveCore'"
+    & (Join-Path $PSScriptRoot 'Set-RestrictedServiceProcess.ps1') -ServiceProcessId $active.ProcessId |
+        Tee-Object (Join-Path $results 'restricted-rollback-process.txt')
+    & $helper rollback $install $rollbackId
+    if ($LASTEXITCODE -ne 0 -or (Service-Image) -ne $second -or (Test-Path (Join-Path $install 'setup-pending.txt'))) {
+        throw 'Restricted-process rollback did not restore the preceding running service.'
+    }
+    $null = Shortcut-Hashes $second
+    $steps.Add(@{ name = 'restricted-process-activation-rollback'; recovered = $true })
 
     # An interrupted upgrade must be recoverable, while damaged evidence must block further writes.
     $preceding = $second
