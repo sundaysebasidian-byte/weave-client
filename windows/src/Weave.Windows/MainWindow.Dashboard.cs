@@ -41,6 +41,7 @@ public sealed partial class MainWindow
         RootGrid.Loaded += (_, _) => { UpdateTitleBarInset(); UpdateCellWidths(); UpdateListHeights(); UpdateDashboard(); };
         QuickNodes.SizeChanged += (_, _) => UpdateCellWidths();
         HeroCity.SizeChanged += (_, _) => FitHeroTitle();
+        ConnectionHero.SizeChanged += (_, _) => FitKnot();
         ThemeGallery.SizeChanged += (_, _) => UpdateCellWidths();
     }
 
@@ -84,6 +85,13 @@ public sealed partial class MainWindow
             return new(L.T("自动"), "AUTO · " + record.Name, "", known.Length > 0 ? known.Min() : null);
         }
         return new(L.T("尚未连接"), "", "", null);
+    }
+
+    // The illustration takes under half of the hero so the headline, chips and buttons keep their room in narrower tiles.
+    private void FitKnot()
+    {
+        var size = Math.Clamp((ConnectionHero.ActualWidth - 50) * 0.42, 160, 300);
+        if (Math.Abs(Knot.Width - size) > 1) Knot.Width = Knot.Height = Math.Round(size);
     }
 
     // The headline is as large as the column allows: a short city name is monumental, a longer phrase steps down instead of being cut.
@@ -657,7 +665,9 @@ public sealed partial class MainWindow
             var heroTop = ConnectionHero.TransformToVisual(ContentScroll).TransformPoint(origin).Y;
             var trafficTop = TrafficTile.TransformToVisual(ContentScroll).TransformPoint(origin).Y;
             var sideBySide = Math.Abs(heroTop - trafficTop) < 1;
-            if (compactLayout == sideBySide) throw new InvalidOperationException("Home tiles did not reflow for the window width");
+            // Stacked when compact, and also in the mid range where two columns would drop under their minimum width.
+            if (sideBySide != (RootGrid.ActualWidth >= HomeSideBySideMinWidth))
+                throw new InvalidOperationException($"Home tiles did not reflow for the window width {RootGrid.ActualWidth:F0}");
             if (ConnectionHero.ActualHeight < 300) throw new InvalidOperationException("Hero tile is cramped");
         }
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_SWITCH_LANGUAGE") == "1")

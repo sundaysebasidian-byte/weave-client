@@ -111,7 +111,7 @@
 
                     <!-- ============ Connect ============ -->
                     <StackPanel x:Name="ConnectPage" Spacing="12">
-                        <local:ResponsiveGrid ColumnSpacing="12" RowSpacing="12" MinColumnWidth="400">
+                        <local:ResponsiveGrid ColumnSpacing="12" RowSpacing="12" MinColumnWidth="330">
                             <!-- Hero: where the connection is going, and the one big button. -->
                             <ContentControl x:Name="ConnectionHero" local:ResponsiveGrid.Weight="1.4" Style="{StaticResource Tile}" MinHeight="340">
                                 <Grid Padding="34,30,16,30" ColumnSpacing="8">
@@ -168,7 +168,7 @@
                             </ContentControl>
                         </local:ResponsiveGrid>
 
-                        <local:ResponsiveGrid ColumnSpacing="12" RowSpacing="12" MinColumnWidth="400">
+                        <local:ResponsiveGrid ColumnSpacing="12" RowSpacing="12" MinColumnWidth="330">
                             <!-- Quick exit: pick the node without leaving this page. -->
                             <ContentControl x:Name="ExitCard" local:ResponsiveGrid.Weight="1.4" Style="{StaticResource Tile}">
                                 <Grid Padding="22,16,14,8" RowSpacing="8">
@@ -270,9 +270,9 @@
                     </StackPanel>
 
                     <!-- ============ Subscriptions ============ -->
-                    <local:ResponsiveGrid x:Name="SubscriptionsPage" ColumnSpacing="12" RowSpacing="12" MinColumnWidth="260" Visibility="Collapsed">
+                    <local:ResponsiveGrid x:Name="SubscriptionsPage" ColumnSpacing="12" RowSpacing="12" MinColumnWidth="230" Visibility="Collapsed">
                         <!-- Library: avatar rings show how many nodes of each subscription answered the last test. -->
-                        <ContentControl x:Name="SubscriptionsPanel" local:ResponsiveGrid.Weight="1" Style="{StaticResource Tile}">
+                        <ContentControl x:Name="SubscriptionsPanel" local:ResponsiveGrid.Weight="1.35" Style="{StaticResource Tile}">
                             <Grid Padding="14,16,14,14" RowSpacing="8">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                 <Grid Margin="10,0,0,0">
@@ -323,14 +323,17 @@
                                         </Grid>
                                         <TextBox x:Name="SubscriptionUrlBox" PlaceholderText="https://example.com/sub" KeyDown="SubscriptionUrlBox_KeyDown" AutomationProperties.Name="{Binding HTTPSURL, Source={StaticResource UiText}}"/>
                                         <TextBox x:Name="SubscriptionNameBox" PlaceholderText="{Binding EGMainSubscription, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NameOptional, Source={StaticResource UiText}}"/>
-                                        <Grid ColumnSpacing="4">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <!-- The primary action has its own row so it never clips in a narrow column; the other routes sit below it. -->
+                                        <StackPanel Spacing="6">
                                             <Button Style="{StaticResource SmallPillButton}" HorizontalAlignment="Stretch" Padding="8,0" MinWidth="0" Click="ImportUrlButton_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportLink, Source={StaticResource UiText}}"/></Button>
-                                            <Button Grid.Column="1" Style="{StaticResource IconButton}" Click="ImportFileButton_Click" ToolTipService.ToolTip="{Binding FileClientExport, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding FileClientExport, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8E5;" FontSize="14"/></Button>
-                                            <Button Grid.Column="2" Style="{StaticResource IconButton}" Click="QrFile_Click" ToolTipService.ToolTip="{Binding QRImage, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding QRImage, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8B9;" FontSize="14"/></Button>
-                                            <Button Grid.Column="3" Style="{StaticResource IconButton}" Click="CameraQr_Click" ToolTipService.ToolTip="{Binding CameraScan, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding CameraScan, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE722;" FontSize="14"/></Button>
-                                        </Grid>
-                                        <Expander x:Name="PasteConfigurationExpander" Header="{Binding PasteConfiguration, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="12">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <Button Style="{StaticResource IconButton}" HorizontalAlignment="Center" Click="ImportFileButton_Click" ToolTipService.ToolTip="{Binding FileClientExport, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding FileClientExport, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8E5;" FontSize="14"/></Button>
+                                                <Button Grid.Column="1" Style="{StaticResource IconButton}" HorizontalAlignment="Center" Click="QrFile_Click" ToolTipService.ToolTip="{Binding QRImage, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding QRImage, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8B9;" FontSize="14"/></Button>
+                                                <Button Grid.Column="2" Style="{StaticResource IconButton}" HorizontalAlignment="Center" Click="CameraQr_Click" ToolTipService.ToolTip="{Binding CameraScan, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding CameraScan, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE722;" FontSize="14"/></Button>
+                                            </Grid>
+                                        </StackPanel>
+                                        <Expander x:Name="PasteConfigurationExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><Expander.Header><TextBlock Text="{Binding PasteConfiguration, Source={StaticResource UiText}}" FontSize="13" TextTrimming="CharacterEllipsis"/></Expander.Header><StackPanel Spacing="12">
                                             <TextBox x:Name="SubscriptionTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" AutomationProperties.Name="{Binding ClashMihomoYAMLBase64, Source={StaticResource UiText}}"/>
                                             <Button Content="{Binding ImportText, Source={StaticResource UiText}}" Click="ImportTextButton_Click" HorizontalAlignment="Left"/>
                                         </StackPanel></Expander>
