@@ -19,7 +19,7 @@ jobs:
         env:
           WEAVE_ISOLATED_INSTALLER_TEST: '1'
         run: |
-          ./windows/setup/Build-Setup.ps1
+          ./windows/setup/Build-Setup.ps1 -TestGuiProcesses
           ./windows/tests/Test-SetupBoundary.ps1
       - name: Preserve native installer boundary evidence
         if: always()
