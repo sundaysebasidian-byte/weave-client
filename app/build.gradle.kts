@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val isolatedDeviceTest = providers.gradleProperty("weaveDeviceTest").orNull == "true"
+
 android {
     namespace = "io.weave.client"
     compileSdk = 37
@@ -47,6 +49,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (isolatedDeviceTest) {
+                applicationIdSuffix = ".acceptance"
+                versionNameSuffix = "-device-test"
+            }
+        }
         release {
             isDebuggable = false
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
@@ -74,6 +82,10 @@ android {
     }
 
     sourceSets.getByName("test").resources.srcDir(rootProject.file("tests/fixtures"))
+    if (isolatedDeviceTest) {
+        // Separate UID, preferences and Keystore from the owner's installed client.
+        sourceSets.getByName("debug").res.srcDir("src/deviceTest/res")
+    }
 
     androidResources {
         // Runtime caches are not distribution assets, even if a local core test created one.
