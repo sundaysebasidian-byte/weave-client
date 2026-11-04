@@ -443,23 +443,31 @@ void Rollback(SC_HANDLE manager, const fs::path& root) {
     RestoreShortcuts(root, transaction.next, transaction.previous);
     Archive(root, transaction, L"rolled-back");
 }
+void RequireClosedGuiProcess(const fs::path& root, const PROCESSENTRY32W& entry) {
+    if (_wcsicmp(entry.szExeFile, L"Weave.Windows.exe") != 0) return;
+    // Exited process objects can remain in Toolhelp during delayed teardown.
+    // They have no executing threads and OpenProcess may return ACCESS_DENIED even to
+    // an administrator. Do not mistake this residue for a running application.
+    if (entry.cntThreads == 0) return;
+    Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID));
+    if (!process.value) {
+        const DWORD error = GetLastError();
+        if (error == ERROR_INVALID_PARAMETER) return;
+        Fail(("Cannot verify running Weave process PID " + std::to_string(entry.th32ProcessID) + "; close it before retrying").c_str(), error);
+    }
+    wchar_t image[32768]; DWORD length = 32768;
+    Require(QueryFullProcessImageNameW(process.value, 0, image, &length), "Read running application path");
+    const auto prefix = (root / L"versions").wstring() + L"\\";
+    if (_wcsnicmp(image, prefix.c_str(), prefix.size()) == 0)
+        Fail(("Close Weave process PID " + std::to_string(entry.th32ProcessID) + " in its user session, then retry setup").c_str(), ERROR_INSTALL_ALREADY_RUNNING);
+}
 void RequireClosedGui(const fs::path& root) {
     Handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
     Require(snapshot.value != INVALID_HANDLE_VALUE, "Inspect running application versions");
     PROCESSENTRY32W entry{}; entry.dwSize = sizeof entry;
     if (!Process32FirstW(snapshot.value, &entry)) Fail("Enumerate running applications");
     do {
-        if (_wcsicmp(entry.szExeFile, L"Weave.Windows.exe") != 0) continue;
-        Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID));
-        if (!process.value) {
-            if (GetLastError() == ERROR_INVALID_PARAMETER) continue;
-            Fail("Cannot verify a running Weave process; close it before retrying");
-        }
-        wchar_t image[32768]; DWORD length = 32768;
-        Require(QueryFullProcessImageNameW(process.value, 0, image, &length), "Read running application path");
-        const auto prefix = (root / L"versions").wstring() + L"\\";
-        if (_wcsnicmp(image, prefix.c_str(), prefix.size()) == 0)
-            Fail("Close Weave in every user session, then retry setup", ERROR_INSTALL_ALREADY_RUNNING);
+        RequireClosedGuiProcess(root, entry);
     } while (Process32NextW(snapshot.value, &entry));
     if (GetLastError() != ERROR_NO_MORE_FILES) Fail("Application enumeration was interrupted");
 }
