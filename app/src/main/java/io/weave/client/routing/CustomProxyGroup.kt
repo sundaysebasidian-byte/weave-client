@@ -60,21 +60,23 @@ class CustomProxyGroupStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
 ) {
+    private val appContext = context.applicationContext
     private val file = File(context.applicationContext.noBackupFilesDir, FILE_NAME)
 
-    @Synchronized
-    fun list(): List<CustomProxyGroup> {
-        if (!file.isFile) return emptyList()
-        return runCatching {
-            val array = JSONArray(secretBox.decrypt(file.readText(), AAD).toString(Charsets.UTF_8))
-            (0 until array.length()).map { index -> decode(array.getJSONObject(index)) }
-                .map(CustomProxyGroupValidator::normalize)
-                .take(CustomProxyGroupValidator.MAX_GROUPS)
-        }.getOrDefault(emptyList())
+    internal fun snapshot(): List<CustomProxyGroup> = io.weave.client.data.ProfileStorage.access(appContext) {
+        if (!file.exists()) return@access emptyList()
+        val array = JSONArray(secretBox.decrypt(file.readText(), AAD).toString(Charsets.UTF_8))
+        require(array.length() <= CustomProxyGroupValidator.MAX_GROUPS)
+        (0 until array.length()).map { CustomProxyGroupValidator.normalize(decode(array.getJSONObject(it))) }.also {
+            require(it.map { group -> group.id }.toSet().size == it.size)
+        }
     }
 
-    @Synchronized
-    fun save(groups: List<CustomProxyGroup>) {
+    fun list(): List<CustomProxyGroup> = io.weave.client.data.ProfileStorage.access(appContext) {
+        runCatching { snapshot() }.getOrDefault(emptyList())
+    }
+
+    fun save(groups: List<CustomProxyGroup>): Unit = io.weave.client.data.ProfileStorage.access(appContext) {
         require(groups.size <= CustomProxyGroupValidator.MAX_GROUPS) {
             "最多保存 ${CustomProxyGroupValidator.MAX_GROUPS} 个策略组"
         }

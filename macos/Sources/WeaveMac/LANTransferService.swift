@@ -1,3 +1,4 @@
+import WeaveCoreRuntime
 import Darwin
 import Foundation
 import Network

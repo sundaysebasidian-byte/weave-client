@@ -26,6 +26,8 @@ private enum WeaveGlyphKind: Equatable {
 }
 
 struct ContentView: View {
+    @EnvironmentObject private var vault: SubscriptionVault
+    @EnvironmentObject private var model: AppModel
     @State private var destination: MacDestination = .connection
 
     var body: some View {
@@ -48,6 +50,27 @@ struct ContentView: View {
             }
         }
         .tint(.weaveAcid)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let error = vault.lastError {
+                Label(error, systemImage: "exclamationmark.lock.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.weaveCanvas)
+                    .accessibilityLabel("订阅存储错误：\(error)")
+            }
+            if let notice = model.selectionIssue ?? model.selectionNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.weaveCanvas)
+            }
+        }
+        .sheet(item: $model.pendingSubscriptionUpdate) { pending in
+            SubscriptionUpdatePreview(pending: pending).environmentObject(model)
+        }
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -265,6 +288,7 @@ private struct ConnectionView: View {
     @State private var showNodeSelector = false
 
     private var isRunning: Bool { model.core.state.isConnected }
+    private var canStop: Bool { model.core.hasOwnedSession || model.core.state == .starting }
     private var statusColor: Color {
         switch model.core.state {
         case .tun, .localProxy: return .weaveGood
@@ -326,8 +350,8 @@ private struct ConnectionView: View {
                         model.toggleConnection()
                     } label: {
                         HStack(spacing: 9) {
-                            Image(systemName: isRunning ? "stop.fill" : "power")
-                            Text(isRunning ? "断开" : "连接")
+                            Image(systemName: canStop ? "stop.fill" : "power")
+                            Text(model.core.state == .starting ? "取消连接" : canStop ? "停止连接" : "连接")
                             Spacer()
                             Image(systemName: "arrow.right")
                         }
@@ -382,7 +406,7 @@ private struct ConnectionView: View {
                             NodeSelectorPopover(
                                 nodes: model.selectedNodes,
                                 selectedNode: model.selectedNodeName,
-                                onSelect: { model.selectedNodeName = $0 }
+                                onSelect: model.selectNode
                             )
                         }
                     }
@@ -406,7 +430,7 @@ private struct ConnectionView: View {
                             .lineLimit(1)
                     }
                     Spacer()
-                    Text(model.core.state == .tun ? "双栈 TUN" : "等待连接")
+                    Text(model.core.state == .tun ? "双栈 TUN" : model.core.state == .localProxy ? "系统代理" : "等待连接")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.weaveMuted)
                 }
@@ -417,9 +441,7 @@ private struct ConnectionView: View {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(Color.weaveGood)
                         .padding(.top, 1)
-                    Text(model.core.state == .tun
-                         ? "全设备 IPv4/IPv6 TUN 已接管流量，DNS 请求被劫持，标准 STUN 端口已阻断。"
-                         : "默认使用双栈 TUN；如果 utun、路由或 DNS 未就绪，会拒绝连接而不是让 IPv4 直连。")
+                    Text(model.core.message)
                         .font(.system(size: 12))
                         .foregroundStyle(Color.weaveMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -435,14 +457,15 @@ private struct ConnectionView: View {
     }
 
     private var connectDisabled: Bool {
-        model.core.state == .starting ||
-            ((!model.core.coreAvailable || model.selectedSubscription == nil) && !isRunning)
+        model.core.state == .stopping ||
+            ((!model.core.coreAvailable || model.selectedSubscription == nil || model.nodeCacheLoading || model.selectionIssue != nil) && !model.core.state.isActive && !model.core.hasOwnedSession)
     }
 
     private var statusLabel: String {
         switch model.core.state {
-        case .tun, .localProxy: return "已保护"
+        case .tun, .localProxy: return "已连接"
         case .starting: return "正在连接"
+        case .stopping: return "正在恢复网络"
         case .failed: return "需要处理"
         case .stopped: return "未连接"
         }
@@ -776,6 +799,39 @@ private struct SubscriptionListView: View {
     }
 }
 
+private struct SubscriptionUpdatePreview: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let pending: PendingSubscriptionUpdate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("检查订阅更新").font(.title2.bold())
+            Text(pending.original.name).font(.headline)
+            Text("\(pending.original.nodeCount) → \(pending.nodes.count) 个节点 · 新增 \(pending.added.count) · 移除 \(pending.removed.count)")
+            if let fixed = model.selectedNodeName, model.selectedSubscriptionID == pending.id, !pending.nodes.contains(fixed) {
+                Label("固定节点“\(ClashNodeNames.display(fixed))”将不可用，保存后需要重新选择出口。", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(pending.added, id: \.self) { Text("＋ \(ClashNodeNames.display($0))") }
+                    ForEach(pending.removed, id: \.self) { Text("－ \(ClashNodeNames.display($0))") }
+                    if pending.added.isEmpty && pending.removed.isEmpty { Text("节点名称未变，连接参数可能更新。") }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxHeight: 220)
+            Text("保存后将在下次连接时生效；当前连接保持不变。").font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存更新") { Task { await model.applyPendingSubscriptionUpdate() } }
+                    .disabled(model.directImportBusy)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 520)
+    }
+}
+
 private struct SubscriptionEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
@@ -816,10 +872,13 @@ private struct SubscriptionEditorSheet: View {
                     .foregroundStyle(Color.weaveMuted)
                 Spacer()
                 Button("保存") {
-                    model.updateSubscription(id: subscription.id, name: name, source: source, payload: payload)
-                    message = model.directImportMessage
-                    if message == "订阅已更新" { dismiss() }
+                    Task {
+                        let saved = await model.updateSubscription(id: subscription.id, name: name, source: source, payload: payload)
+                        message = model.directImportMessage
+                        if saved { dismiss() }
+                    }
                 }
+                .disabled(model.directImportBusy)
                 .weavePrimaryButton()
                 .frame(width: 120)
             }
@@ -1142,10 +1201,10 @@ private struct TransferView: View {
 private struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     private let rows = [
-        ("版本", "0.1.0-alpha09", "number"),
+        ("版本", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建", "number"),
         ("架构", "Apple Silicon arm64", "cpu"),
         ("本地存储", "Keychain + AES-256-GCM", "lock.fill"),
-        ("VPN 模式", "Mihomo 原生双栈 TUN · 失败闭锁", "network"),
+        ("VPN 模式", "Mihomo 原生双栈 TUN", "network"),
     ]
 
     var body: some View {
@@ -1180,11 +1239,7 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("系统代理接管")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(model.core.state == .tun
-                             ? "全设备 IPv4/IPv6 TUN · DNS 劫持 · STUN 防泄漏"
-                             : model.core.state == .localProxy
-                             ? "HTTP/HTTPS/SOCKS → 127.0.0.1:7890；PAC 和原设置会自动恢复"
-                             : "TUN 未就绪时拒绝连接；关闭下方开关才会使用本地代理")
+                        Text(model.core.message)
                             .font(.caption)
                             .foregroundStyle(Color.weaveMuted)
                     }
@@ -1204,7 +1259,7 @@ private struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("强制全设备双栈 TUN")
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("接管 IPv4、IPv6、UDP 和 DNS；失败时拒绝连接")
+                            Text("要求 TUN 及双栈路由就绪；需要系统权限")
                                 .font(.caption)
                                 .foregroundStyle(Color.weaveMuted)
                         }
@@ -1212,7 +1267,9 @@ private struct SettingsView: View {
                     .toggleStyle(.switch)
                     .disabled(model.core.state.isActive)
 
-                    Text("关闭后才会允许本地 HTTP/HTTPS/SOCKS 代理模式；该模式不保证 IPv4、IPv6 或 DNS 全部经过 Weave。")
+                    CoreServiceSettingsView(core: model.core, manager: model.core.serviceManager)
+
+                    Text("TUN 失败时不会自动切换模式。关闭后使用本地 HTTP/HTTPS/SOCKS 系统代理，仅覆盖遵循系统代理的应用。未连接时其他应用仍可能使用原网络。")
                         .font(.caption2)
                         .foregroundStyle(Color.weaveMuted)
                 }
@@ -1369,4 +1426,33 @@ private extension Color {
     ))
     static let weaveGood = Color(red: 61 / 255, green: 111 / 255, blue: 99 / 255)
     static let weaveError = Color(red: 186 / 255, green: 26 / 255, blue: 26 / 255)
+}
+
+private struct CoreServiceSettingsView: View {
+    @ObservedObject var core: MihomoController
+    @ObservedObject var manager: CoreServiceManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(manager.message).font(.caption).foregroundStyle(Color.weaveMuted)
+            if manager.status == .enabled {
+                Text("停用服务会影响本机所有已登录用户的 TUN 连接。")
+                    .font(.caption2).foregroundStyle(Color.weaveMuted)
+            }
+            HStack {
+                if manager.status == .notRegistered {
+                    Button("启用 TUN 服务") { manager.enable() }
+                        .disabled(!manager.identityValid || manager.busy || core.state.isActive)
+                } else {
+                    Button("系统授权设置") { manager.openSettings() }
+                    Button("停用 TUN 服务") { Task { await core.disableService() } }
+                        .disabled(manager.busy || core.state == .starting || core.state == .stopping)
+                }
+                Button("刷新状态") { manager.refresh() }.disabled(manager.busy)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            manager.refresh()
+        }
+    }
 }

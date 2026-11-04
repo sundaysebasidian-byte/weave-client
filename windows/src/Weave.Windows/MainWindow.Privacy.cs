@@ -14,13 +14,13 @@ public sealed partial class MainWindow
     private async Task OpenPrivacyAsync(bool dns)
     {
         if (_privacyOpen || _summaryOpen || _busy) return;
-        if (!_model.IsConnected || _model.ActiveBundle is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
+        if (!_model.IsConnected || _model.ActiveConnection is not { } bundle) { MessageText.Text = L.T("请先连接代理"); return; }
         _privacyOpen = true;
         try { await RunPrivacySessionAsync(dns, bundle, _model.NetworkRevision); }
         finally { _privacyOpen = false; _activePrivacyDialog = null; }
     }
 
-    private async Task RunPrivacySessionAsync(bool dns, RuntimeBundle bundle, long revision)
+    private async Task RunPrivacySessionAsync(bool dns, ConnectionEndpoint bundle, long revision)
     {
         var consent = new ContentDialog
         {

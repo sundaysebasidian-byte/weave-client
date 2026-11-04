@@ -13,6 +13,18 @@ class BackupCodecTest {
         assertEquals(entries, BackupCodec.decrypt(encrypted, passphrase.copyOf()))
     }
 
+    @Test fun `version two round trips and its version cannot be downgraded`() {
+        val encrypted = BackupCodec.encrypt(entries, passphrase.copyOf(), iterations = 100_000, formatVersion = 2)
+        assertEquals(2, encrypted[4].toInt())
+        assertEquals(entries, BackupCodec.decrypt(encrypted, passphrase.copyOf()))
+        assertFails("密码错误或备份已损坏") {
+            BackupCodec.decrypt(encrypted.copyOf().also { it[4] = 1 }, passphrase.copyOf())
+        }
+        assertFails("不支持的备份版本") {
+            BackupCodec.decrypt(encrypted.copyOf().also { it[4] = 3 }, passphrase.copyOf())
+        }
+    }
+
     @Test fun `wrong password and tampering are rejected`() {
         val encrypted = BackupCodec.encrypt(entries, passphrase.copyOf(), iterations = 100_000)
         assertFails("密码错误或备份已损坏") { BackupCodec.decrypt(encrypted, "wrong password".toCharArray()) }

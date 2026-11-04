@@ -1,12 +1,19 @@
 package io.weave.client.routing
 
 import android.content.Context
+import android.system.Os
+import android.system.OsConstants
 import androidx.compose.runtime.Immutable
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import io.weave.client.subscription.ClashYamlCodec
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import io.weave.client.subscription.SafeSubscriptionFetcher
 import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -32,6 +39,7 @@ data class RemoteRuleSet(
     val sha256: String? = null,
     val entryCount: Int = 0,
     val updatedAtMillis: Long? = null,
+    val revision: String? = null,
 )
 
 class RuleSetException(message: String) : IllegalArgumentException(message)
@@ -147,161 +155,232 @@ object RuleSetCompiler {
         }
 }
 
-/**
- * Encrypted index (names, URLs, hashes) plus one encrypted payload file per set. Files are
- * replaced atomically, so the VPN process can read while the UI updates a set.
- */
+/** A locked index transaction publishes an immutable encrypted payload generation. */
 class RemoteRuleSetStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
-    private val fetcher: SafeSubscriptionFetcher = SafeSubscriptionFetcher(),
+    private val fetcher: SafeSubscriptionFetcher = SafeSubscriptionFetcher(
+        resolver = io.weave.client.subscription.SubscriptionDNSResolver.forContext(context)::resolve,
+    ),
 ) {
+    private val appContext = context.applicationContext
     private val directory = File(context.applicationContext.noBackupFilesDir, DIRECTORY)
     private val index = File(directory, INDEX_FILE)
+    private class Record(val set: RemoteRuleSet, val generation: String?)
 
-    @Synchronized
-    fun list(): List<RemoteRuleSet> {
-        if (!index.isFile) return emptyList()
-        return runCatching {
-            val array = JSONArray(secretBox.decrypt(index.readText(), INDEX_AAD).toString(Charsets.UTF_8))
-            (0 until array.length()).map { i ->
-                val item = array.getJSONObject(i)
-                RemoteRuleSet(
-                    id = item.getString("id"),
-                    name = item.getString("name"),
-                    url = item.getString("url"),
-                    behavior = RuleSetBehavior.valueOf(item.getString("behavior")),
-                    action = LocalRuleAction.valueOf(item.getString("action")),
-                    enabled = item.optBoolean("enabled", true),
-                    sha256 = item.optString("sha256").ifBlank { null },
-                    entryCount = item.optInt("entries"),
-                    updatedAtMillis = item.optLong("updated").takeIf { it > 0 },
-                )
+    private fun <T> locked(block: () -> T): T = io.weave.client.data.ProfileStorage.access(appContext) { synchronized(STORE_LOCK) {
+        try {
+            check(directory.isDirectory || directory.mkdirs())
+            RandomAccessFile(File(directory, "store.lock"), "rw").use { file ->
+                file.channel.lock().use { block() }
             }
-        }.getOrDefault(emptyList())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: RuleSetException) {
+            throw error
+        } catch (_: Exception) {
+            // Neither ciphertext, decrypted URLs nor filesystem paths belong in UI diagnostics.
+            throw RuleSetException("规则集无法读取或保存；原数据已保留，请重试或从备份恢复")
+        }
+    } }
+
+    fun list(): List<RemoteRuleSet> = locked { readIndex().map { it.set } }
+
+    /** A damaged enabled set must block config generation, never silently change routing. */
+    fun active(): List<Pair<RemoteRuleSet, List<String>>> = locked {
+        readIndex().filter { it.set.enabled }.map { it.set to readEntries(it) }
     }
 
-    /** Enabled sets with their validated entries, for the config assembler. */
-    fun active(): List<Pair<RemoteRuleSet, List<String>>> {
-        var total = 0
-        return list().filter(RemoteRuleSet::enabled).mapNotNull { set ->
-            val entries = runCatching { readEntries(set.id) }.getOrNull() ?: return@mapNotNull null
-            if (set.sha256 != null && RuleSetParser.sha256(entries) != set.sha256) return@mapNotNull null
-            total += entries.size
-            if (total > RuleSetParser.MAX_TOTAL_ENTRIES) return@mapNotNull null
-            set to entries
+    /** One consistent snapshot for encrypted backup export, including disabled sets. */
+    fun snapshot(): List<Pair<RemoteRuleSet, List<String>>> = locked {
+        readIndex().map { it.set to readEntries(it) }
+    }
+
+    suspend fun refresh(candidate: RemoteRuleSet): RemoteRuleSet {
+        val normalized = normalize(candidate)
+        val original = locked {
+            val records = readIndex()
+            val original = records.find { it.set.id == candidate.id }
+            if (original?.set?.revision != candidate.revision) throw stale()
+            if (original == null && records.size >= RuleSetParser.MAX_SETS) throw tooMany()
+            original
+        }
+        val body = fetcher.fetch(normalized.url, adaptMainSubscription = false).body
+        val entries = RuleSetParser.parse(body, normalized.behavior)
+        val coroutine = currentCoroutineContext()
+        return locked {
+            coroutine.ensureActive()
+            val records = readIndex()
+            if (records.find { it.set.id == candidate.id }?.set?.revision != original?.set?.revision) throw stale()
+            commit(records, normalized, entries)
         }
     }
 
-    /** Downloads, validates and stores a set. Blocking; call on an IO dispatcher. */
-    fun refresh(candidate: RemoteRuleSet): RemoteRuleSet {
-        val name = candidate.name.trim().take(60).ifEmpty { throw RuleSetException("请填写规则集名称") }
-        if (!candidate.url.trim().startsWith("https://", ignoreCase = true)) {
-            throw RuleSetException("规则集地址必须使用 HTTPS")
-        }
-        val existing = list()
-        if (existing.none { it.id == candidate.id } && existing.size >= RuleSetParser.MAX_SETS) {
-            throw RuleSetException("最多添加 ${RuleSetParser.MAX_SETS} 个规则集")
-        }
-        val body = fetcher.fetch(candidate.url.trim(), adaptMainSubscription = false).body
-        val entries = RuleSetParser.parse(body, candidate.behavior)
-        val otherEntries = existing.filter { it.id != candidate.id && it.enabled }.sumOf { it.entryCount }
-        if (otherEntries + entries.size > RuleSetParser.MAX_TOTAL_ENTRIES) {
-            throw RuleSetException("所有规则集合计超过 ${RuleSetParser.MAX_TOTAL_ENTRIES} 条上限")
-        }
-        val stored = candidate.copy(
-            name = name,
-            url = candidate.url.trim(),
-            sha256 = RuleSetParser.sha256(entries),
-            entryCount = entries.size,
-            updatedAtMillis = System.currentTimeMillis(),
-        )
-        synchronized(this) {
-            directory.mkdirs()
-            writeAtomic(payloadFile(stored.id), secretBox.encrypt(entries.joinToString("\n").toByteArray(Charsets.UTF_8), payloadAad(stored.id)))
-            saveIndex(list().filterNot { it.id == stored.id } + stored)
-        }
-        return stored
+    fun entries(id: String): List<String> = locked {
+        readEntries(readIndex().find { it.set.id == id } ?: throw RuleSetException("规则集已不存在"))
     }
 
-    /** Validated entries of one stored set (for backups). */
-    fun entries(id: String): List<String> = readEntries(id)
-
-    /** Stores a set restored from a backup after re-validating every entry. */
     fun restore(candidate: RemoteRuleSet, entries: List<String>): RemoteRuleSet {
-        val validated = RuleSetParser.parse(entries.joinToString("\n"), candidate.behavior)
-        val stored = candidate.copy(
-            sha256 = RuleSetParser.sha256(validated),
-            entryCount = validated.size,
-            updatedAtMillis = System.currentTimeMillis(),
-        )
-        synchronized(this) {
-            directory.mkdirs()
-            writeAtomic(payloadFile(stored.id), secretBox.encrypt(validated.joinToString("\n").toByteArray(Charsets.UTF_8), payloadAad(stored.id)))
-            saveIndex(list().filterNot { it.id == stored.id } + stored)
+        val normalized = normalize(candidate)
+        val validated = RuleSetParser.parse(entries.joinToString("\n"), normalized.behavior)
+        return locked { commit(readIndex(), normalized, validated) }
+    }
+
+    fun setEnabled(id: String, enabled: Boolean) = locked {
+        val records = readIndex()
+        val current = records.find { it.set.id == id } ?: throw RuleSetException("规则集已不存在")
+        if (current.set.enabled == enabled) return@locked
+        if (enabled) readEntries(current)
+        val next = records.map {
+            if (it === current) Record(it.set.copy(enabled = enabled, revision = generation()), it.generation) else it
         }
+        validateLimits(next)
+        saveIndex(next)
+        finishCommit()
+    }
+
+    fun delete(id: String) = locked {
+        val records = readIndex()
+        val current = records.find { it.set.id == id } ?: return@locked
+        saveIndex(records.filterNot { it === current })
+        finishCommit()
+        payloadFile(current).delete()
+        Unit
+    }
+
+    private fun commit(records: List<Record>, candidate: RemoteRuleSet, entries: List<String>): RemoteRuleSet {
+        val stored = candidate.copy(sha256 = RuleSetParser.sha256(entries), entryCount = entries.size,
+            updatedAtMillis = System.currentTimeMillis(), revision = generation())
+        val record = Record(stored, generation())
+        val previous = records.find { it.set.id == stored.id }
+        // Updating a set must not change first-match rule precedence.
+        val next = if (previous == null) records + record else records.map { if (it === previous) record else it }
+        validateLimits(next)
+        val payload = payloadFile(record)
+        writeAtomic(payload, secretBox.encrypt(entries.joinToString("\n").toByteArray(Charsets.UTF_8), payloadAad(stored.id)))
+        try {
+            // Persist the payload directory entry before publishing a pointer to it.
+            syncDirectory()
+            saveIndex(next)
+        } catch (error: Exception) {
+            payload.delete()
+            throw error
+        }
+        // If durability cannot be confirmed after publication, retain both generations.
+        finishCommit()
+        previous?.let { payloadFile(it).delete() }
         return stored
     }
 
-    @Synchronized
-    fun setEnabled(id: String, enabled: Boolean) {
-        saveIndex(list().map { if (it.id == id) it.copy(enabled = enabled) else it })
-    }
-
-    @Synchronized
-    fun delete(id: String) {
-        saveIndex(list().filterNot { it.id == id })
-        payloadFile(id).delete()
-    }
-
-    private fun readEntries(id: String): List<String> =
-        secretBox.decrypt(payloadFile(id).readText(), payloadAad(id)).toString(Charsets.UTF_8)
-            .split('\n')
-            .filter(String::isNotEmpty)
-
-    private fun saveIndex(sets: List<RemoteRuleSet>) {
-        directory.mkdirs()
-        val array = JSONArray()
-        sets.forEach { set ->
-            array.put(
-                JSONObject()
-                    .put("id", set.id)
-                    .put("name", set.name)
-                    .put("url", set.url)
-                    .put("behavior", set.behavior.name)
-                    .put("action", set.action.name)
-                    .put("enabled", set.enabled)
-                    .put("sha256", set.sha256.orEmpty())
-                    .put("entries", set.entryCount)
-                    .put("updated", set.updatedAtMillis ?: 0L),
+    private fun readIndex(): List<Record> {
+        if (!index.exists()) {
+            // A missing index beside encrypted payloads is recovery state, not a new empty store.
+            check(requireNotNull(directory.listFiles()).none { it.extension == "enc" })
+            return emptyList()
+        }
+        val array = JSONArray(secretBox.decrypt(index.readText(), INDEX_AAD).toString(Charsets.UTF_8))
+        require(array.length() <= RuleSetParser.MAX_SETS)
+        val records = (0 until array.length()).map { i ->
+            val item = array.getJSONObject(i)
+            val legacy = !item.has("generation")
+            val generation = if (legacy) null else item.getString("generation").also { require(GENERATION.matches(it)) }
+            val revision = if (item.has("revision")) item.getString("revision").also { require(GENERATION.matches(it)) }
+                else "legacy:" + RuleSetParser.sha256(listOf(item.toString()))
+            val set = RemoteRuleSet(
+                id = item.getString("id"), name = item.getString("name"), url = item.getString("url"),
+                behavior = RuleSetBehavior.valueOf(item.getString("behavior")),
+                action = LocalRuleAction.valueOf(item.getString("action")),
+                enabled = if (item.has("enabled")) item.get("enabled").let { require(it is Boolean); it } else true,
+                sha256 = item.getString("sha256").also { require(HASH.matches(it)) },
+                entryCount = item.getInt("entries").also { require(it in 1..RuleSetParser.MAX_ENTRIES_PER_SET) },
+                updatedAtMillis = item.getLong("updated").takeIf { it > 0 }, revision = revision,
             )
+            normalize(set)
+            Record(set, generation)
+        }
+        validateLimits(records)
+        return records
+    }
+
+    private fun readEntries(record: Record): List<String> {
+        val set = record.set
+        val body = secretBox.decrypt(payloadFile(record).readText(), payloadAad(set.id)).toString(Charsets.UTF_8)
+        val entries = RuleSetParser.parse(body, set.behavior)
+        require(entries.size == set.entryCount && RuleSetParser.sha256(entries) == set.sha256)
+        return entries
+    }
+
+    private fun normalize(candidate: RemoteRuleSet): RemoteRuleSet {
+        if (!ID.matches(candidate.id)) throw RuleSetException("规则集标识无效")
+        val name = candidate.name.trim().take(60).ifEmpty { throw RuleSetException("请填写规则集名称") }
+        val url = candidate.url.trim()
+        if (!url.startsWith("https://", ignoreCase = true)) throw RuleSetException("规则集地址必须使用 HTTPS")
+        return candidate.copy(name = name, url = url)
+    }
+
+    private fun validateLimits(records: List<Record>) {
+        require(records.map { it.set.id.lowercase() }.toSet().size == records.size)
+        if (records.size > RuleSetParser.MAX_SETS) throw tooMany()
+        if (records.filter { it.set.enabled }.sumOf { it.set.entryCount } > RuleSetParser.MAX_TOTAL_ENTRIES) {
+            throw RuleSetException("已启用规则集合计超过 ${RuleSetParser.MAX_TOTAL_ENTRIES} 条上限")
+        }
+    }
+
+    private fun saveIndex(records: List<Record>) {
+        val array = JSONArray()
+        records.forEach { record ->
+            val set = record.set
+            val item = JSONObject().put("id", set.id).put("name", set.name).put("url", set.url)
+                .put("behavior", set.behavior.name).put("action", set.action.name).put("enabled", set.enabled)
+                .put("sha256", set.sha256).put("entries", set.entryCount).put("updated", set.updatedAtMillis ?: 0L)
+            // Legacy entries retain their old pointer until their own successful update.
+            if (record.generation != null) item.put("generation", record.generation)
+            if (set.revision?.startsWith("legacy:") != true) item.put("revision", set.revision)
+            array.put(item)
         }
         writeAtomic(index, secretBox.encrypt(array.toString().toByteArray(Charsets.UTF_8), INDEX_AAD))
     }
 
-    private fun payloadFile(id: String): File {
-        require(ID.matches(id)) { "invalid rule-set id" }
-        return File(directory, "$id.enc")
-    }
+    private fun payloadFile(record: Record): File = File(directory,
+        record.generation?.let { "${record.set.id}.$it.enc" } ?: "${record.set.id}.enc")
 
     private fun payloadAad(id: String) = "weave.rule-set.$id.v1".toByteArray(Charsets.UTF_8)
 
     private fun writeAtomic(target: File, content: String) {
-        val pending = File(target.parentFile, "${target.name}.pending")
-        pending.writeText(content)
-        runCatching {
+        val pending = File.createTempFile(target.name, ".pending", directory)
+        try {
+            FileOutputStream(pending).use { output ->
+                output.write(content.toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
             Files.move(pending.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        }.recoverCatching {
-            Files.move(pending.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }.getOrElse {
-            check(pending.renameTo(target)) { "无法保存规则集" }
+        } finally {
+            pending.delete()
         }
     }
 
+    private fun syncDirectory() {
+        val descriptor = Os.open(directory.path, OsConstants.O_RDONLY, 0)
+        try { Os.fsync(descriptor) } finally { Os.close(descriptor) }
+    }
+
+    private fun finishCommit() {
+        try { syncDirectory() } catch (_: Exception) {
+            throw RuleSetException("规则集写入结果尚未确认，旧数据已保留；请重新加载核验")
+        }
+    }
+
+    private fun stale() = RuleSetException("规则集已被修改或删除，请重新加载后再试")
+    private fun tooMany() = RuleSetException("最多添加 ${RuleSetParser.MAX_SETS} 个规则集")
+    private fun generation() = UUID.randomUUID().toString().replace("-", "")
+
     private companion object {
+        val STORE_LOCK = Any()
         const val DIRECTORY = "rule-sets"
         const val INDEX_FILE = "index.enc"
         val INDEX_AAD = "weave.rule-sets.index.v1".toByteArray(Charsets.UTF_8)
-        val ID = Regex("[0-9a-fA-F-]{36}")
+        val ID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+        val GENERATION = Regex("[0-9a-f]{32}")
+        val HASH = Regex("[0-9a-f]{64}")
     }
 }

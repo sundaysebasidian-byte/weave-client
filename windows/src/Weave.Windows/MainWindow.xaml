@@ -53,7 +53,7 @@
 <StackPanel Padding="20,16,20,18" Spacing="14">
 <Grid x:Name="NetworkOptions" ColumnSpacing="20" RowSpacing="14"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.3*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <ComboBox x:Name="RoutingSelector" Header="{Binding RoutingMode, Source={StaticResource UiText}}" SelectedIndex="0" SelectionChanged="RoutingMode_Changed"></ComboBox>
-<ToggleSwitch x:Name="TunToggle" Grid.Column="1" VerticalAlignment="Center" Header="{Binding TUNDeviceWideRouting, Source={StaticResource UiText}}" IsOn="True" OffContent="{Binding SystemProxyCompatibleAppsOnly, Source={StaticResource UiText}}" OnContent="{Binding TUNAdministratorAccessRequired, Source={StaticResource UiText}}"/>
+<ToggleSwitch x:Name="TunToggle" Grid.Column="1" VerticalAlignment="Center" Header="{Binding TUNDeviceWideRouting, Source={StaticResource UiText}}" IsOn="True" OffContent="{Binding SystemProxyCompatibleAppsOnly, Source={StaticResource UiText}}" OnContent="{Binding TUNManagedByCoreService, Source={StaticResource UiText}}"/>
 </Grid>
 <Border Background="{ThemeResource WeaveIconBrush}" CornerRadius="12" Padding="12,10"><TextBlock x:Name="ModeExplanation" Text="{Binding RouteByAppAndDomainUseThe, Source={StaticResource UiText}}" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource WeaveInkBrush}"/></Border>
 <StackPanel Orientation="Horizontal" Spacing="10"><Button Content="{Binding RecheckNetwork, Source={StaticResource UiText}}" Click="RecheckNetwork_Click"/><Button Content="{Binding ReconnectNetwork, Source={StaticResource UiText}}" Click="ReconnectNetwork_Click"/></StackPanel>

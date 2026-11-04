@@ -181,32 +181,26 @@ class LocalRouteRuleStore(
     context: Context,
     private val secretBox: SecretBox = AndroidKeystoreSecretBox(),
 ) {
+    private val appContext = context.applicationContext
     private val file = File(context.applicationContext.noBackupFilesDir, FILE_NAME)
     private val associatedData = "weave.local-route-rules.v1".toByteArray(Charsets.UTF_8)
 
-    @Synchronized
-    fun list(): List<LocalRouteRule> = if (!file.isFile) {
-        emptyList()
-    } else {
-        runCatching {
-            val raw = secretBox.decrypt(file.readText(Charsets.UTF_8), associatedData)
-                .toString(Charsets.UTF_8)
-            val array = JSONArray(raw)
-            (0 until array.length()).map { index ->
-                val item = array.getJSONObject(index)
-                LocalRouteRule(
-                    id = item.getString("id"),
-                    type = LocalRuleType.valueOf(item.getString("type")),
-                    value = item.getString("value"),
-                    action = LocalRuleAction.valueOf(item.getString("action")),
-                    enabled = item.optBoolean("enabled", true),
-                ).let(LocalRouteRuleValidator::normalize)
-            }.take(LocalRouteRuleValidator.MAX_RULES)
-        }.getOrDefault(emptyList())
+    internal fun snapshot(): List<LocalRouteRule> = io.weave.client.data.ProfileStorage.access(appContext) {
+        if (!file.exists()) return@access emptyList()
+        val array = JSONArray(secretBox.decrypt(file.readText(), associatedData).toString(Charsets.UTF_8))
+        require(array.length() <= LocalRouteRuleValidator.MAX_RULES)
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            LocalRouteRuleValidator.normalize(LocalRouteRule(item.getString("id"), LocalRuleType.valueOf(item.getString("type")),
+                item.getString("value"), LocalRuleAction.valueOf(item.getString("action")), item.getBoolean("enabled")))
+        }.also { require(it.map { rule -> rule.id }.toSet().size == it.size) }
     }
 
-    @Synchronized
-    fun save(rules: List<LocalRouteRule>) {
+    fun list(): List<LocalRouteRule> = io.weave.client.data.ProfileStorage.access(appContext) {
+        runCatching { snapshot() }.getOrDefault(emptyList())
+    }
+
+    fun save(rules: List<LocalRouteRule>): Unit = io.weave.client.data.ProfileStorage.access(appContext) {
         require(rules.size <= LocalRouteRuleValidator.MAX_RULES) {
             "最多保存 ${LocalRouteRuleValidator.MAX_RULES} 条本地规则"
         }

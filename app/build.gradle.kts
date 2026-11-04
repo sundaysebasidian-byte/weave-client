@@ -3,9 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val isolatedDeviceTest = providers.gradleProperty("weaveDeviceTest").orNull == "true"
+
 android {
     namespace = "io.weave.client"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.weave.client"
@@ -47,6 +49,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (isolatedDeviceTest) {
+                applicationIdSuffix = ".acceptance"
+                versionNameSuffix = "-device-test"
+            }
+        }
         release {
             isDebuggable = false
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
@@ -71,6 +79,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("tests/fixtures"))
+    if (isolatedDeviceTest) {
+        // Separate UID, preferences and Keystore from the owner's installed client.
+        sourceSets.getByName("debug").res.srcDir("src/deviceTest/res")
     }
 
     androidResources {
@@ -129,8 +143,7 @@ android {
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.06.00"))
-    // 1.19.0 / Lifecycle 2.11.0 require compileSdk 37. Keep SDK 36 compatible
-    // versions until API 37 is installed on the build and device-test matrix.
+    // Keep the existing AndroidX runtime versions; SDK 37 is needed by the HTTPS client.
     implementation("androidx.core:core:1.18.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
@@ -147,6 +160,8 @@ dependencies {
     implementation("androidx.camera:camera-view:1.5.3")
     // Safe YAML data parsing for nested Clash providers; never construct arbitrary Java objects.
     implementation("org.yaml:snakeyaml:2.5")
+    // A validated DNS implementation supplies the exact addresses used by the HTTPS socket.
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
 
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

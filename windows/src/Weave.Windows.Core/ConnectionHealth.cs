@@ -10,7 +10,7 @@ public static class ConnectionHealth
 {
     private static readonly string[] Targets = ["https://www.google.com/generate_204", "https://www.youtube.com/generate_204"];
 
-    public static async Task<ConnectionHealthState> CheckAsync(RuntimeBundle bundle, CancellationToken token)
+    public static async Task<ConnectionHealthState> CheckAsync(ConnectionEndpoint bundle, CancellationToken token)
     {
         using var proxyHandler = new SocketsHttpHandler
         {

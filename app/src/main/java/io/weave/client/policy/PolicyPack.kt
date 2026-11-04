@@ -241,15 +241,17 @@ class PolicyPackStore(
     private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
     private val directory = File(appContext.noBackupFilesDir, DIRECTORY).apply { mkdirs() }
 
-    @Synchronized
-    fun list(): List<PolicyPack> = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
+    internal fun snapshot(): List<PolicyPack> = io.weave.client.data.ProfileStorage.access(appContext) {
+        preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().sorted().map(::read)
+    }
+
+    fun list(): List<PolicyPack> = io.weave.client.data.ProfileStorage.access(appContext) { preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
         .mapNotNull { id ->
             runCatching { read(id) }.getOrNull()
         }
-        .sortedWith(compareBy<PolicyPack> { !it.active }.thenBy { it.name.lowercase() })
+        .sortedWith(compareBy<PolicyPack> { !it.active }.thenBy { it.name.lowercase() }) }
 
-    @Synchronized
-    fun save(pack: PolicyPack): PolicyPack {
+    fun save(pack: PolicyPack): PolicyPack = io.weave.client.data.ProfileStorage.access(appContext) {
         val activeIds = activeIds().toMutableSet()
         val file = File(directory, "${pack.id}.enc")
         val encrypted = secretBox.encrypt(
@@ -283,11 +285,10 @@ class PolicyPackStore(
             putBoolean(key(pack.id, ACTIVE), pack.active)
         }
         if (pack.active) activeIds += pack.id else activeIds -= pack.id
-        return pack.copy(active = pack.id in activeIds)
+        return@access pack.copy(active = pack.id in activeIds)
     }
 
-    @Synchronized
-    fun read(id: String): PolicyPack {
+    fun read(id: String): PolicyPack = io.weave.client.data.ProfileStorage.access(appContext) {
         require(ID.matches(id)) { "策略包 id 无效" }
         val encrypted = File(directory, "${id}.enc").takeIf(File::isFile)
             ?: throw PolicyPackException("策略包不存在")
@@ -295,20 +296,18 @@ class PolicyPackStore(
             encrypted.readText(Charsets.UTF_8),
             id.toByteArray(Charsets.UTF_8),
         ).toString(Charsets.UTF_8)
-        return PolicyPackCodec.decode(raw, "local://stored-policy").copy(
+        return@access PolicyPackCodec.decode(raw, "local://stored-policy").copy(
             active = preferences.getBoolean(key(id, ACTIVE), false),
         )
     }
 
-    @Synchronized
-    fun setActive(id: String, active: Boolean): PolicyPack {
+    fun setActive(id: String, active: Boolean): PolicyPack = io.weave.client.data.ProfileStorage.access(appContext) {
         val pack = read(id)
         preferences.edit(commit = true) { putBoolean(key(id, ACTIVE), active) }
-        return pack.copy(active = active)
+        return@access pack.copy(active = active)
     }
 
-    @Synchronized
-    fun delete(id: String) {
+    fun delete(id: String) = io.weave.client.data.ProfileStorage.access(appContext) {
         read(id)
         File(directory, "${id}.enc").delete()
         val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()

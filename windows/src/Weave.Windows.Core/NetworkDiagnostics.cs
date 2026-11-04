@@ -46,7 +46,7 @@ public static class NetworkDiagnostics
         ("Disney+", "https://www.disneyplus.com"),
     };
 
-    public static async Task<IReadOnlyList<ProbeResult>> RunAsync(RuntimeBundle bundle, CancellationToken token,
+    public static async Task<IReadOnlyList<ProbeResult>> RunAsync(ConnectionEndpoint bundle, CancellationToken token,
         IProgress<ProbeResult>? progress = null)
     {
         using var handler = new SocketsHttpHandler

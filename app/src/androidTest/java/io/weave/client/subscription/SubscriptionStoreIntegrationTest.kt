@@ -186,4 +186,93 @@ class SubscriptionStoreIntegrationTest {
         assertEquals(listOf(old.id), SubscriptionSecretStore(context).list().map { it.id })
     }
 
+    @Test fun reviewedPayloadAndQuotaStayAtTheOldRevisionWhenIndexCommitFails() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val parser = SubscriptionPayloadParser()
+        val payload = "proxies: [{name: fixture, type: socks5, server: example.test, port: 1080}]"
+        val originalMetadata = SubscriptionRemoteMetadata(SubscriptionUsage(1, 2, 100, null), 24)
+        val replacementMetadata = SubscriptionRemoteMetadata(SubscriptionUsage(10, 20, 1000, null), 12)
+        val old = store.save("Existing", "https://fixture.invalid/old", payload, parser.parse(payload), remoteMetadata = originalMetadata)
+        val snapshot = store.readForUpdate(old.id)
+        val candidate = payload.replace("1080", "1081")
+        val blocker = File(context.applicationInfo.dataDir, "shared_prefs/encrypted_subscriptions_v1.xml.new")
+        check(blocker.mkdir())
+        File(blocker, "keep-nonempty").writeText("synthetic fault")
+        try {
+            assertTrue(runCatching {
+                store.saveReviewed(old.id, snapshot.revision, "Changed", "https://fixture.invalid/new", candidate,
+                    parser.parse(candidate), SubscriptionImportCounts(1, 0, 0, 1), replacementMetadata)
+            }.isFailure)
+            assertEquals(snapshot.revision, store.readForUpdate(old.id).revision)
+            assertEquals(payload, store.readPayload(old.id))
+            assertEquals(originalMetadata.usage, store.get(old.id)!!.usage)
+            assertEquals(24, store.get(old.id)!!.updateIntervalHours)
+        } finally { blocker.deleteRecursively() }
+        val reopened = SubscriptionSecretStore(context)
+        assertEquals(snapshot.revision, reopened.readForUpdate(old.id).revision)
+        val updated = reopened.saveReviewed(old.id, snapshot.revision, "Changed", "https://fixture.invalid/new", candidate,
+            parser.parse(candidate), SubscriptionImportCounts(1, 0, 0, 1), replacementMetadata)
+        assertEquals(replacementMetadata.usage, updated.usage)
+        assertEquals(12, updated.updateIntervalHours)
+        assertEquals(candidate, reopened.readPayload(old.id))
+    }
+
+    @Test fun failedDeleteKeepsTheOldPayloadReadable() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val payload = "proxies: [{name: fixture, type: socks5, server: example.test, port: 1080}]"
+        val old = store.save("Existing", "local://fixture", payload, SubscriptionPayloadParser().parse(payload))
+        val blocker = File(context.applicationInfo.dataDir, "shared_prefs/encrypted_subscriptions_v1.xml.new")
+        check(blocker.mkdir()); File(blocker, "keep-nonempty").writeText("synthetic fault")
+        try {
+            assertTrue(runCatching { store.delete(old.id) }.isFailure)
+            assertEquals(payload, store.readPayload(old.id))
+            assertEquals(old, store.get(old.id))
+        } finally { blocker.deleteRecursively() }
+        assertEquals(payload, SubscriptionSecretStore(context).readPayload(old.id))
+        assertEquals(old, store.delete(old.id))
+        assertTrue(store.list().isEmpty())
+        assertTrue(File(context.noBackupFilesDir, "subscriptions").listFiles()!!.isEmpty())
+    }
+
+    @Test fun constructorRecoversALegacyDeleteInterruptedBeforeIndexCommit() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val payload = "proxies: [{name: fixture, type: socks5, server: example.test, port: 1080}]"
+        val old = store.save("Existing", "local://fixture", payload, SubscriptionPayloadParser().parse(payload))
+        val directory = File(context.noBackupFilesDir, "subscriptions")
+        val current = directory.listFiles()!!.single { it.extension == "enc" }
+        val staged = File(directory, "${old.id}.deleted")
+        check(current.renameTo(staged))
+        val reopened = SubscriptionSecretStore(context)
+        assertEquals(payload, reopened.readPayload(old.id))
+        assertEquals(old, reopened.get(old.id))
+        assertFalse(staged.exists())
+    }
+
+    @Test fun missingIndexCannotDiscardALegacyDeleteTombstone() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val payload = "proxies: [{name: fixture, type: socks5, server: example.test, port: 1080}]"
+        val old = store.save("Existing", "local://fixture", payload, SubscriptionPayloadParser().parse(payload))
+        val directory = File(context.noBackupFilesDir, "subscriptions")
+        val current = directory.listFiles()!!.single { it.extension == "enc" }
+        val staged = File(directory, "${old.id}.deleted")
+        check(current.renameTo(staged))
+        val encrypted = staged.readText()
+        check(File(context.applicationInfo.dataDir, "shared_prefs/encrypted_subscriptions_v1.xml").delete())
+        assertTrue(runCatching { SubscriptionSecretStore(context) }.isFailure)
+        assertEquals(encrypted, staged.readText())
+    }
+
+    @Test fun committedLegacyDeletionDoesNotReappearDuringRecovery() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val payload = "proxies: [{name: fixture, type: socks5, server: example.test, port: 1080}]"
+        val old = store.save("Existing", "local://fixture", payload, SubscriptionPayloadParser().parse(payload))
+        val directory = File(context.noBackupFilesDir, "subscriptions")
+        val encrypted = directory.listFiles()!!.single { it.extension == "enc" }.readText()
+        store.delete(old.id)
+        val tombstone = File(directory, "${old.id}.deleted")
+        tombstone.writeText(encrypted)
+        assertTrue(SubscriptionSecretStore(context).list().isEmpty())
+        assertFalse(tombstone.exists())
+    }
+
 }

@@ -18,18 +18,19 @@ internal fun Context.crossProcessPreferences(name: String): SharedPreferences =
     TransactionalPreferences(applicationContext, name)
 
 private class TransactionalPreferences(context: Context, name: String) : SharedPreferences {
+    private val appContext = context.applicationContext
     private val directory = File(context.applicationInfo.dataDir, "shared_prefs")
     private val file = File(directory, "$name.xml")
     private val atomicFile = AtomicFile(file)
     init { require(name in STORES) { "Unknown settings store" } }
     @Volatile private var snapshot: Map<String, Any> = transaction { read() }
 
-    private fun <T> transaction(block: () -> T): T = synchronized(LOCKS.getOrPut(file.path) { Any() }) {
+    private fun <T> transaction(block: () -> T): T = ProfileStorage.access(appContext) { synchronized(LOCKS.getOrPut(file.path) { Any() }) {
         check(directory.isDirectory || directory.mkdirs()) { "Settings directory unavailable" }
         RandomAccessFile(File(directory, "${file.name}.weave.lock"), "rw").channel.use { channel ->
             channel.lock().use { block() }
         }
-    }
+    } }
 
     private fun read(): MutableMap<String, Any> {
         if (!file.exists() && !File(file.path + ".bak").exists()) return linkedMapOf()
@@ -93,7 +94,13 @@ private class TransactionalPreferences(context: Context, name: String) : SharedP
             }
             serializer.endTag(null, "map")
             serializer.endDocument()
+            serializer.flush()
+            output.fd.sync()
             atomicFile.finishWrite(output)
+            // AtomicFile logs some finish failures instead of throwing (including failed rename).
+            check(file.isFile && !File(file.path + ".new").exists() && !File(file.path + ".bak").exists()) {
+                "Unable to commit settings file"
+            }
         } catch (failure: Throwable) {
             atomicFile.failWrite(output)
             throw failure

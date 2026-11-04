@@ -10,10 +10,15 @@ public sealed class MihomoProcess : IAsyncDisposable
     private readonly string _executablePath;
     private readonly object _gate = new();
     private Process? _process;
+    private Process? _pendingValidationExit;
     private CancellationTokenSource? _logCancellation;
     private ChildProcessLifetime? _childLifetime;
     private MihomoController? _controller;
+    private CoreReadinessProbe? _readinessProbe;
     private volatile bool _ready;
+    // Only synthetic integration fixtures consume raw lines; the app receives redacted diagnostics.
+    internal Action<string>? TestLogObserver { get; init; }
+    internal Func<Process, Task>? TestTerminateAsync { get; init; }
     public bool IsReady => _ready && IsRunning;
 
     public MihomoProcess(string executablePath)
@@ -36,16 +41,27 @@ public sealed class MihomoProcess : IAsyncDisposable
 
     public event EventHandler? Exited;
 
-    public async Task StartAsync(RuntimeBundle bundle, CancellationToken cancellationToken = default)
+    public Task<IPAddress[]> ResolveHostAsync(string host, CancellationToken token)
     {
-        _ready = false;
-        LastDiagnostics = string.Empty;
         lock (_gate)
         {
-            if (_process is { HasExited: false })
+            if (!_ready || _process is not { HasExited: false } || _controller is null)
+                throw new HttpRequestException(L.T("本会话核心已停止，无法完成订阅 DNS 查询"));
+            return _controller.ResolveHostAsync(host, token);
+        }
+    }
+
+    public async Task StartAsync(RuntimeBundle bundle, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
+            if (_process is not null)
             {
                 throw new InvalidOperationException(L.T("Mihomo 已经在运行"));
             }
+            _ready = false;
+            LastDiagnostics = string.Empty;
         }
 
         if (!File.Exists(_executablePath))
@@ -90,6 +106,7 @@ public sealed class MihomoProcess : IAsyncDisposable
         {
             if (OperatingSystem.IsWindows()) _childLifetime = new ChildProcessLifetime(process);
             _controller = new MihomoController(bundle);
+            _readinessProbe = new(bundle.ReadinessTargetPort);
             await WaitForReadyAsync(bundle, process, cancellationToken).ConfigureAwait(false);
             if (process.HasExited) throw new InvalidOperationException(L.T("内核已退出"));
             _ready = true;
@@ -105,6 +122,8 @@ public sealed class MihomoProcess : IAsyncDisposable
         RuntimeBundle bundle,
         CancellationToken cancellationToken = default)
     {
+        lock (_gate)
+            if (_pendingValidationExit is not null) throw new IOException("The previous configuration check has not stopped.");
         var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
@@ -115,85 +134,104 @@ public sealed class MihomoProcess : IAsyncDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        using var process = new Process { StartInfo = startInfo };
-        if (!process.Start())
-        {
-            return (false, L.T("无法启动 Mihomo 配置检查"));
-        }
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        // Drain both pipes before waiting; a full diagnostic pipe otherwise deadlocks validation.
-        var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
-        var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+        var process = new Process { StartInfo = startInfo };
+        var started = false;
         try
         {
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
-            catch (OperationCanceledException) { }
-            cancellationToken.ThrowIfCancellationRequested();
-            return (false, L.T("Mihomo 配置检查超时"));
-        }
+            started = process.Start();
+            if (!started) return (false, L.T("无法启动 Mihomo 配置检查"));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            // Drain both pipes before waiting; a full diagnostic pipe otherwise deadlocks validation.
+            var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await TerminateOwnedAsync(process).ConfigureAwait(false);
+                try { await Task.WhenAll(stdout, stderr).ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+                cancellationToken.ThrowIfCancellationRequested();
+                return (false, L.T("Mihomo 配置检查超时"));
+            }
 
-        var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
-        return (process.ExitCode == 0, process.ExitCode == 0 ? L.T("配置校验通过") : SafeDiagnostic(output));
+            var output = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false)).Trim();
+            return (process.ExitCode == 0, process.ExitCode == 0 ? L.T("配置校验通过") : SafeDiagnostic(output));
+        }
+        finally
+        {
+            if (!started || process.HasExited) process.Dispose();
+            else lock (_gate) _pendingValidationExit = process;
+        }
     }
 
     public async Task StopAsync()
     {
         _ready = false;
+        Process? validation;
+        lock (_gate) validation = _pendingValidationExit;
+        if (validation is not null)
+        {
+            // Keep the handle and fail cleanup if termination cannot be confirmed.
+            await TerminateOwnedAsync(validation).ConfigureAwait(false);
+            lock (_gate) if (ReferenceEquals(_pendingValidationExit, validation)) _pendingValidationExit = null;
+            validation.Dispose();
+        }
         Process? process;
         CancellationTokenSource? cancellation;
         lock (_gate)
         {
             process = _process;
-            _process = null;
             cancellation = _logCancellation;
-            _logCancellation = null;
         }
+        if (process is null) return;
 
+        if (!process.HasExited && _controller is not null)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try { await _controller.DisableTunAsync(timeout.Token).ConfigureAwait(false); }
+            catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
+        }
+        // A failed kill or wait must retain ownership. A retry must never treat an
+        // uncertain live core as already stopped and release its session files.
+        await TerminateOwnedAsync(process).ConfigureAwait(false);
         cancellation?.Cancel();
-        if (process is null)
+        _controller?.Dispose();
+        _controller = null;
+        _childLifetime?.Dispose();
+        _childLifetime = null;
+        if (_readinessProbe is { } probe)
         {
-            cancellation?.Dispose();
-            return;
+            await probe.DisposeAsync().ConfigureAwait(false);
+            _readinessProbe = null;
         }
-
-        try
+        lock (_gate)
         {
-            if (!process.HasExited)
-            {
-                if (_controller is not null)
-                {
-                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    try { await _controller.DisableTunAsync(timeout.Token).ConfigureAwait(false); }
-                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
-                }
-                process.Kill(entireProcessTree: true);
-                using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await process.WaitForExitAsync(exitTimeout.Token).ConfigureAwait(false);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // The process exited between the checks.
-        }
-        finally
-        {
+            _process = null;
+            _logCancellation = null;
             process.Dispose();
             cancellation?.Dispose();
-            _controller?.Dispose();
-            _controller = null;
-            _childLifetime?.Dispose();
-            _childLifetime = null;
         }
     }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
+
+    private Task TerminateOwnedAsync(Process process) =>
+        TestTerminateAsync is { } terminate ? terminate(process) : TerminateAndWaitAsync(process);
+
+    private static async Task TerminateAndWaitAsync(Process process)
+    {
+        if (!process.HasExited)
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) when (process.HasExited) { }
+        }
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+    }
 
     private async Task WaitForReadyAsync(RuntimeBundle bundle, Process process, CancellationToken cancellationToken)
     {
@@ -213,7 +251,8 @@ public sealed class MihomoProcess : IAsyncDisposable
                     NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
                         adapter.Name.Equals(bundle.TunDevice, StringComparison.OrdinalIgnoreCase) &&
                         adapter.OperationalStatus == OperationalStatus.Up));
-                if (tunReady && await _controller!.IsReadyAsync(bundle, timeout.Token).ConfigureAwait(false)) return;
+                if (tunReady && await _controller!.IsReadyAsync(bundle, timeout.Token).ConfigureAwait(false) &&
+                    await _readinessProbe!.IsForwardingAsync(bundle.ReadinessListenPort, timeout.Token).ConfigureAwait(false)) return;
             }
             catch (Exception error) when (error is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException or NetworkInformationException)
             {
@@ -236,6 +275,7 @@ public sealed class MihomoProcess : IAsyncDisposable
                 }
 
                 LastDiagnostics = SafeDiagnostic(line);
+                TestLogObserver?.Invoke(line);
             }
         }
         catch (OperationCanceledException)

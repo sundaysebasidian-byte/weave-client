@@ -539,7 +539,7 @@ internal fun BackupScreen(
                     }
             }
             Text(
-                "包含订阅、应用分流、默认出口、DNS 与路由设置、本地规则、远程规则集和自定义策略组。不包含离线策略包、系统 HTTP 代理和局域网共享设置。",
+                "包含订阅、应用分流、默认出口、DNS 与路由设置、本地规则、远程规则集、自定义策略组和离线策略包。系统 HTTP 代理和局域网共享需要重新开启。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
@@ -565,13 +565,13 @@ internal fun BackupScreen(
                             translate = false,
                         )
                         Text(
-                            listOf("${preview.localRules} 条本地规则", "${preview.ruleSets} 个规则集", "${preview.groups} 个策略组")
+                            listOf("${preview.localRules} 条本地规则", "${preview.ruleSets} 个规则集", "${preview.groups} 个策略组", "${preview.policyPacks} 个策略包")
                                 .joinToString(" · ") { localizeWeaveText(it, language) },
                             fontSize = 13.sp,
                             translate = false,
                         )
                         Text(
-                            "恢复会覆盖同一订阅和现有设置；同名订阅按安全审计原位更新。",
+                            "订阅、规则集和策略包按标识合并；应用分流、策略组、本地规则和设置会被替换。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                         )

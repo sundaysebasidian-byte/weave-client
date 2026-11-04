@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  # Complete the running device acceptance; newer commits coalesce into the pending run.
+  cancel-in-progress: false
 
 jobs:
   test-and-build:
@@ -27,16 +28,70 @@ jobs:
         with:
           # Legacy SDK "tools" is no longer available; the action installs cmdline-tools itself.
           packages: platform-tools
+          cmdline-tools-version: '15859902'
       - name: Install locked Android toolchain
-        run: sdkmanager "platforms;android-36" "ndk;29.0.14206865" "cmake;3.31.6"
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
+        run: |
+          python3 tools/test-android-ready.py
+          python3 tools/test-android-failure.py
+          python3 tools/test-android-test-code.py
+          ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
       - name: Android lint
         timeout-minutes: 15
         run: ./gradlew lintDebug --no-daemon --no-configuration-cache
       - name: Debug build
-        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache
+        run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
+      - name: Storage transactions on a disposable Android emulator
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "emulator" "system-images;android-36;default;x86_64"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/weave-android-user"
+          export ANDROID_EMULATOR_HOME="$RUNNER_TEMP/weave-android-emulator"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-avds"
+          export ANDROID_ADB_SERVER_PORT=5041
+          export ADB_MDNS_AUTO_CONNECT=''
+          export WEAVE_TEST_ADB_PORT=5041
+          export WEAVE_ISOLATED_EMULATOR=1
+          export WEAVE_TEST_BOOT_TIMEOUT=300
+          export WEAVE_TEST_RESULTS="$RUNNER_TEMP/weave-storage-results"
+          mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" "$WEAVE_TEST_RESULTS"
+          printf 'no\n' | avdmanager create avd -n weave-storage -k 'system-images;android-36;default;x86_64'
+          adb -P 5041 --one-device weave-isolated-no-usb start-server
+          emulator_pid=''
+          cleanup() {
+            result=$?
+            if [[ $result != 0 ]]; then tail -80 "$WEAVE_TEST_RESULTS/emulator.log" || true; fi
+            adb -P 5041 -s emulator-5580 emu kill >/dev/null 2>&1 || true
+            if [[ -n "$emulator_pid" ]]; then
+              kill "$emulator_pid" 2>/dev/null || true
+              wait "$emulator_pid" 2>/dev/null || true
+            fi
+            adb -P 5041 kill-server || true
+          }
+          trap cleanup EXIT
+          # Device acceptance requires an already authorized hardware accelerator.
+          if ! "$ANDROID_HOME/emulator/emulator" -accel-check 2>&1 | tee "$WEAVE_TEST_RESULTS/acceleration.txt"; then
+            echo 'Android device acceptance needs a runner with existing KVM access. No permission changes were attempted.' >&2
+            exit 1
+          fi
+          "$ANDROID_HOME/emulator/emulator" -avd weave-storage -port 5580 -accel on \
+            -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
+            -gpu swiftshader -cores 2 -memory 2048 -camera-back none -camera-front none \
+            > "$WEAVE_TEST_RESULTS/emulator.log" 2>&1 &
+          emulator_pid=$!
+          export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
+          bash tools/test-android-storage.sh emulator-5580
+      - name: Preserve device test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Android-storage-tests
+          path: ${{ runner.temp }}/weave-storage-results/
+          if-no-files-found: warn
       - name: Release build (ABI splits)
         run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
       - name: Ensure no universal APK is published

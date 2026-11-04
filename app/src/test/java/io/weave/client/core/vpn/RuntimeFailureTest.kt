@@ -18,6 +18,8 @@ class RuntimeFailureTest {
         assertEquals(RuntimeFailure.NODE_CONFIGURATION, RuntimeFailure.of(NativeCoreException("proxy 1.2.3.4:443: bad uuid")))
         assertEquals(RuntimeFailure.DNS_CONFIGURATION, RuntimeFailure.of(NativeCoreException("parse dns failed")))
         assertEquals(RuntimeFailure.SUBSCRIPTION_PARSE, RuntimeFailure.of(SubscriptionImportException("x")))
+        assertEquals(RuntimeFailure.RULE_SET_CONFIGURATION, RuntimeFailure.of(io.weave.client.routing.RuleSetException("secret URL")))
+        assertEquals("rule_set_configuration_failed", RuntimeFailure.code(io.weave.client.routing.RuleSetException("secret URL")))
         assertEquals(RuntimeFailure.SUBSCRIPTION_MISSING, RuntimeFailure.of(NoSuchElementException("订阅不存在")))
         assertEquals("IllegalStateException", RuntimeFailure.code(IllegalStateException("host=secret.example")))
     }

@@ -4,14 +4,43 @@ import java.net.URI
 import java.util.Base64
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 class SubscriptionPreparationTest {
+    @Test fun `cancelled provider import cannot fetch the next child or publish partial payload`() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val requests = mutableListOf<String>()
+        var published = false
+        val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = {
+            requests += it
+            entered.complete(Unit)
+            CompletableDeferred<SubscriptionFetchResult>().await()
+        }), SubscriptionPayloadParser())
+        val download = launch {
+            pipeline.prepare("""proxy-providers:
+              first: {type: http, url: https://fixture.invalid/first}
+              second: {type: http, url: https://fixture.invalid/second}
+            """.trimIndent(), "https://fixture.invalid/main")
+            published = true
+        }
+        withTimeout(2_000) {
+            entered.await()
+            download.cancelAndJoin()
+        }
+        assertEquals(listOf("https://fixture.invalid/first"), requests)
+        assertFalse(published)
+    }
+
     private val parser = SubscriptionPayloadParser()
     private fun node(index: Int): String = """{"name":"node-$index","type":"${if (index % 3 == 0) "hysteria2" else "http"}","server":"example.test","port":443,"password":"fixture","tls":true}"""
     private fun body(range: IntRange) = """{"proxies":[${range.joinToString(",", transform = ::node)}]}"""
     private fun base64(input: String) = Base64.getEncoder().encodeToString(input.toByteArray())
 
-    @Test fun `compact JSON main and Base64 provider retain 65 through exact repository pipeline`() {
+    @Test fun `compact JSON main and Base64 provider retain 65 through exact repository pipeline`() = runBlocking<Unit> {
         val requests = mutableListOf<String>()
         val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = {
             requests += it
@@ -30,7 +59,7 @@ class SubscriptionPreparationTest {
         assertEquals(listOf("https://subs.example.test/nodes", "https://subs.example.test/nodes"), requests)
     }
 
-    @Test fun `pure provider manifest without root nodes is fully materialized`() {
+    @Test fun `pure provider manifest without root nodes is fully materialized`() = runBlocking<Unit> {
         val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = {
             SubscriptionFetchResult(body(1..65), URI(it), null)
         }), parser)
@@ -42,7 +71,7 @@ class SubscriptionPreparationTest {
         assertFalse(ClashSubscriptionDocument.hasRootKey("""{"meta":{"proxies":[]}}""", "proxies"))
     }
 
-    @Test fun `all HTTP nodes with same endpoint and distinct names survive normalization`() {
+    @Test fun `all HTTP nodes with same endpoint and distinct names survive normalization`() = runBlocking<Unit> {
         val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = { error("no fetch") }), parser)
         val result = pipeline.prepare(body(1..65), "local://file")
         assertEquals(65, result.second.nodeCount)

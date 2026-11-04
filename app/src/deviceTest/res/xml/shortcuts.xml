@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Production shortcuts target io.weave.client; the isolated fixture must never launch it. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android" />

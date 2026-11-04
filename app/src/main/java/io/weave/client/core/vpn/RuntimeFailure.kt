@@ -1,6 +1,7 @@
 package io.weave.client.core.vpn
 
 import io.weave.client.core.bridge.NativeCoreException
+import io.weave.client.routing.RuleSetException
 import io.weave.client.subscription.SubscriptionImportException
 
 /**
@@ -24,6 +25,7 @@ enum class RuntimeFailure(val code: String, val message: String) {
     SUBSCRIPTION_MISSING("subscription_validation_failed", "所选订阅已不存在，请重新选择出口"),
     NODES_NOT_LOADED("subscription_validation_failed", "订阅节点未成功载入，请重新选择出口或更新订阅"),
     DNS_CONFIGURATION("dns_configuration_failed", "DNS 配置未通过校验，请检查自定义 DNS 地址或重新选择预设"),
+    RULE_SET_CONFIGURATION("rule_set_configuration_failed", "远程规则集无法校验，已停止应用配置；请重新下载、停用损坏规则或从备份恢复"),
     VPN_ROUTE_NOT_READY("system_vpn_route_not_ready", "系统 VPN 路由尚未就绪，请关闭其他 VPN 后重新连接"),
     VPN_INTERFACE("vpn_interface_failed", "系统拒绝建立 VPN，请重新授权后再试"),
     UNDERLYING_NETWORK("underlying_network_unavailable", "没有可用的 Wi‑Fi 或移动数据网络"),
@@ -35,6 +37,7 @@ enum class RuntimeFailure(val code: String, val message: String) {
             if (error == null) return UNKNOWN
             if (error is RuntimeFailureException) return error.failure
             if (error is SubscriptionImportException) return SUBSCRIPTION_PARSE
+            if (error is RuleSetException) return RULE_SET_CONFIGURATION
             if (error is NoSuchElementException) return SUBSCRIPTION_MISSING
             val lower = error.message.orEmpty().lowercase()
             if (error is NativeCoreException) {

@@ -1742,20 +1742,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val mutableBackupState = MutableStateFlow(BackupState())
     val backupState = mutableBackupState.asStateFlow()
-    private var pendingRestore: Map<String, String>? = null
+    private var pendingRestore: io.weave.client.transfer.WeaveBackup.RestorePlan? = null
+    private var backupGeneration = 0L
 
     fun exportBackup(target: Uri, passphrase: CharArray) {
-        if (mutableBackupState.value.running) return
+        if (mutableBackupState.value.running) { passphrase.fill('\u0000'); return }
+        val generation = ++backupGeneration
         mutableBackupState.value = BackupState(running = true)
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = try { withContext(Dispatchers.IO) {
                 probeSafely {
                     val bytes = backup.export(passphrase)
                     getApplication<Application>().contentResolver.openOutputStream(target, "wt")?.use { it.write(bytes) }
                         ?: error("无法写入所选文件")
                 }
-            }
-            passphrase.fill('\u0000')
+            } } finally { passphrase.fill('\u0000') }
+            if (generation != backupGeneration) return@launch
             mutableBackupState.value = result.fold(
                 onSuccess = { BackupState(message = "备份已导出；请妥善保管文件和密码") },
                 onFailure = { BackupState(error = it.message ?: "备份导出失败") },
@@ -1764,10 +1766,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun readBackup(source: Uri, passphrase: CharArray) {
-        if (mutableBackupState.value.running) return
+        if (mutableBackupState.value.running) { passphrase.fill('\u0000'); return }
+        val generation = ++backupGeneration
         mutableBackupState.value = BackupState(running = true)
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = try { withContext(Dispatchers.IO) {
                 probeSafely {
                     val bytes = getApplication<Application>().contentResolver.openInputStream(source)?.use { input ->
                         val output = java.io.ByteArrayOutputStream()
@@ -1781,13 +1784,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         output.toByteArray()
                     } ?: error("无法读取所选文件")
                     val entries = io.weave.client.transfer.BackupCodec.decrypt(bytes, passphrase)
-                    entries to backup.preview(entries)
+                    backup.prepareRestore(entries)
                 }
-            }
-            passphrase.fill('\u0000')
-            result.onSuccess { (entries, preview) ->
-                pendingRestore = entries
-                mutableBackupState.value = BackupState(preview = preview)
+            } } finally { passphrase.fill('\u0000') }
+            if (generation != backupGeneration) return@launch
+            result.onSuccess { plan ->
+                pendingRestore = plan
+                mutableBackupState.value = BackupState(preview = plan.preview)
             }.onFailure {
                 pendingRestore = null
                 mutableBackupState.value = BackupState(error = it.message ?: "无法读取备份")
@@ -1796,23 +1799,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun confirmRestore() {
+        if (mutableBackupState.value.running) return
         val entries = pendingRestore ?: return
+        pendingRestore = null
+        val generation = ++backupGeneration
         mutableBackupState.update { it.copy(running = true, error = null) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { probeSafely { backup.restore(entries) } }
-            pendingRestore = null
             result.onSuccess {
                 reloadLocalState()
                 LocalDataEvents.restored()
-                mutableBackupState.value = BackupState(message = "已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启")
+                if (generation == backupGeneration) {
+                    mutableBackupState.value = BackupState(message = "已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启")
+                }
                 reloadIfConnected("正在应用恢复的配置")
             }.onFailure {
-                mutableBackupState.value = BackupState(error = it.message ?: "恢复失败，已尽量保留现有数据")
+                if (generation == backupGeneration) mutableBackupState.value = BackupState(error = it.message ?: "恢复失败，请重新预览后重试")
             }
         }
     }
 
     fun discardBackupState() {
+        backupGeneration++
         pendingRestore = null
         mutableBackupState.value = BackupState()
     }
