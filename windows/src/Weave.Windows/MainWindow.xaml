@@ -4,7 +4,7 @@
     xmlns:local="using:Weave.Windows"
     xmlns:core="using:Weave.Windows.Core"
     Title="Weave">
-<Grid x:Name="RootGrid" RequestedTheme="Light" UseLayoutRounding="True" SizeChanged="RootGrid_SizeChanged">
+<Grid x:Name="RootGrid" RequestedTheme="Light" UseLayoutRounding="True">
     <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid.KeyboardAccelerators>
         <KeyboardAccelerator Key="Number1" Modifiers="Control" Invoked="NavAccelerator_Invoked"/>
@@ -16,11 +16,11 @@
         <KeyboardAccelerator Key="Escape" Invoked="EscapeAccelerator_Invoked"/>
     </Grid.KeyboardAccelerators>
 
-    <!-- Window size classes. SizeChanged switches between them only when the class changes. -->
+    <!-- Window size classes. AdaptiveTrigger switches only when the class changes, never per resize frame. -->
     <VisualStateManager.VisualStateGroups>
         <VisualStateGroup x:Name="WindowSizeStates">
-            <VisualState x:Name="WideLayout"/>
-            <VisualState x:Name="CompactLayout"><VisualState.Setters>
+            <VisualState x:Name="WideLayout"><VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="720"/></VisualState.StateTriggers></VisualState>
+            <VisualState x:Name="CompactLayout"><VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0"/></VisualState.StateTriggers><VisualState.Setters>
                 <Setter Target="SidebarColumn.Width" Value="84"/>
                 <Setter Target="NavLabel0.Visibility" Value="Collapsed"/>
                 <Setter Target="NavLabel1.Visibility" Value="Collapsed"/>

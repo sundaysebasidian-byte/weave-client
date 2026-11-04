@@ -32,7 +32,6 @@ public sealed partial class MainWindow : Window
     private bool _dataLoaded;
     private readonly TaskCompletionSource _dataReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _settingsDirty;
-    private bool _compact;
     private bool _connectAccent = true;
     private readonly Style? _accentConnectStyle;
     private UIElement[][] _pageElements = Array.Empty<UIElement[]>();
@@ -580,17 +579,6 @@ public sealed partial class MainWindow : Window
         new[] { Nav0, Nav1, Nav2, Nav3, Nav4, Nav5 }[index].IsChecked = true;
     }
 
-    private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (!_initialized) return;
-        // Layout inside the content adapts by itself (ResponsiveGrid, FlowPanel). Only the shell has size classes,
-        // and the visual state changes only when the class does, never per resize frame.
-        var compact = e.NewSize.Width < 720;
-        if (compact == _compact) return;
-        _compact = compact;
-        try { VisualStateManager.GoToElementState(RootGrid, compact ? "CompactLayout" : "WideLayout", true); }
-        catch (Exception) { _compact = !compact; }
-    }
 
     // --- Traffic sampling: pushed by ConnectionSampling from a worker, marshalled to the UI thread, text only. ---
 
