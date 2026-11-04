@@ -27,7 +27,7 @@ public sealed partial class MainWindow
             Title = dns ? L.T("打开 DNS 出口实测？") : L.T("开始浏览器隐私实验？"),
             Content = dns ? L.T("将在隔离的内置浏览器中访问 browserleaks.com/dns。该第三方会看到测试流量和出口地址；结果属于此浏览器，不代表其他应用。")
                 : L.T("HTTPS 出口查询会访问 ipify；WebRTC 将向 Google / Cloudflare 的 STUN 服务发包，可能显露直连公网地址。指纹特征仅在本机计算，不上传。检测只代表内置浏览器，不替代你常用浏览器的实测。"),
-            PrimaryButtonText = L.T("允许本次检测"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot,
+            PrimaryButtonText = L.T("允许本次检测"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
         };
         _activePrivacyDialog = consent;
         if (await consent.ShowAsync() != ContentDialogResult.Primary || !EvidenceStillCurrent(bundle, revision)) return;
@@ -36,7 +36,7 @@ public sealed partial class MainWindow
         var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         web.Loaded += (_, _) => loaded.TrySetResult();
         var dialog = new ContentDialog { Title = dns ? L.T("DNS 出口 · 第三方实测") : L.T("浏览器隐私 · 本机实验"),
-            Content = web, CloseButtonText = L.T("关闭并清理"), XamlRoot = RootGrid.XamlRoot };
+            Content = web, CloseButtonText = L.T("关闭并清理"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme };
         dialog.Resources["ContentDialogMaxWidth"] = 1100d;
         _activePrivacyDialog = dialog;
         var display = dialog.ShowAsync().AsTask();

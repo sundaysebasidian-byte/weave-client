@@ -1,8 +1,9 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Weave.Windows.Core;
-using Windows.Storage.Pickers;
 using WinRT.Interop;
+using WinColor = global::Windows.UI.Color;
 
 namespace Weave.Windows;
 
@@ -18,25 +19,38 @@ public sealed partial class MainWindow : Window
     private bool _shuttingDown;
     private bool _shutdownComplete;
     private CancellationTokenSource? _probeCancellation;
-    private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private CancellationTokenSource? _operationCancellation;
     private CancellationTokenSource? _connectCancellation;
     private CancellationTokenSource? _networkCancellation;
+    private CancellationTokenSource? _samplingCancellation;
+    private int _samplingGeneration;
+    private int _samplingSeconds;
+    private int _idleTrafficSamples;
+    private bool _minimized;
     private TrayIcon? _tray;
     private bool _hiddenToTray;
-    private int _idleTrafficSamples;
-    private bool _trafficBusy;
+    private bool _dataLoaded;
+    private readonly TaskCompletionSource _dataReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _settingsDirty;
+    private bool _compact;
+    private bool _connectAccent = true;
+    private readonly Style? _accentConnectStyle;
+    private UIElement[][] _pageElements = Array.Empty<UIElement[]>();
     private ConnectionEndpoint? _observedBundle;
     private long _observedRevision;
     private bool _observedConnected;
     private bool _diagnosticsStale;
     private DateTimeOffset? _diagnosticsMeasuredAt;
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
+    // Ctrl+1..6 follow the sidebar order, not the page numbers.
+    private static readonly string[] AcceleratorPages = { "0", "1", "2", "4", "5", "3" };
 
     public MainWindow()
     {
         LoadLanguage();
         InitializeComponent();
-        foreach (var card in new[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, NetworkSettingsCard, PrivacySettingsCard, RoutesPanel, NodesPanel, DiagnosticsPanel, TransferPanel })
+        _accentConnectStyle = ConnectButton.Style;
+        foreach (var card in new ContentControl[] { ConnectionHero, ExitCard, ConnectionNote, ImportPanel, SubscriptionsPanel, SettingsPanel, NetworkSettingsCard, PrivacySettingsCard, RoutesPanel, NodesPanel, DiagnosticsPanel, TransferPanel })
         {
             card.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
             card.Translation = new System.Numerics.Vector3(0, 0, card == ConnectionHero ? 12 : 6);
@@ -45,6 +59,10 @@ public sealed partial class MainWindow : Window
         SidebarSurface.Translation = new System.Numerics.Vector3(0, 0, 8);
         ConnectButton.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
         ConnectButton.Translation = new System.Numerics.Vector3(0, 0, 10);
+        InitializeChrome();
+        BuildPages();
+        MessageText.RegisterPropertyChangedCallback(Microsoft.UI.Xaml.Controls.TextBlock.TextProperty,
+            (_, _) => MessageBar.Opacity = string.IsNullOrEmpty(MessageText.Text) ? 0 : 1);
         _initialized = true;
         RootGrid.Loaded += CapturePreviewIfRequested;
         var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
@@ -54,9 +72,10 @@ public sealed partial class MainWindow : Window
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(1400 * scale), (int)(900 * scale)));
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_COMPACT") == "1")
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(900 * scale), (int)(760 * scale)));
-        try { _model.Load(); }
-        catch (Exception) { MessageText.Text = L.T("本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"); }
+        // Connecting is disabled until the encrypted library has been read (see InitializeDataAsync).
+        ConnectButton.IsEnabled = false;
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
+        _model.Subscriptions.CollectionChanged += (_, _) => UpdateEmptyStates();
         ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => L.T(palette.Name)).ToArray();
         LanguageSelector.SelectedIndex = L.Language == "en" ? 1 : 0;
         RootGrid.Language = L.Language;
@@ -79,18 +98,14 @@ public sealed partial class MainWindow : Window
         RouteListView.ItemsSource = _model.AppRoutes;
         RouteTargetModeComboBox.ItemsSource = new[] { L.T("自动测速"), L.T("固定节点"), L.T("直连"), L.T("阻止") };
         RouteTargetModeComboBox.SelectedIndex = 0;
-        if (_model.Subscriptions.Count > 0)
-        {
-            SubscriptionComboBox.SelectedIndex = 0;
-            RouteSubscriptionComboBox.SelectedIndex = 0;
-        }
-        LoadPreferences();
         if (int.TryParse(Environment.GetEnvironmentVariable("WEAVE_PREVIEW_THEME"), out var previewTheme) &&
             previewTheme >= 0 && previewTheme < AppearancePalette.All.Count) ThemeSelector.SelectedIndex = previewTheme;
 
         Closed += MainWindow_Closed;
         _tray = new TrayIcon(WindowNative.GetWindowHandle(this),
-            () => DispatcherQueue.TryEnqueue(() => { _hiddenToTray = false; _trafficTimer.Start(); AppWindow.Show(); Activate(); }),
+            CurrentTrayState,
+            () => DispatcherQueue.TryEnqueue(ShowFromTray),
+            () => DispatcherQueue.TryEnqueue(TrayToggleConnection),
             () => DispatcherQueue.TryEnqueue(async () => await ShutdownAsync(closeWindow: true)),
             () => DispatcherQueue.TryEnqueue(ScheduleNetworkCheck));
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += NetworkAddressChanged;
@@ -98,16 +113,63 @@ public sealed partial class MainWindow : Window
         {
             if (_shutdownComplete) return;
             args.Cancel = true;
-            if (_tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; _trafficTimer.Stop(); AppWindow.Hide(); return; }
+            if (_tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; StopSampling(); AppWindow.Hide(); return; }
             await ShutdownAsync(closeWindow: true);
         };
+        // Minimising pauses sampling; restoring (which activates the window) resumes it.
+        AppWindow.Changed += (_, _) =>
+        {
+            var minimized = IsMinimized();
+            if (minimized == _minimized) return;
+            _minimized = minimized;
+            DispatcherQueue.TryEnqueue(UpdateSampling);
+        };
+        Activated += (_, _) => { if (!_closed) UpdateSampling(); };
         UpdateStatus();
         UpdateNavigation();
         if (int.TryParse(Environment.GetEnvironmentVariable("WEAVE_PREVIEW_PAGE"), out var previewPage) && previewPage is >= 0 and <= 5)
             NavigateTo(previewPage.ToString());
         RefreshAddresses_Click(this, new RoutedEventArgs());
-        _trafficTimer.Tick += TrafficTick;
-        _trafficTimer.Start();
+        _ = InitializeDataAsync();
+    }
+
+    // Registry recovery and the encrypted vault are read on a worker; selections and preferences are restored here.
+    private async Task InitializeDataAsync()
+    {
+        try
+        {
+            try { await _model.LoadAsync(_lifetime.Token); }
+            catch (OperationCanceledException) { return; }
+            catch (Exception) { if (!_closed) MessageText.Text = L.T("本地配置读取失败。原文件已保留，请检查当前 Windows 用户与文件权限。"); }
+            if (_closed) return;
+            if (_model.Subscriptions.Count > 0)
+            {
+                SubscriptionComboBox.SelectedIndex = 0;
+                RouteSubscriptionComboBox.SelectedIndex = 0;
+            }
+            LoadPreferences();
+            _dataLoaded = true;
+            ConnectButton.IsEnabled = !_busy;
+            UpdateEmptyStates();
+            UpdateStatus();
+        }
+        finally { _dataReady.TrySetResult(); }
+    }
+
+    private void BuildPages()
+    {
+        // Elements of each page, in visual order. Showing them plays the compositor entrance, staggered by position.
+        _pageElements = new[]
+        {
+            new UIElement[] { ConnectionHero, ExitCard, ConnectionNote },
+            new UIElement[] { ImportPanel, SubscriptionsPanel, NodesPanel },
+            new UIElement[] { RoutesPanel },
+            new UIElement[] { SettingsPanel, NetworkSettingsCard, PrivacySettingsCard },
+            new UIElement[] { DiagnosticsPanel },
+            new UIElement[] { TransferPanel },
+        };
+        foreach (var page in _pageElements)
+            for (var i = 0; i < page.Length; i++) PageMotion.Entrance(page[i], i);
     }
 
     private void SubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -118,6 +180,7 @@ public sealed partial class MainWindow : Window
         _missingFixedNodeId = null;
         if (SubscriptionComboBox.SelectedItem is not null) _missingSubscriptionId = null;
         NodeComboBox.PlaceholderText = L.T("自动选择 · 最低延迟");
+        MarkSettingsDirty();
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -129,9 +192,13 @@ public sealed partial class MainWindow : Window
         if (e.AddedItems.FirstOrDefault() is SubscriptionRecord selected)
         {
             SubscriptionComboBox.SelectedItem = selected;
-            SubscriptionNodesList.ItemsSource = selected.Nodes;
+            ShowNodes(selected.Nodes);
         }
     }
+
+    // Rows are immutable wrappers; the list is virtualised and bound with x:Bind (see NodeRow).
+    private void ShowNodes(IEnumerable<ProxyNode>? nodes) =>
+        SubscriptionNodesList.ItemsSource = nodes?.Select(node => new NodeRow(node)).ToArray();
 
     private void RouteSubscriptionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -153,7 +220,7 @@ public sealed partial class MainWindow : Window
 
     private async void AddRouteButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunActionAsync(() =>
+        await RunActionAsync(async () =>
         {
             var mode = RouteTargetModeComboBox.SelectedIndex;
             var subscription = RouteSubscriptionComboBox.SelectedItem as SubscriptionRecord;
@@ -167,35 +234,47 @@ public sealed partial class MainWindow : Window
                 _ => throw new InvalidDataException(L.T("自动或固定节点分流需要先选择订阅；固定节点还需要选择节点")),
             };
             var processName = ProcessNameBox.Text.Trim();
-            _model.AddOrReplaceRoute(new WindowsAppRoute
+            await _model.AddOrReplaceRouteAsync(new WindowsAppRoute
             {
                 ProcessName = processName,
                 DisplayName = processName,
                 Target = target,
             });
+            MarkSettingsDirty();
             MessageText.Text = L.F($"已保存 {processName} 的分流规则；重新连接后生效");
-            return Task.CompletedTask;
         });
     }
 
-    private void DeleteRouteButton_Click(object sender, RoutedEventArgs e)
+    private async void DeleteRouteButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy) return;
-        if (sender is Button { Tag: string processName })
+        if (_busy || sender is not Button { Tag: string processName }) return;
+        await RunActionAsync(async () =>
         {
-            _model.RemoveRoute(processName);
+            await _model.RemoveRouteAsync(processName);
+            MarkSettingsDirty();
             MessageText.Text = L.F($"已删除 {processName} 的分流规则；重新连接后生效");
-        }
+        });
+    }
+
+    private void ProcessNameBox_KeyDown(object sender, KeyRoutedEventArgs e) => SubmitOnEnter(e, () => AddRouteButton_Click(sender, e));
+    private void SubscriptionUrlBox_KeyDown(object sender, KeyRoutedEventArgs e) => SubmitOnEnter(e, () => ImportUrlButton_Click(sender, e));
+    private void ReceiveCode_KeyDown(object sender, KeyRoutedEventArgs e) => SubmitOnEnter(e, () => ReceiveLan_Click(sender, e));
+    private static void SubmitOnEnter(KeyRoutedEventArgs e, Action submit)
+    {
+        if (e.Key != global::Windows.System.VirtualKey.Enter) return;
+        e.Handled = true;
+        submit();
     }
 
     private async void ImportTextButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunActionAsync(async () =>
+        await RunCancellableAsync(async token =>
         {
             var record = await _model.ImportTextAsync(
                 SubscriptionNameBox.Text,
                 "clipboard://manual",
-                SubscriptionTextBox.Text);
+                SubscriptionTextBox.Text,
+                token);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = L.F($"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点");
         });
@@ -203,12 +282,12 @@ public sealed partial class MainWindow : Window
 
     private async void ImportUrlButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunActionAsync(async () =>
+        await RunCancellableAsync(async token =>
         {
             var record = await _model.ImportUrlAsync(
                 SubscriptionNameBox.Text,
                 SubscriptionUrlBox.Text,
-                _lifetime.Token);
+                token);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = L.F($"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点");
         });
@@ -216,7 +295,7 @@ public sealed partial class MainWindow : Window
 
     private async void ImportFileButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunActionAsync(async () =>
+        await RunCancellableAsync(async token =>
         {
             var path = DesktopFilePicker.Open(WindowNative.GetWindowHandle(this));
             if (path is null)
@@ -224,7 +303,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            var record = await _model.ImportFileAsync(SubscriptionNameBox.Text, path);
+            var record = await _model.ImportFileAsync(SubscriptionNameBox.Text, path, token);
             SubscriptionComboBox.SelectedItem = record;
             MessageText.Text = L.F($"已导入 {record.Name}，发现 {record.Nodes.Count} 个节点");
         });
@@ -245,7 +324,8 @@ public sealed partial class MainWindow : Window
             Content = L.F($"将从本机删除“{record.Name}”及其加密内容。"),
             PrimaryButtonText = L.T("删除"),
             CloseButtonText = L.T("取消"),
-            XamlRoot = RootGrid.XamlRoot,
+            XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
+            DefaultButton = ContentDialogButton.Close,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
         {
@@ -297,6 +377,7 @@ public sealed partial class MainWindow : Window
             _connectCancellation = connection;
             ConnectButton.IsEnabled = true;
             ConnectButton.Content = L.T("取消连接");
+            UpdateStatus();
             try
             {
             var node = NodeComboBox.SelectedItem as ProxyNode;
@@ -310,6 +391,7 @@ public sealed partial class MainWindow : Window
                 BlockUdpStun = StunToggle.IsOn, CustomDnsEndpoint = CustomDnsBox.Text.Trim(),
                 DnsProfile = (DnsProfile)Math.Max(0, DnsSelector.SelectedIndex) };
             await _model.ConnectAsync(subscription?.Id ?? "", node?.Id, connection.Token);
+            _settingsDirty = false;
             ConnectButton.Content = L.T("断开连接");
             MessageText.Text = ConnectionHealth.Description(_model.Health);
             UpdateStatus();
@@ -322,8 +404,7 @@ public sealed partial class MainWindow : Window
     {
         if (_busy || _closed) return;
         _busy = true;
-        BusyRing.Visibility = Visibility.Visible;
-        BusyRing.IsActive = true;
+        BusyBar.Visibility = Visibility.Visible;
         ConnectButton.IsEnabled = false;
         ImportPanel.IsHitTestVisible = false;
         RoutesPanel.IsHitTestVisible = false;
@@ -347,9 +428,8 @@ public sealed partial class MainWindow : Window
         finally
         {
             _busy = false;
-            BusyRing.IsActive = false;
-            BusyRing.Visibility = Visibility.Collapsed;
-            ConnectButton.IsEnabled = true;
+            BusyBar.Visibility = Visibility.Collapsed;
+            ConnectButton.IsEnabled = _dataLoaded;
             ImportPanel.IsHitTestVisible = true;
             RoutesPanel.IsHitTestVisible = true;
             SubscriptionsPanel.IsHitTestVisible = true;
@@ -359,6 +439,15 @@ public sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
+    // Imports, transfers and other cancellable work share one token that Esc and window close both cancel.
+    private Task RunCancellableAsync(Func<CancellationToken, Task> action) => RunActionAsync(async () =>
+    {
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _operationCancellation = operation;
+        try { await action(operation.Token); }
+        finally { _operationCancellation = null; }
+    });
+
     private void UpdateStatus()
     {
         if (!ReferenceEquals(_observedBundle, _model.ActiveConnection) || _observedRevision != _model.NetworkRevision ||
@@ -367,9 +456,9 @@ public sealed partial class MainWindow : Window
             _probeCancellation?.Cancel();
             _activePrivacyDialog?.Hide();
             if (DiagnosticResults.ItemsSource is not null) _diagnosticsStale = true;
-            if (SubscriptionNodesList.ItemsSource is IEnumerable<NodeResult>)
+            if (SubscriptionNodesList.ItemsSource is NodeRow[] rows && rows.Any(row => row.Tested))
             {
-                SubscriptionNodesList.ItemsSource = (SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes;
+                ShowNodes((SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Nodes);
                 NodeTestText.Text = L.T("网络已变化，请重新测速");
             }
             _observedBundle = _model.ActiveConnection;
@@ -378,18 +467,71 @@ public sealed partial class MainWindow : Window
         }
         DiagnosticEvidenceText.Text = _diagnosticsStale ? L.T("历史结果：网络或节点已变化，请重新检测") :
             _diagnosticsMeasuredAt is { } measured ? L.T("检测时间") + " · " + measured.ToString("g", L.Language == "en" ? System.Globalization.CultureInfo.GetCultureInfo("en-US") : System.Globalization.CultureInfo.GetCultureInfo("zh-CN")) : "";
+        var connecting = _connectCancellation is not null;
         StatusText.Text = _model.Status;
-        ConnectButton.Content = _connectCancellation is not null ? L.T("取消连接") : _model.IsConnected ? L.T("断开连接") : L.T("连接");
+        ConnectButton.Content = connecting ? L.T("取消连接") : _model.IsConnected ? L.T("断开连接") : L.T("连接");
         HeroStatus.Text = !_model.IsConnected ? L.T("尚未连接") : _model.Health == ConnectionHealthState.Reachable ? L.T("已连接") : L.T("网络待确认");
-        HeroDetail.Text = _model.IsConnected ? _model.Status : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
-        if (!_model.IsConnected) { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
+        HeroDetail.Text = connecting || _model.IsConnected ? _model.Status : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
+        if (!_model.IsConnected)
+        {
+            DownloadRate.Text = "—"; UploadRate.Text = "—";
+            _settingsDirty = false;
+        }
+        // Primary (accent) while a connection can be started; neutral while it can only be cancelled or ended.
+        var accent = !connecting && !_model.IsConnected;
+        if (accent != _connectAccent)
+        {
+            _connectAccent = accent;
+            if (accent) ConnectButton.Style = _accentConnectStyle;
+            else ConnectButton.ClearValue(FrameworkElement.StyleProperty);
+        }
+        UpdateConnectionVisuals();
+        UpdateApplyBar();
+        UpdateSampling();
+        _tray?.SetTip("Weave · " + _model.Status);
     }
+
+    // Idle / pending / connected, shown by colour and by the shield mark. Colours come from the active palette.
+    private void UpdateConnectionVisuals()
+    {
+        var state = _connectCancellation is not null ? 1 : !_model.IsConnected ? 0 : _model.Health == ConnectionHealthState.Reachable ? 2 : 1;
+        var tone = ThemeBrush(state switch { 2 => "WeaveSuccessBrush", 1 => "WeaveCautionBrush", _ => "WeaveMutedBrush" });
+        ConnectionDot.Fill = tone;
+        StatusDot.Fill = tone;
+        HeroShield.Stroke = state == 0 ? ThemeBrush("WeaveAccentBrush") : tone;
+        HeroCheck.Stroke = tone;
+        HeroCheck.Visibility = state == 2 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private Microsoft.UI.Xaml.Media.Brush ThemeBrush(string key) => (Microsoft.UI.Xaml.Media.Brush)ThemeDictionary(RootGrid.RequestedTheme == ElementTheme.Dark)[key];
+    private static ResourceDictionary ThemeDictionary(bool dark) => (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[dark ? "Dark" : "Light"];
+
+    private void UpdateEmptyStates()
+    {
+        if (!_dataLoaded) return;
+        var any = _model.Subscriptions.Count > 0;
+        ExitSelectors.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        ExitEmptyState.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        SubscriptionEmptyText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    // Changes made while connected take effect on the next connection; offer to apply them in one click.
+    private void MarkSettingsDirty()
+    {
+        if (!_initialized || _changingLanguage || !_model.IsConnected) return;
+        _settingsDirty = true;
+        UpdateApplyBar();
+    }
+    private void UpdateApplyBar() => ApplyBar.IsOpen = _settingsDirty && _model.IsConnected;
+    private void Setting_Changed(object sender, RoutedEventArgs e) => MarkSettingsDirty();
+    private void CustomDnsBox_TextChanged(object sender, TextChangedEventArgs e) => MarkSettingsDirty();
 
     private void AutomaticNode_Click(object sender, RoutedEventArgs e)
     {
         _missingFixedNodeId = null;
         NodeComboBox.SelectedItem = null;
         NodeComboBox.PlaceholderText = L.T("自动选择 · 最低延迟");
+        MarkSettingsDirty();
     }
 
     private void Navigate_Click(object sender, RoutedEventArgs e)
@@ -397,18 +539,33 @@ public sealed partial class MainWindow : Window
         if (sender is not Button { Tag: string page }) return;
         NavigateTo(page);
     }
+    private void Navigate_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string page }) NavigateTo(page);
+    }
+    private void NavAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        var index = sender.Key - global::Windows.System.VirtualKey.Number1;
+        if (index is < 0 or >= 6) return;
+        args.Handled = true;
+        NavigateTo(AcceleratorPages[index]);
+    }
+    private void EscapeAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (_connectCancellation is { } connection) connection.Cancel();
+        else if (_operationCancellation is { } operation) operation.Cancel();
+        else if (!string.IsNullOrEmpty(MessageText.Text)) MessageText.Text = "";
+        else return;
+        args.Handled = true;
+    }
+
     private void NavigateTo(string page)
     {
         if (_page == page) return;
         _scrollOffsets[_page] = ContentScroll.VerticalOffset;
+        foreach (var element in _pageElements[int.Parse(_page)]) element.Visibility = Visibility.Collapsed;
         _page = page;
-        ConnectionPanel.Visibility = page == "0" ? Visibility.Visible : Visibility.Collapsed;
-        ImportPanel.Visibility = SubscriptionsPanel.Visibility = NodesPanel.Visibility = page == "1" ? Visibility.Visible : Visibility.Collapsed;
-        RoutesPanel.Visibility = page == "2" ? Visibility.Visible : Visibility.Collapsed;
-        SettingsPanel.Visibility = page == "3" ? Visibility.Visible : Visibility.Collapsed;
-        NetworkSettingsCard.Visibility = PrivacySettingsCard.Visibility = SettingsPanel.Visibility;
-        DiagnosticsPanel.Visibility = page == "4" ? Visibility.Visible : Visibility.Collapsed;
-        TransferPanel.Visibility = page == "5" ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var element in _pageElements[int.Parse(page)]) element.Visibility = Visibility.Visible;
         UpdateNavigation();
         DispatcherQueue.TryEnqueue(() => ContentScroll.ChangeView(null, _scrollOffsets.GetValueOrDefault(_page), null, true));
     }
@@ -419,33 +576,125 @@ public sealed partial class MainWindow : Window
         var titles = new[] { L.T("连接"), L.T("订阅"), L.T("分流规则"), L.T("设置"), L.T("网络与隐私"), L.T("设备同步") };
         var index = int.Parse(_page);
         PageTitle.Text = titles[index];
-        PageSubtitle.Text = "";
-        var buttons = new[] { Nav0, Nav1, Nav2, Nav3, Nav4, Nav5 };
-        var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[RootGrid.RequestedTheme == ElementTheme.Dark ? "Dark" : "Light"];
-        for (var i = 0; i < buttons.Length; i++)
-        {
-            buttons[i].Background = i == index ? (Microsoft.UI.Xaml.Media.Brush)theme["WeaveSelectionBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            buttons[i].BorderThickness = new Thickness(i == index ? 1 : 0);
-            buttons[i].BorderBrush = (Microsoft.UI.Xaml.Media.Brush)theme["WeaveLightEdgeBrush"];
-            buttons[i].Foreground = (Microsoft.UI.Xaml.Media.Brush)theme[i == index ? "WeaveAccentBrush" : "WeaveMutedBrush"];
-            buttons[i].FontWeight = i == index ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
-        }
+        // Selection, hover and focus visuals are visual states of the nav item style; only the checked item changes here.
+        new[] { Nav0, Nav1, Nav2, Nav3, Nav4, Nav5 }[index].IsChecked = true;
     }
 
     private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!_initialized) return;
-        // Reflow individual controls, not entire cards: keep network controls close to the exit.
-        SidebarColumn.Width = new GridLength(e.NewSize.Width < 1100 ? 276 : 292);
-        var narrow = e.NewSize.Width < 920;
-        Grid.SetColumnSpan(SubscriptionComboBox, narrow ? 2 : 1);
-        Grid.SetColumn(NodeSelection, narrow ? 0 : 1);
-        Grid.SetRow(NodeSelection, narrow ? 1 : 0);
-        Grid.SetColumnSpan(NodeSelection, narrow ? 2 : 1);
-        Grid.SetColumnSpan(RoutingSelector, narrow ? 2 : 1);
-        Grid.SetColumn(TunToggle, narrow ? 0 : 1);
-        Grid.SetRow(TunToggle, narrow ? 1 : 0);
-        Grid.SetColumnSpan(TunToggle, narrow ? 2 : 1);
+        // Layout inside the content adapts by itself (ResponsiveGrid, FlowPanel). Only the shell has size classes,
+        // and the visual state changes only when the class does, never per resize frame.
+        var compact = e.NewSize.Width < 720;
+        if (compact == _compact) return;
+        _compact = compact;
+        try { VisualStateManager.GoToElementState(RootGrid, compact ? "CompactLayout" : "WideLayout", true); }
+        catch (Exception) { _compact = !compact; }
+    }
+
+    // --- Traffic sampling: pushed by ConnectionSampling from a worker, marshalled to the UI thread, text only. ---
+
+    private bool IsMinimized() => AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized };
+
+    private void UpdateSampling()
+    {
+        var wanted = !_closed && !_hiddenToTray && _model.IsConnected && !IsMinimized();
+        if (wanted && _samplingCancellation is null) { _idleTrafficSamples = 0; StartSampling(2); }
+        else if (!wanted && _samplingCancellation is not null) StopSampling();
+    }
+
+    private void StartSampling(int seconds)
+    {
+        StopSampling();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _samplingCancellation = cancellation;
+        _samplingSeconds = seconds;
+        var generation = _samplingGeneration;
+        var sampling = new ConnectionSampling(
+            _ => Task.FromResult(_model.IsConnected && _model.ActiveConnection is not null),
+            async token =>
+            {
+                if (_model.ActiveConnection is not { } bundle) return (-1L, -1L);
+                try { return await _model.ReadTrafficAsync(bundle, token); }
+                catch (Exception error) when (error is HttpRequestException or System.Text.Json.JsonException or IOException or KeyNotFoundException or FormatException or InvalidOperationException)
+                { return (-1L, -1L); }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested) { return (-1L, -1L); } // one slow request, not shutdown
+            });
+        sampling.Updated += (_, sample) => DispatcherQueue.TryEnqueue(() => ApplySample(sample, generation));
+        _ = ObserveSamplingAsync(sampling, cancellation, TimeSpan.FromSeconds(seconds));
+    }
+
+    private void StopSampling()
+    {
+        var cancellation = _samplingCancellation;
+        _samplingCancellation = null;
+        _samplingGeneration++;
+        try { cancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
+
+    // Awaiting the run task is how a sampling failure reaches the UI; cancellation is the normal way out.
+    private async Task ObserveSamplingAsync(ConnectionSampling sampling, CancellationTokenSource cancellation, TimeSpan interval)
+    {
+        try { await sampling.RunAsync(cancellation.Token, interval); }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (!_closed && ReferenceEquals(_samplingCancellation, cancellation))
+            {
+                DownloadRate.Text = "—"; UploadRate.Text = "—";
+                MessageText.Text = error.Message;
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_samplingCancellation, cancellation)) _samplingCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private void ApplySample(ConnectionSample sample, int generation)
+    {
+        if (_closed || generation != _samplingGeneration || !_model.IsConnected) return;
+        if (!sample.Ready)
+        {
+            if (DownloadRate.Text != "—") { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
+            return;
+        }
+        if (sample.Down < 0) return; // transient read failure: keep the last values
+        var down = Rate(sample.Down);
+        var up = Rate(sample.Up);
+        if (DownloadRate.Text != down) DownloadRate.Text = down;
+        if (UploadRate.Text != up) UploadRate.Text = up;
+        // Back off to 10 s after three idle samples; return to 2 s as soon as traffic resumes.
+        _idleTrafficSamples = sample.Down == 0 && sample.Up == 0 ? Math.Min(3, _idleTrafficSamples + 1) : 0;
+        var seconds = _idleTrafficSamples >= 3 ? 10 : 2;
+        if (seconds != _samplingSeconds) StartSampling(seconds);
+    }
+    private static string Rate(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:F1} MB/s" : $"{Math.Max(0, bytes) / 1024.0:F1} KB/s";
+
+    // --- Tray: menu state is read when the menu opens, so it always matches the window. ---
+
+    private TrayState CurrentTrayState() => new(_model.IsConnected, _connectCancellation is not null, !_dataLoaded || (_busy && _connectCancellation is null));
+
+    private void ShowFromTray()
+    {
+        _hiddenToTray = false;
+        AppWindow.Show();
+        Activate();
+        UpdateSampling();
+    }
+
+    private void TrayToggleConnection()
+    {
+        if (_closed) return;
+        // Without a usable selection the connect attempt could only fail with a message nobody would see: show the window instead.
+        if (!_model.IsConnected && _connectCancellation is null && RoutingSelector.SelectedIndex != 2 && SubscriptionComboBox.SelectedItem is null)
+        {
+            ShowFromTray();
+            return;
+        }
+        ConnectButton_Click(this, new RoutedEventArgs());
     }
 
     private async void CapturePreviewIfRequested(object sender, RoutedEventArgs e)
@@ -453,6 +702,7 @@ public sealed partial class MainWindow : Window
         // Explicit CI-only render capture, never enabled during normal use.
         var path = Environment.GetEnvironmentVariable("WEAVE_UI_CAPTURE");
         if (string.IsNullOrEmpty(path)) return;
+        await _dataReady.Task;
         if (_page == "4" && Environment.GetEnvironmentVariable("WEAVE_PREVIEW_DIAGNOSTICS") == "1")
         {
             // Synthetic evidence exclusively for CI layout review; no requests or user data.
@@ -466,31 +716,52 @@ public sealed partial class MainWindow : Window
         }
         await Task.Delay(700);
         double? previousNavigationTop = null;
-        foreach (var button in new[] { Nav0, Nav1, Nav2, Nav4, Nav5, Nav3 })
+        var labels = new[] { NavLabel0, NavLabel1, NavLabel2, NavLabel4, NavLabel5, NavLabel3 };
+        var navButtons = new[] { Nav0, Nav1, Nav2, Nav4, Nav5, Nav3 };
+        for (var i = 0; i < navButtons.Length; i++)
         {
-            var caption = (StackPanel)button.Content;
-            if (Math.Abs(button.ActualHeight - 56) > 1 || caption.DesiredSize.Width > button.ActualWidth - button.Padding.Left - button.Padding.Right + 1)
+            var button = navButtons[i];
+            if (Math.Abs(button.ActualHeight - 44) > 1 || (labels[i].Visibility == Visibility.Visible && labels[i].IsTextTrimmed))
                 throw new InvalidOperationException("Navigation row is cramped or clips its label: " + button.Name);
             var top = button.TransformToVisual(NavigationItems).TransformPoint(new global::Windows.Foundation.Point()).Y;
-            if (previousNavigationTop is { } previous && Math.Abs(top - previous - 66) > 1)
+            if (previousNavigationTop is { } previous && Math.Abs(top - previous - 48) > 1)
                 throw new InvalidOperationException("Navigation spacing is not uniform: " + button.Name);
             previousNavigationTop = top;
         }
-        var navigationBottom = SidebarNavigationScroll.TransformToVisual(RootGrid)
-            .TransformPoint(new global::Windows.Foundation.Point()).Y + SidebarNavigationScroll.ActualHeight;
-        if (SidebarFooter.TransformToVisual(RootGrid).TransformPoint(new global::Windows.Foundation.Point()).Y < navigationBottom - 1)
-            throw new InvalidOperationException("Navigation overlaps the traffic footer");
+        if (SidebarFooter.Visibility == Visibility.Visible)
+        {
+            var navigationBottom = SidebarNavigationScroll.TransformToVisual(RootGrid)
+                .TransformPoint(new global::Windows.Foundation.Point()).Y + SidebarNavigationScroll.ActualHeight;
+            if (SidebarFooter.TransformToVisual(RootGrid).TransformPoint(new global::Windows.Foundation.Point()).Y < navigationBottom - 1)
+                throw new InvalidOperationException("Navigation overlaps the traffic footer");
+        }
         if (_page == "0")
         {
             // Real XAML layout regression check; never run in regular user sessions.
-            var stacked = RootGrid.ActualWidth < 920;
-            if (Grid.GetRow(NodeSelection) != (stacked ? 1 : 0) || Grid.GetRow(TunToggle) != (stacked ? 1 : 0))
-                throw new InvalidOperationException("Home controls did not reflow for the window width");
-            if (!stacked && RootGrid.ActualHeight >= 600)
-                foreach (var control in new FrameworkElement[] { ConnectButton, SubscriptionComboBox, NodeComboBox, RoutingSelector, TunToggle })
+            // With an empty library (CI) the exit selectors are replaced by the import prompt; check whichever is shown.
+            var selectors = ExitSelectors.Visibility == Visibility.Visible;
+            var controls = selectors
+                ? new FrameworkElement[] { ConnectButton, SubscriptionComboBox, NodeComboBox, RoutingSelector, TunToggle }
+                : new FrameworkElement[] { ConnectButton, ExitEmptyState, RoutingSelector, TunToggle };
+            foreach (var control in controls)
+            {
+                var origin = control.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point());
+                if (control.ActualWidth < 40 || origin.X < 0 || origin.X + control.ActualWidth > ContentScroll.ActualWidth + 1)
+                    throw new InvalidOperationException("Home control is clipped horizontally: " + control.Name);
+            }
+            var wide = RootGrid.ActualWidth >= 1100;
+            if (wide && selectors)
+            {
+                var subscriptionTop = SubscriptionComboBox.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y;
+                var nodeTop = NodeSelection.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y;
+                if (Math.Abs(nodeTop - subscriptionTop) > 1)
+                    throw new InvalidOperationException("Exit selectors did not sit side by side in a wide window");
+            }
+            if (wide && RootGrid.ActualHeight >= 600)
+                foreach (var control in controls)
                 {
                     var top = control.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y;
-                    if (control.ActualWidth < 40 || top < 0 || top + control.ActualHeight > ContentScroll.ActualHeight)
+                    if (top < 0 || top + control.ActualHeight > ContentScroll.ActualHeight)
                         throw new InvalidOperationException("Primary home control is outside the first viewport: " + control.Name);
                 }
         }
@@ -502,8 +773,7 @@ public sealed partial class MainWindow : Window
             var node = NodeComboBox.SelectedItem;
             LanguageSelector.SelectedIndex = L.Language == "en" ? 0 : 1;
             await Task.Delay(150);
-            var caption = ((StackPanel)Nav0.Content).Children.OfType<TextBlock>().Single().Text;
-            if (caption != L.T("连接") || PageTitle.Text != L.T(new[] { "连接", "订阅", "分流规则", "设置", "网络与隐私", "设备同步" }[int.Parse(_page)]) ||
+            if (NavLabel0.Text != L.T("连接") || PageTitle.Text != L.T(new[] { "连接", "订阅", "分流规则", "设置", "网络与隐私", "设备同步" }[int.Parse(_page)]) ||
                 mode != RoutingSelector.SelectedIndex || dns != DnsSelector.SelectedIndex ||
                 !ReferenceEquals(subscription, SubscriptionComboBox.SelectedItem) || !ReferenceEquals(node, NodeComboBox.SelectedItem))
                 throw new InvalidOperationException("Live language switch failed or changed network selection");
@@ -529,61 +799,109 @@ public sealed partial class MainWindow : Window
         var index = ThemeSelector.SelectedIndex;
         if (index < 0 || index >= AppearancePalette.All.Count) return;
         var palette = AppearancePalette.All[index];
-        var theme = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[palette.Dark ? "Dark" : "Light"];
-        void Set(string key, string hex) => ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme[key]).Color = Color(hex);
-        Set("WeaveCanvasBrush", palette.Canvas);
-        Set("WeaveCardBrush", palette.Paper);
-        Set("WeaveInkBrush", palette.Ink);
-        Set("WeaveMutedBrush", palette.Muted);
-        if (index >= 4) ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme["WeaveMutedBrush"]).Color = Mix(Color(palette.Muted), Color(palette.Ink), .20);
-        Set("WeaveAccentBrush", palette.Accent);
-        ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme["WeaveRimBrush"]).Color = Mix(Color(palette.Paper), Color(palette.Ink), palette.Dark ? .16 : .08);
-        var glass = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme["WeaveGlassBrush"];
-        glass.GradientStops[0].Color = Color(palette.Paper);
-        glass.GradientStops[1].Color = Mix(Color(palette.Paper), Color(palette.Tint), index >= 4 ? .16 : .10);
-        var topGlass = glass.GradientStops[0].Color; topGlass.A = 235;
-        var bottomGlass = glass.GradientStops[1].Color; bottomGlass.A = 244;
-        glass.GradientStops[0].Color = topGlass; glass.GradientStops[1].Color = bottomGlass;
-        var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
-        sidebar.TintColor = sidebar.FallbackColor = Color(palette.Paper);
-        sidebar.TintOpacity = palette.Dark ? .48 : .28;
-        sidebar.TintLuminosityOpacity = palette.Dark ? .55 : .78;
-        var acrylic = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeavePanelAcrylic"];
-        acrylic.TintColor = acrylic.FallbackColor = Color(palette.Paper);
-        acrylic.TintOpacity = palette.Dark ? .48 : .22;
-        acrylic.TintLuminosityOpacity = palette.Dark ? .55 : .72;
-        void Gradient(string key, params global::Windows.UI.Color[] colors)
+        var dark = palette.Dark;
+        var theme = ThemeDictionary(dark);
+        var paper = Color(palette.Paper); var canvas = Color(palette.Canvas); var ink = Color(palette.Ink);
+        var tint = Color(palette.Tint); var rawAccent = Color(palette.Accent);
+        var white = Color("FFFFFF"); var black = Color("000000");
+        static WinColor Alpha(WinColor color, byte opacity) { color.A = opacity; return color; }
+        void Solid(string key, WinColor value) => ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme[key]).Color = value;
+        void Gradient(string key, params WinColor[] colors)
         {
             var brush = (Microsoft.UI.Xaml.Media.LinearGradientBrush)theme[key];
             for (var stop = 0; stop < colors.Length; stop++) brush.GradientStops[stop].Color = colors[stop];
         }
-        var paper = Color(palette.Paper); var tint = Color(palette.Tint); var accent = Color(palette.Accent);
-        static global::Windows.UI.Color Alpha(global::Windows.UI.Color color, byte opacity) { color.A = opacity; return color; }
-        var white = Color("FFFFFF");
-        Gradient("WeaveAtmosphereBrush", Mix(Color(palette.Canvas), tint, .12), Color(palette.Canvas), Mix(Color(palette.Canvas), tint, .08));
+
+        // Text and icon colours are nudged toward the ink colour until they reach 4.5:1 on every surface they sit on,
+        // so all eight palettes meet contrast in light and dark. Labels on filled buttons get the same treatment.
+        var glassBottom = Mix(paper, tint, index >= 4 ? .16 : .10);
+        var surfaces = new[] { paper, canvas, glassBottom };
+        var muted = Readable(index >= 4 ? Mix(Color(palette.Muted), ink, .20) : Color(palette.Muted), ink, 4.5, surfaces);
+        var accent = Readable(rawAccent, ink, 4.5, surfaces);
+        var onAction = dark ? Color("0B0E13") : white;
+        var away = dark ? white : black; // direction that raises the label's contrast on a filled control
+        var actionTop = Backed(Mix(rawAccent, white, dark ? .18 : .06), onAction, 4.5);
+        var actionBottom = Backed(Mix(rawAccent, dark ? white : Color("102E3D"), .16), onAction, 4.5);
+
+        Solid("WeaveCanvasBrush", canvas);
+        Solid("WeaveCardBrush", paper);
+        Solid("WeaveInkBrush", ink);
+        Solid("WeaveMutedBrush", muted);
+        Solid("WeaveAccentBrush", accent);
+        Solid("WeaveRimBrush", Mix(paper, ink, dark ? .16 : .08));
+        Solid("WeaveSubtleFillBrush", Alpha(ink, dark ? (byte)0x1F : (byte)0x14));
+        Solid("WeaveSubtlePressedBrush", Alpha(ink, dark ? (byte)0x33 : (byte)0x24));
+        Solid("WeaveActionTextBrush", onAction);
+        Solid("WeaveAccentFillBrush", actionBottom);
+        Solid("WeaveAccentFillHoverBrush", Mix(actionBottom, away, .10));
+        Solid("WeaveAccentFillPressedBrush", Mix(actionBottom, away, .18));
+        Gradient("WeaveGlassBrush", Alpha(paper, 235), Alpha(glassBottom, 244));
+        Gradient("WeaveAtmosphereBrush", Mix(canvas, tint, .12), canvas, Mix(canvas, tint, .08));
+        Gradient("WeaveHeroBrush", Alpha(Mix(paper, rawAccent, .02), 245), Alpha(Mix(paper, tint, .30), 230), Alpha(Mix(paper, rawAccent, .05), 240));
+        Gradient("WeaveIconBrush", Mix(paper, white, dark ? .10 : .9), Mix(paper, rawAccent, dark ? .32 : .24));
+        Gradient("WeaveLightEdgeBrush", Alpha(Mix(paper, white, dark ? .22 : 1), 230),
+            Alpha(Mix(paper, rawAccent, .16), 95), Alpha(Mix(paper, white, dark ? .24 : .95), 225));
+        Gradient("WeaveInnerEdgeBrush", Alpha(white, 12), Alpha(white, 4), Alpha(white, dark ? (byte)48 : (byte)170));
+        Gradient("WeaveSheenBrush", Alpha(white, dark ? (byte)10 : (byte)54), Alpha(white, 5), Alpha(white, 0), Alpha(white, 16));
+        Gradient("WeaveRibbonBrush", Alpha(tint, 0), Alpha(Mix(tint, rawAccent, .24), 115), Alpha(tint, 38));
+        Gradient("WeaveSelectionBrush", Alpha(Mix(paper, white, dark ? .1 : .8), 240),
+            Alpha(Mix(paper, rawAccent, dark ? .20 : .09), 240), Alpha(Mix(paper, tint, .3), 235));
+        Gradient("WeaveActionBrush", actionTop, actionBottom);
+        Gradient("WeaveActionHoverBrush", Mix(actionTop, away, .10), Mix(actionBottom, away, .10));
+        Gradient("WeaveActionPressedBrush", Mix(actionTop, away, .18), Mix(actionBottom, away, .18));
+        var sidebar = (Microsoft.UI.Xaml.Media.AcrylicBrush)theme["WeaveSidebarBrush"];
+        sidebar.TintColor = sidebar.FallbackColor = paper;
+        sidebar.TintOpacity = dark ? .48 : .28;
+        sidebar.TintLuminosityOpacity = dark ? .55 : .78;
         AtmosphericRibbons.Opacity = index >= 4 ? .55 : .16;
-        Gradient("WeaveHeroBrush", Alpha(Mix(paper, accent, .02), 245), Alpha(Mix(paper, tint, .30), 230), Alpha(Mix(paper, accent, .05), 240));
-        Gradient("WeaveIconBrush", Mix(paper, white, palette.Dark ? .10 : .9), Mix(paper, accent, palette.Dark ? .32 : .24));
-        Gradient("WeaveLightEdgeBrush", Alpha(Mix(paper, white, palette.Dark ? .22 : 1), 230),
-            Alpha(Mix(paper, accent, .16), 95), Alpha(Mix(paper, white, palette.Dark ? .24 : .95), 225));
-        Gradient("WeaveInnerEdgeBrush", Alpha(white, 12), Alpha(white, 4), Alpha(white, palette.Dark ? (byte)48 : (byte)170));
-        Gradient("WeaveSheenBrush", Alpha(white, palette.Dark ? (byte)10 : (byte)54), Alpha(white, 5), Alpha(white, 0), Alpha(white, 16));
-        Gradient("WeaveRibbonBrush", Alpha(tint, 0), Alpha(Mix(tint, accent, .24), 115), Alpha(tint, 38));
-        Gradient("WeaveSelectionBrush", Alpha(Mix(paper, white, palette.Dark ? .1 : .8), 240),
-            Alpha(Mix(paper, accent, palette.Dark ? .20 : .09), 240), Alpha(Mix(paper, tint, .3), 235));
-        Gradient("WeaveActionBrush", Mix(accent, white, .18), Mix(accent, Color(palette.Dark ? "FFFFFF" : "102E3D"), .16));
-        RootGrid.RequestedTheme = palette.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        // With Mica the palette veil is translucent so the wallpaper tint shows; otherwise the canvas is fully opaque.
+        AtmosphereVeil.Opacity = _micaActive ? (dark ? .86 : .80) : 1;
+        RootGrid.RequestedTheme = dark ? ElementTheme.Dark : ElementTheme.Light;
+        ApplyCaptionColors(ink, muted);
         UpdateNavigation();
+        UpdateConnectionVisuals();
         try { Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!); File.WriteAllText(_themePath, index.ToString()); }
         catch (IOException) { MessageText.Text = L.T("外观已切换，但偏好未能保存。"); }
         catch (UnauthorizedAccessException) { MessageText.Text = L.T("外观已切换，但偏好未能保存。"); }
     }
 
-    private static global::Windows.UI.Color Color(string hex) => global::Windows.UI.Color.FromArgb(255,
+    private static WinColor Color(string hex) => WinColor.FromArgb(255,
         Convert.ToByte(hex[..2], 16), Convert.ToByte(hex.Substring(2, 2), 16), Convert.ToByte(hex.Substring(4, 2), 16));
-    private static global::Windows.UI.Color Mix(global::Windows.UI.Color a, global::Windows.UI.Color b, double amount) =>
-        global::Windows.UI.Color.FromArgb(255, (byte)(a.R + (b.R - a.R) * amount),
+    private static WinColor Mix(WinColor a, WinColor b, double amount) =>
+        WinColor.FromArgb(255, (byte)(a.R + (b.R - a.R) * amount),
             (byte)(a.G + (b.G - a.G) * amount), (byte)(a.B + (b.B - a.B) * amount));
+
+    private static double Luminance(WinColor color)
+    {
+        static double Channel(byte value) { var s = value / 255.0; return s <= 0.03928 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4); }
+        return 0.2126 * Channel(color.R) + 0.7152 * Channel(color.G) + 0.0722 * Channel(color.B);
+    }
+    private static double Contrast(WinColor a, WinColor b)
+    {
+        var x = Luminance(a); var y = Luminance(b);
+        return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
+    }
+    // Moves a foreground toward another colour in 5% steps until it reaches the ratio on all surfaces.
+    private static WinColor Readable(WinColor foreground, WinColor toward, double minimum, params WinColor[] surfaces)
+    {
+        for (var step = 0; step <= 20; step++)
+        {
+            var candidate = Mix(foreground, toward, step / 20.0);
+            if (surfaces.All(surface => Contrast(candidate, surface) >= minimum)) return candidate;
+        }
+        return toward;
+    }
+    // Moves a fill away from its label colour until the label reaches the ratio.
+    private static WinColor Backed(WinColor fill, WinColor label, double minimum)
+    {
+        var away = Luminance(label) > .5 ? Color("000000") : Color("FFFFFF");
+        for (var step = 0; step <= 20; step++)
+        {
+            var candidate = Mix(fill, away, step / 20.0);
+            if (Contrast(candidate, label) >= minimum) return candidate;
+        }
+        return away;
+    }
 
     private async void RefreshSubscription_Click(object sender, RoutedEventArgs e)
     {
@@ -609,10 +927,11 @@ public sealed partial class MainWindow : Window
         var name = new TextBox { Header = L.T("名称"), Text = record.Name };
         var url = new TextBox { Header = L.T("订阅链接（保存后重新获取）"), Text = record.Source,
             IsEnabled = record.Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) };
-        var panel = new StackPanel { Spacing = 14 };
+        var panel = new StackPanel { Spacing = 16 };
         panel.Children.Add(name); panel.Children.Add(url);
         var dialog = new ContentDialog { Title = L.T("编辑订阅"), Content = panel, PrimaryButtonText = L.T("保存"),
-            CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
+            CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
+            DefaultButton = ContentDialogButton.Primary };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             await RunActionAsync(async () => { if (await UpdateSubscriptionWithReviewAsync(record, name.Text, url.Text)) MessageText.Text = L.T("订阅已保存"); });
     }
@@ -624,7 +943,8 @@ public sealed partial class MainWindow : Window
         if (selected.Length == 0) { MessageText.Text = L.T("请先勾选要分享的订阅；未勾选的不会导出"); return; }
         var warning = new ContentDialog { Title = L.F($"导出 {selected.Length} 份订阅？"),
             Content = L.T("文件包含服务器和连接密码，不加密。请妥善保管，勿上传公开仓库。"),
-            PrimaryButtonText = L.T("继续导出"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot };
+            PrimaryButtonText = L.T("继续导出"), CloseButtonText = L.T("取消"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
+            DefaultButton = ContentDialogButton.Close };
         if (await warning.ShowAsync() != ContentDialogResult.Primary) return;
         await RunActionAsync(async () =>
         {
@@ -644,16 +964,9 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private sealed record NodeResult(ProxyNode Node, int? Delay) : System.ComponentModel.INotifyPropertyChanged
-    {
-        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
-        public void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(DisplayName)));
-        public string DisplayName => $"{Node.Name} · {(Delay is { } ms ? $"{ms} ms" : L.T("超时 / 不可达"))}";
-    }
     private void NodeList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        var node = SubscriptionNodesList.SelectedItem switch { ProxyNode p => p, NodeResult r => r.Node, _ => null };
-        if (node is not null) NodeComboBox.SelectedItem = node;
+        if (SubscriptionNodesList.SelectedItem is NodeRow row) NodeComboBox.SelectedItem = row.Node;
     }
 
     private async void TestNodes_Click(object sender, RoutedEventArgs e)
@@ -670,19 +983,22 @@ public sealed partial class MainWindow : Window
             var revision = _model.NetworkRevision;
             try
             {
-                using var gate = new SemaphoreSlim(3);
-                var results = await Task.WhenAll(record.Nodes.Select(async node =>
-                {
-                    await gate.WaitAsync(cancellation.Token);
-                    try { return new NodeResult(node, await _model.ProbeNodeAsync(bundle, MihomoConfigBuilder.NodePrefix(record.Id) + node.RawName, cancellation.Token)); }
-                    catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException)
-                    { cancellation.Token.ThrowIfCancellationRequested(); return new NodeResult(node, null); }
-                    finally { gate.Release(); }
-                }));
+                // Snapshot on the UI thread; the probes run on workers, three at a time.
+                var nodes = record.Nodes.ToArray();
+                var prefix = MihomoConfigBuilder.NodePrefix(record.Id);
+                var delays = await ConnectionSampling.ProbeNodesAsync(nodes.Select(node => prefix + node.RawName),
+                    async (name, token) =>
+                    {
+                        try { return await _model.ProbeNodeAsync(bundle, name, token); }
+                        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException)
+                        { token.ThrowIfCancellationRequested(); return null; }
+                    }, cancellation.Token, 3);
                 cancellation.Token.ThrowIfCancellationRequested();
                 if (!EvidenceStillCurrent(bundle, revision)) return;
-                SubscriptionNodesList.ItemsSource = results.OrderBy(result => result.Delay ?? int.MaxValue).ToArray();
-                NodeTestText.Text = L.F($"已测 {results.Length} 个，响应 {results.Count(result => result.Delay.HasValue)} 个。点击节点可选为默认出口，重新连接后生效。");
+                var rows = nodes.Select(node => new NodeRow(node, true, delays.TryGetValue(prefix + node.RawName, out var delay) ? delay : null))
+                    .OrderBy(row => row.Delay ?? int.MaxValue).ToArray();
+                SubscriptionNodesList.ItemsSource = rows;
+                NodeTestText.Text = L.F($"已测 {rows.Length} 个，响应 {rows.Count(row => row.Delay.HasValue)} 个。点击节点可选为默认出口，重新连接后生效。");
             }
             finally { _probeCancellation = null; }
         });
@@ -739,6 +1055,8 @@ public sealed partial class MainWindow : Window
     private string PreferencesPath => Path.Combine(Path.GetDirectoryName(_themePath)!, "preferences.bin");
     private void SavePreferences()
     {
+        // Until the library has been read the selectors are empty; saving now would overwrite the stored choices.
+        if (!_dataLoaded) return;
         try
         {
             var value = new Preferences((SubscriptionComboBox.SelectedItem as SubscriptionRecord)?.Id ?? _missingSubscriptionId,
@@ -790,8 +1108,9 @@ public sealed partial class MainWindow : Window
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= NetworkAddressChanged;
         _networkCancellation?.Cancel();
         _tray?.Dispose();
+        _minSize?.Dispose();
         _lifetime.Cancel();
-        _trafficTimer.Stop();
+        StopSampling();
         try { await Task.WhenAll(StopShareAsync(), _model.DisposeAsync().AsTask()); }
         catch (Exception) { /* Encrypted system-proxy recovery record remains for the next launch. */ }
         finally
@@ -807,6 +1126,7 @@ public sealed partial class MainWindow : Window
         if (!_initialized) return;
         ChainNode.ItemsSource = (ChainSubscription.SelectedItem as SubscriptionRecord)?.Nodes;
         ChainNode.SelectedIndex = -1;
+        MarkSettingsDirty();
     }
     private void RoutingMode_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -818,30 +1138,13 @@ public sealed partial class MainWindow : Window
             2 => L.T("全部直连，不经过任何代理节点。隐私端口拦截仍生效。"),
             _ => L.T("应用规则 → 自订规则 → 局域网 / 国内直连 → 默认出口。"),
         };
+        MarkSettingsDirty();
     }
     private void ValidateRules_Click(object sender, RoutedEventArgs e)
     {
-        try { var rules = DomainRoute.Parse(DomainRulesBox.Text); SavePreferences(); MessageText.Text = L.F($"已保存 {rules.Count} 条规则，重新连接后生效"); }
+        try { var rules = DomainRoute.Parse(DomainRulesBox.Text); SavePreferences(); MarkSettingsDirty(); MessageText.Text = L.F($"已保存 {rules.Count} 条规则，重新连接后生效"); }
         catch (InvalidDataException error) { MessageText.Text = error.Message; }
     }
-    private async void TrafficTick(object? sender, object e)
-    {
-        // No polling while hidden/minimized; back off after three idle samples.
-        if (_closed || _hiddenToTray || _trafficBusy || !_model.IsConnected || _model.ActiveConnection is not { } bundle ||
-            (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)) return;
-        _trafficBusy = true;
-        try
-        {
-            var traffic = await _model.ReadTrafficAsync(bundle, _lifetime.Token);
-            if (_closed || !_model.IsConnected || !ReferenceEquals(bundle, _model.ActiveConnection)) return;
-            DownloadRate.Text = Rate(traffic.Down); UploadRate.Text = Rate(traffic.Up);
-            _idleTrafficSamples = traffic.Down == 0 && traffic.Up == 0 ? Math.Min(3, _idleTrafficSamples + 1) : 0;
-            _trafficTimer.Interval = TimeSpan.FromSeconds(_idleTrafficSamples >= 3 ? 10 : 2);
-        }
-        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException or KeyNotFoundException or FormatException or InvalidOperationException) { }
-        finally { _trafficBusy = false; }
-    }
-    private static string Rate(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:F1} MB/s" : $"{Math.Max(0, bytes) / 1024.0:F1} KB/s";
 
     private void NetworkAddressChanged(object? sender, EventArgs e)
         => DispatcherQueue.TryEnqueue(ScheduleNetworkCheck);

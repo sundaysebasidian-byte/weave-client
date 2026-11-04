@@ -8,76 +8,245 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Palette-driven brushes. MainWindow.ThemeSelector_SelectionChanged mutates these in place,
+                 so every key below must exist in both dictionaries with the same brush type. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <AcrylicBrush x:Key="WeavePanelAcrylic" TintColor="#EFF6FB" TintOpacity="0.22" TintLuminosityOpacity="0.72" FallbackColor="#F6FAFD"/>
+                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F4F6F8"/>
+                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#1D252D"/>
+                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#5D6873"/>
+                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#3F596F"/>
+                    <SolidColorBrush x:Key="WeaveRimBrush" Color="#DDE5ED"/>
+                    <SolidColorBrush x:Key="WeaveSubtleFillBrush" Color="#0F000000"/>
+                    <SolidColorBrush x:Key="WeaveSubtlePressedBrush" Color="#1A000000"/>
+                    <SolidColorBrush x:Key="WeaveSuccessBrush" Color="#0F7B0F"/>
+                    <SolidColorBrush x:Key="WeaveCautionBrush" Color="#9D5D00"/>
+                    <SolidColorBrush x:Key="WeaveDangerBrush" Color="#C42B1C"/>
+                    <SolidColorBrush x:Key="WeaveAccentFillBrush" Color="#176B80"/>
+                    <SolidColorBrush x:Key="WeaveAccentFillHoverBrush" Color="#1F7A90"/>
+                    <SolidColorBrush x:Key="WeaveAccentFillPressedBrush" Color="#125869"/>
+                    <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#FFFFFF"/>
+                    <LinearGradientBrush x:Key="WeaveActionBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#2A7C90" Offset="0"/><GradientStop Color="#176B80" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveActionHoverBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#33899D" Offset="0"/><GradientStop Color="#1F7A90" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveActionPressedBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#1F6E82" Offset="0"/><GradientStop Color="#125869" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#EDF2F7" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveSheenBrush" StartPoint="0,0" EndPoint="0.3,1"><GradientStop Color="#70FFFFFF" Offset="0"/><GradientStop Color="#0AFFFFFF" Offset="0.28"/><GradientStop Color="#00FFFFFF" Offset="0.72"/><GradientStop Color="#24FFFFFF" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveInnerEdgeBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#08FFFFFF" Offset="0"/><GradientStop Color="#04FFFFFF" Offset="0.5"/><GradientStop Color="#80FFFFFF" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveRibbonBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#009BCAD9" Offset="0"/><GradientStop Color="#659BCAD9" Offset="0.5"/><GradientStop Color="#18A5BED8" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveSelectionBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EEFFFFFF" Offset="0"/><GradientStop Color="#92B9D7E4" Offset="0.55"/><GradientStop Color="#D5F3FAFD" Offset="1"/></LinearGradientBrush>
-                    <LinearGradientBrush x:Key="WeaveActionBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#398F9F" Offset="0"/><GradientStop Color="#176B80" Offset="1"/></LinearGradientBrush>
-                    <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#FFFFFF"/>
-                    <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#F5F8FC" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#F5F8FC"/>
                     <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EAF0F8" Offset="0"/><GradientStop Color="#F3F6FA" Offset="0.55"/><GradientStop Color="#E7EFEE" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveLightEdgeBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#DFE6EF" Offset="0.5"/><GradientStop Color="#FFFFFF" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveHeroBrush" StartPoint="0,0" EndPoint="1,0.8"><GradientStop Color="#F8FBFF" Offset="0"/><GradientStop Color="#E4EDF9" Offset="0.6"/><GradientStop Color="#E8F3ED" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveIconBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#CBDDEE" Offset="1"/></LinearGradientBrush>
-                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#F4F6F8" />
-                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#1D252D" />
-                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#5D6873" />
-                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#3F596F" />
-                    <SolidColorBrush x:Key="WeaveRimBrush" Color="#DDE5ED" />
-                    <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFFFFF" Offset="0"/><GradientStop Color="#EDF2F7" Offset="1"/></LinearGradientBrush>
+                    <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#F5F8FC" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#F5F8FC"/>
+
+                    <!-- Control states follow the palette instead of the Windows accent colour. -->
+                    <StaticResource x:Key="FocusVisualPrimaryBrush" ResourceKey="WeaveInkBrush"/>
+                    <StaticResource x:Key="FocusVisualSecondaryBrush" ResourceKey="WeaveCardBrush"/>
+                    <StaticResource x:Key="AccentButtonBackground" ResourceKey="WeaveActionBrush"/>
+                    <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="WeaveActionHoverBrush"/>
+                    <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="WeaveActionPressedBrush"/>
+                    <StaticResource x:Key="AccentButtonForeground" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="WeaveLightEdgeBrush"/>
+                    <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="WeaveLightEdgeBrush"/>
+                    <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="WeaveLightEdgeBrush"/>
+                    <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="ToggleSwitchKnobFillOnPointerOver" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="ToggleSwitchKnobFillOnPressed" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundStrokeChecked" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckGlyphForegroundChecked" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="ProgressBarForeground" ResourceKey="WeaveAccentFillBrush"/>
                 </ResourceDictionary>
+
                 <ResourceDictionary x:Key="Dark">
-                    <AcrylicBrush x:Key="WeavePanelAcrylic" TintColor="#EFF6FB" TintOpacity="0.22" TintLuminosityOpacity="0.72" FallbackColor="#F6FAFD"/>
+                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#07100E"/>
+                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#101C19"/>
+                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#F2F7F5"/>
+                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#A8BBB4"/>
+                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#8DD9B4"/>
+                    <SolidColorBrush x:Key="WeaveRimBrush" Color="#30483C"/>
+                    <SolidColorBrush x:Key="WeaveSubtleFillBrush" Color="#14FFFFFF"/>
+                    <SolidColorBrush x:Key="WeaveSubtlePressedBrush" Color="#22FFFFFF"/>
+                    <SolidColorBrush x:Key="WeaveSuccessBrush" Color="#6CCB5F"/>
+                    <SolidColorBrush x:Key="WeaveCautionBrush" Color="#FCE100"/>
+                    <SolidColorBrush x:Key="WeaveDangerBrush" Color="#FF99A4"/>
+                    <SolidColorBrush x:Key="WeaveAccentFillBrush" Color="#8DD9B4"/>
+                    <SolidColorBrush x:Key="WeaveAccentFillHoverBrush" Color="#7FCBA6"/>
+                    <SolidColorBrush x:Key="WeaveAccentFillPressedBrush" Color="#6FB898"/>
+                    <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#0B0E13"/>
+                    <LinearGradientBrush x:Key="WeaveActionBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#9BE3BF" Offset="0"/><GradientStop Color="#7FCBA6" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveActionHoverBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#A9EACA" Offset="0"/><GradientStop Color="#8DD9B4" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveActionPressedBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#8AD3AD" Offset="0"/><GradientStop Color="#6FB898" Offset="1"/></LinearGradientBrush>
+                    <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#20382E" Offset="0"/><GradientStop Color="#101C19" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveSheenBrush" StartPoint="0,0" EndPoint="0.3,1"><GradientStop Color="#70FFFFFF" Offset="0"/><GradientStop Color="#0AFFFFFF" Offset="0.28"/><GradientStop Color="#00FFFFFF" Offset="0.72"/><GradientStop Color="#24FFFFFF" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveInnerEdgeBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#08FFFFFF" Offset="0"/><GradientStop Color="#04FFFFFF" Offset="0.5"/><GradientStop Color="#80FFFFFF" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveRibbonBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#009BCAD9" Offset="0"/><GradientStop Color="#659BCAD9" Offset="0.5"/><GradientStop Color="#18A5BED8" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveSelectionBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#EEFFFFFF" Offset="0"/><GradientStop Color="#92B9D7E4" Offset="0.55"/><GradientStop Color="#D5F3FAFD" Offset="1"/></LinearGradientBrush>
-                    <LinearGradientBrush x:Key="WeaveActionBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#398F9F" Offset="0"/><GradientStop Color="#176B80" Offset="1"/></LinearGradientBrush>
-                    <SolidColorBrush x:Key="WeaveActionTextBrush" Color="#0B0E13"/>
-                    <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#151C29" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#151C29"/>
                     <LinearGradientBrush x:Key="WeaveAtmosphereBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#111B2B" Offset="0"/><GradientStop Color="#0B101A" Offset="0.55"/><GradientStop Color="#152329" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveLightEdgeBrush" StartPoint="0,0" EndPoint="0.8,1"><GradientStop Color="#526174" Offset="0"/><GradientStop Color="#1C2735" Offset="0.5"/><GradientStop Color="#394555" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveHeroBrush" StartPoint="0,0" EndPoint="1,0.8"><GradientStop Color="#24364B" Offset="0"/><GradientStop Color="#1A2534" Offset="0.6"/><GradientStop Color="#273D3E" Offset="1"/></LinearGradientBrush>
                     <LinearGradientBrush x:Key="WeaveIconBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#385368" Offset="0"/><GradientStop Color="#182537" Offset="1"/></LinearGradientBrush>
-                    <SolidColorBrush x:Key="WeaveCanvasBrush" Color="#07100E" />
-                    <SolidColorBrush x:Key="WeaveCardBrush" Color="#101C19" />
-                    <SolidColorBrush x:Key="WeaveInkBrush" Color="#F2F7F5" />
-                    <SolidColorBrush x:Key="WeaveMutedBrush" Color="#A8BBB4" />
-                    <SolidColorBrush x:Key="WeaveAccentBrush" Color="#8DD9B4" />
-                    <SolidColorBrush x:Key="WeaveRimBrush" Color="#30483C" />
-                    <LinearGradientBrush x:Key="WeaveGlassBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#20382E" Offset="0"/><GradientStop Color="#101C19" Offset="1"/></LinearGradientBrush>
+                    <AcrylicBrush x:Key="WeaveSidebarBrush" TintColor="#151C29" TintOpacity="0.7" TintLuminosityOpacity="0.85" FallbackColor="#151C29"/>
+
+                    <StaticResource x:Key="FocusVisualPrimaryBrush" ResourceKey="WeaveInkBrush"/>
+                    <StaticResource x:Key="FocusVisualSecondaryBrush" ResourceKey="WeaveCardBrush"/>
+                    <StaticResource x:Key="AccentButtonBackground" ResourceKey="WeaveActionBrush"/>
+                    <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="WeaveActionHoverBrush"/>
+                    <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="WeaveActionPressedBrush"/>
+                    <StaticResource x:Key="AccentButtonForeground" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="WeaveLightEdgeBrush"/>
+                    <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="WeaveLightEdgeBrush"/>
+                    <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="WeaveLightEdgeBrush"/>
+                    <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="ToggleSwitchKnobFillOnPointerOver" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="ToggleSwitchKnobFillOnPressed" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundStrokeChecked" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" ResourceKey="WeaveAccentFillHoverBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" ResourceKey="WeaveAccentFillPressedBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckGlyphForegroundChecked" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" ResourceKey="WeaveActionTextBrush"/>
+                    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="WeaveAccentFillBrush"/>
+                    <StaticResource x:Key="ProgressBarForeground" ResourceKey="WeaveAccentFillBrush"/>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
             <local:UiText x:Key="UiText" />
-            <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI</FontFamily>
+
+            <!-- Spacing scale: 4 / 8 / 12 / 16 / 24 / 32. Radii: control 8, tile 10, card 16, surface 20. -->
+            <x:Double x:Key="SpaceXS">4</x:Double>
+            <x:Double x:Key="SpaceS">8</x:Double>
+            <x:Double x:Key="SpaceM">12</x:Double>
+            <x:Double x:Key="SpaceL">16</x:Double>
+            <x:Double x:Key="SpaceXL">24</x:Double>
+            <x:Double x:Key="SpaceXXL">32</x:Double>
+            <CornerRadius x:Key="WeaveControlRadius">8</CornerRadius>
+            <CornerRadius x:Key="WeaveTileRadius">10</CornerRadius>
+            <CornerRadius x:Key="WeaveCardRadius">16</CornerRadius>
+            <CornerRadius x:Key="WeaveCardInnerRadius">15</CornerRadius>
+            <CornerRadius x:Key="WeaveSurfaceRadius">20</CornerRadius>
+            <Thickness x:Key="WeaveCardPadding">24</Thickness>
+
+            <!-- Type ramp (WinUI): Caption 12 / Body 14 / BodyStrong 14 semibold / Subtitle 20 / Title 28.
+                 Section titles use 16 semibold. Nothing else sets a font size. -->
             <Style TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
+            <Style x:Key="CaptionText" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="LineHeight" Value="16"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Foreground" Value="{ThemeResource WeaveMutedBrush}"/></Style>
+            <Style x:Key="SecondaryText" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="LineHeight" Value="20"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Foreground" Value="{ThemeResource WeaveMutedBrush}"/></Style>
+            <Style x:Key="BodyStrongText" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
+            <Style x:Key="SectionTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="16"/><Setter Property="LineHeight" Value="24"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
+            <Style x:Key="SubtitleText" TargetType="TextBlock"><Setter Property="FontSize" Value="20"/><Setter Property="LineHeight" Value="28"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
+            <Style x:Key="TitleText" TargetType="TextBlock"><Setter Property="FontSize" Value="28"/><Setter Property="LineHeight" Value="36"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
+            <!-- No Foreground: lets navigation labels inherit the colour of their state-aware parent. -->
+            <Style x:Key="ButtonLabel" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/></Style>
+            <Style x:Key="NavLabel" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
+
+            <Style TargetType="Button"><Setter Property="CornerRadius" Value="{StaticResource WeaveControlRadius}"/><Setter Property="Padding" Value="16,8"/><Setter Property="MinHeight" Value="36"/><Setter Property="FontSize" Value="14"/></Style>
+            <Style TargetType="ComboBox"><Setter Property="CornerRadius" Value="{StaticResource WeaveControlRadius}"/><Setter Property="MinHeight" Value="36"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
+            <Style TargetType="TextBox"><Setter Property="CornerRadius" Value="{StaticResource WeaveControlRadius}"/><Setter Property="MinHeight" Value="36"/><Setter Property="BorderBrush" Value="{ThemeResource WeaveRimBrush}"/><Setter Property="BorderThickness" Value="1"/></Style>
+
+            <Style x:Key="IconTile" TargetType="Border">
+                <Setter Property="Width" Value="32"/>
+                <Setter Property="Height" Value="32"/>
+                <Setter Property="CornerRadius" Value="{StaticResource WeaveTileRadius}"/>
+                <Setter Property="Background" Value="{ThemeResource WeaveIconBrush}"/>
+            </Style>
+
+            <!-- Card: one fill + rim, one sheen with an inner highlight. Static layers only, no per-card blur. -->
             <Style x:Key="GlassCard" TargetType="ContentControl">
                 <Setter Property="Background" Value="{ThemeResource WeaveGlassBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="CornerRadius" Value="20"/>
-                <Setter Property="Padding" Value="24"/>
+                <Setter Property="CornerRadius" Value="{StaticResource WeaveCardRadius}"/>
+                <Setter Property="Padding" Value="{StaticResource WeaveCardPadding}"/>
                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                 <Setter Property="IsTabStop" Value="False"/>
                 <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContentControl">
                     <Grid>
-                        <!-- Keep backdrop acrylic on the sidebar only. Cards retain static
-                             glass gradients, rims and elevation without per-card blur. -->
-                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{TemplateBinding Background}" IsHitTestVisible="False"/>
-                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{ThemeResource WeaveSheenBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" IsHitTestVisible="False"/>
-                        <Border Margin="1" CornerRadius="19" BorderBrush="{ThemeResource WeaveInnerEdgeBrush}" BorderThickness="0,1,0,0.5" IsHitTestVisible="False"/>
+                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" IsHitTestVisible="False"/>
+                        <Border Margin="1" CornerRadius="{StaticResource WeaveCardInnerRadius}" Background="{ThemeResource WeaveSheenBrush}" BorderBrush="{ThemeResource WeaveInnerEdgeBrush}" BorderThickness="0,1,0,0" IsHitTestVisible="False"/>
                         <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
                     </Grid>
                 </ControlTemplate></Setter.Value></Setter>
             </Style>
-            <Style x:Key="SectionTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="19"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
-            <Style TargetType="Button"><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="18,11"/><Setter Property="MinHeight" Value="44"/><Setter Property="FontSize" Value="14"/><Setter Property="BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/></Style>
-            <Style TargetType="ComboBox"><Setter Property="CornerRadius" Value="10"/><Setter Property="MinHeight" Value="44"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
-            <Style TargetType="TextBox"><Setter Property="CornerRadius" Value="10"/><Setter Property="MinHeight" Value="44"/><Setter Property="BorderBrush" Value="{ThemeResource WeaveRimBrush}"/><Setter Property="BorderThickness" Value="1"/></Style>
+
+            <!-- Sidebar entry. Selection and hover are drawn by visual states; the indicator fades on the compositor
+                 through OpacityTransition. Focus uses the system visual (ink/paper ring from the palette). -->
+            <Style x:Key="WeaveNavItem" TargetType="RadioButton">
+                <Setter Property="GroupName" Value="WeaveNavigation"/>
+                <Setter Property="Height" Value="44"/>
+                <Setter Property="Padding" Value="15,0,12,0"/>
+                <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="Foreground" Value="{ThemeResource WeaveMutedBrush}"/>
+                <Setter Property="CornerRadius" Value="12"/>
+                <Setter Property="UseSystemFocusVisuals" Value="True"/>
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
+                    <Grid>
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal"/>
+                                <VisualState x:Name="PointerOver"><VisualState.Setters>
+                                    <Setter Target="Surface.Background" Value="{ThemeResource WeaveSubtleFillBrush}"/>
+                                    <Setter Target="Presenter.Foreground" Value="{ThemeResource WeaveInkBrush}"/>
+                                </VisualState.Setters></VisualState>
+                                <VisualState x:Name="Pressed"><VisualState.Setters>
+                                    <Setter Target="Surface.Background" Value="{ThemeResource WeaveSubtlePressedBrush}"/>
+                                    <Setter Target="Presenter.Foreground" Value="{ThemeResource WeaveInkBrush}"/>
+                                </VisualState.Setters></VisualState>
+                                <VisualState x:Name="Disabled"><VisualState.Setters>
+                                    <Setter Target="Presenter.Opacity" Value="0.4"/>
+                                </VisualState.Setters></VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates">
+                                <VisualState x:Name="Unchecked"/>
+                                <VisualState x:Name="Indeterminate"/>
+                                <VisualState x:Name="Checked"><VisualState.Setters>
+                                    <Setter Target="Surface.Background" Value="{ThemeResource WeaveSelectionBrush}"/>
+                                    <Setter Target="Surface.BorderBrush" Value="{ThemeResource WeaveLightEdgeBrush}"/>
+                                    <Setter Target="Indicator.Opacity" Value="1"/>
+                                    <Setter Target="Presenter.Foreground" Value="{ThemeResource WeaveInkBrush}"/>
+                                    <Setter Target="Presenter.FontWeight" Value="SemiBold"/>
+                                </VisualState.Setters></VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <Border x:Name="Surface" CornerRadius="{TemplateBinding CornerRadius}" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"/>
+                        <Rectangle x:Name="Indicator" Width="3" Height="16" RadiusX="1.5" RadiusY="1.5" Margin="4,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" Fill="{ThemeResource WeaveAccentBrush}" Opacity="0">
+                            <Rectangle.OpacityTransition><ScalarTransition Duration="0:0:0.15"/></Rectangle.OpacityTransition>
+                        </Rectangle>
+                        <ContentPresenter x:Name="Presenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Grid>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

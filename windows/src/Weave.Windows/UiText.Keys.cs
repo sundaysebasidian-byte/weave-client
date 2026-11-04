@@ -18,6 +18,7 @@ public sealed partial class UiText
     public string Settings => L.T("设置");
     public string LocalFirstNoCloudSync => L.T("本地优先 · 无云端同步");
     public string Disconnected => L.T("未连接");
+    public string ImportASubscriptionFirst => L.T("请先导入订阅");
     public string CURRENTSESSION => L.T("当前会话");
     public string ReadyToConnect => L.T("尚未连接");
     public string ChooseASubscriptionToGetStarted => L.T("选择订阅后连接");

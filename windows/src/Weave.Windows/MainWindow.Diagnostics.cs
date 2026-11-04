@@ -20,7 +20,7 @@ public sealed partial class MainWindow
             content.Children.Add(new TextBlock { Text = L.T("仅包含检测状态与耗时，不含 IP、订阅或节点信息。复制后，其他应用可能读取剪贴板。"), TextWrapping = TextWrapping.Wrap });
             content.Children.Add(new TextBlock { Text = summary, TextWrapping = TextWrapping.Wrap,
                 FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), FontSize = 12, IsTextSelectionEnabled = true });
-            var dialog = new ContentDialog { Title = L.T("脱敏检测摘要"), XamlRoot = RootGrid.XamlRoot,
+            var dialog = new ContentDialog { Title = L.T("脱敏检测摘要"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
                 Content = new ScrollViewer { MaxHeight = 420, Content = content },
                 PrimaryButtonText = L.T("复制"), CloseButtonText = L.T("取消"), DefaultButton = ContentDialogButton.Close };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;

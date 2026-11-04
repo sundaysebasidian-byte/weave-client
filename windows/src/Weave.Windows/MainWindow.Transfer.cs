@@ -80,7 +80,7 @@ public sealed partial class MainWindow
     }
     private async void ReceiveLan_Click(object sender, RoutedEventArgs e)
     {
-        await RunActionAsync(async () =>
+        await RunCancellableAsync(async token =>
         {
             _pendingTransfer = Array.Empty<TransferSubscription>(); ReceivePreview.ItemsSource = null;
             ReceiveConfirmArea.Visibility = Visibility.Collapsed;
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
             try
             {
                 if (ReceiveCode.Text.Trim() != link.ConfirmationCode()) throw new InvalidDataException(L.T("请填写发送设备显示的六位核对码"));
-                _pendingTransfer = await LanTransferClient.FetchAsync(link, _lifetime.Token);
+                _pendingTransfer = await LanTransferClient.FetchAsync(link, token);
                 ReceivePreview.ItemsSource = _pendingTransfer;
                 ReceivePreview.SelectAll();
                 ReceiveConfirmArea.Visibility = Visibility.Visible;
@@ -101,9 +101,9 @@ public sealed partial class MainWindow
     {
         var selected = ReceivePreview.SelectedItems.Cast<TransferSubscription>().ToArray();
         if (selected.Length == 0) { MessageText.Text = L.T("请先接收并选择订阅"); return; }
-        await RunActionAsync(async () =>
+        await RunCancellableAsync(async token =>
         {
-            await _model.ImportTransferAsync(selected);
+            await _model.ImportTransferAsync(selected, token);
             _pendingTransfer = Array.Empty<TransferSubscription>(); ReceivePreview.ItemsSource = null;
             ReceiveConfirmArea.Visibility = Visibility.Collapsed;
             MessageText.Text = L.F($"已安全同步 {selected.Length} 份订阅；未选中的内容未导入。重新连接后应用新配置。");
@@ -145,7 +145,7 @@ public sealed partial class MainWindow
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(preview);
         panel.Children.Add(new TextBlock { Text = L.T("对准订阅或 Weave 互传二维码。图像只在本机识别，不保存、不上传。"), TextWrapping = TextWrapping.Wrap });
-        var dialog = new ContentDialog { Title = L.T("扫描二维码"), Content = panel, CloseButtonText = L.T("完成"), XamlRoot = RootGrid.XamlRoot };
+        var dialog = new ContentDialog { Title = L.T("扫描二维码"), Content = panel, CloseButtonText = L.T("完成"), XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme };
         string? scanned = null;
         var renderPending = 0;
         var active = true;

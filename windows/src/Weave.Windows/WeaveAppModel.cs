@@ -21,6 +21,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public ConnectionEndpoint? ActiveConnection { get; private set; }
     public ConnectionHealthState Health { get; private set; }
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
+    private readonly SemaphoreSlim _routeSaveGate = new(1, 1);
+    private long _routeSaveVersion;
     private long _networkRevision;
     public long NetworkRevision => Interlocked.Read(ref _networkRevision);
     public event EventHandler? StatusChanged;
@@ -55,18 +57,24 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     private string _status = "未连接";
     public string Status { get => L.T(_status) + (_runtimeCleanupPending ? " · " + L.T("会话配置尚未清理") : ""); private set => _status = value; }
 
-    public void Load()
+    /// <summary>Registry recovery, DPAPI and vault reads run on a worker; only the collections are filled on the caller's (UI) thread.</summary>
+    public async Task LoadAsync(CancellationToken token = default)
     {
-        _systemProxy.Recover();
-        _runtimeCleanupPending = RuntimeSession.Recover(Path.Combine(_dataDirectory, "runtime-sessions")).Retained > 0;
+        var loaded = await Task.Run(() =>
+        {
+            _systemProxy.Recover();
+            var retained = RuntimeSession.Recover(Path.Combine(_dataDirectory, "runtime-sessions")).Retained > 0;
+            return (Retained: retained, Subscriptions: _vault.List(), Routes: _routeStore.Load());
+        }, token);
+        _runtimeCleanupPending = loaded.Retained;
         Subscriptions.Clear();
         AppRoutes.Clear();
-        foreach (var subscription in _vault.List())
+        foreach (var subscription in loaded.Subscriptions)
         {
             Subscriptions.Add(subscription);
         }
 
-        foreach (var route in _routeStore.Load())
+        foreach (var route in loaded.Routes)
         {
             AppRoutes.Add(route);
         }
@@ -74,40 +82,45 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         Status = Subscriptions.Count == 0 ? "请先导入订阅" : "未连接";
     }
 
-    public async Task<SubscriptionRecord> ImportTextAsync(string name, string source, string payload)
+    public async Task<SubscriptionRecord> ImportTextAsync(string name, string source, string payload, CancellationToken cancellationToken = default)
     {
-        var record = await Task.Run(() => _importer.ImportText(name, source, payload));
-        record = PreserveIdentity(record);
-        await Task.Run(() => _vault.Upsert(record));
-        ReplaceInCollection(record);
-        return record;
+        var record = await _importer.ImportTextAsync(name, source, payload, cancellationToken);
+        return await StoreImportedAsync(record, cancellationToken);
     }
 
     public async Task<SubscriptionRecord> ImportUrlAsync(string name, string source, CancellationToken cancellationToken)
     {
         var record = await _importer.ImportUrlAsync(name, source, cancellationToken);
-        record = PreserveIdentity(record);
-        await Task.Run(() => _vault.Upsert(record), cancellationToken);
-        ReplaceInCollection(record);
-        return record;
+        return await StoreImportedAsync(record, cancellationToken);
     }
 
-    public async Task<SubscriptionRecord> ImportFileAsync(string name, string path)
+    public async Task<SubscriptionRecord> ImportFileAsync(string name, string path, CancellationToken cancellationToken = default)
     {
-        var record = await Task.Run(() => _importer.ImportFile(name, path));
-        record = PreserveIdentity(record);
+        var record = await _importer.ImportFileAsync(name, path, cancellationToken);
+        return await StoreImportedAsync(record, cancellationToken);
+    }
+
+    // Runs on the UI thread (callers await without ConfigureAwait(false)): identity lookup and the collection are UI-owned.
+    // Cancellation is honoured up to the vault write; once the write starts it is allowed to finish.
+    private async Task<SubscriptionRecord> StoreImportedAsync(SubscriptionRecord imported, CancellationToken cancellationToken)
+    {
+        var record = PreserveIdentity(imported);
+        cancellationToken.ThrowIfCancellationRequested();
         await Task.Run(() => _vault.Upsert(record));
         ReplaceInCollection(record);
         return record;
     }
 
-    public async Task ImportTransferAsync(IReadOnlyList<TransferSubscription> items)
+    public async Task ImportTransferAsync(IReadOnlyList<TransferSubscription> items, CancellationToken cancellationToken = default)
     {
         // Parse every selected subscription before the single atomic vault write.
-        var parsed = await Task.Run(() => items.Select(item => _importer.ImportText(item.Name, item.Source, item.Payload)).ToArray());
+        var parsed = new List<SubscriptionRecord>(items.Count);
+        foreach (var item in items)
+            parsed.Add(await _importer.ImportTextAsync(item.Name, item.Source, item.Payload, cancellationToken));
         var merged = parsed.Select(PreserveIdentity).ToArray();
         if (merged.Select(item => item.Id).Distinct().Count() != merged.Length)
             throw new InvalidDataException(L.T("传输包包含重复订阅，请在发送端分别选择"));
+        cancellationToken.ThrowIfCancellationRequested();
         await Task.Run(() => _vault.Merge(merged));
         foreach (var record in merged) ReplaceInCollection(record);
     }
@@ -134,7 +147,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     {
         var parsed = source.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
             ? await _importer.ImportUrlAsync(name, source, token)
-            : await Task.Run(() => _importer.ImportText(name, existing.Source, existing.ProviderYaml), token);
+            : await _importer.ImportTextAsync(name, existing.Source, existing.ProviderYaml, token);
         var nodes = parsed.Nodes.Select(node => new ProxyNode
         {
             Id = existing.Nodes.FirstOrDefault(old => old.RawName == node.RawName && old.Protocol == node.Protocol)?.Id ?? node.Id,
@@ -149,7 +162,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         return true;
     }
 
-    public void AddOrReplaceRoute(WindowsAppRoute route)
+    public async Task AddOrReplaceRouteAsync(WindowsAppRoute route)
     {
         var processName = Path.GetFileName(route.ProcessName.Trim());
         if (string.IsNullOrWhiteSpace(processName) || processName.Contains(',') ||
@@ -175,10 +188,10 @@ internal sealed class WeaveAppModel : IAsyncDisposable
             AppRoutes.Add(normalized);
         }
 
-        _routeStore.Save(AppRoutes);
+        await SaveRoutesAsync();
     }
 
-    public bool RemoveRoute(string processName)
+    public async Task<bool> RemoveRouteAsync(string processName)
     {
         var route = AppRoutes.FirstOrDefault(item =>
             item.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase));
@@ -188,8 +201,23 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         }
 
         AppRoutes.Remove(route);
-        _routeStore.Save(AppRoutes);
+        await SaveRoutesAsync();
         return true;
+    }
+
+    // The collection changes immediately on the UI thread; the encrypted write happens on a worker, one at a time.
+    // Each save carries an immutable snapshot, and a save that a newer one has overtaken is skipped.
+    private async Task SaveRoutesAsync()
+    {
+        var snapshot = AppRoutes.ToArray();
+        var version = Interlocked.Increment(ref _routeSaveVersion);
+        await _routeSaveGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (version != Interlocked.Read(ref _routeSaveVersion)) return;
+            await Task.Run(() => _routeStore.Save(snapshot)).ConfigureAwait(false);
+        }
+        finally { _routeSaveGate.Release(); }
     }
 
     public async Task ConnectAsync(string subscriptionId, string? nodeId, CancellationToken cancellationToken)
@@ -197,12 +225,14 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         await _connectionGate.WaitAsync(cancellationToken);
         try
         {
-            if (IsConnected) return;
-            await StopCoreAsync().ConfigureAwait(false);
-            _systemProxy.Recover();
+            // The collections belong to the UI thread, which is where the gate wait resumed. Take immutable
+            // snapshots now: every continuation after the first ConfigureAwait(false) runs on a worker.
             var subscriptions = Subscriptions.ToArray();
             var routes = AppRoutes.ToArray();
             var options = NetworkOptions;
+            if (IsConnected) return;
+            await StopCoreAsync().ConfigureAwait(false);
+            _systemProxy.Recover();
             try
             {
                 Status = options.EnableTun ? "正在启动 TUN" : "正在启动系统代理";
@@ -380,6 +410,8 @@ internal sealed class WeaveAppModel : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync().ConfigureAwait(false);
+        await _routeSaveGate.WaitAsync().ConfigureAwait(false); // let an in-flight route write finish
+        _routeSaveGate.Release();
         _importer.Dispose();
     }
 
