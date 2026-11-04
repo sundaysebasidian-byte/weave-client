@@ -112,4 +112,25 @@ public sealed partial class UiText
     public string NotSharing => L.T("尚未开始分享");
     public string CopyLink => L.T("复制链接");
     public string StopSharing => L.T("立即停止分享");
+
+    // Interface refresh: short labels for the icon rail and the dense dashboard.
+    public string NavLibrary => L.T("订阅库");
+    public string NavRouting => L.T("分流");
+    public string NavPrivacy => L.T("隐私");
+    public string NavSync => L.T("同步");
+    public string ToggleLightDark => L.T("切换浅色 / 深色");
+    public string ExitLabel => L.T("出口");
+    public string SessionTotal => L.T("本次");
+    public string Latency => L.T("延迟");
+    public string Uptime => L.T("时长");
+    public string SearchNodes => L.T("搜索节点");
+    public string DropToImport => L.T("拖入链接、文件或二维码图片");
+    public string Protocol => L.T("协议");
+    public string Trend => L.T("趋势");
+    public string SetAsExit => L.T("设为出口");
+    public string CopyName => L.T("复制名称");
+    public string Behavior => L.T("行为");
+    public string CloseButtonBehavior => L.T("点击关闭按钮时");
+    public string ReleaseToImport => L.T("松开以导入");
+    public string Close => L.T("关闭提示");
 }

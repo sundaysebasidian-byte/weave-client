@@ -1,5 +1,11 @@
 # Weave Windows 0.4.3 RC4
 
+**界面焕新（未发布）**：图标侧栏 + 首页仪表盘（出口城市、实时流量曲线、编织结插画、出口快选与延迟信号条）；
+六套主题（印象日出、睡莲、罂粟花田、暮色花园、星夜、素纸），每套都有浅色与深色，可跟随 Windows。
+订阅头像改为“健康环”（环弧 = 上次测速有响应的节点占比，中间是名称首字）；节点页新增地区筛选、搜索、
+逐条趋势线和边测边出的结果。新增拖入链接/文件/二维码图片导入、右键菜单、Delete 删除、连接成功提示与“重新连接并应用”条。
+只改界面与展示逻辑，连接、订阅、加密与分流行为不变；尚未用真实核心、TUN 与系统代理做整机验收。
+
 RC4 keeps diagnostic cards in fixed slots during testing, distinguishes pending checks from measured evidence, preserves redirect status codes, and handles an intentional stop without showing unrelated connection/administrator errors. Partial or cancelled checks are not exported as completed measurements.
 
 RC3：网络与隐私检测改为分层证据卡片，单独标记确认状态、HTTP 状态和耗时；DNS、TLS、连接错误与超时分项提示。新增脱敏检测摘要预览/复制，只输出白名单状态字段，不包含出口 IP、订阅、节点、浏览器指纹或原始异常，复制时请求禁止剪贴板历史与跨设备漫游。检测依然由用户主动触发，不新增后台轮询。

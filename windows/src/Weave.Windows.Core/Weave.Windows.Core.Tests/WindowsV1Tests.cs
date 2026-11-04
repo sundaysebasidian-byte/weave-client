@@ -147,10 +147,10 @@ public sealed class WindowsV1Tests
     }
 
     [Fact]
-    public void EightPalettesAndNineDiagnosticTargets()
+    public void SixThemesAndNineDiagnosticTargets()
     {
-        Assert.Equal(8, AppearancePalette.All.Count);
-        Assert.Equal(8, AppearancePalette.All.Select(p => p.Name).Distinct().Count());
+        Assert.Equal(6, Appearance.Themes.Count);
+        Assert.Equal(6, Appearance.Themes.Select(theme => theme.Name).Distinct().Count());
         Assert.Equal(9, NetworkDiagnostics.Targets.Count);
         Assert.All(NetworkDiagnostics.Targets, target => Assert.StartsWith("https://", target.Url));
     }
