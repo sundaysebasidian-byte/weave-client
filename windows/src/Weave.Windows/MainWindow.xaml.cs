@@ -793,6 +793,15 @@ public sealed partial class MainWindow : Window
             var button = navButtons[i];
             if (Math.Abs(button.ActualHeight - 44) > 1 || (labels[i].Visibility == Visibility.Visible && labels[i].IsTextTrimmed))
                 throw new InvalidOperationException("Navigation row is cramped or clips its label: " + button.Name);
+            if (compactLayout)
+            {
+                if (labels[i].Visibility != Visibility.Collapsed)
+                    throw new InvalidOperationException("Compact navigation label is visible: " + button.Name);
+                var icon = (FrameworkElement)((Grid)button.Content).Children[0];
+                var iconLeft = icon.TransformToVisual(button).TransformPoint(new global::Windows.Foundation.Point()).X;
+                if (icon.ActualWidth < 18 || iconLeft < 0 || iconLeft + icon.ActualWidth > button.ActualWidth + 1)
+                    throw new InvalidOperationException("Compact navigation icon is clipped: " + button.Name);
+            }
             var top = button.TransformToVisual(NavigationItems).TransformPoint(new global::Windows.Foundation.Point()).Y;
             if (previousNavigationTop is { } previous && Math.Abs(top - previous - 48) > 1)
                 throw new InvalidOperationException("Navigation spacing is not uniform: " + button.Name);
@@ -818,6 +827,13 @@ public sealed partial class MainWindow : Window
                 var origin = control.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point());
                 if (control.ActualWidth < 40 || origin.X < 0 || origin.X + control.ActualWidth > ContentScroll.ActualWidth + 1)
                     throw new InvalidOperationException("Home control is clipped horizontally: " + control.Name);
+            }
+            if (compactLayout && selectors)
+            {
+                var subscriptionBottom = SubscriptionComboBox.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y + SubscriptionComboBox.ActualHeight;
+                var nodeTop = NodeSelection.TransformToVisual(ContentScroll).TransformPoint(new global::Windows.Foundation.Point()).Y;
+                if (nodeTop < subscriptionBottom)
+                    throw new InvalidOperationException("Compact exit selectors did not stack in one column");
             }
             var wide = RootGrid.ActualWidth >= 1100;
             if (wide && selectors)

@@ -4,6 +4,8 @@
     xmlns:local="using:Weave.Windows"
     xmlns:core="using:Weave.Windows.Core"
     Title="Weave">
+<!-- Adaptive state triggers require a Control host; Window is not a Control. -->
+<UserControl>
 <Grid x:Name="RootGrid" RequestedTheme="Light" UseLayoutRounding="True">
     <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid.KeyboardAccelerators>
@@ -64,22 +66,22 @@
                 <ScrollViewer x:Name="SidebarNavigationScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsTabStop="False">
                     <StackPanel x:Name="NavigationItems" Spacing="4">
                         <RadioButton x:Name="Nav0" Tag="0" Style="{StaticResource WeaveNavItem}" IsChecked="True" Checked="Navigate_Checked" AccessKey="1" ToolTipService.ToolTip="{Binding Connect, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Connect, Source={StaticResource UiText}}">
-                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE80F;" FontSize="18"/><TextBlock x:Name="NavLabel0" Grid.Column="1" Style="{StaticResource NavLabel}" Text="{Binding Connect, Source={StaticResource UiText}}"/></Grid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE80F;" FontSize="18"/><TextBlock x:Name="NavLabel0" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Connect, Source={StaticResource UiText}}"/></Grid>
                         </RadioButton>
                         <RadioButton x:Name="Nav1" Tag="1" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="2" ToolTipService.ToolTip="{Binding Subscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Subscriptions, Source={StaticResource UiText}}">
-                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8F1;" FontSize="18"/><TextBlock x:Name="NavLabel1" Grid.Column="1" Style="{StaticResource NavLabel}" Text="{Binding Subscriptions, Source={StaticResource UiText}}"/></Grid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8F1;" FontSize="18"/><TextBlock x:Name="NavLabel1" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Subscriptions, Source={StaticResource UiText}}"/></Grid>
                         </RadioButton>
                         <RadioButton x:Name="Nav2" Tag="2" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="3" ToolTipService.ToolTip="{Binding Routing, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Routing, Source={StaticResource UiText}}">
-                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8AB;" FontSize="18"/><TextBlock x:Name="NavLabel2" Grid.Column="1" Style="{StaticResource NavLabel}" Text="{Binding Routing, Source={StaticResource UiText}}"/></Grid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8AB;" FontSize="18"/><TextBlock x:Name="NavLabel2" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Routing, Source={StaticResource UiText}}"/></Grid>
                         </RadioButton>
                         <RadioButton x:Name="Nav4" Tag="4" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="4" ToolTipService.ToolTip="{Binding NetworkPrivacy, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NetworkPrivacy, Source={StaticResource UiText}}">
-                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE774;" FontSize="18"/><TextBlock x:Name="NavLabel4" Grid.Column="1" Style="{StaticResource NavLabel}" Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}"/></Grid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE774;" FontSize="18"/><TextBlock x:Name="NavLabel4" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}"/></Grid>
                         </RadioButton>
                         <RadioButton x:Name="Nav5" Tag="5" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="5" ToolTipService.ToolTip="{Binding DeviceSync, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding DeviceSync, Source={StaticResource UiText}}">
-                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8AD;" FontSize="18"/><TextBlock x:Name="NavLabel5" Grid.Column="1" Style="{StaticResource NavLabel}" Text="{Binding DeviceSync, Source={StaticResource UiText}}"/></Grid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8AD;" FontSize="18"/><TextBlock x:Name="NavLabel5" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding DeviceSync, Source={StaticResource UiText}}"/></Grid>
                         </RadioButton>
                         <RadioButton x:Name="Nav3" Tag="3" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="6" ToolTipService.ToolTip="{Binding Settings, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Settings, Source={StaticResource UiText}}">
-                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE713;" FontSize="18"/><TextBlock x:Name="NavLabel3" Grid.Column="1" Style="{StaticResource NavLabel}" Text="{Binding Settings, Source={StaticResource UiText}}"/></Grid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE713;" FontSize="18"/><TextBlock x:Name="NavLabel3" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Settings, Source={StaticResource UiText}}"/></Grid>
                         </RadioButton>
                     </StackPanel>
                 </ScrollViewer>
@@ -488,4 +490,5 @@
         </Grid>
     </Grid>
 </Grid>
+</UserControl>
 </Window>
