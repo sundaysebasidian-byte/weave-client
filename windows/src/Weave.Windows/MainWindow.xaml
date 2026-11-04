@@ -33,6 +33,7 @@
                 <Setter Target="ApplyBar.Margin" Value="16,0,16,8"/>
                 <Setter Target="ContentScroll.Padding" Value="16,8,16,24"/>
                 <Setter Target="MessageBar.Margin" Value="16,0,16,16"/>
+                <Setter Target="BusyBar.Margin" Value="16,0"/>
             </VisualState.Setters></VisualState>
         </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
@@ -82,7 +83,7 @@
                         </RadioButton>
                     </StackPanel>
                 </ScrollViewer>
-                <Grid x:Name="SidebarFooter" Grid.Row="1" Margin="4,8,4,4" Padding="0,12,0,0" ColumnSpacing="16" BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,1,0,0">
+                <Grid x:Name="SidebarFooter" Grid.Row="1" Visibility="Collapsed" Margin="4,8,4,4" Padding="0,12,0,0" ColumnSpacing="16" BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,1,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <StackPanel Spacing="4">
                         <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE74B;" FontSize="12" Foreground="{ThemeResource WeaveAccentBrush}"/><TextBlock Text="{Binding Download, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap"/></StackPanel>
@@ -100,10 +101,10 @@
         <Grid Grid.Column="1">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
 
-            <Grid x:Name="PageHeader" Padding="32,16,32,8" ColumnSpacing="16">
+            <Grid x:Name="PageHeader" Padding="32,16,32,8" ColumnSpacing="16" MaxWidth="1024">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="PageTitle" Style="{StaticResource TitleText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Connect, Source={StaticResource UiText}}" AutomationProperties.HeadingLevel="Level1"/>
-                <Border Grid.Column="1" VerticalAlignment="Center" CornerRadius="16" Padding="12,6" BorderThickness="1" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" Background="{ThemeResource WeaveGlassBrush}">
+                <Border x:Name="StatusPill" Grid.Column="1" Visibility="Collapsed" VerticalAlignment="Center" CornerRadius="16" Padding="12,6" BorderThickness="1" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" Background="{ThemeResource WeaveGlassBrush}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Ellipse x:Name="StatusDot" Width="8" Height="8" VerticalAlignment="Center" Fill="{ThemeResource WeaveMutedBrush}"/>
                         <TextBlock x:Name="StatusText" MaxWidth="280" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Style="{StaticResource CaptionText}" Text="{Binding Disconnected, Source={StaticResource UiText}}"/>
@@ -112,7 +113,7 @@
             </Grid>
 
             <!-- One-click apply for pending changes while connected; shown on every page. -->
-            <InfoBar x:Name="ApplyBar" Grid.Row="1" Margin="32,0,32,8" Severity="Informational" IsOpen="False" IsClosable="True" Message="{Binding ReconnectToApplyChanges, Source={StaticResource UiText}}">
+            <InfoBar x:Name="ApplyBar" Grid.Row="1" Margin="32,0,32,8" MaxWidth="960" Severity="Informational" IsOpen="False" IsClosable="True" Message="{Binding ReconnectToApplyChanges, Source={StaticResource UiText}}">
                 <InfoBar.ActionButton><Button Content="{Binding ReconnectNetwork, Source={StaticResource UiText}}" Click="ReconnectNetwork_Click" HorizontalAlignment="Right"/></InfoBar.ActionButton>
             </InfoBar>
 
@@ -134,7 +135,7 @@
                                 </Grid>
                                 <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock x:Name="HeroStatus" Style="{StaticResource TitleText}" TextWrapping="Wrap" Text="{Binding ReadyToConnect, Source={StaticResource UiText}}"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <StackPanel x:Name="HeroDetailRow" Orientation="Horizontal" Spacing="8">
                                         <Ellipse x:Name="ConnectionDot" Width="8" Height="8" VerticalAlignment="Center" Fill="{ThemeResource WeaveMutedBrush}"/>
                                         <TextBlock x:Name="HeroDetail" Style="{StaticResource SecondaryText}" Text="{Binding ChooseASubscriptionToGetStarted, Source={StaticResource UiText}}"/>
                                     </StackPanel>
@@ -153,7 +154,7 @@
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8F1;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
                                 <TextBlock Grid.Column="1" Text="{Binding ExitNode, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                <Button Grid.Column="2" Content="{Binding ManageSubscriptions, Source={StaticResource UiText}}" Tag="1" Click="Navigate_Click" Background="Transparent" BorderThickness="0" Padding="12,4" MinHeight="32"/>
+                                <Button x:Name="ManageSubscriptionsButton" Grid.Column="2" Tag="1" Click="Navigate_Click" Background="Transparent" BorderThickness="0" Padding="12,4" MinHeight="32" VerticalAlignment="Center" Foreground="{ThemeResource WeaveMutedBrush}"><StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ManageSubscriptions, Source={StaticResource UiText}}"/><FontIcon Glyph="&#xE76C;" FontSize="10"/></StackPanel></Button>
                             </Grid>
                             <local:ResponsiveGrid x:Name="ExitSelectors" ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
                                 <ComboBox x:Name="SubscriptionComboBox" local:ResponsiveGrid.Weight="1" Header="{Binding Subscriptions, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged"/>
@@ -179,21 +180,28 @@
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE968;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
                                 <TextBlock Grid.Column="1" Text="{Binding NetworkSettings, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                <Button Grid.Column="2" Content="{Binding Settings, Source={StaticResource UiText}}" Tag="3" Click="Navigate_Click" Background="Transparent" BorderThickness="0" Padding="12,4" MinHeight="32"/>
+                                <Button Grid.Column="2" Tag="3" Click="Navigate_Click" Background="Transparent" BorderThickness="0" Padding="12,4" MinHeight="32" VerticalAlignment="Center" Foreground="{ThemeResource WeaveMutedBrush}"><StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Settings, Source={StaticResource UiText}}"/><FontIcon Glyph="&#xE76C;" FontSize="10"/></StackPanel></Button>
                             </Grid>
                             <local:ResponsiveGrid x:Name="NetworkOptions" ColumnSpacing="24" RowSpacing="16" MinColumnWidth="240">
                                 <ComboBox x:Name="RoutingSelector" local:ResponsiveGrid.Weight="1" Header="{Binding RoutingMode, Source={StaticResource UiText}}" SelectedIndex="0" SelectionChanged="RoutingMode_Changed"/>
                                 <ToggleSwitch x:Name="TunToggle" local:ResponsiveGrid.Weight="1.3" VerticalAlignment="Center" Header="{Binding TUNDeviceWideRouting, Source={StaticResource UiText}}" IsOn="True" OffContent="{Binding SystemProxyCompatibleAppsOnly, Source={StaticResource UiText}}" OnContent="{Binding TUNManagedByCoreService, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
                             </local:ResponsiveGrid>
-                            <Border Background="{ThemeResource WeaveIconBrush}" CornerRadius="12" Padding="16,12"><TextBlock x:Name="ModeExplanation" Text="{Binding RouteByAppAndDomainUseThe, Source={StaticResource UiText}}" TextWrapping="Wrap" LineHeight="20"/></Border>
+                            <TextBlock x:Name="ModeExplanation" Style="{StaticResource CaptionText}" Text="{Binding RouteByAppAndDomainUseThe, Source={StaticResource UiText}}"/>
                             <local:FlowPanel>
                                 <Button Click="RecheckNetwork_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72C;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding RecheckNetwork, Source={StaticResource UiText}}"/></StackPanel></Button>
                                 <Button Click="ReconnectNetwork_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ReconnectNetwork, Source={StaticResource UiText}}"/></Button>
                             </local:FlowPanel>
                             <Expander Header="{Binding ProxyChain, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
-                                <ToggleSwitch x:Name="ChainToggle" Header="{Binding EntryCurrentExit, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" OnContent="{Binding On, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                                <Grid ColumnSpacing="16" MinHeight="44">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding EntryCurrentExit, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="ChainToggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding EntryCurrentExit, Source={StaticResource UiText}}"
+                                        OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                                </Grid>
                                 <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="200">
-                                    <ComboBox x:Name="ChainSubscription" Header="{Binding EntrySubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="ChainSubscription_Changed"/>
+                                    <ComboBox x:Name="ChainSubscription" Header="{Binding EntrySubscription, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="ChainSubscription_Changed"/>
                                     <ComboBox x:Name="ChainNode" Header="{Binding EntryNode, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName" SelectionChanged="Setting_Changed"/>
                                 </local:ResponsiveGrid>
                                 <TextBlock Text="{Binding DeviceEntryExitWebsiteSelectTheExit, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
@@ -207,19 +215,18 @@
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8AB;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding AppRouting, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding AppRouting, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}"/></StackPanel>
                             </Grid>
-                            <TextBlock Text="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                             <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
                                 <TextBox x:Name="ProcessNameBox" Header="{Binding ProcessName, Source={StaticResource UiText}}" PlaceholderText="chrome.exe" KeyDown="ProcessNameBox_KeyDown"/>
                                 <ComboBox x:Name="RouteTargetModeComboBox" Header="{Binding ExitType, Source={StaticResource UiText}}" SelectionChanged="RouteTargetModeComboBox_SelectionChanged"/>
                             </local:ResponsiveGrid>
                             <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
-                                <ComboBox x:Name="RouteSubscriptionComboBox" Header="{Binding Subscriptions, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="RouteSubscriptionComboBox_SelectionChanged"/>
+                                <ComboBox x:Name="RouteSubscriptionComboBox" Header="{Binding Subscriptions, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="RouteSubscriptionComboBox_SelectionChanged"/>
                                 <ComboBox x:Name="RouteNodeComboBox" Header="{Binding NodeSpecificNodeRoutingOnly, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName"/>
                             </local:ResponsiveGrid>
                             <Button Style="{StaticResource AccentButtonStyle}" Click="AddRouteButton_Click" HorizontalAlignment="Right"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding SaveRule, Source={StaticResource UiText}}"/></Button>
-                            <ListView x:Name="RouteListView" MaxHeight="320" SelectionMode="None">
+                            <ListView x:Name="RouteListView" Visibility="Collapsed" MaxHeight="320" SelectionMode="None">
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="core:WindowsAppRoute">
                                         <Grid ColumnSpacing="12" Padding="0,8">
@@ -234,7 +241,7 @@
                                 </ListView.ItemTemplate>
                             </ListView>
                             <Expander Header="{Binding CustomDomainIPRules, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
-                                <TextBlock Text="{Binding OneRulePerLineDOMAINSUFFIXExample, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
+                                <TextBlock Text="{Binding OneRulePerLineDOMAINSUFFIXExample, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                                 <TextBox x:Name="DomainRulesBox" AcceptsReturn="True" MinHeight="152" TextWrapping="Wrap" PlaceholderText="DOMAIN-SUFFIX,example.com,DIRECT"/>
                                 <Button Content="{Binding ValidateAndSave, Source={StaticResource UiText}}" Click="ValidateRules_Click"/>
                             </StackPanel></Expander>
@@ -247,9 +254,8 @@
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE710;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding ImportSubscription, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding ImportSubscription, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding ImportedContentIsEncryptedWithWindowsDPAPI, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ImportedContentIsEncryptedWithWindowsDPAPI, Source={StaticResource UiText}}"/></StackPanel>
                             </Grid>
-                            <TextBlock Text="{Binding ImportedContentIsEncryptedWithWindowsDPAPI, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                             <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
                                 <TextBox x:Name="SubscriptionUrlBox" local:ResponsiveGrid.Weight="1.6" Header="{Binding HTTPSURL, Source={StaticResource UiText}}" PlaceholderText="https://example.com/sub" KeyDown="SubscriptionUrlBox_KeyDown"/>
                                 <TextBox x:Name="SubscriptionNameBox" local:ResponsiveGrid.Weight="1" Header="{Binding NameOptional, Source={StaticResource UiText}}" PlaceholderText="{Binding EGMainSubscription, Source={StaticResource UiText}}"/>
@@ -272,16 +278,14 @@
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8F1;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding YourLibrary, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding YourLibrary, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding SelectASubscriptionToViewItsNodes, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding SelectASubscriptionToViewItsNodes, Source={StaticResource UiText}}"/></StackPanel>
                             </Grid>
-                            <TextBlock Text="{Binding SelectASubscriptionToViewItsNodes, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                             <local:FlowPanel>
                                 <Button Click="RefreshSubscription_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72C;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Refresh, Source={StaticResource UiText}}"/></StackPanel></Button>
                                 <Button Click="EditSubscription_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE70F;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Edit, Source={StaticResource UiText}}"/></StackPanel></Button>
                                 <Button Click="ExportSubscriptions_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE896;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Export, Source={StaticResource UiText}}"/></StackPanel></Button>
                                 <Button Click="ShareLan_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE724;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding SendToPhone, Source={StaticResource UiText}}"/></StackPanel></Button>
                             </local:FlowPanel>
-                            <TextBlock x:Name="SubscriptionEmptyText" Visibility="Collapsed" Text="{Binding ImportASubscriptionFirst, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                             <ListView x:Name="SubscriptionListView" SelectionMode="Multiple" SelectionChanged="SubscriptionListView_SelectionChanged" MaxHeight="280">
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="core:SubscriptionRecord">
@@ -304,14 +308,13 @@
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding SubscriptionNodes, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding SubscriptionNodes, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding ConnectBeforeTestingLatencyTestsRunOnly, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ConnectBeforeTestingLatencyTestsRunOnly, Source={StaticResource UiText}}"/></StackPanel>
                             </Grid>
-                            <TextBlock Text="{Binding ConnectBeforeTestingLatencyTestsRunOnly, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                             <local:FlowPanel>
                                 <Button Style="{StaticResource AccentButtonStyle}" Click="TestNodes_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding TestNodes, Source={StaticResource UiText}}"/></Button>
                                 <Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/>
                             </local:FlowPanel>
-                            <ListView x:Name="SubscriptionNodesList" Height="360" SelectionMode="Single" SelectionChanged="NodeList_SelectionChanged">
+                            <ListView x:Name="SubscriptionNodesList" MaxHeight="360" SelectionMode="Single" SelectionChanged="NodeList_SelectionChanged">
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="local:NodeRow">
                                         <Grid ColumnSpacing="12" MinHeight="40">
@@ -323,7 +326,7 @@
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
                             </ListView>
-                            <TextBlock x:Name="NodeTestText" Style="{StaticResource SecondaryText}"/>
+                            <TextBlock x:Name="NodeTestText" Visibility="Collapsed" Style="{StaticResource CaptionText}"/>
                         </StackPanel>
                     </ContentControl>
 
@@ -339,7 +342,7 @@
                                 <ComboBox x:Name="ThemeSelector" local:ResponsiveGrid.Weight="1.4" Header="{Binding Appearance, Source={StaticResource UiText}}" SelectionChanged="ThemeSelector_SelectionChanged"/>
                                 <ComboBox x:Name="LanguageSelector" local:ResponsiveGrid.Weight="1" Header="{Binding Language, Source={StaticResource UiText}}" SelectionChanged="LanguageSelector_SelectionChanged"><x:String>简体中文</x:String><x:String>English</x:String></ComboBox>
                             </local:ResponsiveGrid>
-                            <TextBlock Text="{Binding TrayCloseNotice, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
+                            <TextBlock Text="{Binding TrayCloseNotice, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                         </StackPanel>
                     </ContentControl>
 
@@ -350,14 +353,35 @@
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE968;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
                                 <TextBlock Grid.Column="1" Text="{Binding NetworkSettings, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
                             </Grid>
-                            <ToggleSwitch x:Name="ChinaDirectToggle" Header="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" IsOn="True" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
-                            <TextBlock Text="{Binding OfflineRulesUpdateWithTheAppApp, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
-                            <ToggleSwitch x:Name="Ipv6Toggle" Header="{Binding IPv6DualStack, Source={StaticResource UiText}}" IsOn="True" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                            <Grid ColumnSpacing="16" MinHeight="44">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding OfflineRulesUpdateWithTheAppApp, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="ChinaDirectToggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" IsOn="True"
+                                    OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                            </Grid>
+                            <Grid ColumnSpacing="16" MinHeight="44">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IPv6DualStack, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="Ipv6Toggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding IPv6DualStack, Source={StaticResource UiText}}" IsOn="True"
+                                    OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                            </Grid>
                             <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
                                 <ComboBox x:Name="DnsSelector" Header="DNS" SelectionChanged="Setting_Changed"/>
                                 <TextBox x:Name="CustomDnsBox" Header="{Binding CustomEncryptedDNS, Source={StaticResource UiText}}" PlaceholderText="https://example.com/dns-query" TextChanged="CustomDnsBox_TextChanged"/>
                             </local:ResponsiveGrid>
-                            <ToggleSwitch x:Name="StunToggle" Header="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" OnContent="{Binding OnMayAffectCalls, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                            <Grid ColumnSpacing="16" MinHeight="44">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="StunToggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}"
+                                    OnContent="{Binding OnMayAffectCalls, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
+                            </Grid>
                             <TextBlock Text="{Binding NetworkSettingsApplyOnTheNextConnection, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                         </StackPanel>
                     </ContentControl>
@@ -379,17 +403,16 @@
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}"/></StackPanel>
                             </Grid>
-                            <TextBlock Text="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                             <CheckBox x:Name="DiagnosticConsent" Content="{Binding AllowThisTestToContactIpifyAnd, Source={StaticResource UiText}}"/>
                             <local:FlowPanel>
                                 <Button Style="{StaticResource AccentButtonStyle}" Click="RunDiagnostics_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding RunTests, Source={StaticResource UiText}}"/></Button>
                                 <Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/>
                                 <Button Content="{Binding PreviewSafeSummary, Source={StaticResource UiText}}" Click="PreviewDiagnostics_Click"/>
                             </local:FlowPanel>
-                            <TextBlock x:Name="DiagnosticEvidenceText" Style="{StaticResource CaptionText}"/>
-                            <TextBlock x:Name="DiagnosticProgress" Style="{StaticResource CaptionText}"/>
+                            <TextBlock x:Name="DiagnosticEvidenceText" Visibility="Collapsed" Style="{StaticResource CaptionText}"/>
+                            <TextBlock x:Name="DiagnosticProgress" Visibility="Collapsed" Style="{StaticResource CaptionText}"/>
                             <ListView x:Name="DiagnosticResults" MaxHeight="480" SelectionMode="None">
                                 <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="IsTabStop" Value="False"/></Style></ListView.ItemContainerStyle>
                                 <ListView.ItemTemplate>
@@ -420,12 +443,12 @@
                                 <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8AD;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
                                 <TextBlock Grid.Column="1" Text="{Binding DeviceSyncLabel, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
                             </Grid>
-                            <TextBlock Text="{Binding ConnectYourPhoneAndPCToThe, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
+                            <TextBlock Text="{Binding ConnectYourPhoneAndPCToThe, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                             <Expander x:Name="ReceiveSection" Header="{Binding ReceiveFromPhone, Source={StaticResource UiText}}" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
                                 <TextBox x:Name="ReceiveLink" Header="{Binding PasteTheWeaveLinkFromYourPhone, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
                                 <TextBox x:Name="ReceiveCode" Header="{Binding SenderSSixDigitCode, Source={StaticResource UiText}}" MaxLength="6" KeyDown="ReceiveCode_KeyDown"/>
                                 <local:FlowPanel>
-                                    <Button Style="{StaticResource AccentButtonStyle}" Click="ReceiveLan_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ReceiveAndPreview, Source={StaticResource UiText}}"/></Button>
+                                    <Button x:Name="ReceiveButton" Style="{StaticResource AccentButtonStyle}" Click="ReceiveLan_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ReceiveAndPreview, Source={StaticResource UiText}}"/></Button>
                                     <Button Content="{Binding ReadQRImage, Source={StaticResource UiText}}" Click="QrFile_Click"/>
                                     <Button Content="{Binding CameraScan, Source={StaticResource UiText}}" Click="CameraQr_Click"/>
                                 </local:FlowPanel>
@@ -439,9 +462,9 @@
                                     <ComboBox x:Name="LanAddress" local:ResponsiveGrid.Weight="1" Header="{Binding ThisDeviceSLANAddress, Source={StaticResource UiText}}"/>
                                     <Button local:ResponsiveGrid.Weight="0" Content="{Binding RefreshAddresses, Source={StaticResource UiText}}" Click="RefreshAddresses_Click" VerticalAlignment="Bottom"/>
                                 </local:ResponsiveGrid>
-                                <TextBlock Text="{Binding ToSendSelectSubscriptionsInYourLibrary, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
+                                <TextBlock Text="{Binding ToSendSelectSubscriptionsInYourLibrary, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                                 <Image x:Name="ShareQr" Width="280" Height="280" HorizontalAlignment="Left" Visibility="Collapsed"/>
-                                <TextBlock x:Name="ShareCode" Style="{StaticResource SubtitleText}"/>
+                                <TextBlock x:Name="ShareCode" Visibility="Collapsed" Style="{StaticResource SubtitleText}"/>
                                 <TextBox x:Name="ShareLink" IsReadOnly="True" TextWrapping="Wrap" Header="{Binding OneTimeEncryptedLink, Source={StaticResource UiText}}"/>
                                 <TextBlock x:Name="ShareStatus" Text="{Binding NotSharing, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
                                 <local:FlowPanel>
@@ -454,7 +477,7 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <ProgressBar x:Name="BusyBar" Grid.Row="2" VerticalAlignment="Top" Margin="32,0" IsIndeterminate="True" Visibility="Collapsed"/>
+            <ProgressBar x:Name="BusyBar" Grid.Row="2" VerticalAlignment="Top" Margin="32,0" MaxWidth="960" IsIndeterminate="True" Visibility="Collapsed"/>
 
             <!-- Status messages float above the content so they never shift the layout. Hidden by opacity, not
                  visibility, to keep the polite live region in the accessibility tree. -->

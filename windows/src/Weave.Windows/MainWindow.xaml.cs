@@ -34,6 +34,8 @@ public sealed partial class MainWindow : Window
     private bool _settingsDirty;
     private bool _connectAccent = true;
     private readonly Style? _accentConnectStyle;
+    private Style? _accentReceiveStyle;
+    private bool _trafficShown;
     private UIElement[][] _pageElements = Array.Empty<UIElement[]>();
     private ConnectionEndpoint? _observedBundle;
     private long _observedRevision;
@@ -43,6 +45,10 @@ public sealed partial class MainWindow : Window
     private readonly string _themePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "appearance.txt");
     // Ctrl+1..6 follow the sidebar order, not the page numbers.
     private static readonly string[] AcceleratorPages = { "0", "1", "2", "4", "5", "3" };
+    // AdaptiveTrigger in MainWindow.xaml switches to the compact layout below this many effective pixels of client width.
+    // The preview window's outer width includes ~16 px of frame, so 640 lands at ~624 and stays under the threshold.
+    private const double CompactLayoutThreshold = 720;
+    private const double CompactPreviewWidth = 640;
 
     public MainWindow()
     {
@@ -60,6 +66,22 @@ public sealed partial class MainWindow : Window
         ConnectButton.Translation = new System.Numerics.Vector3(0, 0, 10);
         InitializeChrome();
         BuildPages();
+        PageMotion.Entrance(SidebarFooter, 0);
+        _accentReceiveStyle = ReceiveButton.Style;
+        // Once a preview is waiting, its confirm button is the card's primary action; "receive" steps back to a neutral button.
+        ReceiveConfirmArea.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) =>
+        {
+            if (ReceiveConfirmArea.Visibility == Visibility.Visible) ReceiveButton.ClearValue(FrameworkElement.StyleProperty);
+            else ReceiveButton.Style = _accentReceiveStyle;
+        });
+        // Lines that only exist while they have text must not leave an empty gap in their card's stack.
+        foreach (var line in new TextBlock[] { DiagnosticEvidenceText, DiagnosticProgress, NodeTestText, ShareCode })
+        {
+            var target = line;
+            void Sync() => target.Visibility = string.IsNullOrEmpty(target.Text) ? Visibility.Collapsed : Visibility.Visible;
+            target.RegisterPropertyChangedCallback(TextBlock.TextProperty, (_, _) => Sync());
+            Sync();
+        }
         MessageText.RegisterPropertyChangedCallback(Microsoft.UI.Xaml.Controls.TextBlock.TextProperty,
             (_, _) => MessageBar.Opacity = string.IsNullOrEmpty(MessageText.Text) ? 0 : 1);
         _initialized = true;
@@ -70,11 +92,12 @@ public sealed partial class MainWindow : Window
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_WIDE") == "1")
             AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(1400 * scale), (int)(900 * scale)));
         if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_COMPACT") == "1")
-            AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(900 * scale), (int)(760 * scale)));
+            AppWindow.Resize(new global::Windows.Graphics.SizeInt32((int)(CompactPreviewWidth * scale), (int)(760 * scale)));
         // Connecting is disabled until the encrypted library has been read (see InitializeDataAsync).
         ConnectButton.IsEnabled = false;
         _model.StatusChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) UpdateStatus(); });
         _model.Subscriptions.CollectionChanged += (_, _) => UpdateEmptyStates();
+        _model.AppRoutes.CollectionChanged += (_, _) => UpdateEmptyStates();
         ThemeSelector.ItemsSource = AppearancePalette.All.Select(palette => L.T(palette.Name)).ToArray();
         LanguageSelector.SelectedIndex = L.Language == "en" ? 1 : 0;
         RootGrid.Language = L.Language;
@@ -311,7 +334,7 @@ public sealed partial class MainWindow : Window
     private async void DeleteSubscriptionButton_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
-        if (sender is not Button { Tag: string id } ||
+        if (sender is not Button { Tag: string id } deleteButton ||
             _model.Subscriptions.FirstOrDefault(item => item.Id == id) is not { } record)
         {
             return;
@@ -331,13 +354,19 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        try { _model.Remove(id); }
-        catch (Exception error) { MessageText.Text = error.Message; return; }
-        if (SubscriptionComboBox.SelectedItem is SubscriptionRecord selected && selected.Id == id)
+        // The DPAPI write runs on a worker; the collection is updated back on this (UI) context. RunActionAsync locks the
+        // subscription list while it runs, and the clicked button is disabled too so a repeat click cannot queue a second delete.
+        await RunActionAsync(async () =>
         {
-            SubscriptionComboBox.SelectedIndex = _model.Subscriptions.Count > 0 ? 0 : -1;
-        }
-        MessageText.Text = L.T("订阅已删除");
+            deleteButton.IsEnabled = false;
+            try { await _model.RemoveAsync(id, _lifetime.Token); }
+            finally { deleteButton.IsEnabled = true; }
+            if (SubscriptionComboBox.SelectedItem is SubscriptionRecord selected && selected.Id == id)
+            {
+                SubscriptionComboBox.SelectedIndex = _model.Subscriptions.Count > 0 ? 0 : -1;
+            }
+            MessageText.Text = L.T("订阅已删除");
+        });
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -469,25 +498,49 @@ public sealed partial class MainWindow : Window
         var connecting = _connectCancellation is not null;
         StatusText.Text = _model.Status;
         ConnectButton.Content = connecting ? L.T("取消连接") : _model.IsConnected ? L.T("断开连接") : L.T("连接");
-        HeroStatus.Text = !_model.IsConnected ? L.T("尚未连接") : _model.Health == ConnectionHealthState.Reachable ? L.T("已连接") : L.T("网络待确认");
-        HeroDetail.Text = connecting || _model.IsConnected ? _model.Status : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
         if (!_model.IsConnected)
         {
-            DownloadRate.Text = "—"; UploadRate.Text = "—";
+            SetTraffic(null, null);
             _settingsDirty = false;
         }
-        // Primary (accent) while a connection can be started; neutral while it can only be cancelled or ended.
-        var accent = !connecting && !_model.IsConnected;
+        UpdateStatusSurfaces();
+        UpdateConnectionVisuals();
+        UpdateApplyBar();
+        UpdateSampling();
+        _tray?.SetTip("Weave · " + _model.Status);
+    }
+
+    // Each fact appears once. The home hero is the status on the Connect page, so the header pill only appears on other pages,
+    // and only when it says something beyond "not connected". With nothing imported yet, the exit card's import prompt is the
+    // single message and the one primary action; the hero keeps its title and Connect steps back to a neutral button.
+    private void UpdateStatusSurfaces()
+    {
+        var connecting = _connectCancellation is not null;
+        var idle = !connecting && !_model.IsConnected;
+        var status = _model.Status;
+        var quiet = status == L.T("未连接") || status == L.T("请先导入订阅");
+        var needsSubscription = _dataLoaded && _model.Subscriptions.Count == 0 && RoutingSelector.SelectedIndex != 2;
+        StatusPill.Visibility = _page != "0" && (!idle || !quiet) ? Visibility.Visible : Visibility.Collapsed;
+        HeroStatus.Text = !_model.IsConnected ? L.T("尚未连接") : _model.Health == ConnectionHealthState.Reachable ? L.T("已连接") : L.T("网络待确认");
+        HeroDetail.Text = !idle || !quiet ? status : RoutingSelector.SelectedIndex == 2 ? L.T("直连不隐藏公网地址") : L.T("选择订阅后连接");
+        HeroDetailRow.Visibility = idle && quiet && needsSubscription ? Visibility.Collapsed : Visibility.Visible;
+        // Primary (accent) while a connection can be started; neutral while it can only be cancelled or ended, or has nothing to use.
+        var accent = idle && !needsSubscription;
         if (accent != _connectAccent)
         {
             _connectAccent = accent;
             if (accent) ConnectButton.Style = _accentConnectStyle;
             else ConnectButton.ClearValue(FrameworkElement.StyleProperty);
         }
-        UpdateConnectionVisuals();
-        UpdateApplyBar();
-        UpdateSampling();
-        _tray?.SetTip("Weave · " + _model.Status);
+    }
+
+    // Traffic is shown only while there is a measured sample; no placeholder dashes.
+    private void SetTraffic(string? down, string? up)
+    {
+        _trafficShown = down is not null;
+        DownloadRate.Text = down ?? "—";
+        UploadRate.Text = up ?? "—";
+        SidebarFooter.Visibility = _trafficShown ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // Idle / pending / connected, shown by colour and by the shield mark. Colours come from the active palette.
@@ -511,8 +564,17 @@ public sealed partial class MainWindow : Window
         var any = _model.Subscriptions.Count > 0;
         ExitSelectors.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         ExitEmptyState.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
-        SubscriptionEmptyText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        ManageSubscriptionsButton.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        RouteListView.Visibility = _model.AppRoutes.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (_page == "1")
+            foreach (var panel in new UIElement[] { SubscriptionsPanel, NodesPanel })
+                panel.Visibility = HiddenWhileLibraryEmpty(panel) ? Visibility.Collapsed : Visibility.Visible;
+        UpdateStatusSurfaces();
     }
+
+    // Until a subscription exists the library and node cards have nothing to show; the import card is the whole page.
+    private bool HiddenWhileLibraryEmpty(UIElement element) =>
+        _dataLoaded && _model.Subscriptions.Count == 0 && (ReferenceEquals(element, SubscriptionsPanel) || ReferenceEquals(element, NodesPanel));
 
     // Changes made while connected take effect on the next connection; offer to apply them in one click.
     private void MarkSettingsDirty()
@@ -564,8 +626,9 @@ public sealed partial class MainWindow : Window
         _scrollOffsets[_page] = ContentScroll.VerticalOffset;
         foreach (var element in _pageElements[int.Parse(_page)]) element.Visibility = Visibility.Collapsed;
         _page = page;
-        foreach (var element in _pageElements[int.Parse(page)]) element.Visibility = Visibility.Visible;
+        foreach (var element in _pageElements[int.Parse(page)]) element.Visibility = HiddenWhileLibraryEmpty(element) ? Visibility.Collapsed : Visibility.Visible;
         UpdateNavigation();
+        UpdateStatusSurfaces();
         DispatcherQueue.TryEnqueue(() => ContentScroll.ChangeView(null, _scrollOffsets.GetValueOrDefault(_page), null, true));
     }
 
@@ -630,7 +693,7 @@ public sealed partial class MainWindow : Window
         {
             if (!_closed && ReferenceEquals(_samplingCancellation, cancellation))
             {
-                DownloadRate.Text = "—"; UploadRate.Text = "—";
+                SetTraffic(null, null);
                 MessageText.Text = error.Message;
             }
         }
@@ -646,14 +709,13 @@ public sealed partial class MainWindow : Window
         if (_closed || generation != _samplingGeneration || !_model.IsConnected) return;
         if (!sample.Ready)
         {
-            if (DownloadRate.Text != "—") { DownloadRate.Text = "—"; UploadRate.Text = "—"; }
+            if (_trafficShown) SetTraffic(null, null);
             return;
         }
         if (sample.Down < 0) return; // transient read failure: keep the last values
         var down = Rate(sample.Down);
         var up = Rate(sample.Up);
-        if (DownloadRate.Text != down) DownloadRate.Text = down;
-        if (UploadRate.Text != up) UploadRate.Text = up;
+        if (!_trafficShown || DownloadRate.Text != down || UploadRate.Text != up) SetTraffic(down, up);
         // Back off to 10 s after three idle samples; return to 2 s as soon as traffic resumes.
         _idleTrafficSamples = sample.Down == 0 && sample.Up == 0 ? Math.Min(3, _idleTrafficSamples + 1) : 0;
         var seconds = _idleTrafficSamples >= 3 ? 10 : 2;
@@ -703,6 +765,13 @@ public sealed partial class MainWindow : Window
             DiagnosticProgress.Text = "CI · synthetic layout fixture";
         }
         await Task.Delay(700);
+        // The size class must match what the capture claims to show: compact captures sit under the AdaptiveTrigger threshold
+        // with the 84 px icon rail, everything else is the wide layout with the 260 px sidebar.
+        var compactLayout = RootGrid.ActualWidth < CompactLayoutThreshold;
+        if (compactLayout != (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_COMPACT") == "1"))
+            throw new InvalidOperationException($"Window width {RootGrid.ActualWidth:F0} is on the wrong side of the {CompactLayoutThreshold:F0} px layout threshold");
+        if (Math.Abs(SidebarColumn.ActualWidth - (compactLayout ? 84 : 260)) > 1)
+            throw new InvalidOperationException($"Sidebar is {SidebarColumn.ActualWidth:F0} px wide; the {(compactLayout ? "compact" : "wide")} layout did not apply");
         double? previousNavigationTop = null;
         var labels = new[] { NavLabel0, NavLabel1, NavLabel2, NavLabel4, NavLabel5, NavLabel3 };
         var navButtons = new[] { Nav0, Nav1, Nav2, Nav4, Nav5, Nav3 };
@@ -1126,6 +1195,7 @@ public sealed partial class MainWindow : Window
             2 => L.T("全部直连，不经过任何代理节点。隐私端口拦截仍生效。"),
             _ => L.T("应用规则 → 自订规则 → 局域网 / 国内直连 → 默认出口。"),
         };
+        UpdateStatusSurfaces();
         MarkSettingsDirty();
     }
     private void ValidateRules_Click(object sender, RoutedEventArgs e)

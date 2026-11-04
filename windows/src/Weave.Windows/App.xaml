@@ -173,6 +173,22 @@
             <Style TargetType="ComboBox"><Setter Property="CornerRadius" Value="{StaticResource WeaveControlRadius}"/><Setter Property="MinHeight" Value="36"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
             <Style TargetType="TextBox"><Setter Property="CornerRadius" Value="{StaticResource WeaveControlRadius}"/><Setter Property="MinHeight" Value="36"/><Setter Property="BorderBrush" Value="{ThemeResource WeaveRimBrush}"/><Setter Property="BorderThickness" Value="1"/></Style>
 
+            <!-- Quiet "i" button that carries a card's explanatory sentence in its tooltip. Hover and keyboard focus show the
+                 tooltip; the button is focusable so the text is reachable without a pointer. Content is the glyph string. -->
+            <Style x:Key="InfoButton" TargetType="Button">
+                <Setter Property="Width" Value="28"/>
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="MinWidth" Value="28"/>
+                <Setter Property="MinHeight" Value="28"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="CornerRadius" Value="14"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Foreground" Value="{ThemeResource WeaveMutedBrush}"/>
+                <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><FontIcon Glyph="{Binding}" FontSize="14"/></DataTemplate></Setter.Value></Setter>
+            </Style>
+
             <Style x:Key="IconTile" TargetType="Border">
                 <Setter Property="Width" Value="32"/>
                 <Setter Property="Height" Value="32"/>
