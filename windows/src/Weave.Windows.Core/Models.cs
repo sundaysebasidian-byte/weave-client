@@ -49,6 +49,38 @@ public sealed class SubscriptionRecord : System.ComponentModel.INotifyPropertyCh
     [JsonIgnore]
     public string Summary => L.F($"{Nodes.Count} 个节点 · {UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}");
 
+    /// <summary>Compact list line: "12 · 2h". Language-neutral on purpose.</summary>
+    [JsonIgnore]
+    public string Meta => $"{Nodes.Count} · {Age(DateTimeOffset.UtcNow - UpdatedAt)}";
+
+    /// <summary>First visible character of the name, shown inside the avatar ring.</summary>
+    [JsonIgnore]
+    public string Monogram
+    {
+        get
+        {
+            var name = Name.Trim();
+            return name.Length == 0 ? "?" : System.Globalization.StringInfo.GetNextTextElement(name).ToUpperInvariant();
+        }
+    }
+
+    private double _health = double.NaN;
+    /// <summary>Share of nodes that answered the last test, 0..1. NaN until measured. UI state only, never stored.</summary>
+    [JsonIgnore]
+    public double Health
+    {
+        get => _health;
+        set
+        {
+            if (_health.Equals(value)) return;
+            _health = value;
+            PropertyChanged?.Invoke(this, new(nameof(Health)));
+        }
+    }
+
+    private static string Age(TimeSpan age) => age.TotalMinutes < 1 ? "now" :
+        age.TotalHours < 1 ? $"{(int)age.TotalMinutes}m" : age.TotalDays < 1 ? $"{(int)age.TotalHours}h" : $"{(int)age.TotalDays}d";
+
     public override string ToString() => Name;
 }
 

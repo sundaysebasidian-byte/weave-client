@@ -55,6 +55,8 @@ public sealed partial class MainWindow
     private void DefaultNode_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (NodeComboBox.SelectedItem is ProxyNode) _missingFixedNodeId = null;
+        SyncQuickSelection();
+        UpdateDashboard();
         MarkSettingsDirty();
     }
 }

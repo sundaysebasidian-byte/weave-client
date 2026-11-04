@@ -24,7 +24,7 @@ public sealed partial class MainWindow
         {
             L.Language = next;
             RootGrid.Language = next;
-            RefreshOptions(ThemeSelector, AppearancePalette.All.Select(p => L.T(p.Name)));
+            RefreshAppearanceLanguage();
             RefreshOptions(DnsSelector, new[] { L.T("加密 DNS"), L.T("广告过滤"), L.T("家庭过滤"), L.T("自订 DNS") });
             RefreshOptions(RoutingSelector, new[] { L.T("规则"), L.T("全局"), L.T("直连") });
             // A temporary SelectedIndex=-1 must not clear the user's fixed-node selection.
@@ -35,8 +35,7 @@ public sealed partial class MainWindow
             foreach (var route in _model.AppRoutes) route.RefreshLanguage();
             if (DiagnosticResults.ItemsSource is IEnumerable<ProbeResult> probes)
                 foreach (var probe in probes) probe.RefreshLanguage();
-            if (SubscriptionNodesList.ItemsSource is IEnumerable<NodeRow> nodes)
-                foreach (var node in nodes) node.RefreshLanguage();
+            RefreshRowLanguage();
             UpdateStatus(); UpdateNavigation(); RoutingMode_Changed(this, e);
             // Test rows and selections remain intact; transient notices are not stale-language history.
             MessageText.Text = ""; NodeTestText.Text = ""; DiagnosticProgress.Text = "";
@@ -49,7 +48,8 @@ public sealed partial class MainWindow
         { MessageText.Text = L.T("语言偏好未能保存"); }
         finally { _changingLanguage = false; }
     }
-    private static void RefreshOptions(ComboBox selector, IEnumerable<string> items)
+    // Works for the combo boxes and the segmented lists alike; the chosen index survives the new labels.
+    private static void RefreshOptions(Microsoft.UI.Xaml.Controls.Primitives.Selector selector, IEnumerable<string> items)
     {
         var index = selector.SelectedIndex;
         selector.ItemsSource = items.ToArray();

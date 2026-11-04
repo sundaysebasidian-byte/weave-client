@@ -31,7 +31,7 @@ public sealed partial class MainWindow
         };
         _activePrivacyDialog = consent;
         if (await consent.ShowAsync() != ContentDialogResult.Primary || !EvidenceStillCurrent(bundle, revision)) return;
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave", "privacy-sessions", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(AppPaths.DataRoot, "privacy-sessions", Guid.NewGuid().ToString("N"));
         var web = new WebView2 { Width = Math.Max(420, Math.Min(940, RootGrid.ActualWidth - 120)), Height = Math.Max(320, Math.Min(620, RootGrid.ActualHeight - 150)) };
         var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         web.Loaded += (_, _) => loaded.TrySetResult();

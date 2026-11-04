@@ -1,0 +1,22 @@
+<UserControl
+    x:Class="Weave.Windows.LatencyBars"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False" IsHitTestVisible="False">
+    <!-- Four-bar signal glyph. Filled bars follow the ink colour; a single weak bar turns sun-coloured. -->
+    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Height="13">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="LevelStates">
+                <VisualState x:Name="L0"/>
+                <VisualState x:Name="L1"><VisualState.Setters><Setter Target="B1.Fill" Value="{ThemeResource WeaveSunBrush}"/></VisualState.Setters></VisualState>
+                <VisualState x:Name="L2"><VisualState.Setters><Setter Target="B1.Fill" Value="{ThemeResource WeaveInkBrush}"/><Setter Target="B2.Fill" Value="{ThemeResource WeaveInkBrush}"/></VisualState.Setters></VisualState>
+                <VisualState x:Name="L3"><VisualState.Setters><Setter Target="B1.Fill" Value="{ThemeResource WeaveInkBrush}"/><Setter Target="B2.Fill" Value="{ThemeResource WeaveInkBrush}"/><Setter Target="B3.Fill" Value="{ThemeResource WeaveInkBrush}"/></VisualState.Setters></VisualState>
+                <VisualState x:Name="L4"><VisualState.Setters><Setter Target="B1.Fill" Value="{ThemeResource WeaveInkBrush}"/><Setter Target="B2.Fill" Value="{ThemeResource WeaveInkBrush}"/><Setter Target="B3.Fill" Value="{ThemeResource WeaveInkBrush}"/><Setter Target="B4.Fill" Value="{ThemeResource WeaveInkBrush}"/></VisualState.Setters></VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <Rectangle x:Name="B1" Width="3" Height="4" RadiusX="1" RadiusY="1" VerticalAlignment="Bottom" Fill="{ThemeResource WeaveHairBrush}"/>
+        <Rectangle x:Name="B2" Width="3" Height="7" RadiusX="1" RadiusY="1" VerticalAlignment="Bottom" Fill="{ThemeResource WeaveHairBrush}"/>
+        <Rectangle x:Name="B3" Width="3" Height="10" RadiusX="1" RadiusY="1" VerticalAlignment="Bottom" Fill="{ThemeResource WeaveHairBrush}"/>
+        <Rectangle x:Name="B4" Width="3" Height="13" RadiusX="1" RadiusY="1" VerticalAlignment="Bottom" Fill="{ThemeResource WeaveHairBrush}"/>
+    </StackPanel>
+</UserControl>
