@@ -70,7 +70,7 @@ public class LocalizationTests
                 Assert.True(L.Catalog.ContainsKey(source), $"{Path.GetFileName(path)}: {source}");
             }
         }
-        foreach (var palette in AppearancePalette.All) Assert.True(L.Catalog.ContainsKey(palette.Name));
+        foreach (var theme in Appearance.Themes) Assert.True(L.Catalog.ContainsKey(theme.Name), theme.Name);
     }
     [Fact]
     public void PrivacyLabHasCompleteEnglishAndUnchangedChinese()

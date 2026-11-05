@@ -5,9 +5,8 @@ namespace Weave.Windows;
 
 internal sealed class WeaveAppModel : IAsyncDisposable
 {
-    private readonly string _dataDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Weave");
+    private readonly string _dataDirectory = AppPaths.DataRoot;
+    private volatile bool _previewConnected;
     private readonly SubscriptionVault _vault;
     private readonly AppRouteStore _routeStore;
     private readonly SubscriptionImporter _importer;
@@ -54,7 +53,25 @@ internal sealed class WeaveAppModel : IAsyncDisposable
 
     public ObservableCollection<WindowsAppRoute> AppRoutes { get; } = new();
 
-    public bool IsConnected => _broker?.IsReady == true || _process?.IsReady == true;
+    public bool IsConnected => _previewConnected || _broker?.IsReady == true || _process?.IsReady == true;
+
+    /// <summary>Preview only (WEAVE_PREVIEW_STATE=connected): shows the connected UI without a core. Cleared by disconnecting.</summary>
+    public bool IsPreviewSession => _previewConnected;
+
+    internal void EnterPreviewConnected()
+    {
+        _previewConnected = true;
+        Health = ConnectionHealthState.Reachable;
+        ActiveConnection = new(0, false, new Dictionary<string, int>());
+        Status = "已连接 · 系统代理";
+    }
+
+    /// <summary>Preview only: adds synthetic subscriptions to the in-memory list. Never touches the vault.</summary>
+    internal void AddPreviewSubscriptions(IEnumerable<SubscriptionRecord> records)
+    {
+        foreach (var record in records) Subscriptions.Add(record);
+        Status = "未连接";
+    }
 
     private volatile string _status = "未连接";
     public string Status { get => L.T(_status) + (_runtimeCleanupPending ? " · " + L.T("会话配置尚未清理") : ""); private set => _status = value; }
@@ -269,7 +286,12 @@ internal sealed class WeaveAppModel : IAsyncDisposable
                     BrokerRuntimeInfo runtime;
                     try { runtime = await broker.StartAsync(profile, cancellationToken).ConfigureAwait(false); }
                     catch (BrokerRequestException error)
-                    { throw new IOException(L.T("W-S02：核心服务未能启动连接。请检查订阅、路由设置和其他客户端的 TUN 状态。"), error); }
+                    { throw new IOException(error.Code switch
+                        {
+                            "invalid-profile" => L.T("W-S03：订阅或路由配置未通过核心服务校验。请检查节点协议及选项，更新订阅后重试。"),
+                            "timeout" => L.T("W-S04：核心服务启动超时。请检查其他客户端的 TUN 状态后重试。"),
+                            _ => L.T("W-S02：核心服务未能启动连接。请检查订阅、路由设置和其他客户端的 TUN 状态。"),
+                        }, error); }
                     ActiveConnection = new(runtime.MixedPort, true, runtime.ProviderNodeCounts);
                 }
                 else
@@ -356,6 +378,7 @@ internal sealed class WeaveAppModel : IAsyncDisposable
         await _connectionGate.WaitAsync();
         try
         {
+            _previewConnected = false;
             Interlocked.Increment(ref _networkRevision);
             Exception? recoveryError = null;
             try { _systemProxy.Recover(); } catch (Exception error) { recoveryError = error; }

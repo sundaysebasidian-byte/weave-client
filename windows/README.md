@@ -1,4 +1,11 @@
-# Weave Windows 0.4.3 RC4
+# Weave Windows 0.5.0 RC2
+
+**0.5.0 RC1 界面焕新**：图标侧栏 + 首页仪表盘（出口城市、实时流量曲线、编织结插画、出口快选与延迟信号条）；
+六套主题（印象日出、睡莲、罂粟花田、暮色花园、星夜、素纸），每套都有浅色与深色，可跟随 Windows。
+订阅头像改为“健康环”（环弧 = 上次测速有响应的节点占比，中间是名称首字）；节点页新增地区筛选、搜索、
+逐条趋势线和边测边出的结果。新增拖入链接/文件/二维码图片导入、右键菜单、Delete 删除、连接成功提示与“重新连接并应用”条。
+安装时可选择位置：默认 `Program Files\Weave`，也可选本地固定磁盘上名为 Weave 的专用文件夹（如 `D:\Weave`）；若该文件夹或上级允许普通用户修改，安装会拒绝并说明原因，因为核心服务以系统权限运行。升级沿用原位置。
+只改界面与展示逻辑，连接、订阅、加密与分流行为不变；尚未用真实核心、TUN 与系统代理做整机验收。
 
 RC4 keeps diagnostic cards in fixed slots during testing, distinguishes pending checks from measured evidence, preserves redirect status codes, and handles an intentional stop without showing unrelated connection/administrator errors. Partial or cancelled checks are not exported as completed measurements.
 

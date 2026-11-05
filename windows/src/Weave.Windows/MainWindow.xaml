@@ -6,7 +6,7 @@
     Title="Weave">
 <!-- Adaptive state triggers require a Control host; Window is not a Control. -->
 <UserControl>
-<Grid x:Name="RootGrid" RequestedTheme="Light" UseLayoutRounding="True">
+<Grid x:Name="RootGrid" RequestedTheme="Light" UseLayoutRounding="True" AllowDrop="True" DragOver="Root_DragOver" DragLeave="Root_DragLeave" Drop="Root_Drop">
     <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid.KeyboardAccelerators>
         <KeyboardAccelerator Key="Number1" Modifiers="Control" Invoked="NavAccelerator_Invoked"/>
@@ -16,6 +16,7 @@
         <KeyboardAccelerator Key="Number5" Modifiers="Control" Invoked="NavAccelerator_Invoked"/>
         <KeyboardAccelerator Key="Number6" Modifiers="Control" Invoked="NavAccelerator_Invoked"/>
         <KeyboardAccelerator Key="Escape" Invoked="EscapeAccelerator_Invoked"/>
+        <KeyboardAccelerator Key="V" Modifiers="Control" Invoked="PasteAccelerator_Invoked"/>
     </Grid.KeyboardAccelerators>
 
     <!-- Window size classes. AdaptiveTrigger switches only when the class changes, never per resize frame. -->
@@ -23,202 +24,402 @@
         <VisualStateGroup x:Name="WindowSizeStates">
             <VisualState x:Name="WideLayout"><VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="720"/></VisualState.StateTriggers></VisualState>
             <VisualState x:Name="CompactLayout"><VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0"/></VisualState.StateTriggers><VisualState.Setters>
-                <Setter Target="SidebarColumn.Width" Value="84"/>
-                <Setter Target="NavLabel0.Visibility" Value="Collapsed"/>
-                <Setter Target="NavLabel1.Visibility" Value="Collapsed"/>
-                <Setter Target="NavLabel2.Visibility" Value="Collapsed"/>
-                <Setter Target="NavLabel3.Visibility" Value="Collapsed"/>
-                <Setter Target="NavLabel4.Visibility" Value="Collapsed"/>
-                <Setter Target="NavLabel5.Visibility" Value="Collapsed"/>
-                <Setter Target="SidebarFooter.Visibility" Value="Collapsed"/>
-                <Setter Target="PageHeader.Padding" Value="16,16,16,8"/>
+                <Setter Target="PageHeader.Padding" Value="16,8,16,8"/>
                 <Setter Target="ApplyBar.Margin" Value="16,0,16,8"/>
-                <Setter Target="ContentScroll.Padding" Value="16,8,16,24"/>
+                <Setter Target="ContentScroll.Padding" Value="8,4,16,24"/>
                 <Setter Target="MessageBar.Margin" Value="16,0,16,16"/>
                 <Setter Target="BusyBar.Margin" Value="16,0"/>
+                <Setter Target="Knot.Visibility" Value="Collapsed"/>
+                <Setter Target="HeroGlow.Visibility" Value="Collapsed"/>
             </VisualState.Setters></VisualState>
         </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
 
-    <!-- Backdrop layers. Mica shows through the translucent atmosphere veil; without Mica the canvas is opaque. -->
+    <!-- Backdrop: Mica shows through the translucent base; without Mica the base is opaque. Three soft washes give the theme its colour. -->
     <Rectangle x:Name="BackdropFallback" Grid.RowSpan="2" Fill="{ThemeResource WeaveCanvasBrush}" IsHitTestVisible="False"/>
-    <Rectangle x:Name="AtmosphereVeil" Grid.RowSpan="2" Fill="{ThemeResource WeaveAtmosphereBrush}" IsHitTestVisible="False"/>
-    <Viewbox x:Name="AtmosphericRibbons" Grid.RowSpan="2" Opacity="0.25" Stretch="Fill" IsHitTestVisible="False"><Canvas Width="1000" Height="800"><Canvas.Clip><RectangleGeometry Rect="0,0,1000,800"/></Canvas.Clip>
-        <Path Fill="{ThemeResource WeaveRibbonBrush}" Data="M 280,0 C 660,140 400,290 750,490 C 850,548 930,540 1000,560 L 1000,800 C 750,720 550,460 510,350 C 435,150 630,95 280,0 Z"/>
-        <Path Fill="{ThemeResource WeaveRibbonBrush}" Opacity="0.45" Data="M 0,610 C 160,420 350,565 410,380 C 448,262 480,95 770,0 L 1000,0 C 628,130 612,278 512,475 C 410,690 160,535 0,800 Z"/>
-    </Canvas></Viewbox>
+    <Rectangle Grid.RowSpan="2" Fill="{ThemeResource WeaveWash0Brush}" IsHitTestVisible="False"/>
+    <Rectangle Grid.RowSpan="2" Fill="{ThemeResource WeaveWash1Brush}" IsHitTestVisible="False"/>
+    <Rectangle Grid.RowSpan="2" Fill="{ThemeResource WeaveWash2Brush}" IsHitTestVisible="False"/>
 
     <!-- Title bar: the whole row is the drag region; caption buttons are drawn by the system on the right. -->
     <Grid x:Name="AppTitleBar" Height="48" Background="Transparent">
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="24,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
-            <Image Width="20" Height="20" AutomationProperties.AccessibilityView="Raw"><Image.Source><BitmapImage UriSource="ms-appx:///Assets/Weave.png" DecodePixelWidth="20" DecodePixelType="Logical"/></Image.Source></Image>
-            <TextBlock Text="Weave" Style="{StaticResource BodyStrongText}"/>
-        </StackPanel>
+        <Grid x:Name="TitleBarContent" Margin="0,0,150,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
+                <Image Width="18" Height="18" AutomationProperties.AccessibilityView="Raw"><Image.Source><BitmapImage UriSource="ms-appx:///Assets/Weave.png" DecodePixelWidth="18" DecodePixelType="Logical"/></Image.Source></Image>
+                <TextBlock Text="Weave" FontSize="12"/>
+            </StackPanel>
+            <Border x:Name="StatusPill" HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="13" Height="26" Padding="13,0" BorderThickness="1" BorderBrush="{ThemeResource WeaveTileStrokeBrush}" Background="{ThemeResource WeaveTileBrush}" IsHitTestVisible="False">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="7" Height="7" VerticalAlignment="Center" Fill="{ThemeResource WeaveFaintBrush}"/>
+                    <TextBlock x:Name="StatusText" MaxWidth="300" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" FontSize="12" AutomationProperties.LiveSetting="Polite" Text="{Binding Disconnected, Source={StaticResource UiText}}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 
     <Grid Grid.Row="1">
-        <Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="260"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 
-        <!-- Sidebar -->
-        <Border x:Name="SidebarSurface" Margin="12,0,0,12" CornerRadius="{StaticResource WeaveSurfaceRadius}" Background="{ThemeResource WeaveSidebarBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1">
-            <Grid Padding="12">
-                <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <ScrollViewer x:Name="SidebarNavigationScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsTabStop="False">
-                    <StackPanel x:Name="NavigationItems" Spacing="4">
-                        <RadioButton x:Name="Nav0" Tag="0" Style="{StaticResource WeaveNavItem}" IsChecked="True" Checked="Navigate_Checked" AccessKey="1" ToolTipService.ToolTip="{Binding Connect, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Connect, Source={StaticResource UiText}}">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE80F;" FontSize="18"/><TextBlock x:Name="NavLabel0" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Connect, Source={StaticResource UiText}}"/></Grid>
-                        </RadioButton>
-                        <RadioButton x:Name="Nav1" Tag="1" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="2" ToolTipService.ToolTip="{Binding Subscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Subscriptions, Source={StaticResource UiText}}">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8F1;" FontSize="18"/><TextBlock x:Name="NavLabel1" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Subscriptions, Source={StaticResource UiText}}"/></Grid>
-                        </RadioButton>
-                        <RadioButton x:Name="Nav2" Tag="2" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="3" ToolTipService.ToolTip="{Binding Routing, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Routing, Source={StaticResource UiText}}">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8AB;" FontSize="18"/><TextBlock x:Name="NavLabel2" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Routing, Source={StaticResource UiText}}"/></Grid>
-                        </RadioButton>
-                        <RadioButton x:Name="Nav4" Tag="4" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="4" ToolTipService.ToolTip="{Binding NetworkPrivacy, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NetworkPrivacy, Source={StaticResource UiText}}">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE774;" FontSize="18"/><TextBlock x:Name="NavLabel4" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}"/></Grid>
-                        </RadioButton>
-                        <RadioButton x:Name="Nav5" Tag="5" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="5" ToolTipService.ToolTip="{Binding DeviceSync, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding DeviceSync, Source={StaticResource UiText}}">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE8AD;" FontSize="18"/><TextBlock x:Name="NavLabel5" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding DeviceSync, Source={StaticResource UiText}}"/></Grid>
-                        </RadioButton>
-                        <RadioButton x:Name="Nav3" Tag="3" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="6" ToolTipService.ToolTip="{Binding Settings, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Settings, Source={StaticResource UiText}}">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="&#xE713;" FontSize="18"/><TextBlock x:Name="NavLabel3" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource NavLabel}" Text="{Binding Settings, Source={StaticResource UiText}}"/></Grid>
-                        </RadioButton>
-                    </StackPanel>
-                </ScrollViewer>
-                <Grid x:Name="SidebarFooter" Grid.Row="1" Visibility="Collapsed" Margin="4,8,4,4" Padding="0,12,0,0" ColumnSpacing="16" BorderBrush="{ThemeResource WeaveRimBrush}" BorderThickness="0,1,0,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <StackPanel Spacing="4">
-                        <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE74B;" FontSize="12" Foreground="{ThemeResource WeaveAccentBrush}"/><TextBlock Text="{Binding Download, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap"/></StackPanel>
-                        <TextBlock x:Name="DownloadRate" Text="—" Style="{StaticResource BodyStrongText}"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="4">
-                        <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE74A;" FontSize="12" Foreground="{ThemeResource WeaveAccentBrush}"/><TextBlock Text="{Binding Upload, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap"/></StackPanel>
-                        <TextBlock x:Name="UploadRate" Text="—" Style="{StaticResource BodyStrongText}"/>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-        </Border>
+        <!-- Rail: icon over a short label. The sun-coloured bar marks the page you are on. -->
+        <Grid x:Name="SidebarSurface" Padding="8,6,8,14">
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <ScrollViewer x:Name="SidebarNavigationScroll" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" IsTabStop="False">
+                <StackPanel x:Name="NavigationItems" Spacing="6" HorizontalAlignment="Center">
+                    <RadioButton x:Name="Nav0" GroupName="Navigation" Tag="0" Style="{StaticResource WeaveNavItem}" IsChecked="True" Checked="Navigate_Checked" AccessKey="1" ToolTipService.ToolTip="{Binding Connect, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Connect, Source={StaticResource UiText}}">
+                        <StackPanel Spacing="5" HorizontalAlignment="Center"><FontIcon Glyph="&#xE80F;" FontSize="19"/><TextBlock x:Name="NavLabel0" Style="{StaticResource NavLabel}" Text="{Binding Connect, Source={StaticResource UiText}}"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="Nav1" GroupName="Navigation" Tag="1" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="2" ToolTipService.ToolTip="{Binding Subscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Subscriptions, Source={StaticResource UiText}}">
+                        <StackPanel Spacing="5" HorizontalAlignment="Center"><FontIcon Glyph="&#xE8F1;" FontSize="19"/><TextBlock x:Name="NavLabel1" Style="{StaticResource NavLabel}" Text="{Binding NavLibrary, Source={StaticResource UiText}}"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="Nav2" GroupName="Navigation" Tag="2" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="3" ToolTipService.ToolTip="{Binding Routing, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Routing, Source={StaticResource UiText}}">
+                        <StackPanel Spacing="5" HorizontalAlignment="Center"><FontIcon Glyph="&#xE8AB;" FontSize="19"/><TextBlock x:Name="NavLabel2" Style="{StaticResource NavLabel}" Text="{Binding NavRouting, Source={StaticResource UiText}}"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="Nav4" GroupName="Navigation" Tag="4" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="4" ToolTipService.ToolTip="{Binding NetworkPrivacy, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NetworkPrivacy, Source={StaticResource UiText}}">
+                        <StackPanel Spacing="5" HorizontalAlignment="Center"><FontIcon Glyph="&#xEA18;" FontSize="19"/><TextBlock x:Name="NavLabel4" Style="{StaticResource NavLabel}" Text="{Binding NavPrivacy, Source={StaticResource UiText}}"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="Nav5" GroupName="Navigation" Tag="5" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="5" ToolTipService.ToolTip="{Binding DeviceSync, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding DeviceSync, Source={StaticResource UiText}}">
+                        <StackPanel Spacing="5" HorizontalAlignment="Center"><FontIcon Glyph="&#xE895;" FontSize="19"/><TextBlock x:Name="NavLabel5" Style="{StaticResource NavLabel}" Text="{Binding NavSync, Source={StaticResource UiText}}"/></StackPanel>
+                    </RadioButton>
+                </StackPanel>
+            </ScrollViewer>
+            <StackPanel Grid.Row="1" Spacing="6" HorizontalAlignment="Center">
+                <Button x:Name="ThemeToggleButton" Style="{StaticResource IconButton}" Click="ThemeToggle_Click" ToolTipService.ToolTip="{Binding ToggleLightDark, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ToggleLightDark, Source={StaticResource UiText}}">
+                    <FontIcon x:Name="ThemeToggleGlyph" Glyph="&#xE708;" FontSize="15"/>
+                </Button>
+                <RadioButton x:Name="Nav3" GroupName="Navigation" Tag="3" Style="{StaticResource WeaveNavItem}" Checked="Navigate_Checked" AccessKey="6" ToolTipService.ToolTip="{Binding Settings, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Settings, Source={StaticResource UiText}}">
+                    <StackPanel Spacing="5" HorizontalAlignment="Center"><FontIcon Glyph="&#xE713;" FontSize="19"/><TextBlock x:Name="NavLabel3" Style="{StaticResource NavLabel}" Text="{Binding Settings, Source={StaticResource UiText}}"/></StackPanel>
+                </RadioButton>
+            </StackPanel>
+        </Grid>
 
         <!-- Content -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
 
-            <Grid x:Name="PageHeader" Padding="32,16,32,8" ColumnSpacing="16" MaxWidth="1024">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <!-- Pages other than Connect and Subscriptions carry a quiet title; those two are their own headings. -->
+            <Grid x:Name="PageHeader" Padding="6,4,28,8" MaxWidth="1120" HorizontalAlignment="Stretch" Visibility="Collapsed">
                 <TextBlock x:Name="PageTitle" Style="{StaticResource TitleText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Connect, Source={StaticResource UiText}}" AutomationProperties.HeadingLevel="Level1"/>
-                <Border x:Name="StatusPill" Grid.Column="1" Visibility="Collapsed" VerticalAlignment="Center" CornerRadius="16" Padding="12,6" BorderThickness="1" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" Background="{ThemeResource WeaveGlassBrush}">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Ellipse x:Name="StatusDot" Width="8" Height="8" VerticalAlignment="Center" Fill="{ThemeResource WeaveMutedBrush}"/>
-                        <TextBlock x:Name="StatusText" MaxWidth="280" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Style="{StaticResource CaptionText}" Text="{Binding Disconnected, Source={StaticResource UiText}}"/>
-                    </StackPanel>
-                </Border>
             </Grid>
 
             <!-- One-click apply for pending changes while connected; shown on every page. -->
-            <InfoBar x:Name="ApplyBar" Grid.Row="1" Margin="32,0,32,8" MaxWidth="960" Severity="Informational" IsOpen="False" IsClosable="True" Message="{Binding ReconnectToApplyChanges, Source={StaticResource UiText}}">
+            <InfoBar x:Name="ApplyBar" Grid.Row="1" Margin="6,0,28,8" MaxWidth="1120" HorizontalAlignment="Stretch" Severity="Informational" IsOpen="False" IsClosable="True" Message="{Binding ReconnectToApplyChanges, Source={StaticResource UiText}}">
                 <InfoBar.ActionButton><Button Content="{Binding ReconnectNetwork, Source={StaticResource UiText}}" Click="ReconnectNetwork_Click" HorizontalAlignment="Right"/></InfoBar.ActionButton>
             </InfoBar>
 
-            <ScrollViewer x:Name="ContentScroll" Grid.Row="2" Padding="32,8,32,32" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsDeferredScrollingEnabled="False">
-                <StackPanel x:Name="PageStack" MaxWidth="960" HorizontalAlignment="Stretch" Spacing="16">
+            <ScrollViewer x:Name="ContentScroll" Grid.Row="2" Padding="6,4,28,28" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsDeferredScrollingEnabled="False">
+                <!-- Width is set in UpdateListHeights: Stretch + MaxWidth would centre the stack by its desired width and shift narrow pages. -->
+                <StackPanel x:Name="PageStack" HorizontalAlignment="Center" Spacing="12">
 
-                    <!-- Connect -->
-                    <ContentControl x:Name="ConnectionHero" Style="{StaticResource GlassCard}" Background="{ThemeResource WeaveHeroBrush}" MinHeight="112">
-                        <local:ResponsiveGrid ColumnSpacing="24" RowSpacing="16" MinColumnWidth="240">
-                            <Grid ColumnSpacing="16" local:ResponsiveGrid.Weight="1">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Grid Width="64" Height="64" VerticalAlignment="Center">
-                                    <Ellipse Fill="{ThemeResource WeaveIconBrush}" Stroke="{ThemeResource WeaveLightEdgeBrush}" StrokeThickness="1"/>
-                                    <Ellipse Margin="4" Stroke="{ThemeResource WeaveInnerEdgeBrush}" StrokeThickness="1"/>
-                                    <Viewbox Width="26" Height="32" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"><Canvas Width="24" Height="31">
-                                        <Path x:Name="HeroShield" Stroke="{ThemeResource WeaveAccentBrush}" StrokeThickness="1.7" StrokeLineJoin="Round" Data="M 12,2 C 15,4 19,5 22,5 L 22,15 C 22,21 18,26 12,29 C 6,26 2,21 2,15 L 2,5 C 5,5 9,4 12,2 Z"/>
-                                        <Path x:Name="HeroCheck" Visibility="Collapsed" Stroke="{ThemeResource WeaveSuccessBrush}" StrokeThickness="1.7" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 7,15 L 11,19 L 18,11"/>
-                                    </Canvas></Viewbox>
-                                </Grid>
-                                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                                    <TextBlock x:Name="HeroStatus" Style="{StaticResource TitleText}" TextWrapping="Wrap" Text="{Binding ReadyToConnect, Source={StaticResource UiText}}"/>
-                                    <StackPanel x:Name="HeroDetailRow" Orientation="Horizontal" Spacing="8">
-                                        <Ellipse x:Name="ConnectionDot" Width="8" Height="8" VerticalAlignment="Center" Fill="{ThemeResource WeaveMutedBrush}"/>
-                                        <TextBlock x:Name="HeroDetail" Style="{StaticResource SecondaryText}" Text="{Binding ChooseASubscriptionToGetStarted, Source={StaticResource UiText}}"/>
+                    <!-- ============ Connect ============ -->
+                    <StackPanel x:Name="ConnectPage" Spacing="12">
+                        <local:ResponsiveGrid ColumnSpacing="12" RowSpacing="12" MinColumnWidth="330">
+                            <!-- Hero: where the connection is going, and the one big button. -->
+                            <ContentControl x:Name="ConnectionHero" local:ResponsiveGrid.Weight="1.4" Style="{StaticResource Tile}" MinHeight="340">
+                                <Grid Padding="34,30,16,30" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <Grid x:Name="HeroText">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <!-- Status orb, as on Android: a halo around a disc. The disc fills only for a confirmed exit. -->
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Grid x:Name="HeroOrb" Width="42" Height="42" RenderTransformOrigin="0.5,0.5">
+                                            <Grid.RenderTransform><ScaleTransform x:Name="HeroOrbScale"/></Grid.RenderTransform>
+                                            <Ellipse x:Name="HeroOrbHalo" StrokeThickness="1" Stroke="{ThemeResource WeaveFaintBrush}" Opacity="0.55"/>
+                                            <Ellipse x:Name="ConnectionDot" Margin="6" StrokeThickness="1" Stroke="{ThemeResource WeaveRimBrush}" Fill="{ThemeResource WeaveSubtleFillBrush}"/>
+                                            <FontIcon x:Name="HeroOrbGlyph" Glyph="&#xE7E8;" FontSize="13" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                            <ProgressRing x:Name="HeroOrbProgress" Width="16" Height="16" IsActive="False" Visibility="Collapsed" Foreground="{ThemeResource WeaveAccentBrush}"/>
+                                        </Grid>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock x:Name="HeroState" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" AutomationProperties.LiveSetting="Polite"/>
+                                            <TextBlock x:Name="HeroEyebrow" Style="{StaticResource MicroText}" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock x:Name="HeroCity" Grid.Row="1" Margin="0,14,0,14" FontFamily="{StaticResource WeaveDisplayFont}" FontWeight="Normal" FontSize="92" CharacterSpacing="-30" TextTrimming="CharacterEllipsis" MaxLines="1" TextWrapping="NoWrap" OpticalMarginAlignment="TrimSideBearings" Opacity="0.55" AutomationProperties.HeadingLevel="Level1"/>
+                                    <StackPanel x:Name="HeroChips" Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                                        <Border x:Name="HeroProtocolChip" Style="{StaticResource ChipBorder}"><TextBlock x:Name="HeroProtocol" FontSize="12"/></Border>
+                                        <Border x:Name="HeroLatencyChip" Style="{StaticResource ChipBorder}"><StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE9D9;" FontSize="11" Foreground="{ThemeResource WeaveMutedBrush}"/><TextBlock x:Name="HeroLatency" FontSize="12"/></StackPanel></Border>
+                                        <Border x:Name="HeroModeChip" Style="{StaticResource ChipBorder}"><TextBlock x:Name="HeroMode" FontSize="12"/></Border>
                                     </StackPanel>
-                                </StackPanel>
-                            </Grid>
-                            <Button x:Name="ConnectButton" local:ResponsiveGrid.Weight="0" Style="{StaticResource AccentButtonStyle}" Content="{Binding Connect, Source={StaticResource UiText}}" Click="ConnectButton_Click" AccessKey="C" VerticalAlignment="Center" MinWidth="144" MinHeight="48" Padding="24,12" CornerRadius="12" FontWeight="SemiBold">
-                                <Button.KeyboardAccelerators><KeyboardAccelerator Key="Enter" Modifiers="Control"/></Button.KeyboardAccelerators>
-                                <Button.ContentTemplate><DataTemplate><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE7E8;" FontSize="16"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding}"/></StackPanel></DataTemplate></Button.ContentTemplate>
-                            </Button>
+                                    <StackPanel x:Name="HeroActions" Grid.Row="4" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
+                                        <Button x:Name="ConnectButton" Style="{StaticResource PillButton}" Content="{Binding Connect, Source={StaticResource UiText}}" Click="ConnectButton_Click" AccessKey="C">
+                                            <Button.KeyboardAccelerators><KeyboardAccelerator Key="Enter" Modifiers="Control"/></Button.KeyboardAccelerators>
+                                            <Button.ContentTemplate><DataTemplate><StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE7E8;" FontSize="16"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding}"/></StackPanel></DataTemplate></Button.ContentTemplate>
+                                        </Button>
+                                        <Button x:Name="ManageSubscriptionsButton" Style="{StaticResource QuietPillButton}" Width="52" Padding="0" Tag="1" Click="Navigate_Click" ToolTipService.ToolTip="{Binding ManageSubscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ManageSubscriptions, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8AB;" FontSize="15"/></Button>
+                                    </StackPanel>
+                                    </Grid>
+                                    <!-- A soft pool of the state colour behind the knot; it brightens when the link is up. -->
+                                    <Ellipse x:Name="HeroGlow" Canvas.ZIndex="-1" Grid.Column="1" Width="375" Height="375" Margin="-37,-40,-37,-40" HorizontalAlignment="Center" VerticalAlignment="Center" Fill="{ThemeResource WeaveHeroGlowBrush}" Opacity="0.25" IsHitTestVisible="False"/>
+                                    <local:KnotView x:Name="Knot" Grid.Column="1" Width="300" Height="300" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                </Grid>
+                            </ContentControl>
+
+                            <!-- Live traffic. -->
+                            <ContentControl x:Name="TrafficTile" local:ResponsiveGrid.Weight="1" Style="{StaticResource Tile}">
+                                <Grid Padding="28,26,28,22" RowSpacing="0">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" AutomationProperties.Name="{Binding Download, Source={StaticResource UiText}}">
+                                            <FontIcon Glyph="&#xE74B;" FontSize="14" Foreground="{ThemeResource WeaveMutedBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="DownloadValue" Style="{StaticResource NumberText}" FontSize="48" Text="—" Typography.NumeralAlignment="Tabular"/>
+                                            <TextBlock x:Name="DownloadUnit" Style="{StaticResource UnitText}" VerticalAlignment="Bottom" Margin="0,0,0,8"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom" AutomationProperties.Name="{Binding Upload, Source={StaticResource UiText}}">
+                                            <FontIcon Glyph="&#xE74A;" FontSize="12" Foreground="{ThemeResource WeaveMutedBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="UploadValue" Style="{StaticResource NumberText}" FontSize="26" Foreground="{ThemeResource WeaveMutedBrush}" Text="—" Typography.NumeralAlignment="Tabular"/>
+                                            <TextBlock x:Name="UploadUnit" Style="{StaticResource UnitText}" VerticalAlignment="Bottom" Margin="0,0,0,3"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <local:TrafficChart x:Name="Chart" Grid.Row="1" MinHeight="116" Margin="0,16,0,14"/>
+                                    <Grid Grid.Row="2" ColumnSpacing="0" Padding="0,14,0,0" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,1,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="6"><TextBlock Style="{StaticResource MicroText}" Text="{Binding SessionTotal, Source={StaticResource UiText}}"/><StackPanel Orientation="Horizontal" Spacing="4"><TextBlock x:Name="SessionValue" Style="{StaticResource NumberText}" FontSize="24" Text="—" Typography.NumeralAlignment="Tabular"/><TextBlock x:Name="SessionUnit" Style="{StaticResource UnitText}" VerticalAlignment="Bottom" Margin="0,0,0,3"/></StackPanel></StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="6" Padding="18,0,0,0" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="1,0,0,0"><TextBlock Style="{StaticResource MicroText}" Text="{Binding Latency, Source={StaticResource UiText}}"/><StackPanel Orientation="Horizontal" Spacing="4"><TextBlock x:Name="LatencyValue" Style="{StaticResource NumberText}" FontSize="24" Text="—" Typography.NumeralAlignment="Tabular"/><TextBlock x:Name="LatencyUnit" Style="{StaticResource UnitText}" VerticalAlignment="Bottom" Margin="0,0,0,3"/></StackPanel></StackPanel>
+                                        <StackPanel Grid.Column="2" Spacing="6" Padding="18,0,0,0" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="1,0,0,0"><TextBlock Style="{StaticResource MicroText}" Text="{Binding Uptime, Source={StaticResource UiText}}"/><TextBlock x:Name="UptimeValue" Style="{StaticResource NumberText}" FontSize="24" Text="—" Typography.NumeralAlignment="Tabular"/></StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </ContentControl>
                         </local:ResponsiveGrid>
-                    </ContentControl>
 
-                    <ContentControl x:Name="ExitCard" Style="{StaticResource GlassCard}">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8F1;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding ExitNode, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                <Button x:Name="ManageSubscriptionsButton" Grid.Column="2" Tag="1" Click="Navigate_Click" Background="Transparent" BorderThickness="0" Padding="12,4" MinHeight="32" VerticalAlignment="Center" Foreground="{ThemeResource WeaveMutedBrush}"><StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ManageSubscriptions, Source={StaticResource UiText}}"/><FontIcon Glyph="&#xE76C;" FontSize="10"/></StackPanel></Button>
-                            </Grid>
-                            <local:ResponsiveGrid x:Name="ExitSelectors" ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
-                                <ComboBox x:Name="SubscriptionComboBox" local:ResponsiveGrid.Weight="1" Header="{Binding Subscriptions, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged"/>
-                                <Grid x:Name="NodeSelection" local:ResponsiveGrid.Weight="1.3" ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <ComboBox x:Name="NodeComboBox" Header="{Binding Node, Source={StaticResource UiText}}" PlaceholderText="{Binding AutomaticLowestLatency, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName" SelectionChanged="DefaultNode_Changed"/>
-                                    <Button x:Name="AutomaticNodeButton" Grid.Column="1" Content="{Binding Auto, Source={StaticResource UiText}}" Click="AutomaticNode_Click" VerticalAlignment="Bottom"/>
+                        <local:ResponsiveGrid ColumnSpacing="12" RowSpacing="12" MinColumnWidth="330">
+                            <!-- Quick exit: pick the node without leaving this page. -->
+                            <ContentControl x:Name="ExitCard" local:ResponsiveGrid.Weight="1.4" Style="{StaticResource Tile}">
+                                <Grid Padding="22,16,14,8" RowSpacing="8">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <Grid ColumnSpacing="6" Margin="0,0,8,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource MicroText}" VerticalAlignment="Center" Text="{Binding ExitLabel, Source={StaticResource UiText}}"/>
+                                        <ComboBox x:Name="SubscriptionComboBox" Grid.Column="1" HorizontalAlignment="Left" MinWidth="150" MaxWidth="240" MinHeight="30" Margin="12,0,0,0" Padding="10,2" BorderThickness="0" Background="Transparent" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="SubscriptionComboBox_SelectionChanged" AutomationProperties.Name="{Binding Subscriptions, Source={StaticResource UiText}}"/>
+                                        <Button x:Name="QuickTestButton" Grid.Column="2" Style="{StaticResource IconButton}" Click="TestNodes_Click" ToolTipService.ToolTip="{Binding TestNodes, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding TestNodes, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE945;" FontSize="14"/></Button>
+                                        <Button Grid.Column="3" Style="{StaticResource IconButton}" Tag="1" Click="Navigate_Click" ToolTipService.ToolTip="{Binding ManageSubscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ManageSubscriptions, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE76C;" FontSize="12"/></Button>
+                                    </Grid>
+                                    <GridView x:Name="QuickNodes" Grid.Row="1" SelectionMode="Single" IsItemClickEnabled="False" ItemContainerStyle="{StaticResource WeaveCell}" SelectionChanged="QuickNodes_SelectionChanged" Padding="0" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid x:Name="QuickNodesPanel" Orientation="Horizontal" MaximumRowsOrColumns="2"/></ItemsPanelTemplate></GridView.ItemsPanel>
+                                        <GridView.ItemTemplate>
+                                            <DataTemplate x:DataType="local:NodeRow">
+                                                <Grid Height="56" Padding="16,0,14,0" ColumnSpacing="12">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <Border Width="32" Height="22" CornerRadius="7" Background="{ThemeResource WeaveHairBrush}" VerticalAlignment="Center">
+                                                        <Grid>
+                                                            <TextBlock Text="{x:Bind RegionChip}" Visibility="{x:Bind IsNode}" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="{StaticResource WeaveMicroFont}" FontSize="10" CharacterSpacing="80" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                                            <FontIcon Glyph="&#xE945;" FontSize="11" Visibility="{x:Bind IsAuto}" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                        <TextBlock Text="{x:Bind Name}" FontSize="14" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                                        <TextBlock Text="{x:Bind Protocol}" Style="{StaticResource MicroText}" CharacterSpacing="40" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                                        <local:LatencyBars Level="{x:Bind Level}"/>
+                                                        <TextBlock Text="{x:Bind DelayNumber}" Style="{StaticResource BodyStrongText}" FontSize="13" MinWidth="26" TextAlignment="Right" Typography.NumeralAlignment="Tabular"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </GridView.ItemTemplate>
+                                    </GridView>
+                                    <Grid x:Name="ExitEmptyState" Grid.Row="2" Visibility="Collapsed" ColumnSpacing="16" Padding="0,4,8,8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding ImportASubscriptionFirst, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Style="{StaticResource SmallPillButton}" Tag="1" Click="Navigate_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE710;" FontSize="13"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportSubscription, Source={StaticResource UiText}}"/></StackPanel></Button>
+                                    </Grid>
+                                    <!-- State holders: the quick grid above drives them, saved preferences and Connect read them. -->
+                                    <ComboBox x:Name="NodeComboBox" Grid.Row="2" Visibility="Collapsed" DisplayMemberPath="DisplayName" PlaceholderText="{Binding AutomaticLowestLatency, Source={StaticResource UiText}}" SelectionChanged="DefaultNode_Changed"/>
+                                    <Button x:Name="AutomaticNodeButton" Grid.Row="2" Visibility="Collapsed" Click="AutomaticNode_Click"/>
                                 </Grid>
-                            </local:ResponsiveGrid>
-                            <Grid x:Name="ExitEmptyState" Visibility="Collapsed" ColumnSpacing="16">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding ImportASubscriptionFirst, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Style="{StaticResource AccentButtonStyle}" Tag="1" Click="Navigate_Click">
-                                    <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE710;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportSubscription, Source={StaticResource UiText}}"/></StackPanel>
-                                </Button>
-                            </Grid>
-                        </StackPanel>
-                    </ContentControl>
+                            </ContentControl>
 
-                    <ContentControl x:Name="ConnectionNote" Style="{StaticResource GlassCard}">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE968;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding NetworkSettings, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                <Button Grid.Column="2" Tag="3" Click="Navigate_Click" Background="Transparent" BorderThickness="0" Padding="12,4" MinHeight="32" VerticalAlignment="Center" Foreground="{ThemeResource WeaveMutedBrush}"><StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Settings, Source={StaticResource UiText}}"/><FontIcon Glyph="&#xE76C;" FontSize="10"/></StackPanel></Button>
-                            </Grid>
-                            <local:ResponsiveGrid x:Name="NetworkOptions" ColumnSpacing="24" RowSpacing="16" MinColumnWidth="240">
-                                <ComboBox x:Name="RoutingSelector" local:ResponsiveGrid.Weight="1" Header="{Binding RoutingMode, Source={StaticResource UiText}}" SelectedIndex="0" SelectionChanged="RoutingMode_Changed"/>
-                                <ToggleSwitch x:Name="TunToggle" local:ResponsiveGrid.Weight="1.3" VerticalAlignment="Center" Header="{Binding TUNDeviceWideRouting, Source={StaticResource UiText}}" IsOn="True" OffContent="{Binding SystemProxyCompatibleAppsOnly, Source={StaticResource UiText}}" OnContent="{Binding TUNManagedByCoreService, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
-                            </local:ResponsiveGrid>
-                            <TextBlock x:Name="ModeExplanation" Style="{StaticResource CaptionText}" Text="{Binding RouteByAppAndDomainUseThe, Source={StaticResource UiText}}"/>
-                            <local:FlowPanel>
-                                <Button Click="RecheckNetwork_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72C;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding RecheckNetwork, Source={StaticResource UiText}}"/></StackPanel></Button>
-                                <Button Click="ReconnectNetwork_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ReconnectNetwork, Source={StaticResource UiText}}"/></Button>
-                            </local:FlowPanel>
-                            <Expander Header="{Binding ProxyChain, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
-                                <Grid ColumnSpacing="16" MinHeight="44">
+                            <!-- Network controls. -->
+                            <ContentControl x:Name="ConnectionNote" local:ResponsiveGrid.Weight="1" Style="{StaticResource Tile}">
+                                <StackPanel Padding="24,10,20,10">
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE8AB;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding RoutingMode, Source={StaticResource UiText}}"/>
+                                        <Border Grid.Column="2" Style="{StaticResource SegmentTrack}">
+                                            <ListView x:Name="RoutingSelector" Style="{StaticResource SegmentedList}" SelectionChanged="RoutingMode_Changed" AutomationProperties.Name="{Binding RoutingMode, Source={StaticResource UiText}}"></ListView>
+                                        </Border>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xEDA3;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="TUN"/>
+                                        <ToggleSwitch x:Name="TunToggle" Grid.Column="2" VerticalAlignment="Center" IsOn="True" Toggled="Setting_Changed" ToolTipService.ToolTip="{Binding TUNDeviceWideRouting, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding TUNDeviceWideRouting, Source={StaticResource UiText}}"/>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE71B;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding ProxyChain, Source={StaticResource UiText}}"/>
+                                        <Button Grid.Column="2" Style="{StaticResource IconButton}" ToolTipService.ToolTip="{Binding ProxyChain, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ProxyChain, Source={StaticResource UiText}}">
+                                            <FontIcon Glyph="&#xE76C;" FontSize="12"/>
+                                            <Button.Flyout>
+                                                <Flyout Placement="BottomEdgeAlignedRight">
+                                                    <StackPanel Width="320" Spacing="14">
+                                                        <ToggleSwitch x:Name="ChainToggle" Header="{Binding EntryCurrentExit, Source={StaticResource UiText}}" Toggled="Setting_Changed" OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}"/>
+                                                        <ComboBox x:Name="ChainSubscription" Header="{Binding EntrySubscription, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="ChainSubscription_Changed"/>
+                                                        <ComboBox x:Name="ChainNode" Header="{Binding EntryNode, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName" SelectionChanged="Setting_Changed"/>
+                                                        <TextBlock Text="{Binding DeviceEntryExitWebsiteSelectTheExit, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xF003;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding Routing, Source={StaticResource UiText}}"/>
+                                        <TextBlock x:Name="RouteCountText" Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource NumberText}" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}" Typography.NumeralAlignment="Tabular"/>
+                                        <Button Grid.Column="3" Style="{StaticResource IconButton}" Tag="2" Click="Navigate_Click" ToolTipService.ToolTip="{Binding Routing, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Routing, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE76C;" FontSize="12"/></Button>
+                                    </Grid>
+                                    <!-- As on Android's home: one tap into the exit, DNS and WebRTC checks. -->
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xEA18;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}"/>
+                                        <Button Grid.Column="2" Style="{StaticResource IconButton}" Tag="4" Click="Navigate_Click" ToolTipService.ToolTip="{Binding NetworkPrivacy, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NetworkPrivacy, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE76C;" FontSize="12"/></Button>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE72C;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding RecheckNetwork, Source={StaticResource UiText}}"/>
+                                        <Button Grid.Column="2" Style="{StaticResource IconButton}" Click="RecheckNetwork_Click" ToolTipService.ToolTip="{Binding RecheckNetwork, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding RecheckNetwork, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE72C;" FontSize="14"/></Button>
+                                    </Grid>
+                                    <TextBlock x:Name="ModeExplanation" Visibility="Collapsed" Style="{StaticResource CaptionText}"/>
+                                </StackPanel>
+                            </ContentControl>
+                        </local:ResponsiveGrid>
+                    </StackPanel>
+
+                    <!-- ============ Subscriptions ============ -->
+                    <local:ResponsiveGrid x:Name="SubscriptionsPage" ColumnSpacing="12" RowSpacing="12" MinColumnWidth="230" Visibility="Collapsed">
+                        <!-- Library: avatar rings show how many nodes of each subscription answered the last test. -->
+                        <ContentControl x:Name="SubscriptionsPanel" local:ResponsiveGrid.Weight="1.35" Style="{StaticResource Tile}">
+                            <Grid Padding="14,16,14,14" RowSpacing="8">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <Grid Margin="10,0,0,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding EntryCurrentExit, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
+                                    <TextBlock Style="{StaticResource MicroText}" VerticalAlignment="Center" Text="{Binding Subscriptions, Source={StaticResource UiText}}" AutomationProperties.HeadingLevel="Level1"/>
+                                    <Button x:Name="AddSubscriptionButton" Grid.Column="1" Style="{StaticResource IconButton}" Click="AddSubscription_Click" ToolTipService.ToolTip="{Binding ImportSubscription, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ImportSubscription, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE710;" FontSize="14"/></Button>
+                                </Grid>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="0" Margin="4,0,0,0">
+                                    <Button Style="{StaticResource IconButton}" Click="RefreshSubscription_Click" ToolTipService.ToolTip="{Binding Refresh, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Refresh, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE72C;" FontSize="14"/></Button>
+                                    <Button Style="{StaticResource IconButton}" Click="EditSubscription_Click" ToolTipService.ToolTip="{Binding Edit, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Edit, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE70F;" FontSize="14"/></Button>
+                                    <Button Style="{StaticResource IconButton}" Click="ExportSubscriptions_Click" ToolTipService.ToolTip="{Binding Export, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Export, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE896;" FontSize="14"/></Button>
+                                    <Button Style="{StaticResource IconButton}" Click="ShareLan_Click" ToolTipService.ToolTip="{Binding SendToPhone, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding SendToPhone, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE724;" FontSize="14"/></Button>
+                                    <Button Style="{StaticResource IconButton}" Click="DeleteSelectedSubscriptions_Click" ToolTipService.ToolTip="{Binding Delete, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Delete, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE74D;" FontSize="14"/></Button>
+                                </StackPanel>
+                                <ListView x:Name="SubscriptionListView" Grid.Row="2" SelectionMode="Extended" ItemContainerStyle="{StaticResource WeaveListRow}" SelectionChanged="SubscriptionListView_SelectionChanged" RightTapped="SubscriptionListView_RightTapped" KeyDown="SubscriptionListView_KeyDown" MaxHeight="360">
+                                    <FlyoutBase.AttachedFlyout>
+                                        <MenuFlyout x:Name="LibraryMenu">
+                                            <MenuFlyoutItem Text="{Binding Refresh, Source={StaticResource UiText}}" Click="RefreshSubscription_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                            <MenuFlyoutItem Text="{Binding Edit, Source={StaticResource UiText}}" Click="EditSubscription_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE70F;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                            <MenuFlyoutItem Text="{Binding Export, Source={StaticResource UiText}}" Click="ExportSubscriptions_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE896;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                            <MenuFlyoutItem Text="{Binding SendToPhone, Source={StaticResource UiText}}" Click="ShareLan_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE724;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                            <MenuFlyoutSeparator/>
+                                            <MenuFlyoutItem Text="{Binding Delete, Source={StaticResource UiText}}" KeyboardAcceleratorTextOverride="Del" Click="DeleteSelectedSubscriptions_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                        </MenuFlyout>
+                                    </FlyoutBase.AttachedFlyout>
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="core:SubscriptionRecord">
+                                            <Grid Height="60" Padding="12,0,10,0" ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <local:HealthRing Fraction="{x:Bind Health, Mode=OneWay}" Monogram="{x:Bind Monogram}"/>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                    <TextBlock Text="{x:Bind Name}" FontSize="14" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                                    <TextBlock Text="{x:Bind Meta, Mode=OneWay}" Style="{StaticResource MicroText}" CharacterSpacing="40" TextWrapping="NoWrap"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <!-- Import: a drop target first, with the typed routes tucked below it. -->
+                                <ContentControl x:Name="ImportPanel" Grid.Row="3" Style="{StaticResource GlassCard}" Padding="14" CornerRadius="16" Background="Transparent">
+                                    <StackPanel Spacing="10">
+                                        <Grid>
+                                            <Rectangle RadiusX="14" RadiusY="14" Stroke="{ThemeResource WeaveFaintBrush}" StrokeThickness="1.4" StrokeDashArray="4 4" IsHitTestVisible="False"/>
+                                            <StackPanel Spacing="6" Padding="10,14" HorizontalAlignment="Center">
+                                                <FontIcon Glyph="&#xE896;" FontSize="18" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                                <TextBlock Text="{Binding DropToImport, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}" TextAlignment="Center"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBox x:Name="SubscriptionUrlBox" PlaceholderText="https://example.com/sub" KeyDown="SubscriptionUrlBox_KeyDown" AutomationProperties.Name="{Binding HTTPSURL, Source={StaticResource UiText}}"/>
+                                        <TextBox x:Name="SubscriptionNameBox" PlaceholderText="{Binding EGMainSubscription, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NameOptional, Source={StaticResource UiText}}"/>
+                                        <!-- The primary action has its own row so it never clips in a narrow column; the other routes sit below it. -->
+                                        <StackPanel Spacing="6">
+                                            <Button Style="{StaticResource SmallPillButton}" HorizontalAlignment="Stretch" Padding="8,0" MinWidth="0" Click="ImportUrlButton_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportLink, Source={StaticResource UiText}}"/></Button>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <Button Style="{StaticResource IconButton}" HorizontalAlignment="Center" Click="ImportFileButton_Click" ToolTipService.ToolTip="{Binding FileClientExport, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding FileClientExport, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8E5;" FontSize="14"/></Button>
+                                                <Button Grid.Column="1" Style="{StaticResource IconButton}" HorizontalAlignment="Center" Click="QrFile_Click" ToolTipService.ToolTip="{Binding QRImage, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding QRImage, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8B9;" FontSize="14"/></Button>
+                                                <Button Grid.Column="2" Style="{StaticResource IconButton}" HorizontalAlignment="Center" Click="CameraQr_Click" ToolTipService.ToolTip="{Binding CameraScan, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding CameraScan, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE722;" FontSize="14"/></Button>
+                                            </Grid>
+                                        </StackPanel>
+                                        <Expander x:Name="PasteConfigurationExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><Expander.Header><TextBlock Text="{Binding PasteConfiguration, Source={StaticResource UiText}}" FontSize="13" TextTrimming="CharacterEllipsis"/></Expander.Header><StackPanel Spacing="12">
+                                            <TextBox x:Name="SubscriptionTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" AutomationProperties.Name="{Binding ClashMihomoYAMLBase64, Source={StaticResource UiText}}"/>
+                                            <Button Content="{Binding ImportText, Source={StaticResource UiText}}" Click="ImportTextButton_Click" HorizontalAlignment="Left"/>
+                                        </StackPanel></Expander>
                                     </StackPanel>
-                                    <ToggleSwitch x:Name="ChainToggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding EntryCurrentExit, Source={StaticResource UiText}}"
-                                        OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
-                                </Grid>
-                                <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="200">
-                                    <ComboBox x:Name="ChainSubscription" Header="{Binding EntrySubscription, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="ChainSubscription_Changed"/>
-                                    <ComboBox x:Name="ChainNode" Header="{Binding EntryNode, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName" SelectionChanged="Setting_Changed"/>
-                                </local:ResponsiveGrid>
-                                <TextBlock Text="{Binding DeviceEntryExitWebsiteSelectTheExit, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
-                            </StackPanel></Expander>
-                        </StackPanel>
-                    </ContentControl>
+                                </ContentControl>
+                            </Grid>
+                        </ContentControl>
 
-                    <!-- Routing -->
+                        <!-- Nodes: filter by region, search, test; delay as signal bars, number and a per-run trend. -->
+                        <ContentControl x:Name="NodesPanel" local:ResponsiveGrid.Weight="3.2" Style="{StaticResource Tile}">
+                            <Grid Padding="18,14,18,12" RowSpacing="6">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <Grid ColumnSpacing="8" MinHeight="38">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <ListView x:Name="RegionChips" SelectionMode="Single" ItemContainerStyle="{StaticResource WeaveChipItem}" SelectionChanged="RegionChips_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" VerticalAlignment="Center" AutomationProperties.Name="{Binding Node, Source={StaticResource UiText}}">
+                                        <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListView.ItemsPanel>
+                                        <ListView.ItemTemplate><DataTemplate x:DataType="x:String"><TextBlock Style="{StaticResource ButtonLabel}" FontSize="12" Text="{x:Bind}"/></DataTemplate></ListView.ItemTemplate>
+                                    </ListView>
+                                    <TextBox x:Name="NodeSearchBox" Grid.Column="1" Width="150" MinHeight="32" CornerRadius="16" Padding="14,5" PlaceholderText="{Binding SearchNodes, Source={StaticResource UiText}}" TextChanged="NodeSearchBox_TextChanged" AutomationProperties.Name="{Binding SearchNodes, Source={StaticResource UiText}}"/>
+                                    <Button x:Name="TestNodesButton" Grid.Column="2" Style="{StaticResource IconButton}" Click="TestNodes_Click" ToolTipService.ToolTip="{Binding TestNodes, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding TestNodes, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE945;" FontSize="14"/></Button>
+                                    <Button Grid.Column="3" Style="{StaticResource IconButton}" Click="StopDiagnostics_Click" ToolTipService.ToolTip="{Binding Stop, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Stop, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE71A;" FontSize="13"/></Button>
+                                </Grid>
+                                <Grid Grid.Row="1" Padding="14,0" ColumnSpacing="12" Height="24">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/><ColumnDefinition Width="84"/><ColumnDefinition Width="104"/></Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource MicroText}" VerticalAlignment="Center" Text="{Binding Node, Source={StaticResource UiText}}"/>
+                                    <TextBlock Grid.Column="2" Style="{StaticResource MicroText}" VerticalAlignment="Center" Text="{Binding Protocol, Source={StaticResource UiText}}"/>
+                                    <TextBlock Grid.Column="3" Style="{StaticResource MicroText}" VerticalAlignment="Center" Text="{Binding Trend, Source={StaticResource UiText}}"/>
+                                    <TextBlock Grid.Column="4" Style="{StaticResource MicroText}" VerticalAlignment="Center" TextAlignment="Right" Text="{Binding Latency, Source={StaticResource UiText}}"/>
+                                </Grid>
+                                <ListView x:Name="SubscriptionNodesList" Grid.Row="2" SelectionMode="Single" ItemContainerStyle="{StaticResource WeaveListRow}" SelectionChanged="NodeList_SelectionChanged" RightTapped="NodeList_RightTapped" MaxHeight="520">
+                                    <FlyoutBase.AttachedFlyout>
+                                        <MenuFlyout x:Name="NodeMenu">
+                                            <MenuFlyoutItem Text="{Binding SetAsExit, Source={StaticResource UiText}}" Click="SetAsExit_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE73E;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                            <MenuFlyoutItem Text="{Binding CopyName, Source={StaticResource UiText}}" Click="CopyNodeName_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;"/></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                                        </MenuFlyout>
+                                    </FlyoutBase.AttachedFlyout>
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="local:NodeRow">
+                                            <Grid Height="44" Padding="14,0" ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/><ColumnDefinition Width="84"/><ColumnDefinition Width="104"/></Grid.ColumnDefinitions>
+                                                <Border Width="32" Height="22" CornerRadius="7" Background="{ThemeResource WeaveHairBrush}" VerticalAlignment="Center"><TextBlock Text="{x:Bind RegionChip}" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="{StaticResource WeaveMicroFont}" FontSize="10" CharacterSpacing="80" Foreground="{ThemeResource WeaveMutedBrush}"/></Border>
+                                                <TextBlock Grid.Column="1" Text="{x:Bind Name}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxLines="1"/>
+                                                <TextBlock Grid.Column="2" x:Phase="1" Text="{x:Bind Protocol}" Style="{StaticResource MicroText}" CharacterSpacing="40" TextWrapping="NoWrap" VerticalAlignment="Center"/>
+                                                <local:Sparkline Grid.Column="3" x:Phase="1" Samples="{x:Bind Trend}" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="9" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                    <local:LatencyBars Level="{x:Bind Level}"/>
+                                                    <TextBlock Text="{x:Bind DelayNumber}" Visibility="{x:Bind HasDelay}" FontSize="13" MinWidth="28" TextAlignment="Right" Typography.NumeralAlignment="Tabular"/>
+                                                    <TextBlock Text="{x:Bind LostText}" Visibility="{x:Bind IsLost}" FontSize="12" Foreground="{ThemeResource WeaveSunBrush}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <TextBlock x:Name="NodeTestText" Grid.Row="3" Visibility="Collapsed" Style="{StaticResource CaptionText}" Margin="14,2,0,0"/>
+                            </Grid>
+                        </ContentControl>
+                    </local:ResponsiveGrid>
+
+                    <!-- ============ Routing ============ -->
                     <ContentControl x:Name="RoutesPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                         <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8AB;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding AppRouting, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}"/></StackPanel>
-                            </Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="{Binding AppRouting, Source={StaticResource UiText}}" Style="{StaticResource SubtitleText}" VerticalAlignment="Center"/>
+                                <Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding RouteByWindowsProcessNameReconnectAfter, Source={StaticResource UiText}}"/>
+                            </StackPanel>
                             <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
                                 <TextBox x:Name="ProcessNameBox" Header="{Binding ProcessName, Source={StaticResource UiText}}" PlaceholderText="chrome.exe" KeyDown="ProcessNameBox_KeyDown"/>
                                 <ComboBox x:Name="RouteTargetModeComboBox" Header="{Binding ExitType, Source={StaticResource UiText}}" SelectionChanged="RouteTargetModeComboBox_SelectionChanged"/>
@@ -227,189 +428,127 @@
                                 <ComboBox x:Name="RouteSubscriptionComboBox" Header="{Binding Subscriptions, Source={StaticResource UiText}}" PlaceholderText="{Binding SelectASubscription, Source={StaticResource UiText}}" DisplayMemberPath="Name" SelectionChanged="RouteSubscriptionComboBox_SelectionChanged"/>
                                 <ComboBox x:Name="RouteNodeComboBox" Header="{Binding NodeSpecificNodeRoutingOnly, Source={StaticResource UiText}}" DisplayMemberPath="DisplayName"/>
                             </local:ResponsiveGrid>
-                            <Button Style="{StaticResource AccentButtonStyle}" Click="AddRouteButton_Click" HorizontalAlignment="Right"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding SaveRule, Source={StaticResource UiText}}"/></Button>
-                            <ListView x:Name="RouteListView" Visibility="Collapsed" MaxHeight="320" SelectionMode="None">
+                            <Button Style="{StaticResource SmallPillButton}" Click="AddRouteButton_Click" HorizontalAlignment="Right"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding SaveRule, Source={StaticResource UiText}}"/></Button>
+                            <ListView x:Name="RouteListView" Visibility="Collapsed" MaxHeight="320" SelectionMode="None" ItemContainerStyle="{StaticResource WeaveListRow}">
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="core:WindowsAppRoute">
-                                        <Grid ColumnSpacing="12" Padding="0,8">
+                                        <Grid ColumnSpacing="12" Height="52" Padding="12,0,6,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <StackPanel Spacing="2" VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind ProcessName}" Style="{StaticResource BodyStrongText}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{x:Bind ProcessName}" FontSize="14" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{x:Bind TargetLabel, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Tag="{x:Bind ProcessName}" Click="DeleteRouteButton_Click" Background="Transparent" BorderThickness="0" Padding="8" MinWidth="32" MinHeight="32" ToolTipService.ToolTip="{Binding Delete, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Delete, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE74D;" FontSize="14"/></Button>
+                                            <Button Grid.Column="1" Style="{StaticResource IconButton}" Tag="{x:Bind ProcessName}" Click="DeleteRouteButton_Click" ToolTipService.ToolTip="{Binding Delete, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Delete, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE74D;" FontSize="14"/></Button>
                                         </Grid>
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
                             </ListView>
                             <Expander Header="{Binding CustomDomainIPRules, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
                                 <TextBlock Text="{Binding OneRulePerLineDOMAINSUFFIXExample, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
-                                <TextBox x:Name="DomainRulesBox" AcceptsReturn="True" MinHeight="152" TextWrapping="Wrap" PlaceholderText="DOMAIN-SUFFIX,example.com,DIRECT"/>
+                                <TextBox x:Name="DomainRulesBox" AcceptsReturn="True" MinHeight="152" TextWrapping="Wrap" FontFamily="Consolas" PlaceholderText="DOMAIN-SUFFIX,example.com,DIRECT"/>
                                 <Button Content="{Binding ValidateAndSave, Source={StaticResource UiText}}" Click="ValidateRules_Click"/>
                             </StackPanel></Expander>
                         </StackPanel>
                     </ContentControl>
 
-                    <!-- Subscriptions -->
-                    <ContentControl x:Name="ImportPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE710;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding ImportSubscription, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding ImportedContentIsEncryptedWithWindowsDPAPI, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ImportedContentIsEncryptedWithWindowsDPAPI, Source={StaticResource UiText}}"/></StackPanel>
-                            </Grid>
-                            <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
-                                <TextBox x:Name="SubscriptionUrlBox" local:ResponsiveGrid.Weight="1.6" Header="{Binding HTTPSURL, Source={StaticResource UiText}}" PlaceholderText="https://example.com/sub" KeyDown="SubscriptionUrlBox_KeyDown"/>
-                                <TextBox x:Name="SubscriptionNameBox" local:ResponsiveGrid.Weight="1" Header="{Binding NameOptional, Source={StaticResource UiText}}" PlaceholderText="{Binding EGMainSubscription, Source={StaticResource UiText}}"/>
-                            </local:ResponsiveGrid>
-                            <local:FlowPanel>
-                                <Button Style="{StaticResource AccentButtonStyle}" Click="ImportUrlButton_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportLink, Source={StaticResource UiText}}"/></Button>
-                                <Button Content="{Binding FileClientExport, Source={StaticResource UiText}}" Click="ImportFileButton_Click"/>
-                                <Button Content="{Binding QRImage, Source={StaticResource UiText}}" Click="QrFile_Click"/>
-                                <Button Content="{Binding CameraScan, Source={StaticResource UiText}}" Click="CameraQr_Click"/>
-                            </local:FlowPanel>
-                            <Expander Header="{Binding PasteConfiguration, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
-                                <TextBox x:Name="SubscriptionTextBox" Header="{Binding ClashMihomoYAMLBase64, Source={StaticResource UiText}}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120"/>
-                                <Button Content="{Binding ImportText, Source={StaticResource UiText}}" Click="ImportTextButton_Click" HorizontalAlignment="Left"/>
-                            </StackPanel></Expander>
-                        </StackPanel>
-                    </ContentControl>
-
-                    <ContentControl x:Name="SubscriptionsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8F1;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding YourLibrary, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding SelectASubscriptionToViewItsNodes, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding SelectASubscriptionToViewItsNodes, Source={StaticResource UiText}}"/></StackPanel>
-                            </Grid>
-                            <local:FlowPanel>
-                                <Button Click="RefreshSubscription_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72C;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Refresh, Source={StaticResource UiText}}"/></StackPanel></Button>
-                                <Button Click="EditSubscription_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE70F;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Edit, Source={StaticResource UiText}}"/></StackPanel></Button>
-                                <Button Click="ExportSubscriptions_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE896;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding Export, Source={StaticResource UiText}}"/></StackPanel></Button>
-                                <Button Click="ShareLan_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE724;" FontSize="14"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding SendToPhone, Source={StaticResource UiText}}"/></StackPanel></Button>
-                            </local:FlowPanel>
-                            <ListView x:Name="SubscriptionListView" SelectionMode="Multiple" SelectionChanged="SubscriptionListView_SelectionChanged" MaxHeight="280">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="core:SubscriptionRecord">
-                                        <Grid ColumnSpacing="12" Padding="0,8">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="2" VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongText}" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{x:Bind Summary, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <!-- ============ Settings ============ -->
+                    <local:ResponsiveGrid x:Name="SettingsPage" ColumnSpacing="12" RowSpacing="12" MinColumnWidth="400" Visibility="Collapsed">
+                        <!-- Appearance: choose a painting; light and dark are a separate switch. -->
+                        <ContentControl x:Name="SettingsPanel" local:ResponsiveGrid.Weight="1.25" Style="{StaticResource Tile}">
+                            <StackPanel Padding="26,22,16,10" Spacing="18">
+                                <Grid Margin="0,0,10,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource MicroText}" VerticalAlignment="Center" Text="{Binding Appearance, Source={StaticResource UiText}}"/>
+                                    <Border Grid.Column="1" Style="{StaticResource SegmentTrack}">
+                                        <ListView x:Name="ModeSelector" Style="{StaticResource SegmentedList}" SelectionChanged="ModeSelector_SelectionChanged" AutomationProperties.Name="{Binding Appearance, Source={StaticResource UiText}}"></ListView>
+                                    </Border>
+                                </Grid>
+                                <GridView x:Name="ThemeGallery" SelectionMode="Single" IsItemClickEnabled="False" ItemContainerStyle="{StaticResource WeaveGalleryCell}" SelectionChanged="ThemeGallery_SelectionChanged" Padding="4,4,0,0" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                    <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid x:Name="ThemeGalleryPanel" Orientation="Horizontal" MaximumRowsOrColumns="2"/></ItemsPanelTemplate></GridView.ItemsPanel>
+                                    <GridView.ItemTemplate>
+                                        <DataTemplate x:DataType="local:ThemeChoice">
+                                            <StackPanel Spacing="10">
+                                                <local:ThemePreview Colors="{x:Bind Colors, Mode=OneWay}" IsDark="{x:Bind IsDark, Mode=OneWay}" Height="132"/>
+                                                <TextBlock Text="{x:Bind Name, Mode=OneWay}" FontSize="13" HorizontalAlignment="Center"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Tag="{x:Bind Id}" Click="DeleteSubscriptionButton_Click" Background="Transparent" BorderThickness="0" Padding="8" MinWidth="32" MinHeight="32" ToolTipService.ToolTip="{Binding Delete, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Delete, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE74D;" FontSize="14"/></Button>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </StackPanel>
-                    </ContentControl>
+                                        </DataTemplate>
+                                    </GridView.ItemTemplate>
+                                </GridView>
+                            </StackPanel>
+                        </ContentControl>
 
-                    <ContentControl x:Name="NodesPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding SubscriptionNodes, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding ConnectBeforeTestingLatencyTestsRunOnly, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ConnectBeforeTestingLatencyTestsRunOnly, Source={StaticResource UiText}}"/></StackPanel>
-                            </Grid>
-                            <local:FlowPanel>
-                                <Button Style="{StaticResource AccentButtonStyle}" Click="TestNodes_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding TestNodes, Source={StaticResource UiText}}"/></Button>
-                                <Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/>
-                            </local:FlowPanel>
-                            <ListView x:Name="SubscriptionNodesList" MaxHeight="360" SelectionMode="Single" SelectionChanged="NodeList_SelectionChanged">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="local:NodeRow">
-                                        <Grid ColumnSpacing="12" MinHeight="40">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
-                                            <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind Protocol}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="2" x:Phase="1" Text="{x:Bind DelayText, Mode=OneWay}" Style="{StaticResource CaptionText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" TextAlignment="Right" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                            <TextBlock x:Name="NodeTestText" Visibility="Collapsed" Style="{StaticResource CaptionText}"/>
-                        </StackPanel>
-                    </ContentControl>
-
-                    <!-- Settings -->
-                    <ContentControl x:Name="SettingsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE713;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding Personalization, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                            </Grid>
-                            <local:ResponsiveGrid ColumnSpacing="24" RowSpacing="16" MinColumnWidth="240">
-                                <ComboBox x:Name="ThemeSelector" local:ResponsiveGrid.Weight="1.4" Header="{Binding Appearance, Source={StaticResource UiText}}" SelectionChanged="ThemeSelector_SelectionChanged"/>
-                                <ComboBox x:Name="LanguageSelector" local:ResponsiveGrid.Weight="1" Header="{Binding Language, Source={StaticResource UiText}}" SelectionChanged="LanguageSelector_SelectionChanged"><x:String>简体中文</x:String><x:String>English</x:String></ComboBox>
-                            </local:ResponsiveGrid>
-                            <TextBlock Text="{Binding TrayCloseNotice, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
-                        </StackPanel>
-                    </ContentControl>
-
-                    <ContentControl x:Name="NetworkSettingsCard" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE968;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding NetworkSettings, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                            </Grid>
-                            <Grid ColumnSpacing="16" MinHeight="44">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding OfflineRulesUpdateWithTheAppApp, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
+                        <StackPanel Spacing="12" local:ResponsiveGrid.Weight="1">
+                            <ContentControl x:Name="BehaviorCard" Style="{StaticResource Tile}">
+                                <StackPanel Padding="24,16,20,6">
+                                    <TextBlock Style="{StaticResource MicroText}" Margin="0,0,0,2" Text="{Binding Behavior, Source={StaticResource UiText}}"/>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE8BB;" FontSize="13" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding CloseButtonBehavior, Source={StaticResource UiText}}" TextTrimming="CharacterEllipsis"/>
+                                        <Border Grid.Column="2" Style="{StaticResource SegmentTrack}"><ListView x:Name="CloseBehaviorSelector" Style="{StaticResource SegmentedList}" SelectionChanged="CloseBehavior_Changed" AutomationProperties.Name="{Binding CloseButtonBehavior, Source={StaticResource UiText}}"></ListView></Border>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE775;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding Language, Source={StaticResource UiText}}"/>
+                                        <Border Grid.Column="2" Style="{StaticResource SegmentTrack}"><ListView x:Name="LanguageSelector" Style="{StaticResource SegmentedList}" SelectionChanged="LanguageSelector_SelectionChanged" AutomationProperties.Name="{Binding Language, Source={StaticResource UiText}}"><x:String>简体中文</x:String><x:String>English</x:String></ListView></Border>
+                                    </Grid>
+                                    <TextBlock Margin="0,0,0,6" Text="{Binding TrayCloseNotice, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                                 </StackPanel>
-                                <ToggleSwitch x:Name="ChinaDirectToggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" IsOn="True"
-                                    OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
-                            </Grid>
-                            <Grid ColumnSpacing="16" MinHeight="44">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding IPv6DualStack, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                                <ToggleSwitch x:Name="Ipv6Toggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding IPv6DualStack, Source={StaticResource UiText}}" IsOn="True"
-                                    OnContent="{Binding On, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
-                            </Grid>
-                            <local:ResponsiveGrid ColumnSpacing="16" RowSpacing="16" MinColumnWidth="240">
-                                <ComboBox x:Name="DnsSelector" Header="DNS" SelectionChanged="Setting_Changed"/>
-                                <TextBox x:Name="CustomDnsBox" Header="{Binding CustomEncryptedDNS, Source={StaticResource UiText}}" PlaceholderText="https://example.com/dns-query" TextChanged="CustomDnsBox_TextChanged"/>
-                            </local:ResponsiveGrid>
-                            <Grid ColumnSpacing="16" MinHeight="44">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                                <ToggleSwitch x:Name="StunToggle" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" AutomationProperties.Name="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}"
-                                    OnContent="{Binding OnMayAffectCalls, Source={StaticResource UiText}}" OffContent="{Binding Off, Source={StaticResource UiText}}" Toggled="Setting_Changed"/>
-                            </Grid>
-                            <TextBlock Text="{Binding NetworkSettingsApplyOnTheNextConnection, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
-                        </StackPanel>
-                    </ContentControl>
+                            </ContentControl>
 
-                    <ContentControl x:Name="PrivacySettingsCard" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding PrivacyBoundaries, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                            </Grid>
-                            <TextBlock Text="{Binding SubscriptionsAreEncryptedWithWindowsDPAPIEncrypted, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
-                        </StackPanel>
-                    </ContentControl>
+                            <ContentControl x:Name="NetworkSettingsCard" Style="{StaticResource Tile}">
+                                <StackPanel Padding="24,16,20,12">
+                                    <TextBlock Style="{StaticResource MicroText}" Margin="0,0,0,2" Text="{Binding NetworkSettings, Source={StaticResource UiText}}"/>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xF003;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding OfflineRulesUpdateWithTheAppApp, Source={StaticResource UiText}}"/>
+                                        <ToggleSwitch x:Name="ChinaDirectToggle" Grid.Column="2" VerticalAlignment="Center" IsOn="True" Toggled="Setting_Changed" AutomationProperties.Name="{Binding BypassMainlandChinaInRuleMode, Source={StaticResource UiText}}"/>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE909;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding IPv6DualStack, Source={StaticResource UiText}}"/>
+                                        <ToggleSwitch x:Name="Ipv6Toggle" Grid.Column="2" VerticalAlignment="Center" IsOn="True" Toggled="Setting_Changed" AutomationProperties.Name="{Binding IPv6DualStack, Source={StaticResource UiText}}"/>
+                                    </Grid>
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE72E;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="DNS"/>
+                                        <ComboBox x:Name="DnsSelector" Grid.Column="2" MinWidth="170" HorizontalAlignment="Right" VerticalAlignment="Center" SelectionChanged="Setting_Changed" AutomationProperties.Name="DNS"/>
+                                    </Grid>
+                                    <TextBox x:Name="CustomDnsBox" Margin="34,10,0,10" PlaceholderText="https://example.com/dns-query" TextChanged="CustomDnsBox_TextChanged" AutomationProperties.Name="{Binding CustomEncryptedDNS, Source={StaticResource UiText}}"/>
+                                    <Grid Height="50" ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE7BA;" FontSize="15" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding OnMayAffectCalls, Source={StaticResource UiText}}"/>
+                                        <ToggleSwitch x:Name="StunToggle" Grid.Column="2" VerticalAlignment="Center" Toggled="Setting_Changed" AutomationProperties.Name="{Binding BlockCommonSTUNPorts, Source={StaticResource UiText}}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </ContentControl>
 
-                    <!-- Network and privacy -->
+                            <ContentControl x:Name="PrivacySettingsCard" Style="{StaticResource Tile}">
+                                <StackPanel Padding="24,16,24,18" Spacing="10">
+                                    <TextBlock Style="{StaticResource MicroText}" Text="{Binding PrivacyBoundaries, Source={StaticResource UiText}}"/>
+                                    <TextBlock Text="{Binding SubscriptionsAreEncryptedWithWindowsDPAPIEncrypted, Source={StaticResource UiText}}" Style="{StaticResource SecondaryText}"/>
+                                    <TextBlock Text="{Binding NetworkSettingsApplyOnTheNextConnection, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
+                                </StackPanel>
+                            </ContentControl>
+                        </StackPanel>
+                    </local:ResponsiveGrid>
+
+                    <!-- ============ Network and privacy ============ -->
                     <ContentControl x:Name="DiagnosticsPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                         <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/><Button Style="{StaticResource InfoButton}" Content="&#xE946;" ToolTipService.ToolTip="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}"/></StackPanel>
+                            <!-- The page title already names this page; the info button explains what the test sends. -->
+                            <Grid ColumnSpacing="4">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <CheckBox x:Name="DiagnosticConsent" Content="{Binding AllowThisTestToContactIpifyAnd, Source={StaticResource UiText}}"/>
+                                <Button Grid.Column="1" Style="{StaticResource InfoButton}" Content="&#xE946;" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding CheckYourExitIPAndPopularWebsites, Source={StaticResource UiText}}"/>
                             </Grid>
-                            <CheckBox x:Name="DiagnosticConsent" Content="{Binding AllowThisTestToContactIpifyAnd, Source={StaticResource UiText}}"/>
                             <local:FlowPanel>
-                                <Button Style="{StaticResource AccentButtonStyle}" Click="RunDiagnostics_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding RunTests, Source={StaticResource UiText}}"/></Button>
+                                <Button Style="{StaticResource SmallPillButton}" Click="RunDiagnostics_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding RunTests, Source={StaticResource UiText}}"/></Button>
                                 <Button Content="{Binding Stop, Source={StaticResource UiText}}" Click="StopDiagnostics_Click"/>
                                 <Button Content="{Binding PreviewSafeSummary, Source={StaticResource UiText}}" Click="PreviewDiagnostics_Click"/>
                             </local:FlowPanel>
@@ -419,11 +558,11 @@
                                 <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="IsTabStop" Value="False"/></Style></ListView.ItemContainerStyle>
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="core:ProbeResult">
-                                        <Border Background="{ThemeResource WeaveGlassBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1" CornerRadius="12" Padding="16,12" MinHeight="72">
+                                        <Border Background="{ThemeResource WeaveTileBrush}" BorderBrush="{ThemeResource WeaveTileStrokeBrush}" BorderThickness="1" CornerRadius="14" Padding="16,12" MinHeight="72">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <StackPanel Spacing="4"><TextBlock Text="{x:Bind DisplayTitle, Mode=OneWay}" Style="{StaticResource BodyStrongText}"/><TextBlock Text="{x:Bind Details, Mode=OneWay}" Style="{StaticResource SecondaryText}"/></StackPanel>
-                                                <Border Grid.Column="1" VerticalAlignment="Top" Background="{ThemeResource WeaveSelectionBrush}" CornerRadius="8" Padding="8,4"><TextBlock Text="{x:Bind EvidenceLabel, Mode=OneWay}" FontSize="12" TextWrapping="NoWrap"/></Border>
+                                                <Border Grid.Column="1" VerticalAlignment="Top" Background="{ThemeResource WeaveHairBrush}" CornerRadius="10" Padding="9,4"><TextBlock Text="{x:Bind EvidenceLabel, Mode=OneWay}" FontSize="12" TextWrapping="NoWrap"/></Border>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -437,26 +576,21 @@
                         </StackPanel>
                     </ContentControl>
 
-                    <!-- Device sync -->
+                    <!-- ============ Device sync ============ -->
                     <ContentControl x:Name="TransferPanel" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                         <StackPanel Spacing="16">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource IconTile}"><FontIcon Glyph="&#xE8AD;" FontSize="16" Foreground="{ThemeResource WeaveAccentBrush}"/></Border>
-                                <TextBlock Grid.Column="1" Text="{Binding DeviceSyncLabel, Source={StaticResource UiText}}" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                            </Grid>
                             <TextBlock Text="{Binding ConnectYourPhoneAndPCToThe, Source={StaticResource UiText}}" Style="{StaticResource CaptionText}"/>
                             <Expander x:Name="ReceiveSection" Header="{Binding ReceiveFromPhone, Source={StaticResource UiText}}" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
                                 <TextBox x:Name="ReceiveLink" Header="{Binding PasteTheWeaveLinkFromYourPhone, Source={StaticResource UiText}}" TextWrapping="Wrap"/>
                                 <TextBox x:Name="ReceiveCode" Header="{Binding SenderSSixDigitCode, Source={StaticResource UiText}}" MaxLength="6" KeyDown="ReceiveCode_KeyDown"/>
                                 <local:FlowPanel>
-                                    <Button x:Name="ReceiveButton" Style="{StaticResource AccentButtonStyle}" Click="ReceiveLan_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ReceiveAndPreview, Source={StaticResource UiText}}"/></Button>
+                                    <Button x:Name="ReceiveButton" Style="{StaticResource SmallPillButton}" Click="ReceiveLan_Click"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ReceiveAndPreview, Source={StaticResource UiText}}"/></Button>
                                     <Button Content="{Binding ReadQRImage, Source={StaticResource UiText}}" Click="QrFile_Click"/>
                                     <Button Content="{Binding CameraScan, Source={StaticResource UiText}}" Click="CameraQr_Click"/>
                                 </local:FlowPanel>
                                 <StackPanel x:Name="ReceiveConfirmArea" Visibility="Collapsed" Spacing="16">
                                     <ListView x:Name="ReceivePreview" MaxHeight="200" SelectionMode="Multiple" DisplayMemberPath="Name"/>
-                                    <Button Style="{StaticResource AccentButtonStyle}" Click="ConfirmTransfer_Click" HorizontalAlignment="Left"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportSelectedSubscriptions, Source={StaticResource UiText}}"/></Button>
+                                    <Button Style="{StaticResource SmallPillButton}" Click="ConfirmTransfer_Click" HorizontalAlignment="Left"><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding ImportSelectedSubscriptions, Source={StaticResource UiText}}"/></Button>
                                 </StackPanel>
                             </StackPanel></Expander>
                             <Expander x:Name="SendSection" Header="{Binding SendToPhoneLabel, Source={StaticResource UiText}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="16">
@@ -479,13 +613,26 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <ProgressBar x:Name="BusyBar" Grid.Row="2" VerticalAlignment="Top" Margin="32,0" MaxWidth="960" IsIndeterminate="True" Visibility="Collapsed"/>
+            <ProgressBar x:Name="BusyBar" Grid.Row="2" VerticalAlignment="Top" Margin="6,0,28,0" MaxWidth="1120" IsIndeterminate="True" Visibility="Collapsed"/>
+
+            <!-- Drag-and-drop hint: appears while something is dragged over the window. -->
+            <Border x:Name="DropHint" Grid.Row="2" Margin="6,4,28,28" CornerRadius="22" Opacity="0" IsHitTestVisible="False" Background="{ThemeResource WeaveTileBrush}" BorderBrush="{ThemeResource WeaveSunBrush}" BorderThickness="1.5">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <FontIcon Glyph="&#xE896;" FontSize="28" Foreground="{ThemeResource WeaveSunBrush}"/>
+                    <TextBlock Text="{Binding ReleaseToImport, Source={StaticResource UiText}}" Style="{StaticResource SubtitleText}" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
 
             <!-- Status messages float above the content so they never shift the layout. Hidden by opacity, not
                  visibility, to keep the polite live region in the accessibility tree. Do not attach an OpacityTransition:
                  startup can change this value before WinUI creates its composition object. -->
-            <Border x:Name="MessageBar" Grid.Row="2" Margin="32,0,32,16" Padding="16,12" MaxWidth="960" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" CornerRadius="12" Opacity="0" IsHitTestVisible="False" Background="{ThemeResource WeaveCardBrush}" BorderBrush="{ThemeResource WeaveLightEdgeBrush}" BorderThickness="1">
-                <TextBlock x:Name="MessageText" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
+            <Border x:Name="MessageBar" Grid.Row="2" Margin="6,0,28,20" Padding="18,12,10,12" MaxWidth="640" VerticalAlignment="Bottom" HorizontalAlignment="Center" CornerRadius="20" Opacity="0" IsHitTestVisible="False" Background="{ThemeResource WeavePopBrush}" BorderBrush="{ThemeResource WeaveTileStrokeBrush}" BorderThickness="1">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Ellipse x:Name="MessageDot" Width="8" Height="8" VerticalAlignment="Center" Fill="{ThemeResource WeaveSunBrush}"/>
+                    <TextBlock x:Name="MessageText" Grid.Column="1" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" FontSize="13" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"/>
+                    <Button x:Name="MessageClose" Grid.Column="2" Style="{StaticResource IconButton}" Width="28" Height="28" MinWidth="28" MinHeight="28" Click="MessageClose_Click" ToolTipService.ToolTip="{Binding Close, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Close, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE711;" FontSize="10"/></Button>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

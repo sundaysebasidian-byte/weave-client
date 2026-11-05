@@ -1,0 +1,22 @@
+<UserControl
+    x:Class="Weave.Windows.HealthRing"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Width="40" Height="40" IsTabStop="False">
+    <!-- Avatar for a subscription: a thin ring showing how many of its nodes answered the last test, around a light monogram.
+         An untested subscription gets a dotted ring, never a "bad" one. -->
+    <Grid>
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="HealthStates">
+                <VisualState x:Name="Unknown"><VisualState.Setters><Setter Target="Dots.Opacity" Value="1"/><Setter Target="Arc.Opacity" Value="0"/></VisualState.Setters></VisualState>
+                <VisualState x:Name="Healthy"><VisualState.Setters><Setter Target="Arc.Stroke" Value="{ThemeResource WeaveSuccessBrush}"/></VisualState.Setters></VisualState>
+                <VisualState x:Name="Fair"><VisualState.Setters><Setter Target="Arc.Stroke" Value="{ThemeResource WeaveCautionBrush}"/></VisualState.Setters></VisualState>
+                <VisualState x:Name="Poor"><VisualState.Setters><Setter Target="Arc.Stroke" Value="{ThemeResource WeaveDangerBrush}"/></VisualState.Setters></VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <Ellipse Margin="1.25" Stroke="{ThemeResource WeaveHairBrush}" StrokeThickness="2.5"/>
+        <Ellipse x:Name="Dots" Margin="1.25" Stroke="{ThemeResource WeaveFaintBrush}" StrokeThickness="2.5" StrokeDashArray="0.1 2.6" StrokeDashCap="Round" Opacity="0"/>
+        <Path x:Name="Arc" Stroke="{ThemeResource WeaveSuccessBrush}" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+        <TextBlock x:Name="Letter" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="{StaticResource WeaveDisplayFont}" FontWeight="Light" FontSize="16"/>
+    </Grid>
+</UserControl>

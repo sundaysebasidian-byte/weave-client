@@ -227,6 +227,7 @@ public sealed class MihomoConfigBuilder
 
     private static void AppendNetworkSettings(StringBuilder builder, WindowsNetworkOptions options, int mixedPort, int controllerPort, string secret)
     {
+        var addressSpace = options.EnableTun ? TunAddressSpace.Current() : null;
         builder.AppendLine($"mixed-port: {mixedPort}");
         builder.AppendLine("bind-address: 127.0.0.1");
         builder.AppendLine($"external-controller: 127.0.0.1:{controllerPort}");
@@ -249,6 +250,7 @@ public sealed class MihomoConfigBuilder
             builder.AppendLine("tun:");
             builder.AppendLine("  enable: true");
             builder.AppendLine("  device: WeaveTun");
+            if (options.Ipv6Enabled) builder.AppendLine($"  inet6-address: ['{addressSpace!.Ipv6Address}']");
             builder.AppendLine("  stack: mixed");
             builder.AppendLine("  mtu: 1500");
             builder.AppendLine("  auto-route: true");
@@ -263,7 +265,7 @@ public sealed class MihomoConfigBuilder
         builder.AppendLine("  enable: true");
         builder.AppendLine($"  ipv6: {options.Ipv6Enabled.ToString().ToLowerInvariant()}");
         builder.AppendLine("  enhanced-mode: fake-ip");
-        builder.AppendLine("  fake-ip-range: 198.18.0.1/16");
+        builder.AppendLine($"  fake-ip-range: {addressSpace?.FakeIpv4Range ?? "198.18.0.1/16"}");
         // Bootstrap must not depend on the proxy it is trying to resolve, or on a
         // content-filtering resolver that can block the node's own hostname.
         builder.AppendLine("  default-nameserver: ['https://223.5.5.5/dns-query', 'https://1.1.1.1/dns-query']");
