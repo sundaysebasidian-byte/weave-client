@@ -426,6 +426,7 @@
   "将从本机删除 {0} 份订阅及其加密内容。": "{0} subscriptions and their encrypted contents will be deleted from this device.",
   "出口已设为 {0}；重新连接后生效": "Exit set to {0}. Reconnect to apply.",
   "操作正在进行，请稍候或按 Esc 取消。": "An operation is in progress. Wait or press Esc to cancel.",
+  "请先开始分享，再复制一次性链接。": "Start sharing before copying the one-time link.",
   "Weave 的候选 TUN 地址段均已被占用。请关闭其他 VPN 的 TUN 后重试。": "Weave's candidate TUN address ranges are all in use. Disable other VPNs' TUN mode and try again.",
   "W-S03：订阅或路由配置未通过核心服务校验。请检查节点协议及选项，更新订阅后重试。": "W-S03: Subscription or routing configuration failed core service validation. Check node protocols and options, update the subscription, then retry.",
   "W-S04：核心服务启动超时。请检查其他客户端的 TUN 状态后重试。": "W-S04: Core service startup timed out. Check other clients' TUN state, then retry."

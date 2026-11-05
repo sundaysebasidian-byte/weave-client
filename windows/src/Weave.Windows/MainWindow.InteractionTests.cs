@@ -21,6 +21,19 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("Navigation did not show page " + page);
         }
         NavigateTo(originalPage);
+        if (!_model.IsConnected)
+        {
+            RecheckNetwork_Click(this, new RoutedEventArgs());
+            if (MessageText.Text != L.T("请先连接代理") || MessageBar.Opacity != 1)
+                throw new InvalidOperationException("Disconnected network check did not explain its prerequisite.");
+        }
+        if (ShareLink.Text.Length == 0)
+        {
+            CopyShareLink_Click(this, new RoutedEventArgs());
+            if (MessageText.Text != L.T("请先开始分享，再复制一次性链接。"))
+                throw new InvalidOperationException("Empty sharing action did not explain its prerequisite.");
+        }
+        MessageClose_Click(this, new RoutedEventArgs());
         var disabledWhileBusy = false;
         var busy = RunActionAsync(async () =>
         {
