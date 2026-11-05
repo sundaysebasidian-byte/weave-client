@@ -148,7 +148,7 @@ public sealed partial class MainWindow
             pop.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.EasingDoubleKeyFrame
             {
                 KeyTime = TimeSpan.FromMilliseconds(420), Value = 1,
-                EasingFunction = new Microsoft.UI.Xaml.Media.Animation.BackEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut, Amplitude = 0.4 },
+                EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut },
             });
             Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(pop, HeroOrbScale);
             Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(pop, axis);
