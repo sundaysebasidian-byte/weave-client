@@ -89,7 +89,35 @@ function Get-OwnedService {
     if ($service -and $service.PathName -ne "`"$serviceExe`"") { throw 'Service ownership changed; refusing to modify it' }
     return $service
 }
+$occupiedTun = $null
 try {
+    # Reproduce the reporting machine's existing Mihomo adapter without taking over
+    # any routes. This fixture runs only on the explicitly disposable CI host.
+    $occupiedConfig = Join-Path $results 'occupied-tun.yaml'
+    @'
+mixed-port: 0
+mode: direct
+ipv6: false
+log-level: warning
+tun:
+  enable: true
+  device: Weave-CI-Occupied
+  stack: system
+  auto-route: false
+  auto-detect-interface: true
+dns:
+  enable: false
+  fake-ip-range: 198.18.0.1/16
+'@ | Set-Content -LiteralPath $occupiedConfig
+    $occupiedTun = Start-Process -FilePath (Join-Path $root 'artifacts\x64\runtime\mihomo.exe') -ArgumentList @('-d',('"'+$results+'"'),'-f',('"'+$occupiedConfig+'"')) -WindowStyle Hidden -PassThru
+    $deadline = (Get-Date).AddSeconds(20)
+    do {
+        if ($occupiedTun.HasExited) { throw 'Occupied-address fixture exited early' }
+        $occupied = Get-NetIPAddress -InterfaceAlias 'Weave-CI-Occupied' -AddressFamily IPv4 -ErrorAction SilentlyContinue
+        if ($occupied.IPAddress -contains '198.18.0.1') { break }
+        Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $deadline)
+    if ($occupied.IPAddress -notcontains '198.18.0.1') { throw 'Occupied-address fixture never acquired the default Mihomo address' }
     $password = ConvertTo-SecureString ('Weave!' + [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))) -AsPlainText -Force
     $createdUser = New-LocalUser -Name $username -Password $password -AccountNeverExpires -PasswordNeverExpires -Description 'Disposable Weave service acceptance'
     Add-LocalGroupMember -SID $users -Member $createdUser
@@ -122,6 +150,10 @@ try {
     'Ordinary-user TUN forwarding, authenticated endpoint, stop/reconnect and service-crash cleanup passed.' | Set-Content (Join-Path $results 'acceptance.txt')
 }
 finally {
+    if ($occupiedTun) {
+        if (-not $occupiedTun.HasExited) { $occupiedTun.Kill(); $occupiedTun.WaitForExit(10000) | Out-Null }
+        $occupiedTun.Dispose()
+    }
     $coreLog = Join-Path $install 'synthetic-core.log'
     if (Test-Path $coreLog) { Copy-Item $coreLog (Join-Path $results 'synthetic-core.log') }
     Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$startedAt} -ErrorAction SilentlyContinue |
