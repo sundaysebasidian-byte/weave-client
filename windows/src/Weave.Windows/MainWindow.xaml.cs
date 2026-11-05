@@ -810,7 +810,14 @@ public sealed partial class MainWindow : Window
     }
 
     private async void RecheckNetwork_Click(object sender, RoutedEventArgs e)
-        => await RunActionAsync(() => _model.RecheckAsync(_lifetime.Token));
+    {
+        if (!_model.IsConnected) { Toast(L.T("请先连接代理"), MessageKind.Warning); return; }
+        await RunCancellableAsync(async token =>
+        {
+            await _model.RecheckAsync(token);
+            Toast(_model.Health == ConnectionHealthState.Reachable ? L.T("网络连通性已确认") : ConnectionHealth.Description(_model.Health));
+        });
+    }
 
     private async void ReconnectNetwork_Click(object sender, RoutedEventArgs e)
     {
