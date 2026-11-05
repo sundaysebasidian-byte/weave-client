@@ -21,13 +21,14 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("Navigation did not show page " + page);
         }
         NavigateTo(originalPage);
+        var disabledWhileBusy = false;
         var busy = RunActionAsync(async () =>
         {
             await Task.Yield();
-            if (ImportPanel.IsEnabled || RoutesPanel.IsEnabled || SubscriptionsPanel.IsEnabled)
-                throw new InvalidOperationException("Busy controls must be visibly disabled.");
+            disabledWhileBusy = !ImportPanel.IsEnabled && !RoutesPanel.IsEnabled && !SubscriptionsPanel.IsEnabled;
         });
         await busy;
+        if (!disabledWhileBusy) throw new InvalidOperationException("Busy controls must be visibly disabled.");
         if (!ImportPanel.IsEnabled || !RoutesPanel.IsEnabled || !SubscriptionsPanel.IsEnabled)
             throw new InvalidOperationException("Controls did not recover after the operation.");
 
