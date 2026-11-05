@@ -30,6 +30,7 @@
                 <Setter Target="MessageBar.Margin" Value="16,0,16,16"/>
                 <Setter Target="BusyBar.Margin" Value="16,0"/>
                 <Setter Target="Knot.Visibility" Value="Collapsed"/>
+                <Setter Target="HeroGlow.Visibility" Value="Collapsed"/>
             </VisualState.Setters></VisualState>
         </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
@@ -118,11 +119,22 @@
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <Grid x:Name="HeroText">
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <StackPanel Orientation="Horizontal" Spacing="9" Height="20" VerticalAlignment="Center">
-                                        <Ellipse x:Name="ConnectionDot" Width="7" Height="7" VerticalAlignment="Center" Fill="{ThemeResource WeaveFaintBrush}"/>
-                                        <TextBlock x:Name="HeroEyebrow" Style="{StaticResource MicroText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                    <TextBlock x:Name="HeroCity" Grid.Row="1" Margin="0,10,0,14" FontFamily="{StaticResource WeaveDisplayFont}" FontWeight="Light" FontSize="92" CharacterSpacing="-30" TextTrimming="CharacterEllipsis" MaxLines="1" TextWrapping="NoWrap" OpticalMarginAlignment="TrimSideBearings" Opacity="0.4" AutomationProperties.HeadingLevel="Level1"/>
+                                    <!-- Status orb, as on Android: a halo around a disc. The disc fills only for a confirmed exit. -->
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Grid x:Name="HeroOrb" Width="42" Height="42" RenderTransformOrigin="0.5,0.5">
+                                            <Grid.RenderTransform><ScaleTransform x:Name="HeroOrbScale"/></Grid.RenderTransform>
+                                            <Ellipse x:Name="HeroOrbHalo" StrokeThickness="1" Stroke="{ThemeResource WeaveFaintBrush}" Opacity="0.55"/>
+                                            <Ellipse x:Name="ConnectionDot" Margin="6" StrokeThickness="1" Stroke="{ThemeResource WeaveRimBrush}" Fill="{ThemeResource WeaveSubtleFillBrush}"/>
+                                            <FontIcon x:Name="HeroOrbGlyph" Glyph="&#xE7E8;" FontSize="13" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                            <ProgressRing x:Name="HeroOrbProgress" Width="16" Height="16" IsActive="False" Visibility="Collapsed" Foreground="{ThemeResource WeaveAccentBrush}"/>
+                                        </Grid>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock x:Name="HeroState" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" AutomationProperties.LiveSetting="Polite"/>
+                                            <TextBlock x:Name="HeroEyebrow" Style="{StaticResource MicroText}" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock x:Name="HeroCity" Grid.Row="1" Margin="0,14,0,14" FontFamily="{StaticResource WeaveDisplayFont}" FontWeight="Normal" FontSize="92" CharacterSpacing="-30" TextTrimming="CharacterEllipsis" MaxLines="1" TextWrapping="NoWrap" OpticalMarginAlignment="TrimSideBearings" Opacity="0.55" AutomationProperties.HeadingLevel="Level1"/>
                                     <StackPanel x:Name="HeroChips" Grid.Row="2" Orientation="Horizontal" Spacing="8">
                                         <Border x:Name="HeroProtocolChip" Style="{StaticResource ChipBorder}"><TextBlock x:Name="HeroProtocol" FontSize="12"/></Border>
                                         <Border x:Name="HeroLatencyChip" Style="{StaticResource ChipBorder}"><StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE9D9;" FontSize="11" Foreground="{ThemeResource WeaveMutedBrush}"/><TextBlock x:Name="HeroLatency" FontSize="12"/></StackPanel></Border>
@@ -133,9 +145,11 @@
                                             <Button.KeyboardAccelerators><KeyboardAccelerator Key="Enter" Modifiers="Control"/></Button.KeyboardAccelerators>
                                             <Button.ContentTemplate><DataTemplate><StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE7E8;" FontSize="16"/><TextBlock Style="{StaticResource ButtonLabel}" Text="{Binding}"/></StackPanel></DataTemplate></Button.ContentTemplate>
                                         </Button>
-                                        <Button x:Name="ManageSubscriptionsButton" Style="{StaticResource QuietPillButton}" Width="48" Padding="0" Tag="1" Click="Navigate_Click" ToolTipService.ToolTip="{Binding ManageSubscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ManageSubscriptions, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8AB;" FontSize="15"/></Button>
+                                        <Button x:Name="ManageSubscriptionsButton" Style="{StaticResource QuietPillButton}" Width="52" Padding="0" Tag="1" Click="Navigate_Click" ToolTipService.ToolTip="{Binding ManageSubscriptions, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding ManageSubscriptions, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE8AB;" FontSize="15"/></Button>
                                     </StackPanel>
                                     </Grid>
+                                    <!-- A soft pool of the state colour behind the knot; it brightens when the link is up. -->
+                                    <Ellipse x:Name="HeroGlow" Canvas.ZIndex="-1" Grid.Column="1" Width="375" Height="375" Margin="-37,-40,-37,-40" HorizontalAlignment="Center" VerticalAlignment="Center" Fill="{ThemeResource WeaveHeroGlowBrush}" Opacity="0.25" IsHitTestVisible="False"/>
                                     <local:KnotView x:Name="Knot" Grid.Column="1" Width="300" Height="300" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                 </Grid>
                             </ContentControl>
@@ -256,6 +270,13 @@
                                         <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding Routing, Source={StaticResource UiText}}"/>
                                         <TextBlock x:Name="RouteCountText" Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource NumberText}" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}" Typography.NumeralAlignment="Tabular"/>
                                         <Button Grid.Column="3" Style="{StaticResource IconButton}" Tag="2" Click="Navigate_Click" ToolTipService.ToolTip="{Binding Routing, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding Routing, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE76C;" FontSize="12"/></Button>
+                                    </Grid>
+                                    <!-- As on Android's home: one tap into the exit, DNS and WebRTC checks. -->
+                                    <Grid Height="50" ColumnSpacing="14" BorderBrush="{ThemeResource WeaveHairBrush}" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xEA18;" FontSize="16" Foreground="{ThemeResource WeaveMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Text="{Binding NetworkPrivacy, Source={StaticResource UiText}}"/>
+                                        <Button Grid.Column="2" Style="{StaticResource IconButton}" Tag="4" Click="Navigate_Click" ToolTipService.ToolTip="{Binding NetworkPrivacy, Source={StaticResource UiText}}" AutomationProperties.Name="{Binding NetworkPrivacy, Source={StaticResource UiText}}"><FontIcon Glyph="&#xE76C;" FontSize="12"/></Button>
                                     </Grid>
                                     <Grid Height="50" ColumnSpacing="14">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

@@ -46,6 +46,13 @@
                         <LinearGradientBrush x:Key="WeaveChartAreaBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#6B7BA3A3" Offset="0"/><GradientStop Color="#007BA3A3" Offset="1"/></LinearGradientBrush>
                         <LinearGradientBrush x:Key="WeaveChartLineBrush" StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#2B3866" Offset="0"/><GradientStop Color="#A599C2" Offset="1"/></LinearGradientBrush>
                         <SolidColorBrush x:Key="WeaveChartDotBrush" Color="#A599C2"/>
+                        <RadialGradientBrush x:Key="WeaveHeroGlowBrush"><GradientStop Color="#99E5775B" Offset="0"/><GradientStop Color="#33E5775B" Offset="0.5"/><GradientStop Color="#00E5775B" Offset="1"/></RadialGradientBrush>
+                        <LinearGradientBrush x:Key="WeaveTileSheenBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#B3FFFFFF" Offset="0"/><GradientStop Color="#00FFFFFF" Offset="0.42"/></LinearGradientBrush>
+                        <!-- No drop-down chevrons: the field itself reads as a choice. -->
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundDisabled" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocused" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocusedPressed" Color="Transparent"/>
     
                         <!-- Control states follow the palette instead of the Windows accent colour. -->
                         <StaticResource x:Key="FocusVisualPrimaryBrush" ResourceKey="WeaveInkBrush"/>
@@ -134,6 +141,13 @@
                         <LinearGradientBrush x:Key="WeaveChartAreaBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#6B5E9C98" Offset="0"/><GradientStop Color="#005E9C98" Offset="1"/></LinearGradientBrush>
                         <LinearGradientBrush x:Key="WeaveChartLineBrush" StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#6E81BD" Offset="0"/><GradientStop Color="#9F8FC2" Offset="1"/></LinearGradientBrush>
                         <SolidColorBrush x:Key="WeaveChartDotBrush" Color="#9F8FC2"/>
+                        <RadialGradientBrush x:Key="WeaveHeroGlowBrush"><GradientStop Color="#99E5775B" Offset="0"/><GradientStop Color="#33E5775B" Offset="0.5"/><GradientStop Color="#00E5775B" Offset="1"/></RadialGradientBrush>
+                        <LinearGradientBrush x:Key="WeaveTileSheenBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#1AFFFFFF" Offset="0"/><GradientStop Color="#00FFFFFF" Offset="0.42"/></LinearGradientBrush>
+                        <!-- No drop-down chevrons: the field itself reads as a choice. -->
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundDisabled" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocused" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocusedPressed" Color="Transparent"/>
     
                         <StaticResource x:Key="FocusVisualPrimaryBrush" ResourceKey="WeaveInkBrush"/>
                         <StaticResource x:Key="FocusVisualSecondaryBrush" ResourceKey="WeaveCardBrush"/>
@@ -207,8 +221,8 @@
             <x:Double x:Key="SpaceXXL">32</x:Double>
             <CornerRadius x:Key="WeaveControlRadius">10</CornerRadius>
             <CornerRadius x:Key="WeaveRowRadius">15</CornerRadius>
-            <CornerRadius x:Key="WeaveTileRadius">22</CornerRadius>
-            <CornerRadius x:Key="WeaveTileInnerRadius">21</CornerRadius>
+            <CornerRadius x:Key="WeaveTileRadius">24</CornerRadius>
+            <CornerRadius x:Key="WeaveTileInnerRadius">23</CornerRadius>
             <Thickness x:Key="WeaveCardPadding">24</Thickness>
 
             <Style TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/></Style>
@@ -258,7 +272,7 @@
             </Style>
             <!-- Secondary action beside the primary pill. -->
             <Style x:Key="QuietPillButton" TargetType="Button">
-                <Setter Property="CornerRadius" Value="24"/><Setter Property="MinHeight" Value="48"/><Setter Property="MinWidth" Value="48"/><Setter Property="Padding" Value="22,0"/>
+                <Setter Property="CornerRadius" Value="16"/><Setter Property="MinHeight" Value="52"/><Setter Property="MinWidth" Value="52"/><Setter Property="Padding" Value="22,0"/>
                 <Setter Property="Foreground" Value="{ThemeResource WeaveInkBrush}"/><Setter Property="FontSize" Value="14"/><Setter Property="UseSystemFocusVisuals" Value="True"/>
                 <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
                     <Grid x:Name="Root" Background="{ThemeResource WeaveSubtleFillBrush}" CornerRadius="{TemplateBinding CornerRadius}">
@@ -275,10 +289,10 @@
                 </ControlTemplate></Setter.Value></Setter>
             </Style>
             <Style x:Key="PillButton" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
-                <Setter Property="CornerRadius" Value="24"/><Setter Property="MinHeight" Value="48"/><Setter Property="MinWidth" Value="132"/><Setter Property="Padding" Value="26,0"/>
+                <Setter Property="CornerRadius" Value="16"/><Setter Property="MinHeight" Value="52"/><Setter Property="MinWidth" Value="168"/><Setter Property="Padding" Value="24,0"/><Setter Property="FontWeight" Value="SemiBold"/>
             </Style>
             <Style x:Key="SmallPillButton" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
-                <Setter Property="CornerRadius" Value="18"/><Setter Property="MinHeight" Value="36"/><Setter Property="Padding" Value="18,0"/>
+                <Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="38"/><Setter Property="Padding" Value="18,0"/><Setter Property="FontWeight" Value="SemiBold"/>
             </Style>
 
             <Style x:Key="SegmentTrack" TargetType="Border">
@@ -323,8 +337,10 @@
                 <Setter Property="IsTabStop" Value="False"/>
                 <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContentControl">
                     <Grid>
-                        <Border Margin="-1" CornerRadius="23" BorderBrush="{ThemeResource WeaveTileOuterBrush}" BorderThickness="1" IsHitTestVisible="False"/>
+                        <Border Margin="-1" CornerRadius="25" BorderBrush="{ThemeResource WeaveTileOuterBrush}" BorderThickness="1" IsHitTestVisible="False"/>
                         <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{TemplateBinding Background}" BorderBrush="{ThemeResource WeaveTileStrokeBrush}" BorderThickness="1" IsHitTestVisible="False"/>
+                        <!-- Glass sheen: light gathers along the top edge and fades within the upper half. -->
+                        <Border CornerRadius="{TemplateBinding CornerRadius}" Background="{ThemeResource WeaveTileSheenBrush}" IsHitTestVisible="False"/>
                         <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
                     </Grid>
                 </ControlTemplate></Setter.Value></Setter>

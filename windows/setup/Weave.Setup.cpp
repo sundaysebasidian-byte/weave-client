@@ -59,7 +59,7 @@ bool Trusted(PSID sid) {
     }();
     return EqualSid(sid, const_cast<BYTE*>(installer.data())) != FALSE;
 }
-void CheckEntry(const fs::path& path, bool ancestor = false, bool pinned = false) {
+void CheckEntry(const fs::path& path, bool ancestor = false, bool pinned = false, bool volumeRoot = false) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     Require(attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT), "Unsafe or missing installation path");
     PSID owner = nullptr; PACL acl = nullptr; PSECURITY_DESCRIPTOR descriptor = nullptr;
@@ -80,6 +80,8 @@ void CheckEntry(const fs::path& path, bool ancestor = false, bool pinned = false
         // A no-delete-sharing handle prevents rename/replacement while shortcut metadata is accessed.
         // Executable installation paths always use the stricter, unpinned policy.
         if (pinned) forbidden &= ~(DELETE | FILE_DELETE_CHILD);
+        // A volume root cannot be renamed or deleted, so DELETE on it (usual on data drives) cannot move the tree below it.
+        if (volumeRoot) forbidden &= ~DELETE;
         if (!Trusted(&allow->SidStart) && (allow->Mask & forbidden)) {
             std::wcerr << L"Unsafe installation ACL path: " << path.wstring() << L"; mask: " << allow->Mask << L"\n";
             Fail("An untrusted identity can change installation files", ERROR_ACCESS_DENIED);
@@ -95,7 +97,7 @@ void CheckTree(const fs::path& path) {
 }
 void CheckAncestors(fs::path path) {
     while (path.has_parent_path() && path.parent_path() != path) {
-        path = path.parent_path(); CheckEntry(path, true);
+        path = path.parent_path(); CheckEntry(path, true, false, path == path.root_path());
     }
 }
 void CreateProtected(const fs::path& path) {
@@ -114,9 +116,26 @@ fs::path KnownFolder(REFKNOWNFOLDERID id) {
     if (FAILED(result)) Fail("Resolve installation folder", static_cast<DWORD>(result));
     const fs::path path(value); CoTaskMemFree(value); return path;
 }
+bool Under(const fs::path& path, const fs::path& folder) {
+    const auto p = path.wstring(), f = folder.wstring();
+    return p.size() >= f.size() && _wcsnicmp(p.c_str(), f.c_str(), f.size()) == 0 && (p.size() == f.size() || p[f.size()] == L'\\');
+}
+// The default is Program Files\Weave. A chosen folder must be a dedicated "Weave" folder on a local fixed drive, outside Windows,
+// user profiles and ProgramData; the ancestor and tree checks below then decide whether its ACLs are safe for a SYSTEM service.
 fs::path MachineRoot(const wchar_t* supplied) {
-    const fs::path root = KnownFolder(FOLDERID_ProgramFilesX64) / L"Weave";
-    if (!Same(root.wstring(), supplied)) Fail("Only the fixed machine installation directory is supported", ERROR_ACCESS_DENIED);
+    const fs::path standard = KnownFolder(FOLDERID_ProgramFilesX64) / L"Weave";
+    std::wstring text(supplied);
+    while (text.size() > 3 && (text.back() == L'\\' || text.back() == L'/')) text.pop_back();
+    const fs::path root = fs::path(text).lexically_normal();
+    if (!Same(root.wstring(), standard.wstring())) {
+        const auto drive = root.root_name().wstring();
+        if (!root.is_absolute() || drive.size() != 2 || drive[1] != L':' || root.root_directory().empty())
+            Fail("Choose a folder on a local drive", ERROR_BAD_PATHNAME);
+        if (!Same(root.filename().wstring(), L"Weave")) Fail("The installation folder must be a dedicated folder named Weave", ERROR_BAD_PATHNAME);
+        if (GetDriveTypeW((drive + L"\\").c_str()) != DRIVE_FIXED) Fail("Choose a folder on a local fixed drive", ERROR_BAD_PATHNAME);
+        for (const auto& id : {FOLDERID_Windows, FOLDERID_UserProfiles, FOLDERID_ProgramData})
+            if (Under(root, KnownFolder(id))) Fail("Windows, user profile and ProgramData folders cannot hold the installation", ERROR_ACCESS_DENIED);
+    }
     CheckAncestors(root);
     if (fs::exists(root)) CheckTree(root);
     return root;

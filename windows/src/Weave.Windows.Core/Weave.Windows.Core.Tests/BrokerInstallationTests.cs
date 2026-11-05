@@ -63,6 +63,34 @@ public sealed class BrokerInstallationTests
         Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.Inspect(Path.GetTempPath()));
     }
 
+    [NativeWindowsFact]
+    public void VolumeRootsMayGrantDeleteButNothingElseThatReplacesChildren()
+    {
+        var acl = ProtectedAcl();
+        var users = new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null);
+        // The default ACL of a freshly formatted data drive: Authenticated Users may modify the root.
+        acl.AddAccessRule(new(users, FileSystemRights.Modify, AccessControlType.Allow));
+        Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.ValidateAcl(acl, false, true));
+        BrokerInstallation.ValidateAcl(acl, false, true, volumeRoot: true);
+        acl.AddAccessRule(new(users, FileSystemRights.DeleteSubdirectoriesAndFiles, AccessControlType.Allow));
+        Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.ValidateAcl(acl, false, true, volumeRoot: true));
+    }
+
+    [NativeWindowsFact]
+    public void ChosenLocationsMustBeDedicatedLocalWeaveFolders()
+    {
+        var system = Path.GetPathRoot(Environment.SystemDirectory)!;
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        BrokerInstallation.RequireMachineLocation(Path.Combine(programFiles, "Weave", "versions", "id"));
+        BrokerInstallation.RequireMachineLocation(Path.Combine(system, "Apps", "Weave", "versions", "id"));
+        Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.RequireMachineLocation(Path.Combine(system, "Apps", "Tools", "versions", "id")));
+        Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.RequireMachineLocation(@"\\server\share\Weave\versions\id"));
+        Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.RequireMachineLocation(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Weave", "versions", "id")));
+        Assert.Throws<UnauthorizedAccessException>(() => BrokerInstallation.RequireMachineLocation(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Weave", "versions", "id")));
+    }
+
     private sealed class NativeWindowsFactAttribute : FactAttribute
     {
         public NativeWindowsFactAttribute() { if (!OperatingSystem.IsWindows()) Skip = "Requires Windows ACL types and installed path semantics."; }

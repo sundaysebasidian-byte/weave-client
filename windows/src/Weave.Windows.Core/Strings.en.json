@@ -85,6 +85,7 @@
   "系统代理已设置；不使用系统代理的应用不受接管，完整接管请用 TUN。": "System proxy enabled. Apps that ignore system proxy settings are not covered. Use TUN for device-wide routing.",
   "网络请求失败，请检查连接与订阅地址。未展示原始请求地址，以保护订阅凭据。": "Network request failed. Check your connection and subscription URL. The original URL is hidden to protect credentials.",
   "已连接": "Connected",
+  "正在连接": "Connecting",
   "尚未连接": "Ready to connect",
   " · 配置已核对": " · Configuration verified",
   "直连不隐藏公网地址": "Direct mode does not hide your public address",

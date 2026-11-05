@@ -23,10 +23,7 @@ public sealed record BrokerInstallation(string Root, string ServiceExecutable, s
     public static BrokerInstallation Inspect(string root)
     {
         root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
-        var programFiles = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
-        var relative = Path.GetRelativePath(programFiles, root);
-        if (relative is "." or ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative))
-            throw new UnauthorizedAccessException("The service must be installed under Program Files.");
+        RequireMachineLocation(root);
         CheckAncestors(root);
         CheckTree(root);
         var installation = new BrokerInstallation(root, Path.Combine(root, "service", ServiceExecutableName),
@@ -62,10 +59,42 @@ public sealed record BrokerInstallation(string Root, string ServiceExecutable, s
         return root;
     }
 
+    /// <summary>
+    /// Program Files by default; the installer may also place Weave in a dedicated folder on a local fixed drive. Either way the
+    /// path must stay out of Windows, user profiles and ProgramData, and the ACL checks decide whether it is safe for SYSTEM.
+    /// </summary>
+    internal static void RequireMachineLocation(string root)
+    {
+        if (root.StartsWith(@"\\", StringComparison.Ordinal) || Path.GetPathRoot(root) is not { Length: 3 } volume || volume[1] != ':')
+            throw new UnauthorizedAccessException("The service must be installed on a local drive.");
+        if (new DriveInfo(volume).DriveType != DriveType.Fixed)
+            throw new UnauthorizedAccessException("The service must be installed on a local fixed drive.");
+        var programFiles = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+        if (IsUnder(root, programFiles) && !string.Equals(root, programFiles, StringComparison.OrdinalIgnoreCase)) return;
+        foreach (var folder in new[] { Environment.SpecialFolder.Windows, Environment.SpecialFolder.CommonApplicationData })
+            if (IsUnder(root, Environment.GetFolderPath(folder)))
+                throw new UnauthorizedAccessException("The service cannot run from Windows or ProgramData.");
+        var profiles = Directory.GetParent(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))?.FullName;
+        if (profiles is not null && IsUnder(root, profiles))
+            throw new UnauthorizedAccessException("The service cannot run from a user profile.");
+        // The release sits at <install>\versions\<id>; the install folder itself is a dedicated "Weave" folder.
+        var install = Directory.GetParent(root)?.Parent;
+        if (install is null || !string.Equals(install.Name, "Weave", StringComparison.OrdinalIgnoreCase) || install.Parent is null)
+            throw new UnauthorizedAccessException("The service must run from a dedicated Weave installation folder.");
+    }
+
+    private static bool IsUnder(string path, string folder)
+    {
+        folder = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
+        return path.StartsWith(folder, StringComparison.OrdinalIgnoreCase) &&
+            (path.Length == folder.Length || path[folder.Length] == Path.DirectorySeparatorChar);
+    }
+
     internal static void CheckAncestors(string path)
     {
+        // A volume root cannot be renamed or deleted, so DELETE on it does not let anyone move the tree below.
         for (var parent = Directory.GetParent(path); parent is not null; parent = parent.Parent)
-            CheckEntry(parent.FullName, ancestorsOnly: true);
+            CheckEntry(parent.FullName, ancestorsOnly: true, volumeRoot: parent.Parent is null);
     }
 
     internal static void CheckTree(string root)
@@ -78,22 +107,23 @@ public sealed record BrokerInstallation(string Root, string ServiceExecutable, s
         }
     }
 
-    internal static void CheckEntry(string path, bool privateAccess = false, bool ancestorsOnly = false)
+    internal static void CheckEntry(string path, bool privateAccess = false, bool ancestorsOnly = false, bool volumeRoot = false)
     {
         var attributes = File.GetAttributes(path);
         if ((attributes & FileAttributes.ReparsePoint) != 0) throw new UnauthorizedAccessException("Service paths cannot contain reparse points.");
         FileSystemSecurity security = (attributes & FileAttributes.Directory) != 0
             ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Owner | AccessControlSections.Access)
             : new FileInfo(path).GetAccessControl(AccessControlSections.Owner | AccessControlSections.Access);
-        ValidateAcl(security, privateAccess, ancestorsOnly);
+        ValidateAcl(security, privateAccess, ancestorsOnly, volumeRoot);
     }
 
-    internal static void ValidateAcl(FileSystemSecurity security, bool privateAccess, bool ancestorsOnly)
+    internal static void ValidateAcl(FileSystemSecurity security, bool privateAccess, bool ancestorsOnly, bool volumeRoot = false)
     {
         if (security.GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner || !Trusted(owner) ||
             new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0).DiscretionaryAcl is null)
             throw new UnauthorizedAccessException("Service path ownership or access control is unsafe.");
         var forbidden = ancestorsOnly ? AncestorMutation : Mutation;
+        if (volumeRoot) forbidden &= ~FileSystemRights.Delete;
         foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
         {
             if (rule.AccessControlType != AccessControlType.Allow ||
