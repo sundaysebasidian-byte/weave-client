@@ -18,7 +18,7 @@ public partial class App : Application
     {
         try
         {
-            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Weave");
+            var directory = AppPaths.DataRoot;
             Directory.CreateDirectory(directory);
             try { _instanceLock = new FileStream(Path.Combine(directory, "desktop-instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
             catch (IOException) { /* Activate the existing instance below. */ }

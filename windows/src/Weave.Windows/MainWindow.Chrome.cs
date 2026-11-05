@@ -30,7 +30,8 @@ public sealed partial class MainWindow
             }
         }
         catch (Exception) { _micaActive = false; }
-        BackdropFallback.Visibility = _micaActive ? Visibility.Collapsed : Visibility.Visible;
+        // The theme's base colour always paints; with Mica it is translucent (see ApplyAppearance) so the wallpaper tints the window.
+        BackdropFallback.Visibility = Visibility.Visible;
         try
         {
             var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "Weave.ico");

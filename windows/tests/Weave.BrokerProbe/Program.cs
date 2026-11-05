@@ -6,6 +6,7 @@ if (index < 0 || index + 1 >= args.Length) return 2;
 var session = Path.GetFullPath(args[index + 1]);
 var root = Directory.GetParent(session)?.FullName ?? throw new InvalidDataException();
 if (!Path.GetFileName(root).StartsWith("weave-broker-session-", StringComparison.Ordinal)) return 2;
+if (File.Exists(Path.Combine(root, "exit-after-validation.fixture"))) return 0;
 File.WriteAllText(Path.Combine(root, "probe.pid"), Environment.ProcessId.ToString());
 await Task.Delay(Timeout.Infinite);
 return 0;

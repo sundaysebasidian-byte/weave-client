@@ -33,15 +33,24 @@ public sealed class ConnectionSampling(
         finally { Volatile.Write(ref _running, 0); }
     }
 
+    /// <summary>
+    /// Probes every node, a few at a time. <paramref name="report"/> fires on a worker thread as each node finishes,
+    /// so the UI can fill rows in live instead of waiting for the whole batch.
+    /// </summary>
     public static async Task<IReadOnlyDictionary<string, int?>> ProbeNodesAsync(
         IEnumerable<string> nodeNames, Func<string, CancellationToken, Task<int?>> probe,
-        CancellationToken token, int maxConcurrency = 3)
+        CancellationToken token, int maxConcurrency = 3, Action<string, int?>? report = null)
     {
         if (maxConcurrency is < 1 or > 16) throw new ArgumentOutOfRangeException(nameof(maxConcurrency));
         var results = new System.Collections.Concurrent.ConcurrentDictionary<string, int?>(StringComparer.Ordinal);
         await Parallel.ForEachAsync(nodeNames.Distinct(StringComparer.Ordinal),
             new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency, CancellationToken = token },
-            async (name, cancellation) => results[name] = await probe(name, cancellation).ConfigureAwait(false)).ConfigureAwait(false);
+            async (name, cancellation) =>
+            {
+                var delay = await probe(name, cancellation).ConfigureAwait(false);
+                results[name] = delay;
+                report?.Invoke(name, delay);
+            }).ConfigureAwait(false);
         return results;
     }
 }

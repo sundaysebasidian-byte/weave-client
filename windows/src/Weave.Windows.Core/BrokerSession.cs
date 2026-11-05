@@ -67,10 +67,12 @@ public sealed class BrokerSession(string runtimeRoot, string coreExecutable, str
                 timeout.Token.ThrowIfCancellationRequested();
                 TestBundleObserver?.Invoke(bundle);
                 _core = new(coreExecutable) { TestLogObserver = TestLogObserver, TestTerminateAsync = TestTerminateAsync };
-                _core.Exited += CoreExited;
                 var validation = await _core.ValidateConfigAsync(bundle, timeout.Token).ConfigureAwait(false);
                 if (!validation.IsValid) throw new InvalidDataException("The core rejected the service configuration.");
                 await _core.StartAsync(bundle, timeout.Token).ConfigureAwait(false);
+                // A failed start tears down its own child. Preserve the startup error
+                // reply instead of treating that cleanup as a lost running session.
+                _core.Exited += CoreExited;
                 _controller = new(bundle);
                 _nodes = profile.Subscriptions.SelectMany(item => item.Nodes.Select(node => MihomoConfigBuilder.NodePrefix(item.Id) + node.RawName))
                     .ToHashSet(StringComparer.Ordinal);

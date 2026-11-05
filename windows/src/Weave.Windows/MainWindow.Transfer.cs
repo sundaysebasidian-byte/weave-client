@@ -71,12 +71,8 @@ public sealed partial class MainWindow
     }
     private void CopyShareLink_Click(object sender, RoutedEventArgs e)
     {
-        if (ShareLink.Text.Length == 0) return;
-        var package = new global::Windows.ApplicationModel.DataTransfer.DataPackage();
-        package.SetText(ShareLink.Text);
-        global::Windows.ApplicationModel.DataTransfer.Clipboard.SetContentWithOptions(package,
-            new global::Windows.ApplicationModel.DataTransfer.ClipboardContentOptions { IsAllowedInHistory = false, IsRoamable = false });
-        MessageText.Text = L.T("已复制一次性链接，已请求禁用剪贴板历史和跨设备漫游；不要发到公开群聊");
+        if (ShareLink.Text.Length == 0) { Toast(L.T("请先开始分享，再复制一次性链接。"), MessageKind.Warning); return; }
+        CopyText(ShareLink.Text, L.T("已复制一次性链接，已请求禁用剪贴板历史和跨设备漫游；不要发到公开群聊"));
     }
     private async void ReceiveLan_Click(object sender, RoutedEventArgs e)
     {

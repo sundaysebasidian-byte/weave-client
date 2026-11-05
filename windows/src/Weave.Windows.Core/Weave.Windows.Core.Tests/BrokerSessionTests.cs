@@ -123,6 +123,29 @@ public sealed class BrokerSessionTests
 
     [BrokerProbeTheory]
     [InlineData(true)]
+    public async Task StartupChildExitDoesNotAbortTheStartupErrorReply(bool failStartup)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "weave-broker-session-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "exit-after-validation.fixture"), "fixture");
+        await using var session = new BrokerSession(root, Environment.GetEnvironmentVariable("WEAVE_TEST_BROKER_PROBE")!, "unused");
+        var notified = 0;
+        session.Exited += (_, _) => Interlocked.Increment(ref notified);
+        try
+        {
+            Assert.True(failStartup);
+            var profile = new BrokerProfile([], [], null, null,
+                new(RoutingMode.Direct, false, false, false, DnsProfile.Privacy, null, "", null, null));
+            await Assert.ThrowsAnyAsync<Exception>(() => session.HandleAsync(new BrokerStart(1, profile), CancellationToken.None));
+            Assert.Equal(0, Volatile.Read(ref notified));
+            Assert.False(session.IsReady);
+            Assert.False(session.CleanupPending);
+        }
+        finally { await session.DisposeAsync(); Directory.Delete(root, true); }
+    }
+
+    [BrokerProbeTheory]
+    [InlineData(true)]
     public async Task UnconfirmedValidationExitRetainsTheLeaseAcrossStopRetries(bool failTermination)
     {
         var root = Path.Combine(Path.GetTempPath(), "weave-broker-session-" + Guid.NewGuid().ToString("N"));
