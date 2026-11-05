@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         RootGrid.SizeChanged += (_, _) => { UpdateTitleBarInset(); UpdateCellWidths(); };
         RootGrid.Loaded += (_, _) => { UpdateTitleBarInset(); UpdateCellWidths(); UpdateListHeights(); UpdateDashboard(); };
         QuickNodes.SizeChanged += (_, _) => UpdateCellWidths();
-        HeroCity.SizeChanged += (_, _) => FitHeroTitle();
+        HeroText.SizeChanged += (_, _) => FitHeroTitle();
         ConnectionHero.SizeChanged += (_, _) => FitKnot();
         ThemeGallery.SizeChanged += (_, _) => UpdateCellWidths();
     }
@@ -92,6 +92,69 @@ public sealed partial class MainWindow
     {
         var size = Math.Clamp((ConnectionHero.ActualWidth - 50) * 0.42, 160, 300);
         if (Math.Abs(Knot.Width - size) > 1) Knot.Width = Knot.Height = Math.Round(size);
+        var glow = Math.Round(size * 1.25);
+        HeroGlow.Width = HeroGlow.Height = glow;
+        HeroGlow.Margin = new Thickness(-(glow - size) / 2, -glow, -(glow - size) / 2, -glow); // measures as wide as the knot
+    }
+
+    // The pool behind the knot follows the connection: faint at rest, warm once the link is up.
+    private void AnimateHeroGlow(bool up)
+    {
+        var target = up ? 0.85 : 0.22;
+        if (!PageMotion.AnimationsAllowed) { HeroGlow.Opacity = target; return; }
+        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            To = target, Duration = TimeSpan.FromMilliseconds(up ? 1400 : 600),
+            EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseInOut },
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, HeroGlow);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Opacity");
+        var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        story.Children.Add(animation);
+        story.Begin();
+    }
+
+    // Android's status mark: power at rest, a spinner while connecting, a link while the exit is unconfirmed and a filled
+    // check only once the exit has been verified.
+    private int _orbState = -1;
+    private void UpdateHeroOrb(int state, bool empty)
+    {
+        HeroState.Text = state switch
+        {
+            2 => L.T("已连接"),
+            3 => L.T("网络待确认"),
+            1 => L.T("正在连接"),
+            _ => empty ? L.T("请先导入订阅") : L.T("未连接"),
+        };
+        if (state == _orbState) return;
+        var tone = ThemeBrush(state switch { 2 => "WeaveSuccessBrush", 3 => "WeaveCautionBrush", 1 => "WeaveAccentBrush", _ => "WeaveFaintBrush" });
+        HeroOrbHalo.Stroke = tone;
+        HeroOrbHalo.Opacity = state == 0 ? 0.55 : 0.6;
+        ConnectionDot.Stroke = state == 0 ? ThemeBrush("WeaveRimBrush") : tone;
+        ConnectionDot.Fill = state == 2 ? tone : ThemeBrush("WeaveSubtleFillBrush");
+        HeroOrbGlyph.Glyph = state switch { 2 => "", 3 => "", _ => "" };
+        HeroOrbGlyph.Foreground = state switch { 2 => ThemeBrush("WeaveCanvasBrush"), 0 => ThemeBrush("WeaveMutedBrush"), _ => tone };
+        HeroOrbGlyph.Visibility = state == 1 ? Visibility.Collapsed : Visibility.Visible;
+        HeroOrbProgress.Visibility = state == 1 ? Visibility.Visible : Visibility.Collapsed;
+        HeroOrbProgress.IsActive = state == 1;
+        var first = _orbState == -1;
+        _orbState = state;
+        if (first || !PageMotion.AnimationsAllowed) return;
+        var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        foreach (var axis in new[] { "ScaleX", "ScaleY" })
+        {
+            var pop = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimationUsingKeyFrames();
+            pop.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.EasingDoubleKeyFrame { KeyTime = TimeSpan.Zero, Value = 0.82 });
+            pop.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.EasingDoubleKeyFrame
+            {
+                KeyTime = TimeSpan.FromMilliseconds(420), Value = 1,
+                EasingFunction = new Microsoft.UI.Xaml.Media.Animation.BackEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut, Amplitude = 0.4 },
+            });
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(pop, HeroOrbScale);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(pop, axis);
+            story.Children.Add(pop);
+        }
+        story.Begin();
     }
 
     // The headline is as large as the column allows: a short city name is monumental, a longer phrase steps down instead of being cut.
@@ -101,7 +164,7 @@ public sealed partial class MainWindow
     {
         var text = HeroCity.Text;
         if (string.IsNullOrEmpty(text)) return;
-        var room = HeroCity.ActualWidth;
+        var room = HeroText.ActualWidth; // the column, not the text block, so a small headline can grow back
         double chosen;
         if (room <= 0) chosen = text.Length <= 3 ? 92 : text.Length <= 5 ? 72 : 54;
         else
@@ -136,7 +199,7 @@ public sealed partial class MainWindow
 
         HeroCity.Text = exit.Title;
         FitHeroTitle();
-        HeroCity.Opacity = state is 2 or 3 ? 1 : 0.4;
+        HeroCity.Opacity = state is 2 or 3 ? 1 : 0.55;
         HeroEyebrow.Text = exit.Eyebrow.ToUpperInvariant();
         HeroProtocol.Text = exit.Protocol;
         HeroProtocolChip.Visibility = exit.Protocol.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -146,7 +209,7 @@ public sealed partial class MainWindow
         HeroModeChip.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
 
         var dot = ThemeBrush(state switch { 2 => "WeaveSunBrush", 1 or 3 => "WeaveCautionBrush", _ => "WeaveFaintBrush" });
-        ConnectionDot.Fill = dot;
+        UpdateHeroOrb(state, empty);
         StatusDot.Fill = dot;
         // The pill is a polite live region, so it names the state only; live numbers stay out of it.
         StatusText.Text = state switch
@@ -174,13 +237,16 @@ public sealed partial class MainWindow
         {
             var previous = _dashState;
             _dashState = state;
-            switch (state)
-            {
-                case 2 when previous is 0 or 1: Knot.Weave(TimeSpan.FromMilliseconds(1300)); break;
-                case 2 or 3: Knot.Apply(_knotPalette, KnotState.Connected); break;
-                case 1: Knot.Apply(_knotPalette, KnotState.Connecting, 0.3); break;
-                default: Knot.Apply(_knotPalette, KnotState.Idle); break;
-            }
+            // The knot moves between states instead of jumping: weave while connecting, finish and light the sun once up,
+            // dim back to the ghost when the session ends. The first frame and theme changes (previous == -1) draw directly.
+            var wasUp = previous is 2 or 3;
+            var isUp = state is 2 or 3;
+            if (previous == -1) Knot.Apply(_knotPalette, isUp ? KnotState.Connected : state == 1 ? KnotState.Connecting : KnotState.Idle, state == 1 ? 0.3 : 1);
+            else if (isUp && !wasUp) Knot.CompleteWeave(_knotPalette);
+            else if (state == 1 && !wasUp) Knot.BeginWeaving(_knotPalette);
+            else if (!isUp && wasUp) Knot.FadeTo(_knotPalette, state == 1 ? KnotState.Connecting : KnotState.Idle);
+            else if (state == 0) Knot.FadeTo(_knotPalette, KnotState.Idle);
+            AnimateHeroGlow(isUp);
             if (state == 2 && previous == 1) Toast(L.F($"已连接 · {exit.Title}"), MessageKind.Success);
         }
     }
@@ -642,6 +708,14 @@ public sealed partial class MainWindow
             DiagnosticProgress.Text = "CI · synthetic layout fixture";
         }
         await Task.Delay(1500);
+        // Preview only: play the connect sequence and stop mid-way, so the weave, bloom and ripple can be reviewed.
+        if (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_KNOT") is { Length: > 0 } knot)
+        {
+            Knot.Apply(_knotPalette, KnotState.Idle);
+            Knot.BeginWeaving(_knotPalette);
+            await Task.Delay(knot == "weaving" ? 700 : 1100);
+            if (knot != "weaving") { Knot.CompleteWeave(_knotPalette); AnimateHeroGlow(true); await Task.Delay(knot == "ignite" ? 900 : 2600); }
+        }
         var compactLayout = RootGrid.ActualWidth < CompactLayoutThreshold;
         if (compactLayout != (Environment.GetEnvironmentVariable("WEAVE_PREVIEW_COMPACT") == "1"))
             throw new InvalidOperationException($"Window width {RootGrid.ActualWidth:F0} is on the wrong side of the {CompactLayoutThreshold:F0} px layout threshold");

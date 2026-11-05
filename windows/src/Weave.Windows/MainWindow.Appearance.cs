@@ -101,6 +101,9 @@ public sealed partial class MainWindow
         return WinColor.FromArgb((byte)Math.Round(a * opacity), r, g, b);
     }
 
+    private static string Hex(WinColor colour) => $"{colour.R:X2}{colour.G:X2}{colour.B:X2}";
+    private static WinColor WithAlpha(WinColor colour, double opacity) { colour.A = (byte)Math.Round(255 * opacity); return colour; }
+
     private static WinColor Blend(string from, string to, double amount)
     {
         var (r1, g1, b1, _) = Appearance.ParseHex(from); var (r2, g2, b2, _) = Appearance.ParseHex(to);
@@ -136,8 +139,9 @@ public sealed partial class MainWindow
         Solid("WeaveSubtleFillBrush", Rgb(c.Ink, dark ? 0.08 : 0.06));
         Solid("WeaveSubtlePressedBrush", Rgb(c.Ink, dark ? 0.14 : 0.11));
         Solid("WeaveSelectedBrush", dark ? Rgb(White, 0.10) : Rgb(White, 0.85));
-        Solid("WeaveTileBrush", dark ? Rgb(White, 0.05) : Rgb(White, 0.50));
-        Solid("WeaveTileStrokeBrush", dark ? Rgb(White, 0.09) : Rgb(White, 0.80));
+        // Dark glass is tinted with the theme rather than plain white, so tiles read as coloured depth, not grey slabs.
+        Solid("WeaveTileBrush", dark ? WithAlpha(Blend(Hex(Blend(c.Base, c.Knot[0], 0.10)), White, 0.07), 0.74) : Rgb(White, 0.52));
+        Solid("WeaveTileStrokeBrush", dark ? Rgb(White, 0.11) : Rgb(White, 0.80));
         Solid("WeaveTileOuterBrush", dark ? Rgb(White, 0) : Rgb(c.Ink, 0.07));
         Solid("WeaveSuccessBrush", Rgb(c.Success));
         Solid("WeaveCautionBrush", Rgb(c.Caution));
@@ -151,13 +155,18 @@ public sealed partial class MainWindow
         Gradient("WeaveActionPressedBrush", Rgb(c.Accent2), Blend(c.Accent2, Black, 0.14));
         for (var i = 0; i < 3; i++)
         {
-            var start = Rgb(c.Wash[i]); var clear = start; clear.A = 0;
+            // Washes carry the theme; they are a little richer than the palette values so the canvas has depth behind the glass.
+            var start = Rgb(c.Wash[i]); start.A = (byte)Math.Min(255, Math.Round(start.A * (dark ? 1.45 : 1.15))); var clear = start; clear.A = 0;
             Gradient("WeaveWash" + i + "Brush", start, clear);
         }
         var area = Rgb(c.Knot[1]); area.A = 0x6B; var none = area; none.A = 0;
         Gradient("WeaveChartAreaBrush", area, none);
         Gradient("WeaveChartLineBrush", Rgb(c.Knot[0]), Rgb(c.Knot[2]));
         Solid("WeaveChartDotBrush", Rgb(c.Knot[2]));
+        // The hero's warm pool takes the theme's sun, blended toward the ribbon so it never reads as a flat orange disc.
+        var glowCore = Blend(c.Sun, c.Knot[1], 0.35);
+        WinColor Alpha(WinColor colour, byte a) { colour.A = a; return colour; }
+        Gradient("WeaveHeroGlowBrush", Alpha(glowCore, dark ? (byte)0x8C : (byte)0x7A), Alpha(glowCore, dark ? (byte)0x2E : (byte)0x26), Alpha(glowCore, 0));
     }
 
     // The tokens live in a dictionary merged after XamlControlsResources so they outrank the stock control resources.
@@ -177,7 +186,7 @@ public sealed partial class MainWindow
     {
         var c = CurrentColors;
         _knotPalette = new KnotPalette(c.Knot[0], c.Knot[1], c.Knot[2], c.Ink, c.Sun, c.Muted, _appearanceDark);
-        _dashState = -1; // force the knot to be redrawn in the new colours
+        _dashState = -1; _orbState = -1; // force the knot to be redrawn in the new colours
     }
 
     private void ModeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
