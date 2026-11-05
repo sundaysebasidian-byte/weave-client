@@ -9,7 +9,7 @@
 AppId={{C6EC73B9-A01E-493F-A9E3-BC1747C219F1}
 AppName=Weave
 AppVersion=0.5.0
-AppVerName=Weave Windows 0.5.0 RC1
+AppVerName=Weave Windows 0.5.0 RC2
 DefaultDirName={autopf}\Weave
 ; Fresh installs may choose the folder; upgrades keep the folder the service is registered in.
 UsePreviousAppDir=yes
@@ -30,7 +30,7 @@ OutputDir=artifacts\installer
 #ifdef SyntheticServiceFailure
 OutputBaseFilename=Weave-Windows-synthetic-failure-test
 #else
-OutputBaseFilename=Weave-Windows-0.5.0-rc1-{#Copy(BuildId, 1, 8)}-x64-Setup
+OutputBaseFilename=Weave-Windows-0.5.0-rc2-{#Copy(BuildId, 1, 8)}-x64-Setup
 #endif
 Compression=lzma2
 SolidCompression=yes
