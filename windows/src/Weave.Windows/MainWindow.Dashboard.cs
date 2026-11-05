@@ -562,6 +562,7 @@ public sealed partial class MainWindow
 
     private async void TestNodes_Click(object sender, RoutedEventArgs e)
     {
+        if (_probeCancellation is { } running) { running.Cancel(); return; }
         if (_model.ActiveConnection is not { } bundle || !_model.IsConnected ||
             SubscriptionComboBox.SelectedItem is not SubscriptionRecord record)
         { MessageText.Text = L.T("请先连接，再测试当前订阅节点"); return; }
@@ -696,6 +697,7 @@ public sealed partial class MainWindow
     private async Task CapturePreviewAsync(string path)
     {
         await _dataReady.Task;
+        await CheckInteractionsAsync(path);
         if (_page == "4" && Environment.GetEnvironmentVariable("WEAVE_PREVIEW_DIAGNOSTICS") == "1")
         {
             // Synthetic evidence exclusively for layout review; no requests or user data.
@@ -770,6 +772,7 @@ public sealed partial class MainWindow
             layout.AppendLine($"{name}: {element.ActualWidth:F0}x{element.ActualHeight:F0} at {where.X:F0},{where.Y:F0} desired {element.DesiredSize.Width:F0}x{element.DesiredSize.Height:F0} {(element.Visibility == Visibility.Visible ? "" : "(hidden)")}");
         }
         File.WriteAllText(path + ".layout.txt", layout.ToString());
+        await Knot.WaitForRenderAsync();
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
         await bitmap.RenderAsync(RootGrid, (int)(RootGrid.ActualWidth * 2), (int)(RootGrid.ActualHeight * 2));
         var buffer = await bitmap.GetPixelsAsync();

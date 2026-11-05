@@ -124,7 +124,7 @@ public sealed partial class MainWindow : Window
         {
             if (_shutdownComplete) return;
             args.Cancel = true;
-            if (_tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; StopSampling(); AppWindow.Hide(); return; }
+            if (_closeToTray && _tray?.Available == true && !_shuttingDown) { _hiddenToTray = true; StopSampling(); Knot.StopWeaving(); AppWindow.Hide(); return; }
             await ShutdownAsync(closeWindow: true);
         };
         // Minimising pauses sampling; restoring (which activates the window) resumes it.
@@ -376,13 +376,14 @@ public sealed partial class MainWindow : Window
 
     private async Task RunActionAsync(Func<Task> action)
     {
-        if (_busy || _closed) return;
+        if (_closed) return;
+        if (_busy) { Toast(L.T("操作正在进行，请稍候或按 Esc 取消。"), MessageKind.Warning); return; }
         _busy = true;
         BusyBar.Visibility = Visibility.Visible;
         ConnectButton.IsEnabled = false;
-        ImportPanel.IsHitTestVisible = false;
-        RoutesPanel.IsHitTestVisible = false;
-        SubscriptionsPanel.IsHitTestVisible = false;
+        ImportPanel.IsEnabled = false;
+        RoutesPanel.IsEnabled = false;
+        SubscriptionsPanel.IsEnabled = false;
         try
         {
             await action();
@@ -407,9 +408,9 @@ public sealed partial class MainWindow : Window
             _busy = false;
             BusyBar.Visibility = Visibility.Collapsed;
             ConnectButton.IsEnabled = _dataLoaded;
-            ImportPanel.IsHitTestVisible = true;
-            RoutesPanel.IsHitTestVisible = true;
-            SubscriptionsPanel.IsHitTestVisible = true;
+            ImportPanel.IsEnabled = true;
+            RoutesPanel.IsEnabled = true;
+            SubscriptionsPanel.IsEnabled = true;
             if (!_closed) UpdateStatus();
         }
 
@@ -492,6 +493,7 @@ public sealed partial class MainWindow : Window
     {
         if (_connectCancellation is { } connection) connection.Cancel();
         else if (_operationCancellation is { } operation) operation.Cancel();
+        else if (_probeCancellation is { } probe) probe.Cancel();
         else if (!string.IsNullOrEmpty(MessageText.Text)) MessageText.Text = "";
         else return;
         args.Handled = true;

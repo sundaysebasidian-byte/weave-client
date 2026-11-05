@@ -64,6 +64,8 @@ jobs:
           if-no-files-found: warn
       - name: Check packaged app starts
         shell: pwsh
+        env:
+          WEAVE_DATA_ROOT: ${{ runner.temp }}/weave-ui-acceptance
         run: |
           # Hosted runners can disable client animations, hiding native transition startup crashes.
           Add-Type @'
@@ -110,10 +112,13 @@ jobs:
           $env:WEAVE_PREVIEW_LANGUAGE = 'zh-CN'
           $env:WEAVE_PREVIEW_DIAGNOSTICS = '1'
           $env:WEAVE_UI_CAPTURE = "$env:RUNNER_TEMP/weave-desktop.png"
+          $env:WEAVE_UI_SELF_TEST = '1'
           Get-ChildItem windows/src/Weave.Windows/bin -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
           Get-ChildItem windows/artifacts/x64 -Recurse -Include '*.xbf','*.pri' | Select-Object FullName,Length
           $app = Start-Process "$pwd/windows/artifacts/x64/Weave.Windows.exe" -PassThru
           Wait-WeaveFrame $app
+          Get-Content ($env:WEAVE_UI_CAPTURE + '.interaction.txt')
+          Remove-Item Env:WEAVE_UI_SELF_TEST
           if ($app.HasExited) {
             if (Test-Path $env:WEAVE_STARTUP_DIAGNOSTIC) { Get-Content $env:WEAVE_STARTUP_DIAGNOSTIC }
             Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-2)} -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty Message
@@ -174,6 +179,16 @@ jobs:
             throw 'Live language switching failed'
           }
           Stop-Process -Id $app.Id
+      - name: Validate desktop interactions and close preference
+        shell: pwsh
+        run: ./windows/tests/Test-DesktopInteraction.ps1 -AppPath windows/artifacts/x64/Weave.Windows.exe -OutputDirectory windows/artifacts/desktop-interaction
+      - name: Preserve desktop interaction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weave-Windows-desktop-interaction
+          path: windows/artifacts/desktop-interaction/
+          if-no-files-found: warn
       - name: Validate isolated Windows core service
         id: service
         shell: pwsh
