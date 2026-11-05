@@ -9,10 +9,15 @@
 AppId={{C6EC73B9-A01E-493F-A9E3-BC1747C219F1}
 AppName=Weave
 AppVersion=0.5.0
-AppVerName=Weave Windows 0.5.0 RC1
+AppVerName=Weave Windows 0.5.0 RC2
 DefaultDirName={autopf}\Weave
-UsePreviousAppDir=no
-DisableDirPage=yes
+; Fresh installs may choose the folder; upgrades keep the folder the service is registered in.
+UsePreviousAppDir=yes
+DisableDirPage=auto
+AllowUNCPath=no
+AllowNetworkDrive=no
+AllowRootDirectory=no
+AppendDefaultDirName=yes
 DefaultGroupName=Weave
 DisableProgramGroupPage=yes
 UsePreviousGroup=no
@@ -25,7 +30,7 @@ OutputDir=artifacts\installer
 #ifdef SyntheticServiceFailure
 OutputBaseFilename=Weave-Windows-synthetic-failure-test
 #else
-OutputBaseFilename=Weave-Windows-0.5.0-rc1-{#Copy(BuildId, 1, 8)}-x64-Setup
+OutputBaseFilename=Weave-Windows-0.5.0-rc2-{#Copy(BuildId, 1, 8)}-x64-Setup
 #endif
 Compression=lzma2
 SolidCompression=yes
@@ -80,6 +85,28 @@ begin
     if MaintenanceMutex <> 0 then CloseMaintenanceMutex(MaintenanceMutex);
     MaintenanceMutex := 0;
     SuppressibleMsgBox('Weave maintenance is already running or its lock is unavailable. Close the other installer or uninstaller, then retry.' + #13#10 + SysErrorMessage(ErrorCode), mbError, MB_OK, IDOK);
+  end;
+end;
+
+// The core service runs as SYSTEM, so the folder must be a dedicated "Weave" folder that ordinary users cannot alter.
+// The native setup re-checks ownership and ACLs of the folder and every parent and refuses an unsafe choice.
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Dir, Lower: String;
+begin
+  Result := True;
+  if CurPageID <> wpSelectDir then Exit;
+  Dir := RemoveBackslashUnlessRoot(WizardDirValue);
+  Lower := Lowercase(Dir);
+  if CompareText(ExtractFileName(Dir), 'Weave') <> 0 then begin
+    SuppressibleMsgBox('Choose a dedicated folder named Weave, for example D:\Weave.', mbError, MB_OK, IDOK);
+    Result := False;
+  end
+  else if (Pos(Lowercase(ExpandConstant('{win}')) + '\', Lower + '\') = 1) or
+          (Pos(Lowercase(ExpandConstant('{commonappdata}')) + '\', Lower + '\') = 1) or
+          (Pos(Lowercase(ExtractFileDir(GetEnv('USERPROFILE'))) + '\', Lower + '\') = 1) then begin
+    SuppressibleMsgBox('Windows, ProgramData and user folders cannot hold Weave; ordinary users can change files there.', mbError, MB_OK, IDOK);
+    Result := False;
   end;
 end;
 
@@ -140,7 +167,11 @@ begin
   ReleaseId := '';
   TransactionStarted := True;
   if SetupOperation('begin', ExpandConstant('{tmp}\Weave.Setup.exe'), GetReleaseId) then Result := ''
-  else Result := LastOperationError;
+  else begin
+    Result := LastOperationError;
+    if CompareText(ExpandConstant('{app}'), ExpandConstant('{autopf}\Weave')) <> 0 then
+      Result := Result + #13#10 + 'The chosen folder or one of its parents can be changed by ordinary users. Choose a new folder such as D:\Weave, or the default Program Files location.';
+  end;
 end;
 
 procedure RegisterExtraCloseApplicationsResources;

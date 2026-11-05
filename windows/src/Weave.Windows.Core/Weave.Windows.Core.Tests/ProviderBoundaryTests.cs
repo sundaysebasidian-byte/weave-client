@@ -97,6 +97,34 @@ public sealed class ProviderBoundaryTests : IDisposable
         Assert.Equal(expectedValid, result.IsValid);
     }
 
+    [Theory]
+    [InlineData("true")]
+    [InlineData("false")]
+    public async Task Hysteria2SubscriptionUdpFlagSurvivesBrokerAndCoreValidation(string udp)
+    {
+        using var importer = new SubscriptionImporter();
+        var record = importer.ImportText("fixture", "inline://fixture",
+            $"proxies: [{{name: fixture, type: hysteria2, server: example.com, port: 443, password: fixture, udp: {udp}}}]");
+        var options = new WindowsNetworkOptions { EnableTun = true, ChinaDirect = false };
+        var profile = BrokerProfile.FromLocal(new[] { record }, Array.Empty<WindowsAppRoute>(), record.Id, null, options);
+        var bundle = profile.Build(_root, _root);
+        var actual = File.ReadAllText(Directory.GetFiles(Path.Combine(bundle.Directory, "providers")).Single());
+        Assert.Contains("udp:", actual);
+        await ValidateInlineWithCore(actual);
+    }
+
+    [Theory]
+    [InlineData("{path: file.yaml}")]
+    [InlineData("[true]")]
+    [InlineData("not-a-boolean")]
+    public void Hysteria2UdpCompatibilityDoesNotPermitArbitraryOptions(string udp)
+    {
+        using var importer = new SubscriptionImporter();
+        var record = importer.ImportText("fixture", "inline://fixture",
+            $"proxies: [{{name: fixture, type: hysteria2, server: example.com, port: 443, password: fixture, udp: {udp}}}]");
+        Assert.Throws<InvalidDataException>(() => Build(record));
+    }
+
     [Fact]
     public async Task CoreValidationActuallyRejectsAnInvalidInlineAdapter() =>
         await ValidateInlineWithCore("proxies: [{name: fixture, type: vmess, server: example.com, port: 443, uuid: invalid, cipher: auto}]", expectedValid: false);

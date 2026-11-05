@@ -13,6 +13,9 @@ internal static class PageMotion
 {
     private static readonly bool Enabled = AnimationsEnabled();
 
+    /// <summary>False when Windows' "Show animations in Windows" is off: decorative motion then jumps straight to its end state.</summary>
+    internal static bool AnimationsAllowed => Enabled;
+
     // Windows' "Show animations" switch (SPI_GETCLIENTAREAANIMATION). If it cannot be read, motion stays on.
     private static bool AnimationsEnabled()
     {

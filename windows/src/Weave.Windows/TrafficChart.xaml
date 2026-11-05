@@ -1,0 +1,23 @@
+<UserControl
+    x:Class="Weave.Windows.TrafficChart"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False">
+    <!-- Live traffic: a smooth download curve with a soft area, the upload as a dotted line, and a hover read-out. -->
+    <Grid x:Name="Host" Background="Transparent" SizeChanged="Host_SizeChanged" PointerMoved="Host_PointerMoved" PointerExited="Host_PointerExited">
+        <Canvas x:Name="Layer" IsHitTestVisible="False">
+            <Line x:Name="GuideTop" Stroke="{ThemeResource WeaveHairBrush}" StrokeThickness="1" StrokeDashArray="2 5"/>
+            <Line x:Name="GuideMid" Stroke="{ThemeResource WeaveHairBrush}" StrokeThickness="1" StrokeDashArray="2 5"/>
+            <Line x:Name="GuideBase" Stroke="{ThemeResource WeaveHairBrush}" StrokeThickness="1"/>
+            <Path x:Name="Area" Fill="{ThemeResource WeaveChartAreaBrush}"/>
+            <Path x:Name="DownLine" Stroke="{ThemeResource WeaveChartLineBrush}" StrokeThickness="2" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+            <Path x:Name="UpLine" Stroke="{ThemeResource WeaveSunBrush}" StrokeThickness="1.4" StrokeDashArray="1 4" StrokeDashCap="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Opacity="0.9"/>
+            <Rectangle x:Name="Cursor" Width="1" Fill="{ThemeResource WeaveMutedBrush}" Opacity="0"/>
+            <Ellipse x:Name="Head" Width="9" Height="9" Fill="{ThemeResource WeaveChartDotBrush}" Opacity="0"/>
+        </Canvas>
+        <Border x:Name="Tip" Opacity="0" HorizontalAlignment="Left" VerticalAlignment="Top" Padding="10,5" CornerRadius="10" IsHitTestVisible="False"
+                Background="{ThemeResource WeavePopBrush}" BorderBrush="{ThemeResource WeaveTileStrokeBrush}" BorderThickness="1">
+            <TextBlock x:Name="TipText" FontSize="12" Style="{StaticResource CaptionText}" Foreground="{ThemeResource WeaveInkBrush}" TextWrapping="NoWrap"/>
+        </Border>
+    </Grid>
+</UserControl>

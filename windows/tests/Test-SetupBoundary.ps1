@@ -53,6 +53,25 @@ try {
     if (-not (Test-Path (Join-Path $install "setup-history\$id-rolled-back.txt"))) { throw 'Native setup lost its recovery evidence.' }
     $retained = Join-Path $env:ProgramFiles ('Weave-preflight-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::Move($install, $retained)
+    # A chosen install folder: a new Weave folder directly under the system drive is created protected and accepted;
+    # one below a parent that ordinary users may modify (the inherited default for new top-level folders) is refused.
+    $drive = [IO.Path]::GetPathRoot($env:SystemRoot)
+    $custom = Join-Path $drive 'Weave'
+    if (-not (Test-Path $custom)) {
+        try {
+            & $helper begin $custom $id 2>&1 | Tee-Object (Join-Path $results 'custom-begin.txt')
+            if ($LASTEXITCODE -ne 0) { throw 'Native setup refused a protected custom installation folder.' }
+            & $helper rollback $custom $id 2>&1 | Tee-Object (Join-Path $results 'custom-rollback.txt')
+            if ($LASTEXITCODE -ne 0) { throw 'Native setup could not recover a custom installation folder.' }
+        } finally { if (Test-Path $custom) { Remove-Item $custom -Recurse -Force } }
+    }
+    $loose = Join-Path $drive ('WeaveCI-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory $loose | Out-Null
+    try {
+        & $helper begin (Join-Path $loose 'Weave') $id 2>&1 | Tee-Object (Join-Path $results 'custom-unsafe.txt')
+        if ($LASTEXITCODE -eq 0) { throw 'Native setup accepted a folder below a user-modifiable parent.' }
+        if (Test-Path (Join-Path $loose 'Weave')) { throw 'A refused custom folder was still created.' }
+    } finally { Remove-Item $loose -Recurse -Force }
     'Fresh protected setup storage and prepared-transaction recovery passed.' | Set-Content (Join-Path $results 'acceptance.txt')
 } finally {
     @{ sourceCommit = (git rev-parse HEAD); originalPath = $install; retainedPath = $retained; filesRetained = $true } |
