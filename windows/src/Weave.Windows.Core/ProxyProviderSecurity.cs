@@ -63,6 +63,10 @@ internal static class ProxyProviderSecurity
     {
         if (node is not YamlScalarNode { Value: { } value } || value.Length > 65_536 || value.Contains('\0')) throw Unsupported();
     }
+    private static void Boolean(YamlNode node)
+    {
+        if (node is not YamlScalarNode { Value: "true" or "false" }) throw Unsupported();
+    }
     private static Check List(Check item) => node =>
     {
         if (node is not YamlSequenceNode sequence || sequence.Children.Count > 1024) throw Unsupported();
@@ -167,7 +171,9 @@ internal static class ProxyProviderSecurity
         ["hysteria"] = Node("ports protocol obfs-protocol up up-speed down down-speed auth auth-str obfs sni recv-window-conn recv-window disable-mtu-discovery fast-open hop-interval " + Tls,
             "alpn", children: [("ech-opts", Ech)]),
         ["hysteria2"] = Node("ports hop-interval up down password obfs obfs-password obfs-min-packet-size obfs-max-packet-size sni cwnd bbr-profile udp-mtu handshake-timeout initial-stream-receive-window max-stream-receive-window initial-connection-receive-window max-connection-receive-window " + Tls,
-            "alpn", children: [("ech-opts", Ech), ("realm-opts", Options("enable server-url token realm-id sni " + Tls, "stun-servers alpn"))]),
+            // Subscription generators emit udp for every protocol. Hysteria2 in the pinned
+            // core always enables UDP; this redundant boolean grants no extra capability.
+            "alpn", children: [("udp", Boolean), ("ech-opts", Ech), ("realm-opts", Options("enable server-url token realm-id sni " + Tls, "stun-servers alpn"))]),
         ["tuic"] = Node("token uuid password ip heartbeat-interval reduce-rtt request-timeout udp-relay-mode congestion-controller disable-sni max-udp-relay-packet-size fast-open max-open-streams cwnd bbr-profile recv-window-conn recv-window disable-mtu-discovery max-datagram-frame-size sni udp-over-stream udp-over-stream-version " + Tls,
             "alpn", children: [("ech-opts", Ech)]),
         ["anytls"] = Node("password sni client-fingerprint udp client-metadata idle-session-check-interval idle-session-timeout min-idle-session disable-reuse " + Tls,

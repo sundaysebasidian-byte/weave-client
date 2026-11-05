@@ -286,7 +286,12 @@ internal sealed class WeaveAppModel : IAsyncDisposable
                     BrokerRuntimeInfo runtime;
                     try { runtime = await broker.StartAsync(profile, cancellationToken).ConfigureAwait(false); }
                     catch (BrokerRequestException error)
-                    { throw new IOException(L.T("W-S02：核心服务未能启动连接。请检查订阅、路由设置和其他客户端的 TUN 状态。"), error); }
+                    { throw new IOException(error.Code switch
+                        {
+                            "invalid-profile" => L.T("W-S03：订阅或路由配置未通过核心服务校验。请检查节点协议及选项，更新订阅后重试。"),
+                            "timeout" => L.T("W-S04：核心服务启动超时。请检查其他客户端的 TUN 状态后重试。"),
+                            _ => L.T("W-S02：核心服务未能启动连接。请检查订阅、路由设置和其他客户端的 TUN 状态。"),
+                        }, error); }
                     ActiveConnection = new(runtime.MixedPort, true, runtime.ProviderNodeCounts);
                 }
                 else
