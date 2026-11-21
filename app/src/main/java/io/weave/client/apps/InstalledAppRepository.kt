@@ -55,7 +55,7 @@ class InstalledAppRepository(
             .toList()
         // Exact package queries also find known clients whose launcher entry is hidden/disabled.
         // Never enumerate all packages or open another app's private configuration.
-        val known = ProxyClientDetector.knownPackages.mapNotNull { packageName ->
+        val known = missingKnownApps(launchable, ProxyClientDetector.knownPackages) { packageName ->
             try {
                 @Suppress("DEPRECATION")
                 val info = context.packageManager.getApplicationInfo(packageName, 0)
@@ -87,6 +87,17 @@ class InstalledAppRepository(
             0xFFE1F4F5,
         )
     }
+}
+
+/** Launcher rows already win the merge; avoid a second package-manager lookup for them. */
+internal fun missingKnownApps(
+    launchable: List<InstalledApp>,
+    knownPackages: Set<String>,
+    lookup: (String) -> InstalledApp?,
+): List<InstalledApp> {
+    val missing = knownPackages.toMutableSet()
+    launchable.forEach { missing.remove(it.packageName) }
+    return missing.mapNotNull(lookup)
 }
 
 /** Exact identifiers only: a generic VPN-looking label must never become a migration prompt. */
