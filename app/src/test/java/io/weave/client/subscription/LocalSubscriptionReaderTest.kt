@@ -53,6 +53,23 @@ class LocalSubscriptionReaderTest {
     }
 
     @Test
+    fun `exact byte cap is accepted and oversized malformed input reports its limit first`() {
+        val reader = LocalSubscriptionReader(maxBytes = 1024)
+        val valid = "文" + "a".repeat(1021)
+        assertEquals(valid, reader.read(ByteArrayInputStream(valid.toByteArray())))
+
+        val oversized = ByteArray(1025) { 0x20 }.apply { this[0] = 0xC3.toByte(); this[1] = 0x28 }
+        val limit = assertThrows(SubscriptionImportException::class.java) {
+            reader.read(ByteArrayInputStream(oversized))
+        }
+        assertEquals("订阅内容超过 1 KiB 限制", limit.message)
+        val malformed = assertThrows(SubscriptionImportException::class.java) {
+            reader.read(ByteArrayInputStream(oversized.copyOf(1024)))
+        }
+        assertEquals("订阅内容不是有效 UTF-8", malformed.message)
+    }
+
+    @Test
     fun `rejects malformed utf8`() {
         val reader = LocalSubscriptionReader(maxBytes = 32)
 
