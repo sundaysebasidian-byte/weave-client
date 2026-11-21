@@ -31,6 +31,7 @@ class LocalSubscriptionReader(
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(bytes))
                 .toString()
+                .removePrefix("\uFEFF")
         }.getOrElse {
             throw SubscriptionImportException("订阅内容不是有效 UTF-8")
         }
