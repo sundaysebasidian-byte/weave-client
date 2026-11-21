@@ -1840,15 +1840,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val result = try { withContext(Dispatchers.IO) {
                 probeSafely {
                     val bytes = getApplication<Application>().contentResolver.openInputStream(source)?.use { input ->
-                        val output = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            check(output.size() + read <= io.weave.client.transfer.BackupCodec.MAX_BACKUP_BYTES) { "备份文件过大" }
-                            output.write(buffer, 0, read)
-                        }
-                        output.toByteArray()
+                        io.weave.client.transfer.BackupFileReader.read(
+                            input, io.weave.client.transfer.BackupCodec.MAX_BACKUP_BYTES,
+                        )
                     } ?: error("无法读取所选文件")
                     val entries = io.weave.client.transfer.BackupCodec.decrypt(bytes, passphrase)
                     backup.prepareRestore(entries)
