@@ -391,24 +391,32 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
     var running by remember { mutableStateOf(true) }
     var redacted by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
+    var collectionEpoch by remember { mutableLongStateOf(0L) }
     val listState = rememberLazyListState()
-    LaunchedEffect(level, running) {
-        if (!running) return@LaunchedEffect
+    val collectionLevel = level
+    val requestedEpoch = collectionEpoch
+    val shouldCollect = running
+    LaunchedEffect(collectionLevel, shouldCollect, requestedEpoch) {
+        if (!shouldCollect || !running || collectionEpoch != requestedEpoch) return@LaunchedEffect
         error = false
-        runCatching {
-            // The socket callback runs on IO. Keep the buffer bounded and apply rows on Main.
-            channelFlow {
-                api.streamLogs(level) { line ->
-                    if (trySendBlocking(line).isClosed) {
-                        throw kotlinx.coroutines.CancellationException("Log collection ended")
+        watchCoreLogCollection(
+            collect = {
+                // The socket callback runs on IO. Keep the buffer bounded and apply rows on Main.
+                channelFlow {
+                    api.streamLogs(collectionLevel) { line ->
+                        if (trySendBlocking(line).isClosed) {
+                            throw kotlinx.coroutines.CancellationException("Log collection ended")
+                        }
                     }
+                }.buffer(16).collect { line ->
+                    lines.add(line)
+                    if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
+                    appendedLines++
                 }
-            }.buffer(16).collect { line ->
-                lines.add(line)
-                if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
-                appendedLines++
-            }
-        }.onFailure { if (it !is kotlinx.coroutines.CancellationException) error = true }
+            },
+            stillCurrent = { running && collectionEpoch == requestedEpoch },
+            onStopped = { error = true; running = false },
+        )
     }
     LaunchedEffect(appendedLines, lines.isEmpty()) { if (lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex) }
     WeaveToolScreen(
@@ -417,7 +425,7 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
         onDismiss = onDismiss,
         secure = true,
         actions = {
-            IconButton(onClick = { running = !running }) {
+            IconButton(onClick = { collectionEpoch++; running = !running }) {
                 Icon(if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, localizedContentDescription(if (running) "暂停" else "继续"))
             }
             IconButton(onClick = {
@@ -434,7 +442,17 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             CoreApi.LEVELS.forEach { option ->
-                FilterChip(selected = level == option, onClick = { level = option }, label = { Text(option, translate = false) })
+                FilterChip(
+                    selected = level == option,
+                    onClick = {
+                        if (level != option) {
+                            collectionEpoch++
+                            level = option
+                            if (error) running = true
+                        }
+                    },
+                    label = { Text(option, translate = false) },
+                )
             }
         }
         Row(
