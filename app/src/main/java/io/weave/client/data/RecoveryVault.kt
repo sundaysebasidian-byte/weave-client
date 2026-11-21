@@ -17,10 +17,18 @@ data class RecoveryState(
     val safeModeReason: String? = null,
 )
 
-class RecoveryVault internal constructor(private val readPreferences: () -> SharedPreferences) {
-    constructor(context: Context) : this(readPreferences = context.applicationContext.let { appContext ->
-        { appContext.crossProcessPreferences(PREFERENCES_NAME) }
-    })
+class RecoveryVault internal constructor(
+    private val failureTransaction: (() -> Unit) -> Unit = { it() },
+    private val readPreferences: () -> SharedPreferences,
+) {
+    constructor(context: Context) : this(
+        failureTransaction = context.applicationContext.let { appContext ->
+            { update -> ProfileStorage.access(appContext, update) }
+        },
+        readPreferences = context.applicationContext.let { appContext ->
+            { appContext.crossProcessPreferences(PREFERENCES_NAME) }
+        },
+    )
 
     private val preferences get() = readPreferences()
 
@@ -53,9 +61,15 @@ class RecoveryVault internal constructor(private val readPreferences: () -> Shar
 
     @Synchronized
     fun recordFailure(message: String) {
-        preferences.edit(commit = true) {
-            putInt(KEY_FAILURE_COUNT, (preferences.getInt(KEY_FAILURE_COUNT, 0) + 1).coerceAtMost(99))
-            putString(KEY_LAST_FAILURE, RecoveryRedactor.redact(message))
+        // UI resets and VPN failures use separate store instances. Order the entire increment
+        // with their commits, not just its final write, so a stale count cannot undo a reset.
+        failureTransaction {
+            val prefs = preferences
+            val count = prefs.getInt(KEY_FAILURE_COUNT, 0)
+            prefs.edit(commit = true) {
+                putInt(KEY_FAILURE_COUNT, (count + 1).coerceAtMost(99))
+                putString(KEY_LAST_FAILURE, RecoveryRedactor.redact(message))
+            }
         }
     }
 
