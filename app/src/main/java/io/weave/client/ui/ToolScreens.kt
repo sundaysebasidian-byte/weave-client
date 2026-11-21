@@ -76,16 +76,13 @@ import kotlinx.coroutines.launch
 internal fun ExternalImportDialog(
     value: ExternalImport,
     running: Boolean,
+    confirmEnabled: Boolean,
     error: String?,
+    name: String,
+    onNameChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (name: String) -> Unit,
+    onConfirm: () -> Unit,
 ) {
-    val suggested = when (value) {
-        is ExternalImport.Remote -> value.suggestedName ?: value.host
-        is ExternalImport.Document -> value.displayName.orEmpty()
-        is ExternalImport.Inline -> ""
-    }
-    var name by remember(value) { mutableStateOf(suggested) }
     AlertDialog(
         onDismissRequest = { if (!running) onDismiss() },
         title = { Text("导入外部订阅？", fontWeight = FontWeight.Bold) },
@@ -111,7 +108,7 @@ internal fun ExternalImportDialog(
                 }
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it.take(80) },
+                    onValueChange = onNameChange,
                     label = { Text("名称（可选）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -120,7 +117,7 @@ internal fun ExternalImportDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(name) }, enabled = !running) {
+            Button(onClick = onConfirm, enabled = confirmEnabled) {
                 if (running) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
