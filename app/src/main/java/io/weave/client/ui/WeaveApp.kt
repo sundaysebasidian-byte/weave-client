@@ -488,10 +488,10 @@ fun WeaveApp(
         val request = externalRequest ?: return@LaunchedEffect
         quickStartExternalLaunch = true
         if (quickStart.visible) closeQuickStart()
+        if (request == ExternalRequest.Connect) destination = Destination.HOME
+        if (!viewModel.claimExternalRequest(request)) return@LaunchedEffect
         when (request) {
             ExternalRequest.Connect -> {
-                destination = Destination.HOME
-                viewModel.awaitReady()
                 if (viewModel.dashboard.value.connectionState == ConnectionState.DISCONNECTED ||
                     viewModel.dashboard.value.connectionState == ConnectionState.ERROR
                 ) {
@@ -507,7 +507,6 @@ fun WeaveApp(
                 viewModel.showExternalImport(request.value)
             }
         }
-        viewModel.consumeExternalRequest()
     }
 
     fun openNetworkPrivacyCenter(runFullCheck: Boolean) {
