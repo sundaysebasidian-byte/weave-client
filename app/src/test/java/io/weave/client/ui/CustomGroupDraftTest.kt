@@ -46,4 +46,28 @@ class CustomGroupDraftTest {
     @Test fun `a sole member becoming the entry leaves no exit member`() {
         assertTrue(customGroupDraftMembers(setOf(entry), entry, chained = true).isEmpty())
     }
+
+    @Test fun `draft rejections return the original reason to the caller without applying anything`() {
+        val oversized = List(CustomProxyGroupValidator.MAX_MEMBERS + 1) { NodeRef("first", "node-$it") }
+        val expectedCap = "每个策略组最多 ${CustomProxyGroupValidator.MAX_MEMBERS} 个节点"
+        val invalid = listOf(
+            CustomProxyGroup(groupId, "Balanced", members = oversized) to expectedCap,
+            CustomProxyGroup(groupId, " \u0001 ", members = listOf(otherMember)) to "请填写策略组名称",
+        )
+        for ((draft, reason) in invalid) {
+            val result = submitCustomGroupDraft(draft) { error("A rejected draft must not apply") }
+            assertEquals(reason, result.exceptionOrNull()?.message)
+        }
+        assertEquals(oversized, invalid.first().first.members)
+    }
+
+    @Test fun `a valid draft is normalized and passed through once`() {
+        val original = CustomProxyGroup(groupId, "  Balanced  ",
+            members = listOf(otherProvider, otherMember, otherProvider), entry = entry)
+        val accepted = mutableListOf<CustomProxyGroup>()
+        assertTrue(submitCustomGroupDraft(original) { accepted.add(it) }.isSuccess)
+        assertEquals(listOf(CustomProxyGroupValidator.normalize(original)), accepted)
+        assertEquals("  Balanced  ", original.name)
+        assertEquals(listOf(otherProvider, otherMember, otherProvider), original.members)
+    }
 }
