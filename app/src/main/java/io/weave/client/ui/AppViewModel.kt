@@ -1129,11 +1129,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun renameSubscription(subscriptionId: String, name: String) {
-        runSubscriptionMutation(
-            subscriptionId = subscriptionId,
-            successMessage = { "订阅名称已更新" },
-        ) {
-            subscriptionRepository.rename(subscriptionId, name)
+        val current = mutableEditorState.value
+        if (current.running || current.subscriptionId != subscriptionId) return
+        val active = current.copy(running = true, error = null)
+        mutableEditorState.value = active
+
+        viewModelScope.launch {
+            val refreshed = saveSubscriptionRenameAndRefreshEditor(
+                editorState = mutableEditorState,
+                active = active,
+                saveName = { subscriptionRepository.rename(subscriptionId, name).name },
+                refresh = { savedName ->
+                    mutableSubscriptions.update { subscriptions ->
+                        subscriptions.map {
+                            if (it.id == subscriptionId && it.name != savedName) it.copy(name = savedName) else it
+                        }
+                    }
+                    refreshSubscriptionsAndReferences(subscriptionId)
+                    subscriptionRepository.loadEditor(subscriptionId)
+                },
+            )
+            if (refreshed) {
+                val message = "订阅名称已更新"
+                mutableDashboard.update { it.copy(statusMessage = message) }
+                reloadIfConnected("$message，正在安全更新运行配置")
+            }
         }
     }
 
