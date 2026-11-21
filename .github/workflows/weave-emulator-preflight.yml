@@ -1,0 +1,30 @@
+name: Weave Android emulator preflight
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths: ['.github/workflows/weave-emulator-preflight.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  emulator-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify runner-provided KVM access
+        shell: bash
+        run: |
+          uname -rm
+          if [[ ! -c /dev/kvm || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            echo "::error::Runner does not provide readable and writable /dev/kvm"
+            exit 1
+          fi
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: emulator
+          cmdline-tools-version: '15859902'
+      - name: Verify Android emulator acceleration
+        shell: bash
+        run: "$ANDROID_HOME/emulator/emulator -accel-check"
