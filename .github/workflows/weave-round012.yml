@@ -1,0 +1,23 @@
+name: Weave Android round 012
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths:
+      - '.github/workflows/weave-round012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check shell syntax
+        run: bash -n tools/verify-android-core-hashes.sh
+      - name: Exercise the actual verifier with deterministic host fixtures
+        run: python3 tools/test-android-core-hashes.py -v
