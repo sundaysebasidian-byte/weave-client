@@ -1,6 +1,7 @@
 package io.weave.client.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 
 /**
@@ -16,20 +17,27 @@ data class RecoveryState(
     val safeModeReason: String? = null,
 )
 
-class RecoveryVault(context: Context) {
-    private val appContext = context.applicationContext
-    private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
+class RecoveryVault internal constructor(private val readPreferences: () -> SharedPreferences) {
+    constructor(context: Context) : this(context.applicationContext.let { appContext ->
+        { appContext.crossProcessPreferences(PREFERENCES_NAME) }
+    })
+
+    private val preferences get() = readPreferences()
 
     @Synchronized
-    fun snapshot(): RecoveryState = RecoveryState(
-        safeMode = preferences.getBoolean(KEY_SAFE_MODE, false),
-        failureCount = preferences.getInt(KEY_FAILURE_COUNT, 0),
-        lastFailure = preferences.getString(KEY_LAST_FAILURE, null),
-        lastHealthyAtMillis = preferences.getLong(KEY_LAST_HEALTHY_AT, 0L)
-            .takeIf { it > 0L },
-        lastHealthyRevision = preferences.getString(KEY_LAST_HEALTHY_REVISION, null),
-        safeModeReason = preferences.getString(KEY_SAFE_MODE_REASON, null),
-    )
+    fun snapshot(): RecoveryState {
+        // The transactional getter acquires cross-process locks and reads XML each time.
+        val prefs = preferences
+        return RecoveryState(
+            safeMode = prefs.getBoolean(KEY_SAFE_MODE, false),
+            failureCount = prefs.getInt(KEY_FAILURE_COUNT, 0),
+            lastFailure = prefs.getString(KEY_LAST_FAILURE, null),
+            lastHealthyAtMillis = prefs.getLong(KEY_LAST_HEALTHY_AT, 0L)
+                .takeIf { it > 0L },
+            lastHealthyRevision = prefs.getString(KEY_LAST_HEALTHY_REVISION, null),
+            safeModeReason = prefs.getString(KEY_SAFE_MODE_REASON, null),
+        )
+    }
 
     @Synchronized
     fun recordHealthy(revision: String = "connected") {
