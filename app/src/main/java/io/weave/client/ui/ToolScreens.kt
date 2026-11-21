@@ -240,7 +240,7 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     val labels = remember { mutableStateMapOf<Int, String>() }
     LaunchedEffect(paused) {
         while (!paused) {
-            runCatching { api.connections(latestFirst = true) }
+            readConnectionSnapshotForDisplay { api.connections(latestFirst = true) }
                 .onSuccess { snapshot ->
                     connections = snapshot.connections
                     totals = snapshot.uploadTotal to snapshot.downloadTotal
