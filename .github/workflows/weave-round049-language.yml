@@ -1,0 +1,75 @@
+name: Weave cumulative Android host acceptance with R049 language fix
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths:
+      - '.github/workflows/weave-round049-language.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android-host-acceptance:
+    name: Cumulative Android host acceptance after language repair
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install the project's locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run full unit tests, lint and debug build
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --continue --console=plain --no-build-cache --no-daemon --no-configuration-cache
+      - name: Verify test receipts and compiled debug file
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import hashlib, json, os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          results = Path("app/build/test-results/testDebugUnitTest")
+          reports = list(results.glob("TEST-*.xml"))
+          keys = ("tests", "failures", "errors", "skipped")
+          totals = dict.fromkeys(keys, 0)
+          suites = {}
+          for report in reports:
+              root = ET.parse(report).getroot()
+              counts = {k: int(root.get(k, "0")) for k in keys}
+              suites[root.get("name")] = counts
+              for k, v in counts.items():
+                  totals[k] += v
+
+          commit = os.environ["GITHUB_SHA"]
+          focused = {}
+          for name, tests in [("CompleteLanguageCoverageTest", 1), ("LanguageTest", 8)]:
+              candidates = [x for k, x in suites.items() if k and k.endswith("." + name)]
+              focused[name] = candidates[0] if len(candidates) == 1 else None
+          apk = Path("app/build/outputs/apk/debug/app-debug.apk")
+          fingerprint = None
+          if apk.is_file() and apk.stat().st_size > 0:
+              digest = hashlib.sha256()
+              with apk.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(65536), b""):
+                      digest.update(chunk)
+              fingerprint = digest.hexdigest()
+          print(json.dumps({"commit": commit, "suite_count": len(reports), **totals,
+                            "language": focused, "debug_apk_sha256": fingerprint}))
+          if totals["tests"] < 500 or totals["failures"] or totals["errors"] or not fingerprint:
+              raise SystemExit("Missing or failing cumulative proof")
+          for name, tests in [("CompleteLanguageCoverageTest", 1), ("LanguageTest", 8)]:
+              if focused[name] != dict(tests=tests, failures=0, errors=0, skipped=0):
+                  raise SystemExit("Unexpected focused language receipt")
+          PY
