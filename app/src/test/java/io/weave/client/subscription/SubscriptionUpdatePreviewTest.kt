@@ -21,4 +21,35 @@ class SubscriptionUpdatePreviewTest {
         assertNotEquals(baseline, subscriptionRevision(record.copy(name = "edited"), "password: a", "https://example.com/sub"))
         assertNotEquals(baseline, subscriptionRevision(record, "password: a", "https://example.com/new"))
     }
+
+    @Test fun revisionMatchesPreviousBytesForEmptyAndUnicodeInputs() {
+        val record = StoredSubscription("fixture", "测试 🚇", 1, SubscriptionFormat.CLASH_YAML,
+            listOf(StoredNode("one", "节点", "http")), true)
+        val cases = listOf("" to "", "small" to "fixture", "备注\u0000继续🚇" to "来源\uD800", "\uDC00尾" to "\uD800")
+        for ((payload, source) in cases) {
+            val actual = subscriptionRevision(record, payload, source)
+            assertEquals(previousRevision(record, payload, source), actual)
+            assertTrue(actual.matches(Regex("[0-9a-f]{64}")))
+        }
+    }
+
+    @Test fun revisionMatchesPreviousBytesAtChunkBoundaries() {
+        val record = StoredSubscription("fixture", "节点", 0, SubscriptionFormat.CLASH_YAML, emptyList(), false)
+        val cases = listOf(
+            ("x".repeat(1023) + "🚇" + "路".repeat(3073)) to
+                ("路".repeat(341) + "🚇" + "y".repeat(2050)),
+            ("x".repeat(1023) + "\uD800" + "y".repeat(1022) + "\uD800\uDC00" + "\uDC00" + "路".repeat(3073) + "\uD800") to
+                ("路".repeat(342) + "\uDC00" + "\uD800"),
+            ("x".repeat(1022) + "\uD800\uD801" + "尾".repeat(2050)) to
+                ("\uD800".repeat(2050) + "\uDC00"),
+        )
+        for ((payload, source) in cases) {
+            assertEquals(previousRevision(record, payload, source), subscriptionRevision(record, payload, source))
+        }
+    }
+
+    private fun previousRevision(record: StoredSubscription, payload: String, source: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest((record.toString() + "\u0000" + source + "\u0000" + payload).toByteArray())
+            .joinToString("") { "%02x".format(it) }
 }
