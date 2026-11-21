@@ -327,10 +327,7 @@ private fun CustomGroupEditor(
     var confirmingDelete by remember { mutableStateOf(false) }
     var saveRejection by remember(initial?.id) { mutableStateOf<String?>(null) }
     val subscriptionNames = remember(subscriptions) { subscriptions.associate { it.id to it.name } }
-    val filtered = remember(nodes, query) {
-        val needle = query.trim()
-        nodes.filter { needle.isEmpty() || it.name.contains(needle, true) }
-    }
+    val groupedNodes = remember(nodes, query) { groupMatchingCustomGroupNodes(nodes, query) }
     WeaveToolScreen(
         title = if (initial == null) "新建策略组" else "编辑策略组",
         subtitle = "已选 ${members.size} 个节点",
@@ -410,7 +407,7 @@ private fun CustomGroupEditor(
                 OutlinedTextField(value = query, onValueChange = { query = it.take(100) }, label = { Text("搜索节点") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
             }
-            filtered.groupBy { it.subscriptionId }.forEach { (subscriptionId, subscriptionNodes) ->
+            groupedNodes.forEach { (subscriptionId, subscriptionNodes) ->
                 item(key = "header.$subscriptionId") { TargetSectionLabel(subscriptionNames[subscriptionId] ?: "") }
                 items(subscriptionNodes, key = { "${it.subscriptionId}/${it.id}" }) { node ->
                     val ref = NodeRef(node.subscriptionId, node.id)
