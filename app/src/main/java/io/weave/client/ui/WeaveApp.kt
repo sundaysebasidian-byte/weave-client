@@ -553,9 +553,13 @@ fun WeaveApp(
         showPolicyPacks || showLocalRouteRules || showConnections || showLogs || showRuleSets ||
         showCustomGroups || showBackup || externalImport != null || quickStart.visible
     val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val lifecycle = lifecycleOwner.lifecycle
+        val observer = lifecycle.addForegroundResumeObserver { resumeRevision++ }
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     DisposableEffect(lifecycleOwner, destination, dashboardObscured) {
         fun updateVisibility() {
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeRevision++
             viewModel.setDashboardVisible(
                 destination == Destination.HOME &&
                     !dashboardObscured &&
@@ -755,9 +759,10 @@ fun WeaveApp(
         val renderedGuideStep = quickStart.step
         val hasProxyTarget = QuickStartPolicy.hasProxyTarget(guideDashboard.defaultRouteTarget, usableNodes, guideGroups)
         LaunchedEffect(guideRuntime, resumeRevision) {
-            if (quickStart.action == QuickStartAction.CONNECT &&
-                (guideRuntime.revision != quickStartConnectRevision || resumeRevision > quickStartConnectResume)
-            ) quickStart = quickStart.cancelAction()
+            quickStart = quickStart.afterConnectionProgress(
+                runtimeChanged = guideRuntime.revision != quickStartConnectRevision,
+                resumed = resumeRevision > quickStartConnectResume,
+            )
         }
         val childVisible = showImportDialog || showDefaultRoutePicker || showVpnDisclosure
         if (!childVisible) {
