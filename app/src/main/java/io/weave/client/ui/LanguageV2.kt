@@ -361,8 +361,34 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
 
 private data class CountTemplate(val pattern: String, val translation: SupplementalTranslation)
 
-/** `%d` in each translation is replaced by the captured number. */
+// Keep in step with the release tag shape in AndroidReleasePolicy; group 1 excludes the v prefix.
+private const val RELEASE_VERSION_CAPTURE = "([0-9]+[.][0-9]+[.][0-9]+(?:-rc[1-9][0-9]*)?)"
+private const val RELEASE_BUILD_CAPTURE = "([0-9]{1,10})"
+
+/** `%d` and `%t` are replaced by the first and second captured values. */
 private val COUNT_TEMPLATES = listOf(
+    CountTemplate("^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用$", SupplementalTranslation(
+        "%d · Build %t available", "%d · Build %t 可用", "%d · ビルド %t を利用できます",
+        "%d · Build %t disponible", "%d · Build %t verfügbar",
+    )),
+    CountTemplate("^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用（上次检查）$", SupplementalTranslation(
+        "%d · Build %t available (last check)", "%d · Build %t 可用（上次檢查）", "%d · ビルド %t を利用できます（前回の確認）",
+        "%d · Build %t disponible (dernière vérification)", "%d · Build %t verfügbar (letzte Prüfung)",
+    )),
+    CountTemplate("^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$", SupplementalTranslation(
+        "No compatible release is newer than the current build (%d).", "沒有比目前 Build %d 更新的適用版本。",
+        "現在のビルド（%d）より新しい対応リリースはありません。", "Aucune version compatible n’est plus récente que le build actuel (%d).",
+        "Es gibt kein kompatibles Release, das neuer als der aktuelle Build (%d) ist.",
+    )),
+    CountTemplate("^查看 v${RELEASE_VERSION_CAPTURE} 发布说明$", SupplementalTranslation(
+        "View v%d release notes", "查看 v%d 發行說明", "v%d のリリースノートを見る",
+        "Voir les notes de version de v%d", "Versionshinweise zu v%d ansehen",
+    )),
+    CountTemplate("^Weave ${RELEASE_VERSION_CAPTURE} 可用，可在设置中查看。$", SupplementalTranslation(
+        "Weave %d is available. See Settings.", "Weave %d 已可使用，可在設定中查看。",
+        "Weave %d を利用できます。設定で確認してください。", "Weave %d est disponible. Consultez les paramètres.",
+        "Weave %d ist verfügbar. Details findest du in den Einstellungen.",
+    )),
     CountTemplate("^检测到 (\\d+) 个兼容客户端$", SupplementalTranslation("%d compatible clients detected", "偵測到 %d 個相容用戶端", "互換クライアントを %d 個検出", "%d clients compatibles détectés", "%d kompatible Clients erkannt")),
     CountTemplate("^每 (\\d+) 小时$", SupplementalTranslation("Every %d h", "每 %d 小時", "%d 時間ごと", "Toutes les %d h", "Alle %d Std.")),
     CountTemplate("^(\\d+) 分钟前更新$", SupplementalTranslation("Updated %d min ago", "%d 分鐘前更新", "%d 分前に更新", "Mis à jour il y a %d min", "Vor %d Min. aktualisiert")),
