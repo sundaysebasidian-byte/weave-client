@@ -39,4 +39,27 @@ public final class BoundedLogLineReaderTest {
         assertNull(reader.readLine());
         assertNull(reader.readLine());
     }
+
+    @Test public void completeRowsRemainIndependentWhenChunkIsRefilled() throws IOException {
+        String initial = "x".repeat(2047); // CR ends the first chunk; LF starts the next.
+        String terminal = "🚇" + "z".repeat(2045); // Straddles a later chunk and has no newline.
+        BoundedLogLineReader reader = new BoundedLogLineReader(
+                new StringReader(initial + "\r\nnext🚇\n\n" + terminal), 2047);
+        String first = reader.readLine();
+        String second = reader.readLine();
+        assertEquals("", reader.readLine());
+        assertEquals(terminal, reader.readLine());
+        assertNull(reader.readLine());
+        assertEquals(initial, first);
+        assertEquals("next🚇", second);
+    }
+
+    @Test public void completeRowsInOneChunkHonorLengthCapAndContinueAfterDiscard() throws IOException {
+        BoundedLogLineReader reader = new BoundedLogLineReader(
+                new StringReader("🚇x\r\n🚇\r\r\nx\n"), 2);
+        for (String expected : new String[]{"", "🚇", "", "x"}) {
+            assertEquals(expected, reader.readLine());
+        }
+        assertNull(reader.readLine());
+    }
 }
