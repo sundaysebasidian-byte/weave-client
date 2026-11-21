@@ -56,6 +56,40 @@ class RouteReferenceSanitizerTest {
         )
     }
 
+    @Test
+    fun `first duplicate wins and equal ids in other subscriptions do not match`() {
+        val other = subscription.copy(id = "other")
+        val result = RouteReferenceSanitizer.routes(
+            routes = listOf(
+                route("same.app", RouteTarget(RouteKind.FIXED, "旧", "kept", "jp-1")),
+                route("same.app", RouteTarget(RouteKind.DIRECT, "旧")),
+                route("other.app", RouteTarget(RouteKind.FIXED, "旧", "other", "jp-1")),
+                route("missing.app", RouteTarget(RouteKind.FIXED, "旧", "unknown", "jp-1")),
+            ),
+            subscriptions = listOf(subscription, other),
+            nodes = listOf(node.copy(subscriptionId = "other", name = "Other"), node, node.copy(name = "Duplicate"),
+                node.copy(subscriptionId = "unknown", name = "No longer available")),
+        )
+        assertEquals(listOf("same.app", "other.app", "missing.app"), result.map { it.packageName })
+        assertEquals("JP 01", result[0].target.label)
+        assertEquals("Other", result[1].target.label)
+        assertEquals(RouteKind.BLOCK, result[2].target.kind)
+    }
+
+    @Test
+    fun `multiple fixed routes make at most one pass over nodes`() {
+        val fixtures = List(100) { i -> node.copy(id = "node-$i") }
+        var reads = 0
+        val nodes = object : AbstractList<ProxyNode>() {
+            override val size: Int get() = fixtures.size
+            override fun get(index: Int): ProxyNode = fixtures[index].also { reads++ }
+        }
+        val routes = List(20) { i -> route("app-$i", RouteTarget(RouteKind.FIXED, "旧", "kept", "node-${i+80}")) }
+        val result = RouteReferenceSanitizer.routes(routes, listOf(subscription), nodes)
+        assertEquals(routes.size, result.count { it.target.kind == RouteKind.FIXED })
+        assertEquals(nodes.size, reads)
+    }
+
     private fun route(packageName: String, target: RouteTarget) = AppRoute(
         packageName = packageName,
         appName = packageName,
