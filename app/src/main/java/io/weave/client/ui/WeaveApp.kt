@@ -381,6 +381,12 @@ fun WeaveApp(
     val networkPreferences by viewModel.networkPreferences.collectAsStateWithLifecycle()
     val rulesViewModel: RoutingRulesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val snackbar = remember { SnackbarHostState() }
+    val releaseContext = LocalContext.current.applicationContext
+    val releaseScope = androidx.compose.runtime.rememberCoroutineScope()
+    val releaseCheck = remember(releaseContext, releaseScope) { OfficialReleaseCheck(releaseContext, releaseScope) }
+    LaunchedEffect(releaseCheck) {
+        releaseCheck.start { message -> snackbar.showSnackbar(message); Unit }
+    }
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     val destinationState = rememberSaveableStateHolder()
     var showImportDialog by remember { mutableStateOf(false) }
@@ -669,6 +675,7 @@ fun WeaveApp(
                 val lanCredentials by viewModel.lanCredentials.collectAsStateWithLifecycle()
                 val dnsProbeState by viewModel.dnsProbeState.collectAsStateWithLifecycle()
                 SettingsScreen(
+                    officialReleaseSettings = { OfficialReleaseSettings(releaseCheck) },
                     preferences = networkPreferences,
                     notificationsEnabled = notificationsEnabled,
                     onRequestNotifications = onRequestNotifications,
