@@ -451,7 +451,7 @@ fun WeaveApp(
             val loaded = viewModel.hasLoadedLocalSubscriptions()
             val shouldOffer = QuickStartPolicy.shouldOfferAutomatically(
                 seen = quickStartStore.wasSeen(), dataLoaded = loaded,
-                upgradedInstall = quickStartStore.isUpgradedInstall(),
+                upgradedInstall = quickStartStore::isUpgradedInstall,
                 hasSubscriptions = viewModel.subscriptions.value.isNotEmpty(),
                 hasRoutes = viewModel.routes.value.isNotEmpty(),
                 hasSavedTarget = viewModel.dashboard.value.defaultRouteTarget != null,
