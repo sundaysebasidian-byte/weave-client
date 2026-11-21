@@ -73,10 +73,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
@@ -369,6 +369,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var installedAppsLoaded = false
     private var installedAppsReleaseJob: Job? = null
     private var privacyProbeJob: Job? = null
+    private val dnsProbePermits = Semaphore(3)
     private var dnsProbeJob: Job? = null
     private var dnsGeneration = 0L
     private var downloadProbeJob: Job? = null
@@ -701,19 +702,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         dnsProbeJob = viewModelScope.launch {
             val profiles = DnsProfile.entries.filter { it != DnsProfile.CUSTOM || preferences.customDnsEndpoint.isNotBlank() }
             var failures = 0
-            profiles.chunked(3).forEach { batch ->
-                val results = coroutineScope {
-                    batch.map { profile -> async(Dispatchers.IO) {
-                        profile to probeSafely { dnsProviderProbe.probe(profile, preferences) }
-                    } }.awaitAll()
-                }
-                if (generation != dnsGeneration) return@launch
-                results.forEach { (profile, result) ->
-                    result.onSuccess { probeResult -> mutableDnsProbeState.update { state ->
-                        state.copy(results = state.results + (profile to probeResult))
-                    } }.onFailure { failures++ }
-                }
-            }
+            publishDnsProbeResults(
+                profiles,
+                dnsProbePermits,
+                probe = { profile -> probeSafely { dnsProviderProbe.probe(profile, preferences) } },
+                publish = { profile, result ->
+                    if (generation == dnsGeneration) {
+                        result.onSuccess { probeResult ->
+                            mutableDnsProbeState.update { state ->
+                                state.copy(results = state.results + (profile to probeResult))
+                            }
+                        }.onFailure { failures++ }
+                    }
+                },
+            )
             if (generation == dnsGeneration) mutableDnsProbeState.update {
                 it.copy(running = false, error = if (failures == profiles.size) "所有 DNS 端点都无法完成检测" else null)
             }
