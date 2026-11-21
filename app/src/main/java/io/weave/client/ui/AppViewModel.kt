@@ -923,16 +923,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun applyClientSourceSelection(token: String) {
         val state = mutableClientImportState.value
         if (state.running || state.batchPreview?.token != token) return
-        mutableClientImportState.value = state.copy(running = true, error = null)
-        viewModelScope.launch {
-            try {
-                val subscriptions = subscriptionRepository.applyClientSourceSelection(token)
-                mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
-                mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
-                mutableClientImportState.value = ClientImportState(completedSubscriptions = subscriptions)
-                reloadIfConnected("订阅已导入，正在安全更新运行配置")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { mutableClientImportState.value = state.copy(error = error.message ?: "订阅导入失败", batchPreview = null) }
+        applyReviewedClientImport(state, batch = true) {
+            subscriptionRepository.applyClientSourceSelection(token)
         }
     }
 
@@ -961,18 +953,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun applyClientImport(token: String) {
         val state = mutableClientImportState.value
         if (state.running || state.preview?.token != token) return
-        mutableClientImportState.value = state.copy(running = true, error = null)
+        applyReviewedClientImport(state, batch = false) {
+            listOf(subscriptionRepository.applyMigrationPreview(token))
+        }
+    }
+
+    private fun applyReviewedClientImport(
+        state: ClientImportState,
+        batch: Boolean,
+        save: suspend () -> List<Subscription>,
+    ) {
+        val active = state.copy(running = true, error = null)
+        mutableClientImportState.value = active
         viewModelScope.launch {
-            try {
-                val subscription = subscriptionRepository.applyMigrationPreview(token)
-                mutableSubscriptions.update { (it + subscription).distinctBy(Subscription::id) }
-                mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
-                mutableClientImportState.value = ClientImportState(completed = subscription)
-                reloadIfConnected("订阅已导入，正在安全更新运行配置")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败")
-            }
+            finishReviewedClientImport(
+                state = mutableClientImportState,
+                active = active,
+                batch = batch,
+                save = save,
+                onSaved = { subscriptions ->
+                    mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
+                },
+                readNodes = { withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() } },
+                onNodes = { mutableNodes.value = it },
+                requestReload = {
+                    if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+                        WeaveVpnService.reload(getApplication())
+                        mutableDashboard.update { it.copy(statusMessage = "订阅已导入，正在安全更新运行配置") }
+                    }
+                },
+            )
         }
     }
 
