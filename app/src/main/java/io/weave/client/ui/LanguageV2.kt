@@ -256,6 +256,13 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "无法读取备份" to SupplementalTranslation("Cannot read the backup", "無法讀取備份", "バックアップを読み取れません", "Impossible de lire la sauvegarde", "Backup kann nicht gelesen werden"),
     "恢复失败，请重新预览后重试" to SupplementalTranslation("Restore failed; preview the backup again and retry", "還原失敗，請重新預覽後重試", "復元できませんでした。バックアップを再確認してからやり直してください", "Échec de la restauration ; prévisualisez à nouveau la sauvegarde et réessayez", "Wiederherstellung fehlgeschlagen; prüfen Sie die Vorschau erneut und versuchen Sie es noch einmal"),
     "已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启" to SupplementalTranslation("Restored from backup. Device-specific settings (system proxy, LAN sharing) need to be turned on again.", "已從備份還原；裝置相關設定（系統代理、區域網路共享）需重新開啟", "バックアップから復元しました。端末固有の設定（システムプロキシ、LAN 共有）は再度オンにしてください。", "Restauré. Les réglages propres à l’appareil (proxy système, partage LAN) doivent être réactivés.", "Wiederhergestellt. Geräteeinstellungen (System-Proxy, LAN-Freigabe) bitte erneut aktivieren."),
+    "部分界面可能没有更新；请完全关闭应用后重新打开" to SupplementalTranslation(
+        "Some screens may not have updated. Close the app completely, then reopen it.",
+        "部分畫面可能尚未更新；請完全關閉應用程式後重新開啟",
+        "一部の画面が更新されていない可能性があります。アプリを完全に閉じてから開き直してください。",
+        "Certains écrans peuvent ne pas s’être actualisés. Fermez complètement l’application, puis rouvrez-la.",
+        "Einige Ansichten sind möglicherweise noch nicht aktualisiert. Schließe die App vollständig und öffne sie erneut.",
+    ),
     "正在应用恢复的配置" to SupplementalTranslation("Applying the restored configuration", "正在套用還原的設定", "復元した設定を適用中", "Application de la configuration restaurée", "Wiederhergestellte Konfiguration wird angewendet"),
     "这不是有效的 Weave 备份" to SupplementalTranslation("This is not a valid Weave backup", "這不是有效的 Weave 備份", "有効な Weave バックアップではありません", "Ce n’est pas une sauvegarde Weave valide", "Kein gültiges Weave-Backup"),
     "不支持的备份版本" to SupplementalTranslation("Unsupported backup version", "不支援的備份版本", "未対応のバックアップ形式です", "Version de sauvegarde non prise en charge", "Nicht unterstützte Backup-Version"),
