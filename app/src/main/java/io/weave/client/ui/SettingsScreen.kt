@@ -235,6 +235,7 @@ internal fun SettingsScreen(
     onOpenQuickStart: () -> Unit = {},
     quickStartReducedMotion: Boolean = false,
     onQuickStartMotionChanged: (Boolean) -> Unit = {},
+    officialReleaseSettings: @Composable () -> Unit = {},
 ) {
     var showPalette by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
@@ -544,6 +545,7 @@ internal fun SettingsScreen(
 
         item(key = "about") {
             SettingsGroup(title = "关于") {
+                officialReleaseSettings()
                 LinkSetting(
                     icon = Icons.Rounded.Policy,
                     title = "Weave ${BuildConfig.VERSION_NAME}",
@@ -700,7 +702,7 @@ internal fun SettingsScreen(
                 "AndroidX" to "Apache-2.0。用于 Android UI、生命周期和系统兼容。",
                 "系统相机 / ZXing" to "相机扫码使用系统相机预览；二维码内容由随包 ZXing 本机识别，Weave 不把二维码内容发送到自己的服务器。",
                 "对应源码" to "每个公开发行版应在同一 GitHub Release 附近提供对应源码、构建说明、校验和与第三方清单。",
-                "发行配置" to "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或应用远程更新；主动选择的第三方端点仍按隐私说明工作。",
+                "发行配置" to "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或自动下载安装；应用可向 GitHub 查询公开版本，启动检查可在关于中关闭；主动选择的第三方端点仍按隐私说明工作。",
             ),
             onDismiss = { showOpenSourceDetails = false },
         )
@@ -843,6 +845,41 @@ private fun ExpandableSettingsGroup(
 @Composable
 private fun SettingRowIcon(icon: ImageVector) {
     WeaveIconTile(icon)
+}
+
+@Composable
+internal fun OfficialReleaseSettings(check: OfficialReleaseCheck) {
+    val context = LocalContext.current
+    if (check.eligible) {
+        ToggleSetting(
+            icon = Icons.Rounded.Sync, title = "启动时检查应用更新",
+            subtitle = "每天最多一次。GitHub 可看到连接 IP，不会收到节点、订阅或设备标识。",
+            checked = check.enabled, onCheckedChange = { if (check.ready) check.changeAutomatic(it) },
+        )
+        WeaveDivider()
+        LinkSetting(
+            icon = Icons.Rounded.Info, title = "检查应用更新",
+            subtitle = if (check.busy) "正在查询 GitHub…" else check.detail ?: "只查询 Android 发布，不会下载或安装。",
+            onClick = if (check.ready && !check.busy) ({ check.manual() }) else null,
+        )
+    }
+    fun openPage(page: String) {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page)))
+        } catch (_: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "没有可打开网页的应用。", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    if (check.eligible) WeaveDivider()
+    check.release?.let { update ->
+        LinkSetting(icon = Icons.Rounded.Info, title = "查看 ${update.tag} 发布说明",
+            subtitle = null, onClick = { openPage(update.page) })
+        WeaveDivider()
+    }
+    LinkSetting(icon = Icons.Rounded.Info, title = "所有 GitHub 发布",
+        subtitle = if (check.eligible) null else check.detail,
+        onClick = { openPage("https://github.com/${AndroidReleasePolicy.repo}/releases") })
+    WeaveDivider()
 }
 
 @Composable
