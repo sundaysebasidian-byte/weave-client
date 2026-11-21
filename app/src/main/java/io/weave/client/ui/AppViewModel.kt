@@ -1548,8 +1548,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         Result.failure(error)
     }
 
-    private fun runSubscriptionImport(
+    internal fun runSubscriptionImport(
         externalPreview: ExternalImportPreview? = null,
+        readNodes: suspend () -> List<ProxyNode> = {
+            withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
+        },
+        reload: (String) -> Unit = ::reloadIfConnected,
         importer: suspend () -> Subscription,
     ) {
         if (mutableImportState.value.running) return
@@ -1566,7 +1570,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             (current + subscription).distinctBy { it.id }
                         }
                     },
-                    readNodes = { withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() } },
+                    readNodes = readNodes,
                 ).getOrElse { error ->
                     logSubscriptionImportFailure("Save", error)
                     val message = error.message ?: "订阅导入失败"
@@ -1586,7 +1590,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         "订阅已保存，节点列表刷新失败，请重新打开应用"
                     })
                 }
-                if (saved.nodes.isSuccess) reloadIfConnected("订阅已导入，正在安全更新运行配置")
+                if (saved.nodes.isSuccess) reload("订阅已导入，正在安全更新运行配置")
             } finally {
                 if (mutableImportState.value === active) {
                     mutableImportState.value = SubscriptionImportState()
