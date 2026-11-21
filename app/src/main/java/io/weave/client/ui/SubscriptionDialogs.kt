@@ -775,23 +775,22 @@ private fun LanExportActiveSection(
 /** Marks one-time transfer keys as sensitive and removes our copy after a short grace period. */
 private fun copySensitiveText(context: Context, label: String, value: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val copy = SensitiveClipboardCopy()
     val clip = ClipData.newPlainText(label, value).apply {
         description.extras = PersistableBundle().apply {
             // Compatibility literal is consumed by Android 13+ and many older OEM clipboard UIs.
             putBoolean("android.content.extra.IS_SENSITIVE", true)
+            putString(SensitiveClipboardCopy.EXTRA_COPY_TOKEN, copy.token())
         }
     }
     clipboard.setPrimaryClip(clip)
     Handler(Looper.getMainLooper()).postDelayed({
         // Background clipboard reads can be denied by newer Android versions or OEM policy.
-        // Failure to clear must never crash the app or replace a newer clipboard value.
+        // Checking copy metadata and clearing it are separate, best-effort Android calls.
         runCatching {
-            val stillOurValue = clipboard.primaryClip
-                ?.takeIf { it.itemCount > 0 }
-                ?.getItemAt(0)
-                ?.coerceToText(context)
-                ?.toString() == value
-            if (stillOurValue) {
+            val currentToken = clipboard.primaryClipDescription
+                ?.extras?.getString(SensitiveClipboardCopy.EXTRA_COPY_TOKEN)
+            if (copy.owns(currentToken)) {
                 if (Build.VERSION.SDK_INT >= 28) {
                     clipboard.clearPrimaryClip()
                 } else {
