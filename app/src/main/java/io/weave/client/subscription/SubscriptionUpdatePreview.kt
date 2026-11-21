@@ -1,5 +1,7 @@
 package io.weave.client.subscription
 
+import java.security.MessageDigest
+
 /** Only this safe summary crosses into UI; candidate credentials remain in repository memory. */
 data class SubscriptionUpdatePreview(
     val token: String,
@@ -22,7 +24,32 @@ internal fun <T, K> unmatchedOccurrences(items: List<T>, otherKeys: List<K>, key
     }
 }
 
-internal fun subscriptionRevision(record: StoredSubscription, payload: String, source: String): String =
-    java.security.MessageDigest.getInstance("SHA-256")
-        .digest((record.toString() + "\u0000" + source + "\u0000" + payload).toByteArray())
-        .joinToString("") { "%02x".format(it) }
+internal fun subscriptionRevision(record: StoredSubscription, payload: String, source: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.updateRevisionUtf8(record.toString())
+    digest.update(0.toByte())
+    digest.updateRevisionUtf8(source)
+    digest.update(0.toByte())
+    digest.updateRevisionUtf8(payload)
+
+    val bytes = digest.digest()
+    val digits = "0123456789abcdef"
+    return String(CharArray(bytes.size * 2).also { hex ->
+        for (index in bytes.indices) {
+            val byte = bytes[index].toInt() and 0xff
+            hex[index * 2] = digits[byte ushr 4]
+            hex[index * 2 + 1] = digits[byte and 0x0f]
+        }
+    })
+}
+
+private fun MessageDigest.updateRevisionUtf8(value: String) {
+    var start = 0
+    while (start < value.length) {
+        var end = start + minOf(1024, value.length - start)
+        // Keep a supplementary character together across chunks.
+        if (end < value.length && value[end - 1].isHighSurrogate() && value[end].isLowSurrogate()) end--
+        update(value.substring(start, end).toByteArray(Charsets.UTF_8))
+        start = end
+    }
+}
