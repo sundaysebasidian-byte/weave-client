@@ -12,6 +12,8 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "下载" to SupplementalTranslation("Download", "下載", "ダウンロード", "Réception", "Download"),
     "上传" to SupplementalTranslation("Upload", "上傳", "アップロード", "Envoi", "Upload"),
     "延迟" to SupplementalTranslation("Latency", "延遲", "遅延", "Latence", "Latenz"),
+    // Subscriptions
+    "添加方式" to SupplementalTranslation("Add from", "新增方式", "追加方法", "Ajouter depuis", "Hinzufügen aus"),
     // Routes
     "全局模式下分流不生效" to SupplementalTranslation("App rules are off in global mode", "全局模式下分流不生效", "グローバルモードではアプリのルールは無効です", "Les règles d’app sont inactives en mode global", "App-Regeln gelten im globalen Modus nicht"),
     "直连模式下分流不生效" to SupplementalTranslation("App rules are off in direct mode", "直連模式下分流不生效", "直接接続モードではアプリのルールは無効です", "Les règles d’app sont inactives en mode direct", "App-Regeln gelten im Direktmodus nicht"),
