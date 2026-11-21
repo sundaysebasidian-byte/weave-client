@@ -2,7 +2,7 @@
 
 **[简体中文（主要阅读版本）](PRIVACY.zh-CN.md)** · English
 
-Last updated: 2026-10-04
+Last updated: 2026-11-21
 
 This notice describes the local-first Android client in this repository. A
 distributor that changes Weave, adds analytics, or operates a hosted service
@@ -12,9 +12,17 @@ must publish an accurate notice for that build.
 
 The public repository follows the `local-open-source` profile. Weave does not
 operate accounts, a hosted control plane, proxy relays, a node marketplace, a
-subscription service, advertising, analytics, crash reporting, or an in-app
-remote updater. GitHub releases are static source and build artifacts published
+subscription service, advertising, analytics, crash reporting, or an automatic
+APK downloader or installer. GitHub releases are static source and build artifacts published
 by a maintainer; they are not a Weave backend or a remote configuration channel.
+
+On supported ARM64 devices, release builds with the official application ID can read the official repository's public
+release list from GitHub at startup, normally at most once per 24 hours. Turn off
+“启动时检查应用更新” under Settings → About to stop startup checks. A manual check
+remains available. GitHub sees the request time, network exit IP and a shared
+Weave user agent, but not the installed version, device ID, nodes, subscriptions
+or VPN data. Version comparison and the last-check state stay on the device.
+Opening the official release page is a separate action in your browser.
 
 This boundary does not mean that all traffic stays on the device. A user-selected
 subscription, proxy, DNS resolver, IP-quality service, destination, or LAN peer
