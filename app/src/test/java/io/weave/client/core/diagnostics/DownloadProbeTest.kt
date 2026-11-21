@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType
+import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
@@ -87,12 +88,13 @@ class DownloadProbeTest {
         }
     }
 
+    // Delegate only metadata APIs. Execution and cancellation remain entirely fake.
     private class FakeCall(
         private val request: Request,
         private val enqueued: CountDownLatch,
         val cancelled: CountDownLatch,
         private val reply: (FakeCall, Callback) -> Unit,
-    ) : Call {
+    ) : Call by metadataClient.newCall(request) {
         private val executed = AtomicBoolean()
         override fun request(): Request = request
         override fun execute(): Response = error("run must enqueue")
@@ -145,6 +147,8 @@ class DownloadProbeTest {
     }
 
     private companion object {
+        val metadataClient = OkHttpClient()
+
         fun response(call: Call, status: Int, body: ResponseBody): Response =
             Response.Builder()
                 .request(call.request())
