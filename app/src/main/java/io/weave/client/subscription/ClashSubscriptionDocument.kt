@@ -20,12 +20,25 @@ internal object ClashSubscriptionDocument {
     fun unwrap(input: String): String {
         val plain = input.trim().removePrefix("\uFEFF")
         if (marker.containsMatchIn(plain) || plain.contains(':')) return plain
-        val compact = plain.filterNot(Char::isWhitespace)
+        val compact = plain.withoutSubscriptionWhitespace()
         val decoded = runCatching {
             Base64.getDecoder().decode(compact).toString(Charsets.UTF_8)
         }.recoverCatching {
             Base64.getUrlDecoder().decode(compact).toString(Charsets.UTF_8)
         }.getOrNull()?.trim()?.removePrefix("\uFEFF") ?: return plain
         return decoded.takeIf { marker.containsMatchIn(it) } ?: plain
+    }
+}
+
+/** Reuse already compact payloads. Allocate a replacement only after finding whitespace. */
+internal fun String.withoutSubscriptionWhitespace(): String {
+    val firstWhitespace = indexOfFirst(Char::isWhitespace)
+    if (firstWhitespace < 0) return this
+    return buildString {
+        append(this@withoutSubscriptionWhitespace, 0, firstWhitespace)
+        for (index in firstWhitespace + 1 until this@withoutSubscriptionWhitespace.length) {
+            val char = this@withoutSubscriptionWhitespace[index]
+            if (!char.isWhitespace()) append(char)
+        }
     }
 }
