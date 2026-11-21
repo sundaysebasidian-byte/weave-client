@@ -48,8 +48,7 @@ object RouteReferenceSanitizer {
                     route.copy(target = target.copy(label = name))
                 } ?: route.copy(target = target.copy(kind = RouteKind.BLOCK, label = "出口已失效，请重新选择"))
                 RouteKind.DIRECT -> route.copy(target = target.copy(label = "直连"))
-                RouteKind.BLOCK -> route.copy(target = target.copy(label =
-                    if (target.nodeId != null || target.subscriptionId != null) "出口已失效，请重新选择" else "阻止联网"))
+                RouteKind.BLOCK -> route.copy(target = target.copy(label = target.blockedDisplayLabel()))
                 RouteKind.AUTO -> {
                     if (target.subscriptionId in subscriptionIds) {
                         route.copy(target = target.copy(label = "自动选择"))
@@ -104,3 +103,7 @@ object RouteReferenceSanitizer {
         }
     }
 }
+
+/** A preserved reference distinguishes an invalid exit from a user's explicit block. */
+internal fun RouteTarget.blockedDisplayLabel(): String =
+    if (nodeId != null || subscriptionId != null || groupId != null) "出口已失效，请重新选择" else "阻止联网"
