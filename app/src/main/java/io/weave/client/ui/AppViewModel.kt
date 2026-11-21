@@ -1764,19 +1764,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableCustomGroupError = MutableStateFlow<String?>(null)
     val customGroupError = mutableCustomGroupError.asStateFlow()
 
-    fun saveCustomGroup(group: io.weave.client.routing.CustomProxyGroup): Boolean {
-        val normalized = runCatching { io.weave.client.routing.CustomProxyGroupValidator.normalize(group) }
-            .getOrElse { error ->
-                mutableCustomGroupError.value = error.message
-                return false
-            }
-        val updated = mutableCustomGroups.value.filterNot { it.id == normalized.id } + normalized
-        persistCustomGroups(updated)
-        // A renamed group keeps its routes; refresh their labels.
-        relabelGroupTargets()
-        reloadIfConnected("正在应用自定义策略组")
-        return true
-    }
+    fun saveCustomGroup(group: io.weave.client.routing.CustomProxyGroup): Result<Unit> =
+        submitCustomGroupDraft(group) { normalized ->
+            val updated = mutableCustomGroups.value.filterNot { it.id == normalized.id } + normalized
+            persistCustomGroups(updated)
+            // A renamed group keeps its routes; refresh their labels.
+            relabelGroupTargets()
+            reloadIfConnected("正在应用自定义策略组")
+        }
 
     fun deleteCustomGroup(id: String) {
         persistCustomGroups(mutableCustomGroups.value.filterNot { it.id == id })
