@@ -1062,10 +1062,11 @@ fun WeaveApp(
     if (showAppPicker) {
         val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
         val routes by viewModel.routes.collectAsStateWithLifecycle()
+        val unroutedApps = remember(installedApps, routes) {
+            AppPickerFilter.unrouted(installedApps, routes, { it.packageName }, { it.packageName })
+        }
         AppPickerDialog(
-            apps = installedApps.filterNot { app ->
-                routes.any { it.packageName == app.packageName }
-            },
+            apps = unroutedApps,
             onDismiss = { showAppPicker = false },
             onSelect = { packageName ->
                 viewModel.addAppRoute(packageName)
