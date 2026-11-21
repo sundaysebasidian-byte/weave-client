@@ -385,7 +385,9 @@ fun WeaveApp(
     val releaseScope = androidx.compose.runtime.rememberCoroutineScope()
     val releaseCheck = remember(releaseContext, releaseScope) { OfficialReleaseCheck(releaseContext, releaseScope) }
     LaunchedEffect(releaseCheck) {
-        releaseCheck.start { message -> snackbar.showSnackbar(message); Unit }
+        releaseCheck.start { message ->
+            snackbar.showSnackbar(localizeWeaveText(message, viewModel.language.value))
+        }
     }
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     val destinationState = rememberSaveableStateHolder()
