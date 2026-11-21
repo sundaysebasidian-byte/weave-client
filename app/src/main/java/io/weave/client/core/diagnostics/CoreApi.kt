@@ -24,7 +24,9 @@ data class CoreConnection(
     val uploadBytes: Long,
     val downloadBytes: Long,
     val startedAt: String,
-)
+) {
+    internal val startedAtInstant = ConnectionStartTime.parse(startedAt)
+}
 
 @Immutable
 data class CoreConnectionsSnapshot(
@@ -32,6 +34,9 @@ data class CoreConnectionsSnapshot(
     val uploadTotal: Long,
     val downloadTotal: Long,
 )
+
+internal fun List<CoreConnection>.latestFirst(): List<CoreConnection> =
+    sortedByDescending { it.startedAtInstant }
 
 @Immutable
 data class CoreLogLine(val level: String, val message: String)
@@ -41,9 +46,10 @@ data class CoreLogLine(val level: String, val message: String)
  * Works from either process; nothing read here is written to disk.
  */
 class CoreApi(private val context: Context) {
-    suspend fun connections(): CoreConnectionsSnapshot = withContext(Dispatchers.IO) {
+    suspend fun connections(latestFirst: Boolean = false): CoreConnectionsSnapshot = withContext(Dispatchers.IO) {
         val body = request("GET", "/connections", MAX_RESPONSE_BYTES)
-        parseConnections(JSONObject(body))
+        val snapshot = parseConnections(JSONObject(body))
+        if (latestFirst) snapshot.copy(connections = snapshot.connections.latestFirst()) else snapshot
     }
 
     suspend fun close(id: String): Boolean = withContext(Dispatchers.IO) {
