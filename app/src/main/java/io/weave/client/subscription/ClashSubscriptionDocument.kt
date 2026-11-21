@@ -6,9 +6,15 @@ import java.util.Base64
 internal object ClashSubscriptionDocument {
     private val marker = Regex("(?:^|[\\n\\r,{])[ \\t]*[\"']?(?:proxies|proxy-providers)[\"']?[ \\t]*:")
 
-    fun hasRootKey(text: String, key: String): Boolean {
-        if (!marker.containsMatchIn(text)) return false
-        return ClashYamlCodec.read(text).containsKey(key)
+    fun hasRootKey(text: String, key: String): Boolean = readRootWithKey(text, key) != null
+
+    fun readRootWithKey(
+        text: String,
+        key: String,
+        read: (String) -> Map<String, Any?> = ClashYamlCodec::read,
+    ): Map<String, Any?>? {
+        if (!marker.containsMatchIn(text)) return null
+        return read(text).takeIf { it.containsKey(key) }
     }
 
     fun unwrap(input: String): String {
