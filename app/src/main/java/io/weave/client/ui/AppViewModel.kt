@@ -368,7 +368,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // disabled prevents a connected service from being polled during ViewModel construction.
     private val mutableDashboardVisible = MutableStateFlow(false)
     private val mutableDashboardScrolling = MutableStateFlow(false)
-    private var installedAppsLoaded = false
+    private val installedAppsRefresh = InstalledAppsRefresh(
+        scope = viewModelScope,
+        read = { withContext(Dispatchers.IO) { installedAppRepository.listLaunchableApps() } },
+        publish = { mutableInstalledApps.value = it },
+    )
     private var installedAppsReleaseJob: Job? = null
     private var privacyProbeJob: Job? = null
     private val dnsProbePermits = Semaphore(3)
@@ -543,32 +547,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         settingsStore.setFavoriteNodeIds(mutableFavoriteNodes.value)
     }
 
-    private var installedAppsLoadJob: Job? = null
-
     fun ensureInstalledAppsLoaded(forceRefresh: Boolean = false) {
         installedAppsReleaseJob?.cancel()
-        if (installedAppsLoadJob?.isActive == true || (installedAppsLoaded && !forceRefresh)) return
-        installedAppsLoaded = true
-        installedAppsLoadJob = viewModelScope.launch {
-            try {
-                mutableInstalledApps.value = withContext(Dispatchers.IO) {
-                    installedAppRepository.listLaunchableApps()
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                installedAppsLoaded = false
-            }
-        }
+        installedAppsRefresh.ensure(forceRefresh)
     }
 
     fun releaseInstalledAppsWhenIdle() {
         installedAppsReleaseJob?.cancel()
         installedAppsReleaseJob = viewModelScope.launch {
             delay(INSTALLED_APP_CACHE_IDLE_MS)
-            installedAppsLoadJob?.cancel()
-            mutableInstalledApps.value = emptyList()
-            installedAppsLoaded = false
+            installedAppsRefresh.release()
         }
     }
 
