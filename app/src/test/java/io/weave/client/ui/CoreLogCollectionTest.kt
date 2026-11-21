@@ -4,6 +4,9 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -52,5 +55,49 @@ class CoreLogCollectionTest {
         assertEquals(0, stopped)
         watchCoreLogCollection(collect = {}, onStopped = { stopped++ })
         assertEquals(1, stopped)
+    }
+
+    @Test fun bufferedOldRowsCannotAppendAfterLevelSwitchOrPause() = runBlocking {
+        for (pause in listOf(false, true)) {
+            var epoch = 10L
+            var running = true
+            val requestedEpoch = epoch
+            val oldIsCurrent = { running && epoch == requestedEpoch }
+            val rows = mutableListOf<String>()
+            var stopped = 0
+            watchCoreLogCollection(
+                collect = {
+                    channelFlow {
+                        send("prior")
+                        send("old buffered")
+                    }.buffer(16).collectCurrentLogLines(oldIsCurrent) { row ->
+                        rows += row
+                        if (row == "prior") {
+                            // The user changes level or pauses before the next buffered append.
+                            epoch++
+                            if (pause) running = false
+                        }
+                    }
+                },
+                stillCurrent = oldIsCurrent,
+                onStopped = { stopped++ },
+            )
+            assertEquals(listOf("prior"), rows)
+            assertEquals(0, stopped)
+
+            if (pause) {
+                epoch++
+                running = true
+            }
+            val currentEpoch = epoch
+            val newIsCurrent = { running && epoch == currentEpoch }
+            watchCoreLogCollection(
+                collect = { flowOf("new first", "new last").collectCurrentLogLines(newIsCurrent) { rows += it } },
+                stillCurrent = newIsCurrent,
+                onStopped = { stopped++ },
+            )
+            assertEquals(listOf("prior", "new first", "new last"), rows)
+            assertEquals(1, stopped)
+        }
     }
 }
