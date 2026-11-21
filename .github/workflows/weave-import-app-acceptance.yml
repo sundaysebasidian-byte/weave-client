@@ -1,0 +1,31 @@
+name: Weave compile import app acceptance
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths: ['.github/workflows/weave-import-app-acceptance.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  compile-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install the project's locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile the isolated Android acceptance application and test APK
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true --no-daemon --no-configuration-cache
