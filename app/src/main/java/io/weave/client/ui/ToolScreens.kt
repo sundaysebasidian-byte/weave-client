@@ -245,9 +245,10 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
                     connections = snapshot.connections
                     totals = snapshot.uploadTotal to snapshot.downloadTotal
                     error = false
-                    snapshot.connections.map { it.uid }.distinct().filter { it > 0 && it !in labels }.forEach { uid ->
-                        labels[uid] = appLabel(context, uid)
+                    val newLabels = resolveConnectionAppLabels(snapshot.connections.map { it.uid }, labels.keys) { uid ->
+                        appLabel(context, uid)
                     }
+                    labels.putAll(newLabels)
                 }
                 .onFailure { error = true }
             loaded = true
