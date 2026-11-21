@@ -18,7 +18,7 @@ data class RecoveryState(
 )
 
 class RecoveryVault internal constructor(private val readPreferences: () -> SharedPreferences) {
-    constructor(context: Context) : this(context.applicationContext.let { appContext ->
+    constructor(context: Context) : this(readPreferences = context.applicationContext.let { appContext ->
         { appContext.crossProcessPreferences(PREFERENCES_NAME) }
     })
 
