@@ -121,7 +121,7 @@ class CoreApi(private val context: Context) {
             "$method $path HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII),
         )
         socket.outputStream.flush()
-        val response = socket.inputStream.readBytesBounded(limit).toString(Charsets.UTF_8)
+        val response = BoundedCoreResponse.readUtf8(socket.inputStream, limit)
         val statusLine = response.substringBefore("\r\n")
         val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull() ?: throw IOException("bad response")
         if (code !in 200..299) throw IOException("HTTP $code")
