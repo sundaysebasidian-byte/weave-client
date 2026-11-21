@@ -37,6 +37,7 @@ import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.weave.client.subscription.LiveQrDecoder
+import io.weave.client.subscription.copyLiveQrLuma
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -82,20 +83,7 @@ internal fun LiveQrScanner(onDismiss: () -> Unit, onResult: (String) -> Unit) {
                     val height = image.height
                     if (luma.size != width * height) luma = ByteArray(width * height)
                     val plane = image.planes[0]
-                    val buffer = plane.buffer.duplicate()
-                    val base = buffer.position()
-                    // Respect row/pixel strides, including padding used by OEM camera drivers.
-                    for (row in 0 until height) {
-                        val offset = base + row * plane.rowStride
-                        if (plane.pixelStride == 1) {
-                            buffer.position(offset)
-                            buffer.get(luma, row * width, width)
-                        } else {
-                            for (column in 0 until width) {
-                                luma[row * width + column] = buffer.get(offset + column * plane.pixelStride)
-                            }
-                        }
-                    }
+                    copyLiveQrLuma(plane.buffer, width, height, plane.rowStride, plane.pixelStride, luma)
                     decoder.decode(luma, width, height)?.let { value ->
                         if (consumed.compareAndSet(false, true)) main.execute {
                             if (active.get()) resultCallback(value)
