@@ -193,7 +193,7 @@ internal fun LocalRouteRulesDialog(
 ) {
     var type by remember { mutableStateOf(LocalRuleType.DOMAIN_SUFFIX) }
     var action by remember { mutableStateOf(LocalRuleAction.DIRECT) }
-    var value by remember { mutableStateOf("") }
+    var draft by remember { mutableStateOf(LocalRuleValueDraft()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -248,8 +248,8 @@ internal fun LocalRouteRulesDialog(
                 }
                 item {
                     OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it.take(253) },
+                        value = draft.value,
+                        onValueChange = { draft = LocalRuleValueDraft(it) },
                         label = {
                             Text(
                                 when (type) {
@@ -262,16 +262,18 @@ internal fun LocalRouteRulesDialog(
                             )
                         },
                         singleLine = true,
-                        isError = state.error != null,
+                        isError = state.error != null || draft.exceedsLimit,
+                        supportingText = if (draft.exceedsLimit) ({ Text("规则值长度无效") }) else null,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 item {
                     Button(
                         onClick = {
-                            if (onAdd(type, value, action)) value = ""
+                            val submitted = draft
+                            if (submitted.canAdd && onAdd(type, submitted.value, action)) draft = LocalRuleValueDraft()
                         },
-                        enabled = value.isNotBlank(),
+                        enabled = draft.canAdd,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null)
