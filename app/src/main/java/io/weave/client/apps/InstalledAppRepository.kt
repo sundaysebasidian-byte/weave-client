@@ -69,11 +69,7 @@ class InstalledAppRepository(
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
     }
 
-    private fun String.monogram(): String {
-        val codePoints = codePoints().limit(2).toArray()
-        return codePoints.joinToString(separator = "") { String(Character.toChars(it)) }
-            .uppercase()
-    }
+    private fun String.monogram(): String = LauncherLabelMonogram.of(this)
 
     private companion object {
         val APP_TINTS = longArrayOf(
