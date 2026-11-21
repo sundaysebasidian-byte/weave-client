@@ -65,7 +65,7 @@ class PolicyPackSnapshotTest {
         // A restore changed the store while the mutation was still publishing its result.
         stored = listOf(pack("restored"))
         state.value = state.value.copy(running = false, message = "mutation done", error = "previous warning")
-        reload.mutationFinished()
+        reload.mutationFinished(succeeded = true)
         yield()
         assertEquals(2, readCount)
         assertEquals(listOf("restored"), state.ids())
@@ -90,6 +90,71 @@ class PolicyPackSnapshotTest {
         yield()
         assertTrue(state.value.running)
         assertEquals(listOf("current"), state.ids())
+    }
+
+    @Test
+    fun failedMutationRecoversInterruptedReadWithoutPublishingOldList() = runBlocking {
+        val state = MutableStateFlow(PolicyPackState())
+        val invalidated = CompletableDeferred<List<PolicyPack>?>()
+        val recovered = CompletableDeferred<List<PolicyPack>?>()
+        var reads = 0
+        val reload = PolicyPackReload(state, this) {
+            when (++reads) {
+                1 -> invalidated.await()
+                2 -> recovered.await()
+                else -> error("Unexpected reread")
+            }
+        }
+        reload.request()
+        yield()
+        assertEquals(1, reads)
+
+        reload.mutationStarted()
+        state.value = state.value.copy(running = true)
+        state.value = state.value.copy(running = false, error = "import failed")
+        reload.mutationFinished(succeeded = false)
+        yield()
+        assertEquals(2, reads)
+        assertEquals(emptyList<String>(), state.ids())
+
+        recovered.complete(listOf(pack("stored")))
+        yield()
+        invalidated.complete(listOf(pack("stale")))
+        yield()
+        assertEquals(listOf("stored"), state.ids())
+        assertEquals("import failed", state.value.error)
+        assertEquals(2, reads)
+    }
+
+    @Test
+    fun successfulFreshListAndLaterFailureDoNotRetryRetiredEpochRead() = runBlocking {
+        val state = MutableStateFlow(PolicyPackState())
+        val invalidated = CompletableDeferred<List<PolicyPack>?>()
+        var reads = 0
+        val reload = PolicyPackReload(state, this) {
+            check(++reads == 1)
+            invalidated.await()
+        }
+        reload.request()
+        yield()
+
+        reload.mutationStarted()
+        state.value = state.value.copy(running = true)
+        state.value = PolicyPackState(packs = listOf(pack("mutation list")))
+        reload.mutationFinished(succeeded = true)
+        yield()
+        assertEquals(1, reads)
+
+        reload.mutationStarted()
+        state.value = state.value.copy(running = true)
+        state.value = state.value.copy(running = false, error = "another mutation failed")
+        reload.mutationFinished(succeeded = false)
+        yield()
+        invalidated.complete(listOf(pack("stale")))
+        yield()
+        assertEquals(1, reads)
+        assertEquals(listOf("mutation list"), state.ids())
+        assertEquals("another mutation failed", state.value.error)
     }
 
     private suspend fun kotlinx.coroutines.CoroutineScope.racingReads(): Triple<
