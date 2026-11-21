@@ -36,23 +36,21 @@ class InstalledAppRepository(
             context.packageManager.queryIntentActivities(intent, 0)
         }
 
-        val launchable = resolved.asSequence()
-            .mapNotNull { info ->
-                val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-                if (packageName == context.packageName) return@mapNotNull null
-                val label = info.loadLabel(context.packageManager).toString().trim()
-                    .ifEmpty { packageName.substringAfterLast('.') }
-                InstalledApp(
-                    packageName = packageName,
-                    label = label,
-                    monogram = label.monogram(),
-                    tint = APP_TINTS[(packageName.hashCode() and Int.MAX_VALUE) % APP_TINTS.size],
-                    migrationCandidate = ProxyClientDetector.matches(packageName, label),
-                )
-            }
-            .distinctBy { it.packageName }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
-            .toList()
+        val launchable = describeDistinctLauncherPackages(
+            resolved,
+            context.packageName,
+            packageName = { it.activityInfo?.packageName },
+        ) { info, packageName ->
+            val label = info.loadLabel(context.packageManager).toString().trim()
+                .ifEmpty { packageName.substringAfterLast('.') }
+            InstalledApp(
+                packageName = packageName,
+                label = label,
+                monogram = label.monogram(),
+                tint = APP_TINTS[(packageName.hashCode() and Int.MAX_VALUE) % APP_TINTS.size],
+                migrationCandidate = ProxyClientDetector.matches(packageName, label),
+            )
+        }
         // Exact package queries also find known clients whose launcher entry is hidden/disabled.
         // Never enumerate all packages or open another app's private configuration.
         val known = missingKnownApps(launchable, ProxyClientDetector.knownPackages) { packageName ->
@@ -86,6 +84,22 @@ class InstalledAppRepository(
             0xFFFFF0D6,
             0xFFE1F4F5,
         )
+    }
+}
+
+/** Resolve only the first launcher label for each package, retaining PackageManager order. */
+internal fun <T> describeDistinctLauncherPackages(
+    rows: Iterable<T>,
+    ownPackage: String,
+    packageName: (T) -> String?,
+    describe: (T, String) -> InstalledApp,
+): List<InstalledApp> {
+    val seen = HashSet<String>()
+    return buildList {
+        for (row in rows) {
+            val name = packageName(row) ?: continue
+            if (name != ownPackage && seen.add(name)) add(describe(row, name))
+        }
     }
 }
 
