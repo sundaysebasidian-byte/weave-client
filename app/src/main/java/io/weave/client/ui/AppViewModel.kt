@@ -1883,12 +1883,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { probeSafely { backup.restore(entries) } }
             result.onSuccess {
-                reloadLocalState()
-                LocalDataEvents.restored()
-                if (generation == backupGeneration) {
-                    mutableBackupState.value = BackupState(message = "已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启")
+                finishCommittedBackupUi(
+                    refresh = ::reloadLocalState,
+                    stillCurrent = { generation == backupGeneration },
+                ) { completed ->
+                    LocalDataEvents.restored()
+                    mutableBackupState.value = completed
+                    if (completed.error == null) reloadIfConnected("正在应用恢复的配置")
                 }
-                reloadIfConnected("正在应用恢复的配置")
             }.onFailure {
                 if (generation == backupGeneration) mutableBackupState.value = BackupState(error = it.message ?: "恢复失败，请重新预览后重试")
             }
