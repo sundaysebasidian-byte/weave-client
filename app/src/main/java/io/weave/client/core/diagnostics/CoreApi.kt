@@ -38,6 +38,21 @@ data class CoreConnectionsSnapshot(
 internal fun List<CoreConnection>.latestFirst(): List<CoreConnection> =
     sortedByDescending { it.startedAtInstant }
 
+internal fun connectionRuleLabel(rule: String, payload: String): String {
+    val limit = 160
+    val separator = " · "
+    if (rule.isBlank()) return if (payload.isBlank()) "" else payload.take(limit)
+    if (rule.length >= limit || payload.isBlank()) return rule.take(limit)
+    val remaining = limit - rule.length
+    val separatorEnd = minOf(separator.length, remaining)
+    val payloadEnd = minOf(payload.length, remaining - separatorEnd)
+    return buildString(rule.length + separatorEnd + payloadEnd) {
+        append(rule)
+        append(separator, 0, separatorEnd)
+        append(payload, 0, payloadEnd)
+    }
+}
+
 @Immutable
 data class CoreLogLine(val level: String, val message: String)
 
@@ -134,10 +149,7 @@ class CoreApi(private val context: Context) {
                     process = metadata.optString("process").take(120),
                     network = metadata.optString("network").take(16),
                     destination = (if (port.isBlank()) host else ConnectionEndpoint.withPort(host, port)).take(260),
-                    rule = listOf(value.optString("rule"), value.optString("rulePayload"))
-                        .filter(String::isNotBlank)
-                        .joinToString(" · ")
-                        .take(160),
+                    rule = connectionRuleLabel(value.optString("rule"), value.optString("rulePayload")),
                     chain = (0 until minOf(chains?.length() ?: 0, 12)).map { chains!!.optString(it).take(160) },
                     uploadBytes = value.optLong("upload"),
                     downloadBytes = value.optLong("download"),
