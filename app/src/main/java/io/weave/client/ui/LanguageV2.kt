@@ -10,6 +10,13 @@ import io.weave.client.domain.WeaveLanguage
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     // Official release settings and local save feedback.
     "订阅已保存，节点列表刷新失败，请重新打开应用" to SupplementalTranslation("Subscription saved, but the node list could not refresh. Reopen the app.", "訂閱已儲存，但無法重新整理節點清單。請重新開啟應用程式。", "購読は保存されましたが、ノード一覧を更新できませんでした。アプリを開き直してください。", "Abonnement enregistré, mais la liste des nœuds n’a pas pu être actualisée. Rouvrez l’application.", "Abo gespeichert, aber die Knotenliste konnte nicht aktualisiert werden. Öffne die App erneut."),
+    "订阅已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。" to SupplementalTranslation(
+        "Subscription saved, but the VPN configuration reload could not be started. Reconnect to apply the changes.",
+        "訂閱已儲存，但無法啟動 VPN 設定重新載入。請重新連線以套用變更。",
+        "購読は保存されましたが、VPN 設定の再読み込みを開始できませんでした。変更を適用するには、再接続してください。",
+        "Abonnement enregistré, mais le rechargement de la configuration VPN n’a pas pu démarrer. Reconnectez-vous pour appliquer les changements.",
+        "Das Abo wurde gespeichert, aber das Neuladen der VPN-Konfiguration konnte nicht gestartet werden. Verbinde dich erneut, um die Änderungen zu übernehmen.",
+    ),
     "GitHub 暂时限制访问，请稍后再试。" to SupplementalTranslation("GitHub is temporarily limiting requests. Try again later.", "GitHub 暫時限制請求，請稍後再試。", "GitHub が一時的にリクエストを制限しています。しばらくしてから再試行してください。", "GitHub limite temporairement les requêtes. Réessayez plus tard.", "GitHub begrenzt vorübergehend die Anfragen. Versuche es später erneut."),
     "GitHub 拒绝了本次访问，可尝试打开官方发布页。" to SupplementalTranslation("GitHub denied the request. Try opening the official releases page.", "GitHub 拒絕了這次請求，可試著開啟官方版本頁面。", "GitHub がリクエストを拒否しました。公式リリースページを開いてみてください。", "GitHub a refusé la requête. Essayez d’ouvrir la page officielle des versions.", "GitHub hat die Anfrage abgelehnt. Öffne stattdessen die offizielle Release-Seite."),
     "GitHub 暂时未能提供版本信息。" to SupplementalTranslation("GitHub could not provide version information at this time.", "GitHub 暫時無法提供版本資訊。", "GitHub からバージョン情報を取得できませんでした。", "GitHub n’a pas pu fournir les informations de version pour le moment.", "GitHub konnte die Versionsinformationen momentan nicht bereitstellen."),
