@@ -327,7 +327,7 @@ class SubscriptionPayloadParser {
     }
 
     private fun decodeBase64(payload: String): String {
-        val compact = payload.filterNot(Char::isWhitespace)
+        val compact = payload.withoutSubscriptionWhitespace()
         val decoded = runCatching {
             Base64.getDecoder().decode(padBase64(compact))
         }.recoverCatching {
