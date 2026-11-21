@@ -1,0 +1,35 @@
+name: Weave Android round 001
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths:
+      - '.github/workflows/weave-round001.yml'
+      - 'app/src/main/java/io/weave/client/ui/AppViewModel.kt'
+      - 'app/src/main/java/io/weave/client/ui/ImportNodeRefresh.kt'
+      - 'app/src/test/java/io/weave/client/ui/ImportNodeRefreshTest.kt'
+
+permissions:
+  contents: read
+
+jobs:
+  import-refresh-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install the project's locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile Android and run the focused import regression
+        run: ./gradlew testDebugUnitTest --tests io.weave.client.ui.ImportNodeRefreshTest --no-daemon --no-configuration-cache
