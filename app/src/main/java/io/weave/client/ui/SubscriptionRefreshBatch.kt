@@ -22,10 +22,10 @@ internal object SubscriptionRefreshBatch {
         onUpdated: suspend (String) -> Unit,
         onProgress: (current: Subscription?, results: List<SubscriptionRefreshResult>) -> Unit,
     ): List<SubscriptionRefreshResult> {
-        val results = mutableListOf<SubscriptionRefreshResult>()
+        var results: List<SubscriptionRefreshResult> = emptyList()
         for (subscription in targets) {
             currentCoroutineContext().ensureActive()
-            onProgress(subscription, results.toList())
+            onProgress(subscription, results)
             var reviewRequired = false
             val succeeded = try {
                 refresh(subscription.id)
@@ -39,9 +39,14 @@ internal object SubscriptionRefreshBatch {
             } catch (_: Exception) {
                 false
             }
-            results += SubscriptionRefreshResult(subscription.id, subscription.name, succeeded, reviewRequired)
-            onProgress(null, results.toList())
+            val outcome = SubscriptionRefreshResult(subscription.id, subscription.name, succeeded, reviewRequired)
+            // The next start and final return can share this immutable result snapshot.
+            results = buildList(results.size + 1) {
+                addAll(results)
+                add(outcome)
+            }
+            onProgress(null, results)
         }
-        return results.toList()
+        return results
     }
 }
