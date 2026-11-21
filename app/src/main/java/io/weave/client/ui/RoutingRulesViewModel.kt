@@ -42,6 +42,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private val mutableLocalRouteRuleState = MutableStateFlow(LocalRouteRuleState())
     val localRouteRuleState = mutableLocalRouteRuleState.asStateFlow()
+    private val localRuleSnapshotOrder = LocalRuleSnapshotOrder()
 
     private val mutableRuleSetState = MutableStateFlow(RuleSetState())
     val ruleSetState = mutableRuleSetState.asStateFlow()
@@ -55,8 +56,13 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
     private fun reload() {
         policyPackReload.request()
         viewModelScope.launch {
+            val localRuleRead = localRuleSnapshotOrder.beginRead()
             withContext(Dispatchers.IO) { probeSafely { localRouteRuleStore.list() } }
-                .onSuccess { mutableLocalRouteRuleState.value = LocalRouteRuleState(rules = it) }
+                .onSuccess { rules ->
+                    if (localRuleSnapshotOrder.acceptRead(localRuleRead)) {
+                        mutableLocalRouteRuleState.update { it.copy(rules = rules) }
+                    }
+                }
             withContext(Dispatchers.IO) { probeSafely { ruleSetStore.list() } }
                 .onSuccess { sets -> mutableRuleSetState.update { it.copy(sets = sets) } }
                 .onFailure { mutableRuleSetState.update { it.copy(error = "规则集读取失败，原数据已保留") } }
@@ -138,7 +144,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
             val normalized = LocalRouteRuleValidator.normalize(rule)
             val next = localRouteRuleStore.list() + normalized
             localRouteRuleStore.save(next)
-            mutableLocalRouteRuleState.value = LocalRouteRuleState(next)
+            publishSavedLocalRules(next)
             reloadIfConnected("本地路由规则已添加，正在安全更新运行配置")
         }.onFailure { error ->
             mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则无效") }
@@ -151,7 +157,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
                 if (rule.id == id) rule.copy(enabled = enabled) else rule
             }
             localRouteRuleStore.save(next)
-            mutableLocalRouteRuleState.value = LocalRouteRuleState(next)
+            publishSavedLocalRules(next)
             reloadIfConnected("本地路由规则已更新，正在安全应用")
         }.onFailure { error ->
             mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则更新失败") }
@@ -162,11 +168,16 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
         runCatching {
             val next = localRouteRuleStore.list().filterNot { it.id == id }
             localRouteRuleStore.save(next)
-            mutableLocalRouteRuleState.value = LocalRouteRuleState(next)
+            publishSavedLocalRules(next)
             reloadIfConnected("本地路由规则已删除，正在安全应用")
         }.onFailure { error ->
             mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则删除失败") }
         }
+    }
+
+    private fun publishSavedLocalRules(rules: List<LocalRouteRule>) {
+        localRuleSnapshotOrder.localWritePublished()
+        mutableLocalRouteRuleState.value = LocalRouteRuleState(rules)
     }
 
     fun clearLocalRouteRuleError() {
