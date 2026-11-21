@@ -231,7 +231,7 @@ internal fun CustomGroupsScreen(
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
     error: String?,
-    onSave: (CustomProxyGroup) -> Boolean,
+    onSave: (CustomProxyGroup) -> Result<Unit>,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -301,7 +301,7 @@ internal fun CustomGroupsScreen(
             subscriptions = subscriptions,
             nodes = nodes,
             onDismiss = { creating = false; editing = null },
-            onSave = { group -> if (onSave(group)) { creating = false; editing = null } },
+            onSave = { group -> onSave(group).onSuccess { creating = false; editing = null } },
             onDelete = target?.let { group -> { onDelete(group.id); editing = null } },
         )
     }
@@ -314,7 +314,7 @@ private fun CustomGroupEditor(
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
     onDismiss: () -> Unit,
-    onSave: (CustomProxyGroup) -> Unit,
+    onSave: (CustomProxyGroup) -> Result<Unit>,
     onDelete: (() -> Unit)?,
 ) {
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
@@ -325,6 +325,7 @@ private fun CustomGroupEditor(
     var query by remember { mutableStateOf("") }
     var pickingEntry by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    var saveRejection by remember(initial?.id) { mutableStateOf<String?>(null) }
     val subscriptionNames = remember(subscriptions) { subscriptions.associate { it.id to it.name } }
     val filtered = remember(nodes, query) {
         val needle = query.trim()
@@ -346,11 +347,19 @@ private fun CustomGroupEditor(
                     onSave(
                         (initial ?: CustomProxyGroup(name = name, members = members.toList()))
                             .copy(name = name, strategy = strategy, members = members.toList(), entry = entry.takeIf { chained }),
-                    )
+                    ).onFailure { saveRejection = it.message }
                 },
             ) { Text("保存") }
         },
     ) {
+        saveRejection?.let {
+            WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = it,
+                tone = WeaveStatusTone.CRITICAL,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
