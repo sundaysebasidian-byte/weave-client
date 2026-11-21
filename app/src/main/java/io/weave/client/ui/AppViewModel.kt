@@ -74,6 +74,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -85,6 +87,17 @@ sealed interface ExternalRequest {
     data object Connect : ExternalRequest
     data object OpenImport : ExternalRequest
     data class Import(val value: io.weave.client.subscription.ExternalImport) : ExternalRequest
+}
+
+/** A readiness wait must not consume or dispatch a newer launcher/share request. */
+internal suspend fun claimExternalRequest(
+    pending: MutableStateFlow<ExternalRequest?>,
+    request: ExternalRequest,
+    awaitReady: suspend () -> Unit,
+): Boolean {
+    if (request == ExternalRequest.Connect) awaitReady()
+    currentCoroutineContext().ensureActive()
+    return pending.compareAndSet(request, null)
 }
 
 @Immutable
@@ -255,9 +268,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableExternalRequest.value = request
     }
 
-    fun consumeExternalRequest() {
-        mutableExternalRequest.value = null
-    }
+    suspend fun claimExternalRequest(request: ExternalRequest): Boolean =
+        claimExternalRequest(mutableExternalRequest, request, ::awaitReady)
 
     private val externalImportSession = ExternalImportPreviewSession()
     val externalImportPreview = externalImportSession.current
