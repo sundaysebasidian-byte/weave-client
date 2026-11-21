@@ -850,6 +850,7 @@ private fun SettingRowIcon(icon: ImageVector) {
 @Composable
 internal fun OfficialReleaseSettings(check: OfficialReleaseCheck) {
     val context = LocalContext.current
+    val language = LocalWeaveLanguage.current
     if (check.eligible) {
         ToggleSetting(
             icon = Icons.Rounded.Sync, title = "启动时检查应用更新",
@@ -867,7 +868,11 @@ internal fun OfficialReleaseSettings(check: OfficialReleaseCheck) {
         try {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page)))
         } catch (_: android.content.ActivityNotFoundException) {
-            android.widget.Toast.makeText(context, "没有可打开网页的应用。", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(
+                context,
+                localizeWeaveText("没有可打开网页的应用。", language),
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
         }
     }
     if (check.eligible) WeaveDivider()
