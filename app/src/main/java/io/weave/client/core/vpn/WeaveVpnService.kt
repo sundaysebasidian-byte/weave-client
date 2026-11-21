@@ -30,7 +30,6 @@ import io.weave.client.data.AppRouteStore
 import io.weave.client.data.RecoveryVault
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
-import io.weave.client.domain.TrafficFormat
 import io.weave.client.ui.localizeWeaveText
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -687,11 +686,8 @@ class WeaveVpnService : VpnService() {
                     runtime.uploadBytesPerSecond > 0 || runtime.downloadBytesPerSecond > 0,
                 )
                 val node = runtime.nodeName.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()
-                val detail = getString(
-                    R.string.notification_speed,
-                    TrafficFormat.bytes(runtime.uploadBytesPerSecond),
-                    TrafficFormat.bytes(runtime.downloadBytesPerSecond),
-                ) + node
+                val (upload, download) = policy.formatRates(runtime.uploadBytesPerSecond, runtime.downloadBytesPerSecond)
+                val detail = getString(R.string.notification_speed, upload, download) + node
                 if (!policy.shouldPublish("$connectedStatus|$detail")) continue
                 getSystemService(NotificationManager::class.java).notify(
                     NOTIFICATION_ID,
