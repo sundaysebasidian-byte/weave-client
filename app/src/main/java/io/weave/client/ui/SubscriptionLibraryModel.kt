@@ -40,3 +40,8 @@ internal fun subscriptionExpiryStatus(expireAtMillis: Long?, nowMillis: Long): S
     }
     return if (expireAtMillis <= soonLimit) SubscriptionExpiryStatus.EXPIRING_SOON else SubscriptionExpiryStatus.ACTIVE
 }
+
+/** Match the most recent outcome for each ID, including when a list repeats an ID. */
+internal fun indexSubscriptionRefreshResults(
+    results: List<SubscriptionRefreshResult>,
+): Map<String, SubscriptionRefreshResult> = results.associateBy { it.subscriptionId }
