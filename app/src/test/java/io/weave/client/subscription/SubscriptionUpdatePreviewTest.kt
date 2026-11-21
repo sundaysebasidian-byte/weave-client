@@ -6,13 +6,52 @@ import org.junit.Test
 class SubscriptionUpdatePreviewTest {
     @Test fun duplicateRemovalRetainsTheAffectedNodeId() {
         val old = listOf(StoredNode("one", "Tokyo", "http"), StoredNode("two", "Tokyo", "http"))
-        assertEquals(listOf("two"), unmatchedOccurrences(old, listOf("Tokyo" to "http")) { it.name to it.protocol }.map { it.id })
-        assertTrue(unmatchedOccurrences(old, listOf("Tokyo" to "http", "Tokyo" to "http")) { it.name to it.protocol }.isEmpty())
+        assertEquals(listOf("two"), unmatchedOccurrences(old, listOf("Tokyo" to "http"), { it.name to it.protocol }, { it }).map { it.id })
+        assertTrue(unmatchedOccurrences(old, listOf("Tokyo" to "http", "Tokyo" to "http"), { it.name to it.protocol }, { it }).isEmpty())
     }
     @Test fun protocolChangeAndNewDuplicateAppearInPreview() {
         val nodes = listOf(ParsedNode("Tokyo", "http"), ParsedNode("Tokyo", "http"), ParsedNode("Osaka", "hysteria2"))
-        assertEquals(listOf(nodes[1], nodes[2]), unmatchedOccurrences(nodes, listOf("Tokyo" to "http", "Osaka" to "http")) { it.name to it.protocol })
+        assertEquals(listOf(nodes[1], nodes[2]), unmatchedOccurrences(nodes, listOf("Tokyo" to "http", "Osaka" to "http"), { it.name to it.protocol }, { it }))
     }
+    @Test fun directOccurrenceCountsMatchPreviousOutputAndReadEachSideOnce() {
+        val random = kotlin.random.Random(82)
+        val labelPool = listOf("東京", "TOKYO", "Tokyo", "🗼 Yokohama", " x ", "x")
+        val protocolPool = listOf("http", "HTTP", "ss")
+        repeat(160) { iteration ->
+            val old = List(if (iteration == 0) 0 else random.nextInt(48)) { index ->
+                StoredNode("old-$index", labelPool.random(random), protocolPool.random(random))
+            }
+            val next = List(if (iteration == 1) 0 else random.nextInt(48)) {
+                ParsedNode(labelPool.random(random), protocolPool.random(random))
+            }
+            var oldReads = 0
+            var nextReads = 0
+            val removed = unmatchedOccurrences(old, next,
+                { oldReads++; it.name to it.protocol }, { nextReads++; it.name to it.protocol })
+            assertEquals(old.size, oldReads)
+            assertEquals(next.size, nextReads)
+            assertEquals(previousUnmatchedOccurrences(old, next.map { it.name to it.protocol }) {
+                it.name to it.protocol
+            }.map { it.id }, removed.map { it.id })
+
+            val added = unmatchedOccurrences(next, old, { it.name to it.protocol }, { it.name to it.protocol })
+            val expected = previousUnmatchedOccurrences(next, old.map { it.name to it.protocol }) {
+                it.name to it.protocol
+            }
+            assertEquals(expected.size, added.size)
+            expected.zip(added).forEach { (before, after) -> assertSame(before, after) }
+        }
+    }
+
+    private fun <T, K> previousUnmatchedOccurrences(items: List<T>, otherKeys: List<K>, key: (T) -> K): List<T> {
+        val remaining = otherKeys.groupingBy { it }.eachCount().toMutableMap()
+        return items.filter { item ->
+            val value = key(item)
+            val count = remaining[value] ?: 0
+            if (count == 0) true else { remaining[value] = count - 1; false }
+        }
+    }
+
     @Test fun revisionsChangeEvenWhenSafeNodeLabelsStayTheSame() {
         val record = StoredSubscription("id", "name", 1, SubscriptionFormat.CLASH_YAML, listOf(StoredNode("one", "Tokyo", "http")), true)
         val baseline = subscriptionRevision(record, "password: a", "https://example.com/sub")
