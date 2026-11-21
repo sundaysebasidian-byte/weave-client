@@ -143,6 +143,7 @@ data class LanTransferState(
     val confirmationCode: String = "",
     val pendingLink: String = "",
     val sharedNames: List<String> = emptyList(),
+    val pendingLinkRevision: Long = 0L,
 )
 
 @Immutable
@@ -341,6 +342,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val mutableLanTransferState = MutableStateFlow(LanTransferState())
+    private var lanScanRevision = 0L
     val lanTransferState = mutableLanTransferState.asStateFlow()
 
 
@@ -1284,8 +1286,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableLanTransferState.value = LanTransferState()
     }
 
-    fun importLanTransfer(rawLink: String, confirmationCode: String) {
-        if (mutableLanTransferState.value.running) return
+    fun importLanTransfer(rawLink: String, confirmationCode: String, observedScanRevision: Long = 0L) {
+        val current = mutableLanTransferState.value
+        if (current.running || !canSubmitLanImport(observedScanRevision, current.pendingLinkRevision)) return
         mutableLanTransferState.value = LanTransferState(running = true)
         viewModelScope.launch {
             runCatching {
@@ -1328,6 +1331,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }.onSuccess { rawLink ->
                 mutableLanTransferState.value = LanTransferState(
                     pendingLink = rawLink,
+                    pendingLinkRevision = ++lanScanRevision,
                     // Do not derive or prefill the code from the QR payload: the six digits are
                     // deliberately an out-of-band confirmation shown on the sending device.
                     message = "二维码已读取，请输入发送设备显示的 6 位短码后导入",
@@ -1341,9 +1345,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun importPendingLanTransfer(confirmationCode: String) {
-        val link = mutableLanTransferState.value.pendingLink
-        if (link.isBlank()) return
-        importLanTransfer(link, confirmationCode)
+        val pending = mutableLanTransferState.value
+        if (pending.pendingLink.isBlank()) return
+        importLanTransfer(pending.pendingLink, confirmationCode, pending.pendingLinkRevision)
     }
 
     fun resetLanTransferMessage() {
