@@ -22,7 +22,7 @@ jobs:
             suite: io.weave.client.subscription.QrImageTextDecoderTest
             cases: 3
           - round: '074 live decoder compatibility'
-            suite: io.weave.client.core.qr.LiveQrDecoderTest
+            suite: io.weave.client.subscription.LiveQrDecoderTest
             cases: 2
     env:
       SUITE: ${{ matrix.suite }}
