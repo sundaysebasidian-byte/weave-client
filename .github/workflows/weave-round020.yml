@@ -39,7 +39,7 @@ jobs:
       - name: Install the project's locked Android toolchain
         run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Run focused Kotlin regression after compiler type fix
+      - name: Run focused Kotlin regression after test adapter fix
         run: ./gradlew :app:testDebugUnitTest --tests "$SUITE" --no-build-cache --no-daemon --no-configuration-cache
       - name: Verify exact JUnit receipt
         shell: bash
