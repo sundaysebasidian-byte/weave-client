@@ -85,4 +85,24 @@ class SubscriptionRefreshBatchTest {
         assertEquals(listOf("a", "b"), applied)
         assertEquals(listOf(false, true), results.map { it.succeeded })
     }
+
+    @Test fun `only new outcomes create progress snapshots and old snapshots remain unchanged`() = runBlocking {
+        val third = remoteB.copy(id = "c", name = "Provider C")
+        val callbackIds = mutableListOf<String?>()
+        val snapshots = mutableListOf<List<SubscriptionRefreshResult>>()
+        val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB, third), {}, {}) { current, snapshot ->
+            callbackIds += current?.id
+            snapshots += snapshot
+        }
+        assertEquals(listOf("a", null, "b", null, "c", null), callbackIds)
+        assertEquals(listOf(0, 1, 1, 2, 2, 3), snapshots.map { it.size })
+        assertEquals(listOf("a"), snapshots[1].map { it.subscriptionId })
+        assertEquals(listOf("a", "b"), snapshots[3].map { it.subscriptionId })
+        assertSame(snapshots[1], snapshots[2])
+        assertSame(snapshots[3], snapshots[4])
+        assertSame(snapshots[5], results)
+        assertNotSame(snapshots[1], snapshots[3])
+        assertNotSame(snapshots[3], results)
+        assertEquals(listOf("a", "b", "c"), results.map { it.subscriptionId })
+    }
 }
