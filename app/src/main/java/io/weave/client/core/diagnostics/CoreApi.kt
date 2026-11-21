@@ -127,7 +127,7 @@ class CoreApi(private val context: Context) {
                     uid = metadata.optInt("uid", -1),
                     process = metadata.optString("process").take(120),
                     network = metadata.optString("network").take(16),
-                    destination = (if (port.isBlank()) host else "$host:$port").take(260),
+                    destination = (if (port.isBlank()) host else ConnectionEndpoint.withPort(host, port)).take(260),
                     rule = listOf(value.optString("rule"), value.optString("rulePayload"))
                         .filter(String::isNotBlank)
                         .joinToString(" · ")
