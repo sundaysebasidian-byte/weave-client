@@ -1,0 +1,114 @@
+name: Weave R001 functional emulator acceptance
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths: ['.github/workflows/weave-import-software-acceptance.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  functional-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build isolated application and instrumentation APK
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true --no-daemon --no-configuration-cache
+      - name: Install emulator and Android 36 system image
+        run: sdkmanager "emulator" "system-images;android-36;google_apis;x86_64"
+      - name: Run isolated app acceptance (functional only)
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Functional acceptance only, never a latency or battery benchmark.
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          export ANDROID_I_WANT_MY_TCG=yes
+          serial=emulator-5584
+          private_dir="$(mktemp -d "${RUNNER_TEMP:?}/weave-r001.XXXXXX")"
+          printf 'Functional emulator output: %s\n' "$private_dir"
+          export ANDROID_AVD_HOME="$private_dir/avd"
+          export ANDROID_USER_HOME="$private_dir/user"
+          export ANDROID_EMULATOR_HOME="$private_dir/emulator"
+          export ANDROID_ADB_SERVER_PORT=5041
+          export ADB_MDNS_AUTO_CONNECT=''
+          mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME"
+          adb="$ANDROID_HOME/platform-tools/adb"
+          run_adb() { timeout 45s "$adb" -P 5041 "$@"; }
+          emulator="$ANDROID_HOME/emulator/emulator"
+          avdmanager="$ANDROID_HOME/cmdline-tools/15859902/bin/avdmanager"
+          run_adb start-server
+          devices="$(run_adb devices)"
+          if printf '%s\n' "$devices" | awk 'NR > 1 && NF { found=1 } END { exit(!found) }'; then
+              echo "::error::Expected a fresh runner with no other Android devices connected"
+              exit 1
+          fi
+          printf 'no\n' | "$avdmanager" create avd -n weave_r001_tc -k 'system-images;android-36;google_apis;x86_64'
+          "$emulator" -avd weave_r001_tc -port 5584 -accel off -gpu software -no-window -no-audio -no-snapshot -no-boot-anim >"$private_dir/emulator.log" 2>&1 &
+          emulator_pid=$!
+          close_devices() {
+              kill "$emulator_pid" 2>/dev/null || true
+              timeout 8s "$adb" -P 5041 kill-server || true
+          }
+          trap close_devices EXIT
+
+          export WEAVE_ISOLATED_EMULATOR=1 WEAVE_TEST_ADB_PORT=5041
+          export WEAVE_TEST_EMULATOR_PID="$emulator_pid" WEAVE_TEST_BOOT_TIMEOUT=480
+          if ! python3 tools/wait-android-ready.py "$serial"; then
+              tail -n 35 "$private_dir/emulator.log"
+              exit 1
+          fi
+
+          guest() { run_adb -s "$serial" shell "$@" | tr -d '\r'; }
+          test "$(guest getprop ro.kernel.qemu)" = 1
+          test "$(guest getprop ro.product.cpu.abi)" = x86_64
+          test "$(guest am get-current-user)" = 0
+
+          app=app/build/outputs/apk/debug/app-x86_64-debug.apk
+          tests=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          aapt="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt -type f | sort -V | tail -n 1)"
+          test -x "$aapt"
+          test -s "$app"
+          test -s "$tests"
+          app_id="$("$aapt" dump badging "$app" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          test_id="$("$aapt" dump badging "$tests" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          test "$app_id" = io.weave.client.acceptance
+          test "$test_id" = io.weave.client.acceptance.test
+          run_adb -s "$serial" install --user 0 "$app"
+          run_adb -s "$serial" install --user 0 "$tests"
+          target="instrumentation:$test_id/androidx.test.runner.AndroidJUnitRunner (target=$app_id)"
+          guest pm list instrumentation "$app_id" | grep -Fxq "$target"
+          timeout 120s "$adb" -P 5041 -s "$serial" shell cmd package compile -m verify -f "$app_id"
+          timeout 120s "$adb" -P 5041 -s "$serial" shell cmd package compile -m verify -f "$test_id"
+          receipt="$private_dir/instrumentation.txt"
+          timeout 300s "$adb" -P 5041 -s "$serial" shell am instrument --user 0 -w -r \
+              -e class io.weave.client.ui.ImportViewModelIntegrationTest \
+              -e weaveIsolatedEmulator 1 \
+              "$test_id/androidx.test.runner.AndroidJUnitRunner" | tr -d '\r' | tee "$receipt"
+          if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|INSTRUMENTATION_STATUS_CODE: -[0-9]|Process crashed' "$receipt"; then
+              echo "::error::Android app acceptance failed"
+              exit 1
+          fi
+          grep -Fxq 'OK (1 test)' "$receipt"
+          grep -Fxq 'INSTRUMENTATION_CODE: -1' "$receipt"
+          test "$(grep -Fxc 'INSTRUMENTATION_STATUS_CODE: 1' "$receipt")" = 1
+          test "$(grep -Fxc 'INSTRUMENTATION_STATUS_CODE: 0' "$receipt")" = 1
+          grep -Fxq 'INSTRUMENTATION_STATUS: test=persistedImportUnblocksWithoutResavingOrReloadingAfterNodeReadFails' "$receipt"
