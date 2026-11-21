@@ -77,6 +77,55 @@ class SubscriptionStoreIntegrationTest {
         assertEquals("list index snapshot reads must not grow with record count", emptyListReads, pathReads)
     }
 
+    @Test fun lookingUpOneSubscriptionOnlyDecodesItsIndexedRecord() = isolated { context ->
+        val nodeReads = mutableListOf<String>()
+        val fixtureBox = object : SecretBox {
+            override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): String =
+                Base64.getEncoder().encodeToString(plaintext)
+
+            override fun decrypt(envelope: String, associatedData: ByteArray): ByteArray {
+                val key = associatedData.toString(Charsets.UTF_8)
+                if (key.endsWith(":nodes")) nodeReads += key
+                return Base64.getDecoder().decode(envelope)
+            }
+        }
+        val store = SubscriptionSecretStore(context, fixtureBox)
+        val payload = "proxies: [{name: Zeta, type: socks5, server: fixture.invalid, port: 1080}, " +
+            "{name: alpha, type: socks5, server: fixture.invalid, port: 1081}]"
+        val parsed = SubscriptionPayloadParser().parse(payload)
+        val zulu = store.save("Zulu", "local://fixture", payload, parsed)
+        val wanted = store.save("alpha", "local://fixture", payload, parsed,
+            remoteMetadata = SubscriptionRemoteMetadata(SubscriptionUsage(1, 2, 100, null), 24))
+        val middle = store.save("Middle", "local://fixture", payload, parsed)
+
+        nodeReads.clear()
+        val listed = store.list()
+        assertEquals(listOf(wanted.id, middle.id, zulu.id), listed.map { it.id })
+        assertEquals(3, nodeReads.size)
+
+        nodeReads.clear()
+        assertEquals(listed.first(), store.get(wanted.id))
+        assertEquals(listOf("${wanted.id}:nodes"), nodeReads)
+        nodeReads.clear()
+        assertNull(store.get("unindexed-fixture"))
+        assertTrue(nodeReads.isEmpty())
+
+        // A malformed selected record keeps the same missing-record result.
+        assertTrue(context.crossProcessPreferences("encrypted_subscriptions_v1").edit()
+            .putString("subscription.${wanted.id}.format", "missing-format")
+            .commit())
+        assertNull(store.get(wanted.id))
+        assertTrue(nodeReads.isEmpty())
+        assertEquals(listOf(middle.id, zulu.id), store.list().map { it.id })
+
+        // An absent index with retained encrypted files is not an ordinary absent ID.
+        val index = File(context.applicationInfo.dataDir, "shared_prefs/encrypted_subscriptions_v1.xml")
+        assertTrue(index.delete())
+        val missingIndex = runCatching { store.get("unindexed-fixture") }.exceptionOrNull()
+        assertTrue(missingIndex is IllegalStateException)
+        assertEquals("订阅索引缺失，已保留加密正文；请检查备份", missingIndex?.message)
+    }
+
     @Test fun reviewedUpdateCannotOverwriteANewerSavedPayload() = isolated { context ->
         val store = SubscriptionSecretStore(context)
         val parser = SubscriptionPayloadParser()
