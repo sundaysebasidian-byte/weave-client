@@ -70,11 +70,7 @@ internal object QuickStartPolicy {
             RouteKind.AUTO -> target.subscriptionId == null || nodes.any { it.subscriptionId == target.subscriptionId }
             RouteKind.FIXED -> nodes.any { it.id == target.nodeId && it.subscriptionId == target.subscriptionId }
             RouteKind.GROUP -> groups.firstOrNull { it.id == target.groupId }?.let { group ->
-                fun present(subscriptionId: String, nodeId: String) = nodes.any {
-                    it.subscriptionId == subscriptionId && it.id == nodeId
-                }
-                group.members.any { present(it.subscriptionId, it.nodeId) } &&
-                    (group.entry == null || present(group.entry.subscriptionId, group.entry.nodeId))
+                QuickStartGroupReadiness.hasUsableTargets(nodes, group.members, group.entry)
             } ?: false
             RouteKind.DIRECT, RouteKind.BLOCK -> false
         }
