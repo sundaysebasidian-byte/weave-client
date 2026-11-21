@@ -1,0 +1,103 @@
+name: Weave round 009 checker behavior
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths:
+      - '.github/workflows/weave-round009-checker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regressions:
+    name: Android regression ${{ matrix.round }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - round: '009-fixture'
+            suite: io.weave.client.ui.OfficialReleaseAcceptanceTest
+            cases: 1
+    env:
+      SUITE: ${{ matrix.suite }}
+      EXPECTED_CASES: ${{ matrix.cases }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install the project's locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Generate exact checker fixture with HTTP removed
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          """Write isolated checker fixture into a disposable Android checkout, never into main."""
+          import hashlib
+          import pathlib
+          import sys
+          checkout = pathlib.Path('.')
+          sub = pathlib.Path('app/src/main/java/io/weave/client/ui/OfficialReleaseCheck.kt')
+          source = (checkout/sub).read_bytes()
+          assert hashlib.sha1(f"blob {len(source)}\0".encode() + source).hexdigest() == '35d7066c54e7b0d7d50f6ec6575029b27603fe95'
+          s = source.decode()
+          s = s[:s.index('private object OfficialReleases')] + s[s.index('internal class OfficialReleaseCheck'):]
+          s = s.replace('private class CheckFailure', 'private class FixtureCheckFailure')
+          s = s.replace('internal class OfficialReleaseCheck(private val context: Context, private val scope: CoroutineScope)', '''private class FixtureOfficialReleaseCheck(
+              private val scope: CoroutineScope,
+              private val prefs: FixturePrefs,
+              val eligible: Boolean,
+              val now: () -> Long,
+              val latest: (Boolean) -> AndroidReleasePolicy.Release?,
+          )''')
+          a, b = s.index('    private val prefs by lazy'), s.index('    var enabled')
+          s = s[:a]+s[b:]
+          for old,new in [('System.currentTimeMillis()', 'now()'),('OfficialReleases.latest(', 'latest('),('e: CheckFailure','e: FixtureCheckFailure'),('BuildConfig.VERSION_NAME','"0.4.0-rc4"'),('BuildConfig.VERSION_CODE','110')]:
+              assert old in s
+              s = s.replace(old,new)
+          assert 'https://' not in s and 'OfficialReleases' not in s
+          folder = checkout/'app/src/test/java/io/weave/client/ui'
+          folder.mkdir(parents=True,exist_ok=True)
+          (folder/'OfficialReleaseAcceptanceTest.kt').write_text(s+'\n'+'private class FixturePrefs {\n    private val map = java.util.concurrent.ConcurrentHashMap<String, Any>()\n    fun getBoolean(key: String, fallback: Boolean) = map[key] as? Boolean ?: fallback\n    fun getLong(key: String, fallback: Long) = map[key] as? Long ?: fallback\n    fun getInt(key: String, fallback: Int) = map[key] as? Int ?: fallback\n    fun getString(key: String, fallback: String) = map[key] as? String ?: fallback\n    fun edit() = Editor()\n    inner class Editor {\n        private val pending = mutableMapOf<String, Any?>()\n        fun putBoolean(key: String, value: Boolean) = apply { pending[key] = value }\n        fun putLong(key: String, value: Long) = apply { pending[key] = value }\n        fun putString(key: String, value: String?) = apply { pending[key] = value }\n        fun putInt(key: String, value: Int) = apply { pending[key] = value }\n        fun apply() { commit() }\n        fun commit(): Boolean {\n            pending.forEach { (key, value) -> if (value == null) map.remove(key) else map[key] = value }\n            return true\n        }\n    }\n}\n\nclass OfficialReleaseAcceptanceTest {\n    @org.junit.Test fun firstLaunchOptOutRecreationAndManualFailure() = kotlinx.coroutines.runBlocking {\n        val prefs = FixturePrefs()\n        var now = 10_000L\n        val calls = java.util.concurrent.atomic.AtomicInteger()\n        val notices = mutableListOf<String>()\n        val android = AndroidReleasePolicy.candidate("v0.4.1", false, false, true,\n            listOf("Weave-0.4.1-build111-Production-signed-arm64-v8a.apk"))\n        check(android?.build == 111)\n        check(AndroidReleasePolicy.candidate("v0.9.9", false, false, true, listOf("Weave-Win-x64.exe")) == null)\n        fun session(eligible: Boolean = true, network: (Boolean) -> AndroidReleasePolicy.Release? = { android }) =\n            FixtureOfficialReleaseCheck(this, prefs, eligible, { now }) { preview ->\n                check(preview); calls.incrementAndGet(); network(preview)\n            }\n        val browse = session(false)\n        browse.start { notices.add(it) }\n        browse.manual()\n        check(calls.get() == 0 && browse.detail.orEmpty().contains("仅供浏览"))\n        val first = session()\n        first.start { notices.add(it) }\n        check(calls.get() == 1 && first.release?.build == 111 && notices.size == 1)\n        check(first.release?.page?.endsWith("/releases/tag/v0.4.1") == true)\n        // Decline by not opening the separate browser action. No code path in the checker opens it.\n        now += 86_399_999\n        val recreated = session()\n        recreated.start { notices.add(it) }\n        check(calls.get() == 1 && recreated.detail.orEmpty().contains("上次检查") && notices.size == 1)\n        now++\n        val next = session()\n        next.start { notices.add(it) }\n        check(calls.get() == 2 && notices.size == 2)\n        next.changeAutomatic(false)\n        now += 86_400_000\n        val offline = session { throw java.io.IOException("synthetic offline") }\n        offline.start { notices.add(it) }\n        check(!offline.enabled && calls.get() == 2)\n        offline.manual()\n        kotlinx.coroutines.withTimeout(2_000) {\n            while (!offline.detail.orEmpty().contains("暂时连不上")) kotlinx.coroutines.delay(5)\n        }\n        check(calls.get() == 3 && !offline.busy && notices.size == 2)\n    }\n}\n')
+          PY
+      - name: Run focused Kotlin regression
+        run: ./gradlew :app:testDebugUnitTest --tests "$SUITE" --no-build-cache --no-daemon --no-configuration-cache
+      - name: Verify exact JUnit receipt
+        shell: bash
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          suite = os.environ["SUITE"]
+          expected = int(os.environ["EXPECTED_CASES"])
+          reports = list(Path("app/build/test-results").glob(f"**/TEST-{suite}.xml"))
+          if len(reports) != 1:
+              raise SystemExit("Expected exactly one focused JUnit XML result")
+          root = ET.parse(reports[0]).getroot()
+          cases = root.findall("testcase")
+          names = {case.get("name") for case in cases}
+          counters = {"tests": str(expected), "failures": "0", "errors": "0", "skipped": "0"}
+          if (root.tag != "testsuite" or root.get("name") != suite
+              or len(cases) != expected or len(names) != expected or None in names
+              or any(root.get(key) != value for key, value in counters.items())
+              or any(case.get("classname") != suite or any(
+                  case.find(tag) is not None for tag in ("failure", "error", "skipped"))
+                  for case in cases)):
+              raise SystemExit("Focused JUnit receipt failed to match expected passing cases")
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "suite": suite,
+                            "passed": len(cases), "failed": 0, "skipped": 0}))
+          PY
