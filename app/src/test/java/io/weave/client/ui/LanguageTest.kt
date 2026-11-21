@@ -47,6 +47,72 @@ class LanguageTest {
     }
 
     @Test
+    fun `dynamic update copy preserves versions builds and whether the result was cached`() {
+        val available = "0.6.0-rc109 · Build 2147483647 可用"
+        val cached = "0.6.0-rc109 · Build 2147483647 可用（上次检查）"
+        val current = "没有比当前 Build 109 更新的适用版本。"
+        val notes = "查看 v0.6.1 发布说明"
+        val notice = "Weave 0.6.1 可用，可在设置中查看。"
+        val sources = listOf(available, cached, current, notes, notice)
+        val english = listOf(
+            "0.6.0-rc109 · Build 2147483647 available",
+            "0.6.0-rc109 · Build 2147483647 available (last check)",
+            "No compatible release is newer than the current build (109).",
+            "View v0.6.1 release notes",
+            "Weave 0.6.1 is available. See Settings.",
+        )
+        val french = listOf(
+            "0.6.0-rc109 · Build 2147483647 disponible",
+            "0.6.0-rc109 · Build 2147483647 disponible (dernière vérification)",
+            "Aucune version compatible n’est plus récente que le build actuel (109).",
+            "Voir les notes de version de v0.6.1",
+            "Weave 0.6.1 est disponible. Consultez les paramètres.",
+        )
+        val german = listOf(
+            "0.6.0-rc109 · Build 2147483647 verfügbar",
+            "0.6.0-rc109 · Build 2147483647 verfügbar (letzte Prüfung)",
+            "Es gibt kein kompatibles Release, das neuer als der aktuelle Build (109) ist.",
+            "Versionshinweise zu v0.6.1 ansehen",
+            "Weave 0.6.1 ist verfügbar. Details findest du in den Einstellungen.",
+        )
+        val traditional = listOf(
+            "0.6.0-rc109 · Build 2147483647 可用",
+            "0.6.0-rc109 · Build 2147483647 可用（上次檢查）",
+            "沒有比目前 Build 109 更新的適用版本。",
+            "查看 v0.6.1 發行說明",
+            "Weave 0.6.1 已可使用，可在設定中查看。",
+        )
+        val japanese = listOf(
+            "0.6.0-rc109 · ビルド 2147483647 を利用できます",
+            "0.6.0-rc109 · ビルド 2147483647 を利用できます（前回の確認）",
+            "現在のビルド（109）より新しい対応リリースはありません。",
+            "v0.6.1 のリリースノートを見る",
+            "Weave 0.6.1 を利用できます。設定で確認してください。",
+        )
+        for ((language, expected) in mapOf(
+            WeaveLanguage.ENGLISH to english,
+            WeaveLanguage.FRENCH to french,
+            WeaveLanguage.GERMAN to german,
+            WeaveLanguage.TRADITIONAL_CHINESE to traditional,
+            WeaveLanguage.JAPANESE to japanese,
+            WeaveLanguage.SIMPLIFIED_CHINESE to sources,
+        )) {
+            assertEquals(expected, sources.map { localizeWeaveText(it, language) })
+        }
+    }
+
+    @Test
+    fun `release patterns leave unrelated text unchanged`() {
+        val unrelated = listOf(
+            "Weave 0.6.1-beta 可用，可在设置中查看。",
+            "查看 v0.6.1 的服务器",
+            "0.6.0 · Build eleven 可用",
+            "Provider 0.6.0 · Build 42 可用",
+        )
+        for (text in unrelated) assertEquals(text, localizeWeaveText(text, WeaveLanguage.ENGLISH))
+    }
+
+    @Test
     fun `runtime status and accessibility copy follow the selected language`() {
         assertEquals("Delete subscription?", localizeWeaveText("删除订阅？", WeaveLanguage.ENGLISH))
         assertEquals("DNS リークテスト", localizeWeaveText("DNS 泄漏测试", WeaveLanguage.JAPANESE))
