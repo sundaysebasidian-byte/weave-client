@@ -1,5 +1,10 @@
 package io.weave.client.ui
 
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +23,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.domain.*
 import io.weave.client.ui.theme.WeaveTheme
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -43,7 +47,7 @@ class ProductExperienceUiTest {
     @Test fun unavailableCoreCannotStartConnection() {
         var calls = 0
         home(DashboardState(coreAvailable = false), onConnect = { calls++ })
-        compose.onNodeWithText(label("连接")).assertIsNotEnabled().performClick()
+        compose.onNodeWithContentDescription(label("连接")).assertIsNotEnabled().performClick()
         compose.runOnIdle { assertEquals(0, calls) }
     }
 
@@ -52,8 +56,8 @@ class ProductExperienceUiTest {
         home(DashboardState(coreAvailable = true,
             defaultRouteTarget = RouteTarget(RouteKind.BLOCK, "出口已失效，请重新选择")),
             onExit = { selected++ })
-        compose.onNodeWithText(label("选择出口")).performClick()
-        compose.onNodeWithText(label("连接")).assertDoesNotExist()
+        compose.onNodeWithContentDescription(label("选择出口")).performClick()
+        compose.onNodeWithContentDescription(label("连接")).assertDoesNotExist()
         compose.runOnIdle { assertEquals(1, selected) }
         capture("home-invalid-exit")
     }
@@ -65,7 +69,7 @@ class ProductExperienceUiTest {
             statusMessage = "Fixture: configuration rejected"),
             onConnect = { retries++ }, onExit = { selected++ })
         compose.onNodeWithText("Fixture: configuration rejected").assertIsDisplayed()
-        compose.onNodeWithText(label("重试连接")).performClick()
+        compose.onNodeWithContentDescription(label("重试连接")).performClick()
         compose.onNodeWithText(label("更换出口")).performClick()
         compose.runOnIdle { assertEquals(1, retries); assertEquals(1, selected) }
         capture("home-error")
@@ -73,7 +77,7 @@ class ProductExperienceUiTest {
 
     @Test fun connectingCannotBeSubmittedTwice() {
         home(DashboardState(connectionState = ConnectionState.CONNECTING, coreAvailable = true))
-        compose.onNode(hasText(label("正在连接")) and hasClickAction()).assertIsNotEnabled()
+        compose.onNode(hasContentDescription(label("正在连接")) and hasClickAction()).assertIsNotEnabled()
         capture("home-connecting")
     }
 
@@ -129,17 +133,14 @@ class ProductExperienceUiTest {
         }
         WeavePalette.entries.forEach { value ->
             compose.runOnIdle { palette.value = value }
-            compose.onNodeWithText(localizeWeaveText("重试连接", WeaveLanguage.GERMAN))
-                .assertIsDisplayed().assertIsEnabled()
+            // Retry is the capsule's primary action; the exit change lives on the issue surface,
+            // which scrolls clear of the pinned capsule at large type.
+            compose.onNode(
+                hasContentDescription(localizeWeaveText("重试连接", WeaveLanguage.GERMAN)) and
+                    hasAnyAncestor(hasTestTag("home-capsule")),
+            ).assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithText(localizeWeaveText("更换出口", WeaveLanguage.GERMAN))
-                .assertIsDisplayed().assertIsEnabled()
-            val retryBounds = compose.onNodeWithText(localizeWeaveText("重试连接", WeaveLanguage.GERMAN))
-                .fetchSemanticsNode().boundsInRoot
-            val changeBounds = compose.onNodeWithText(localizeWeaveText("更换出口", WeaveLanguage.GERMAN))
-                .fetchSemanticsNode().boundsInRoot
-            assertTrue("Long recovery actions need readable full-width space", retryBounds.width >
-                compose.onRoot().fetchSemanticsNode().boundsInRoot.width * 0.7f)
-            assertTrue("Recovery actions must not compete for horizontal space", changeBounds.top >= retryBounds.bottom)
+                .performScrollTo().assertIsDisplayed().assertIsEnabled()
             capture("home-german-large-${value.name.lowercase()}")
         }
     }

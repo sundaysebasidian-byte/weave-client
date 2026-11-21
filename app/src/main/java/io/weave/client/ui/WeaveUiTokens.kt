@@ -13,7 +13,7 @@ internal object WeaveUiTokens {
     val screenBottom: Dp = 22.dp
     val sectionGap: Dp = 16.dp
     val panelRadius: Dp = 26.dp
-    val compactPanelRadius: Dp = 19.dp
+    val compactPanelRadius: Dp = 16.dp
     val navigationRadius: Dp = 27.dp
     val navigationHeight: Dp = 64.dp
     val navigationItemHeight: Dp = 52.dp
@@ -34,7 +34,7 @@ internal object WeaveUiTokens {
     val rowVertical: Dp = 12.dp
     /** Leading icon container used by rows, cards and empty states. */
     val iconTile: Dp = 36.dp
-    val iconTileRadius: Dp = 11.dp
+    val iconTileRadius: Dp = 12.dp
     val iconSize: Dp = 20.dp
     /** Primary actions inside a card: compact, but still well above the touch minimum. */
     val actionHeight: Dp = 52.dp
@@ -42,4 +42,11 @@ internal object WeaveUiTokens {
     val cardPadding: Dp = 18.dp
     val sectionLabelHorizontal: Dp = 24.dp
     val itemGap: Dp = 10.dp
+
+    /** The connection capsule pinned above the navigation dock on Home. */
+    val capsuleHeight: Dp = 64.dp
+    val capsuleHorizontal: Dp = 16.dp
+    val capsuleButton: Dp = 48.dp
+    /** Height of the woven status line under the headline. */
+    val weaveHeight: Dp = 150.dp
 }
