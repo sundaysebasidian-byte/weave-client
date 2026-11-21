@@ -1,5 +1,7 @@
 package io.weave.client.subscription
 
+import java.util.Base64
+
 import org.junit.Assert.*
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
@@ -60,10 +62,26 @@ proxies: []
         val resolved = CmfaProviderSnapshot.materialize(raw) { paths += it; payload }
         val prepared = pipeline.prepare(resolved, "local://user-selected-file")
         assertEquals(listOf("providers/cache.yaml"), paths)
+        paths.clear()
+        val wrapped = Base64.getEncoder().encodeToString(raw.toByteArray())
+        val resolvedWrapped = CmfaProviderSnapshot.materialize(wrapped) { paths += it; payload }
+        assertEquals(resolved, resolvedWrapped)
+        assertEquals(listOf("providers/cache.yaml"), paths)
         assertEquals(1, prepared.counts.providers)
         assertEquals(1, prepared.counts.imported)
         assertTrue(prepared.first.contains("udp: true"))
         assertFalse(prepared.first.contains("proxy-providers"))
+    }
+
+    @Test fun nestedProviderMetadataKeepsTheOriginalInputAndReadsNoChild() {
+        val raw = "metadata:\n  proxy-providers: {cache: {type: file, path: providers/unused.yaml}}\n$payload"
+        val wrapped = Base64.getEncoder().encodeToString(raw.toByteArray())
+        for (input in listOf(raw, wrapped)) {
+            assertEquals(input, CmfaProviderSnapshot.materialize(input) { error("No provider read expected") })
+        }
+        assertThrows(SubscriptionImportException::class.java) {
+            CmfaProviderSnapshot.materialize("proxy-providers:") { error("No provider read expected") }
+        }
     }
 
     @Test fun providerTraversalAndRecursiveCollectionsAreRejectedBeforeAnySave() {
