@@ -60,7 +60,8 @@ jobs:
                   if (entry.get("type") != "ONE_OF_MANY" or len(filters) != 1
                           or filters[0].get("filterType") != "ABI"):
                       raise ValueError("Expected one ABI filter per split and no universal APK")
-                  abi = filters[0].get("identifier")
+                  # AGP serializes FilterConfiguration.identifier as "value" in metadata v3.
+                  abi = filters[0].get("value")
                   name = entry.get("outputFile")
                   if (abi not in ABIS or abi in outputs or name in outputs.values()
                           or not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*[.]apk", name)):
@@ -71,6 +72,38 @@ jobs:
               if set(outputs) != ABIS:
                   raise ValueError("AGP did not produce the four configured ABI splits")
               return outputs
+
+          def metadata_receipt(metadata):
+              # Report only the finite schema/ABI facts; never dump raw generated metadata.
+              if not isinstance(metadata, dict) or not isinstance(metadata.get("elements"), list):
+                  return {"shape": "unexpected"}
+              elements = []
+              for entry in metadata["elements"]:
+                  if not isinstance(entry, dict) or not isinstance(entry.get("filters"), list):
+                      elements.append({"shape": "unexpected"})
+                      continue
+                  filters = []
+                  for item in entry["filters"]:
+                      if not isinstance(item, dict):
+                          filters.append({"shape": "unexpected"})
+                          continue
+                      abi = item.get("value")
+                      filters.append({
+                          "keys": sorted(set(item).intersection({"filterType", "identifier", "value"})),
+                          "filter_type": "ABI" if item.get("filterType") == "ABI" else "unexpected",
+                          "abi": abi if isinstance(abi, str) and abi in ABIS else None,
+                      })
+                  elements.append({
+                      "type": entry.get("type") if entry.get("type") in ("ONE_OF_MANY", "SINGLE", "UNIVERSAL") else "unexpected",
+                      "filters": filters,
+                      "expected_version": entry.get("versionCode") == VERSION_CODE and entry.get("versionName") == VERSION_NAME,
+                  })
+              return {
+                  "metadata_version": metadata.get("version") if type(metadata.get("version")) is int else None,
+                  "debug_variant": metadata.get("variantName") == "debug",
+                  "expected_application_id": metadata.get("applicationId") == APP_ID,
+                  "elements": elements,
+              }
 
           def verify_manifest(badging):
               line = next((line for line in badging.splitlines() if line.startswith("package: ")), "")
@@ -125,11 +158,19 @@ jobs:
 
           def main():
               receipt = unit_receipt()
+              commit = os.environ["GITHUB_SHA"]
+              print(json.dumps({"kind": "unit-tests", "commit": commit, **receipt}), flush=True)
+              print(json.dumps({"kind": "expected-sdk-build-tools", "version": BUILD_TOOLS}), flush=True)
               directory = Path("app/build/outputs/apk/debug")
-              outputs = expected_outputs(json.loads((directory / "output-metadata.json").read_text(encoding="utf-8")))
+              metadata = json.loads((directory / "output-metadata.json").read_text(encoding="utf-8"))
+              print(json.dumps({"kind": "debug-apk-metadata", **metadata_receipt(metadata)}), flush=True)
+              apksigner, aapt2 = sdk_tool("apksigner"), sdk_tool("aapt2")
+              print(json.dumps({"kind": "sdk-build-tools", "package": BUILD_TOOLS,
+                                "apksigner": run_tool(apksigner, "version").strip(),
+                                "aapt2": run_tool(aapt2, "version").strip()}), flush=True)
+              outputs = expected_outputs(metadata)
               if {item.name for item in directory.glob("*.apk")} != set(outputs.values()):
                   raise ValueError("Debug output directory does not match the AGP metadata")
-              apksigner, aapt2 = sdk_tool("apksigner"), sdk_tool("aapt2")
               splits = {}
               for abi, name in sorted(outputs.items()):
                   apk = directory / name
