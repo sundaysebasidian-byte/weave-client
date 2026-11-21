@@ -1124,10 +1124,8 @@ internal fun SubscriptionManagerDialog(
                                 )
                             }
                             if (health.checkedAtMillis != null && health.nodes.isNotEmpty()) {
-                                val measured = health.nodes.mapNotNull { it.latencyMs }.sorted()
-                                val available = health.nodes.count { it.successfulSamples > 0 }
-                                val median = measured.getOrNull(measured.size / 2)
-                                val worstP95 = health.nodes.mapNotNull { it.p95LatencyMs }.maxOrNull()
+                                val summary = remember(health.nodes) { SubscriptionProbeSummary.fromNodes(health.nodes) }
+                                val available = summary.availableNodes
                                 val language = LocalWeaveLanguage.current
                                 // The same three measured values as before, as compact tiles.
                                 // A missing value stays "—"; no tile is invented for DNS/TLS.
@@ -1144,13 +1142,13 @@ internal fun SubscriptionManagerDialog(
                                         ),
                                         WeaveMetric(
                                             label = localizeWeaveText("中位延迟", language),
-                                            value = median?.let { "$it ms" } ?: "—",
+                                            value = summary.medianLatencyMs?.let { "$it ms" } ?: "—",
                                         ),
-                                        WeaveMetric(label = "P95", value = worstP95?.let { "$it ms" } ?: "—"),
+                                        WeaveMetric(label = "P95", value = summary.worstP95Ms?.let { "$it ms" } ?: "—"),
                                     ),
                                 )
                                 Text(
-                                    probeResultText(health.nodes.sumOf { it.samples }, health.nodes.sumOf { it.successfulSamples }, LocalWeaveLanguage.current),
+                                    probeResultText(summary.attempts, summary.successes, LocalWeaveLanguage.current),
                                     translate = false, fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
