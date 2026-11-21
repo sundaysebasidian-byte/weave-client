@@ -26,23 +26,25 @@ data class SubscriptionUsage(
         private const val MAX_HEADER_LENGTH = 512
 
         fun parse(header: String?): SubscriptionUsage? {
-            if (header.isNullOrBlank() || header.length > MAX_HEADER_LENGTH) return null
-            val fields = header.split(';', ',')
-                .mapNotNull { field ->
-                    val separator = field.indexOf('=')
-                    if (separator <= 0) return@mapNotNull null
-                    val key = field.substring(0, separator).trim().lowercase()
-                    val value = parseAmount(field.substring(separator + 1)) ?: return@mapNotNull null
-                    key to value
+            if (header == null || header.length > MAX_HEADER_LENGTH || header.isBlank()) return null
+            var upload = 0L
+            var download = 0L
+            var total = 0L
+            var expire: Long? = null
+            var recognized = false
+            for (field in header.split(';', ',')) {
+                val separator = field.indexOf('=')
+                if (separator <= 0) continue
+                when (field.substring(0, separator).trim().lowercase()) {
+                    "upload" -> upload = parseAmount(field.substring(separator + 1)) ?: continue
+                    "download" -> download = parseAmount(field.substring(separator + 1)) ?: continue
+                    "total" -> total = parseAmount(field.substring(separator + 1)) ?: continue
+                    "expire" -> expire = parseAmount(field.substring(separator + 1)) ?: continue
+                    else -> continue
                 }
-                .toMap()
-            if (fields.keys.none { it in setOf("upload", "download", "total", "expire") }) return null
-            return SubscriptionUsage(
-                uploadBytes = fields["upload"] ?: 0,
-                downloadBytes = fields["download"] ?: 0,
-                totalBytes = fields["total"] ?: 0,
-                expireEpochSeconds = fields["expire"]?.takeIf { it > 0 },
-            )
+                recognized = true
+            }
+            return if (recognized) SubscriptionUsage(upload, download, total, expire?.takeIf { it > 0 }) else null
         }
 
         fun decode(value: String?): SubscriptionUsage? {
@@ -52,7 +54,12 @@ data class SubscriptionUsage(
         }
 
         private fun parseAmount(raw: String): Long? {
-            val decimal = raw.trim().toBigDecimalOrNull() ?: return null
+            val value = raw.trim()
+            // Provider byte counts are usually unsigned ASCII integers; keep the full decimal fallback.
+            if (value.isNotEmpty() && value.all { it in '0'..'9' }) {
+                value.toLongOrNull()?.let { return it }
+            }
+            val decimal = value.toBigDecimalOrNull() ?: return null
             if (decimal.signum() < 0) return null
             return if (decimal > BigDecimal.valueOf(Long.MAX_VALUE)) Long.MAX_VALUE else decimal.toLong()
         }
