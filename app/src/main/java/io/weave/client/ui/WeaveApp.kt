@@ -632,6 +632,7 @@ fun WeaveApp(
             }
             Destination.ROUTES -> {
                 val routes by viewModel.routes.collectAsStateWithLifecycle()
+                val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
                 RoutesScreen(
                     onPreset = viewModel::applyRoutingPreset,
                     routes = routes,
@@ -641,6 +642,9 @@ fun WeaveApp(
                     onAdd = { showAppPicker = true },
                     onRouteLens = { showRouteLens = true },
                     contentPadding = innerPadding,
+                    routingMode = dashboard.routingMode,
+                    domesticDirect = networkPreferences.domesticDirect,
+                    onModeSelected = viewModel::selectMode,
                 )
             }
             Destination.SUBSCRIPTIONS -> {
