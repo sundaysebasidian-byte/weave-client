@@ -97,9 +97,10 @@ class CoreApi(private val context: Context) {
                     val status = reader.readLine().orEmpty()
                     if (!status.contains(" 200")) throw IOException("log stream refused")
                     while (reader.readLine()?.isNotEmpty() == true) Unit // headers
+                    val logLines = BoundedLogLineReader(reader, MAX_LOG_LINE)
                     while (continuation.isActive) {
-                        val line = reader.readLine() ?: break
-                        if (line.length > MAX_LOG_LINE) continue
+                        val line = logLines.readLine() ?: break
+                        if (line.isEmpty()) continue
                         val event = runCatching { JSONObject(line) }.getOrNull() ?: continue
                         onLine(CoreLogLine(event.optString("type"), event.optString("payload")))
                     }
