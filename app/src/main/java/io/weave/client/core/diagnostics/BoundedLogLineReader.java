@@ -41,6 +41,11 @@ final class BoundedLogLineReader {
             int start = position;
             while (position < end && chunk[position] != '\n' && chunk[position] != '\r') position++;
             int count = position - start;
+            if (position < end && size == 0 && !dropped) {
+                // A complete row in the current chunk does not need the spanning-row buffer.
+                skipLf = chunk[position++] == '\r';
+                return count == 0 || count > line.length ? "" : new String(chunk, start, count);
+            }
             if (!dropped) {
                 if (count > line.length - size) {
                     dropped = true;
