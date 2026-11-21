@@ -93,7 +93,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
             }.onFailure { error ->
                 mutablePolicyPackState.update { it.copy(running = false, error = "策略包导入失败") }
             }
-            policyPackReload.mutationFinished()
+            policyPackReload.mutationFinished(result.isSuccess)
         }
     }
 
@@ -127,14 +127,14 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
         policyPackReload.mutationStarted()
         mutablePolicyPackState.update { it.copy(running = true, error = null, message = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { probeSafely { mutation(); policyPackStore.list() } }
-                .onSuccess { packs ->
-                    mutablePolicyPackState.value = PolicyPackState(packs = packs, message = message)
-                    reloadIfConnected(reloadMessage)
-                }.onFailure {
-                    mutablePolicyPackState.update { it.copy(running = false, error = failure) }
-                }
-            policyPackReload.mutationFinished()
+            val result = withContext(Dispatchers.IO) { probeSafely { mutation(); policyPackStore.list() } }
+            result.onSuccess { packs ->
+                mutablePolicyPackState.value = PolicyPackState(packs = packs, message = message)
+                reloadIfConnected(reloadMessage)
+            }.onFailure {
+                mutablePolicyPackState.update { it.copy(running = false, error = failure) }
+            }
+            policyPackReload.mutationFinished(result.isSuccess)
         }
     }
 
