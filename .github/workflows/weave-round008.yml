@@ -1,0 +1,136 @@
+name: Weave Android round 008
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths: ['.github/workflows/weave-round008.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  log-tail-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile the actual log collection body into a disposable JVM fixture
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("app/src/main/java/io/weave/client/ui/ToolScreens.kt")
+          screen = path.read_text().split("internal fun LogsScreen", 1)[1]
+          starts = [line for line in screen.splitlines() if line.strip() == "channelFlow {"]
+          if len(starts) != 1:
+              raise SystemExit("Missing unique production Flow in LogsScreen")
+          body = screen.split("            channelFlow {\n", 1)[1].split("\n        }.onFailure", 1)[0]
+          body = "            channelFlow {\n" + body
+          if body.count("appendedLines++") != 1 or "}.buffer(16).collect { line ->" not in body:
+              raise SystemExit("Unexpected production log collection body")
+          if "LaunchedEffect(appendedLines, lines.isEmpty())" not in screen:
+              raise SystemExit("Production effect lacks append/clear key")
+          source = """package io.weave.client.ui
+
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.channels.trySendBlocking
+          import kotlinx.coroutines.flow.buffer
+          import kotlinx.coroutines.flow.channelFlow
+          import kotlinx.coroutines.flow.collect
+          import kotlinx.coroutines.runBlocking
+          import kotlinx.coroutines.withContext
+          import org.junit.Assert.assertEquals
+          import org.junit.Assert.assertTrue
+          import org.junit.Test
+
+          class LogTailRound008Test {
+              private data class CoreLogLine(val message: String)
+              private class Rows(private val backing: MutableList<CoreLogLine> = mutableListOf()) :
+                  MutableList<CoreLogLine> by backing {
+                  fun removeRange(from: Int, to: Int) = backing.subList(from, to).clear()
+              }
+
+              private class FakeCore(var count: Int, var message: String) {
+                  suspend fun streamLogs(level: String, onLine: (CoreLogLine) -> Unit) {
+                      check(level == "info")
+                      withContext(Dispatchers.IO) { repeat(count) { onLine(CoreLogLine(message)) } }
+                  }
+              }
+
+              private class Harness {
+                  val lines = Rows()
+                  var appendedLines = 0L
+                  val api = FakeCore(502, "same line")
+                  val level = "info"
+
+                  suspend fun collectLogs() {
+          PRODUCTION_BODY
+                  }
+              }
+
+              @Test fun retainsNewest500AndTracksRepeatedLines() = runBlocking {
+                  val h = Harness()
+                  h.collectLogs()
+                  assertEquals(502L, h.appendedLines)
+                  assertEquals(500, h.lines.size)
+                  assertTrue(h.lines.all { it.message == "same line" })
+              }
+
+              @Test fun appendAfterClearStartsFreshRowsWithoutReusingRevision() = runBlocking {
+                  val h = Harness()
+                  h.collectLogs()
+                  h.lines.clear()
+                  assertEquals(0, h.lines.size)
+                  h.api.count = 1
+                  h.api.message = "after clear"
+                  h.collectLogs()
+                  assertEquals(503L, h.appendedLines)
+                  assertEquals(listOf("after clear"), h.lines.map { it.message })
+              }
+
+              private companion object { const val MAX_LOG_LINES = 500 }
+          }
+          """
+          test = Path("app/src/test/java/io/weave/client/ui/LogTailRound008Test.kt")
+          test.parent.mkdir(parents=True, exist_ok=True)
+          with test.open("x") as f:
+              f.write(source.replace("PRODUCTION_BODY", body))
+          PY
+      - name: Compile Android and run log-tail collector regression
+        shell: bash
+        run: ./gradlew :app:testDebugUnitTest --tests io.weave.client.ui.LogTailRound008Test --no-build-cache --no-daemon --no-configuration-cache
+      - name: Verify exact JUnit receipt
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          suite = "io.weave.client.ui.LogTailRound008Test"
+          results = list(Path("app/build/test-results").glob(f"**/TEST-{suite}.xml"))
+          if len(results) != 1:
+              raise SystemExit("Missing or ambiguous Kotlin receipt")
+          root = ET.parse(results[0]).getroot()
+          got = root.findall("testcase")
+          expected = {"retainsNewest500AndTracksRepeatedLines", "appendAfterClearStartsFreshRowsWithoutReusingRevision"}
+          if (root.tag != "testsuite" or root.get("name") != suite or len(got) != 2 or
+              {x.get("name") for x in got} != expected or
+              any(x.get("classname") != suite or x.find("skipped") is not None or
+                  x.find("failure") is not None or x.find("error") is not None for x in got) or
+              any(root.get(a) != b for a, b in (("tests", "2"), ("skipped", "0"), ("failures", "0"), ("errors", "0")))):
+              raise SystemExit("Receipt does not prove both log collector cases ran")
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "suite": suite, "passed": len(got), "failed": 0, "skipped": 0}))
+          PY
