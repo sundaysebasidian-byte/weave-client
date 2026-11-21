@@ -40,7 +40,7 @@ internal fun importedSubscriptionName(requested: String, displayName: String?): 
         ?.replace(LOCAL_SUBSCRIPTION_EXTENSION, "")
         ?.trim()
         ?.takeIf(String::isNotEmpty)
-        ?.take(80)
+        ?.let(LocalSubscriptionNameLimit::truncate)
         ?: "Imported subscription"
 }
 
