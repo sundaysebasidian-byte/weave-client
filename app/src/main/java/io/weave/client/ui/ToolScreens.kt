@@ -240,9 +240,9 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     val labels = remember { mutableStateMapOf<Int, String>() }
     LaunchedEffect(paused) {
         while (!paused) {
-            runCatching { api.connections() }
+            runCatching { api.connections(latestFirst = true) }
                 .onSuccess { snapshot ->
-                    connections = snapshot.connections.sortedByDescending { it.startedAt }
+                    connections = snapshot.connections
                     totals = snapshot.uploadTotal to snapshot.downloadTotal
                     error = false
                     snapshot.connections.map { it.uid }.distinct().filter { it > 0 && it !in labels }.forEach { uid ->
