@@ -1,5 +1,7 @@
 package io.weave.client.core.vpn
 
+import io.weave.client.domain.TrafficFormat
+
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -37,5 +39,41 @@ class TrafficNotificationPolicyTest {
         val resumed = TrafficNotificationPolicy()
         assertTrue(resumed.shouldPublish("same"))
         assertEquals(3_000L, resumed.nextDelayMillis(false))
+    }
+
+    @Test fun `flat samples and unchanged directions skip repeat formatting`() {
+        val formatted = mutableListOf<Long>()
+        val policy = TrafficNotificationPolicy { rate ->
+            formatted += rate
+            TrafficFormat.bytes(rate)
+        }
+        val first = policy.formatRates(0, 2048)
+        repeat(100) { assertSame(first, policy.formatRates(0, 2048)) }
+        assertEquals(listOf(0L, 2048L), formatted)
+        val uploadChanged = policy.formatRates(1234, 2048)
+        assertEquals(TrafficFormat.bytes(1234) to TrafficFormat.bytes(2048), uploadChanged)
+        val bothChanged = policy.formatRates(0, 0)
+        assertEquals("0 B" to "0 B", bothChanged)
+        assertEquals(listOf(0L, 2048L, 1234L, 0L, 0L), formatted)
+    }
+
+    @Test fun `a new polling session formats its own first sample`() {
+        var calls = 0
+        val format = { rate: Long -> calls++; TrafficFormat.bytes(rate) }
+        val old = TrafficNotificationPolicy(format)
+        assertEquals("0 B" to "0 B", old.formatRates(0, 0))
+        assertEquals("0 B" to "0 B", old.formatRates(0, 0))
+        assertEquals(2, calls)
+        assertEquals("0 B" to "0 B", TrafficNotificationPolicy(format).formatRates(0, 0))
+        assertEquals(4, calls)
+    }
+    @Test fun `equal rounded labels still suppress repost even if raw rates change`() {
+        val policy = TrafficNotificationPolicy()
+        val first = policy.formatRates(1024, 0)
+        assertTrue(policy.shouldPublish("connected|${first.first}|${first.second}"))
+        val next = policy.formatRates(1025, 0)
+        assertEquals(first, next)
+        assertFalse(policy.shouldPublish("connected|${next.first}|${next.second}"))
+        assertTrue(policy.shouldPublish("localized connected|${next.first}|${next.second}"))
     }
 }
