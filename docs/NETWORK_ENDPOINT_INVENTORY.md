@@ -4,6 +4,7 @@
 
 | 类别 | 端点/来源 | 触发条件 | 发送或返回的信息 |
 | --- | --- | --- | --- |
+| Android 应用版本 | `https://api.github.com/repos/sundaysebasidian-byte/weave-client/releases` | 官方应用 ID 的 ARM64 release 构建启动时默认查询（24 小时节流，可关闭），或手动点击「检查应用更新」 | 固定请求头与分页参数，GitHub 可见出口 IP 和时间。只在本机比较，不发送账号、设备标识、版本、订阅或节点；用户另行点击才用浏览器打开官方发布页，不下载或安装 APK |
 | Android 本地内核观测 | 应用私有 cache 下 `core-observation/api.sock`（Unix socket，非 TCP） | 用户点击“读取实际命中”，或选择“链路终端”外观并停留在已连接的首页 | 父目录显式 0700；手动视图最多展示 40 条、两分钟清除；极客首页可见时每 3 秒读取并仅展示前 8 条，离开页面或退到后台即停。不保留响应中的源/目标地址、域名和规则匹配值，不向第三方发送快照 |
 | 短时下载测速 | `https://speed.cloudflare.com/__down?bytes=1048576` | 用户在检测中心单独点击下载测速且 VPN 已连接 | 经当前应用路由读取最多 1 MiB 响应体，拒绝重定向，不保存正文；仅内存展示字节数、连接和下载总耗时及平均吞吐，不表示线路峰值 |
 | 订阅 | 用户粘贴或扫描的 `https://` URL | 用户导入、手动更新；启用自动更新后按所选周期在后台更新（默认关闭） | 由订阅 URL 决定；请求使用 HTTPS，响应只在本机解析、审计和加密保存 |
@@ -22,4 +23,4 @@
 | 应用内第三方复核 | `https://www.dnsleaktest.com/`、`https://browserleaks.com/webrtc`、`https://browserleaks.com/javascript`、`https://browserleaks.com/ip` | 用户在隐私检测页明确点击对应测试 | 在受限 WebView 中显示；站点可看到当前出口 IP，并接收其测试所需的 DNS/浏览器请求。Weave 不抓取或保存页面结果；这些测试只代表该 WebView，不证明 Chrome 或其他应用无泄漏 |
 | 局域网互传 | 当前局域网中用户明确选择的私有 IPv4 | 用户点击生成或扫描一次性二维码/链接 | AES-256-GCM 密文；密钥只放在 `weave://` 链接 fragment，不放进 HTTP 请求 |
 
-以下不是默认网络端点：Weave 没有账号、广告/统计、崩溃上报、远程配置、远程更新、内置节点或集中式控制 API。固定端点、协议和用户可配置端点发生变化时，必须同步修改本清单、[`PRIVACY.md`](../PRIVACY.md) 和发布审计。
+以下不是默认网络端点：Weave 没有账号、广告/统计、崩溃上报、远程配置、自动下载安装 APK、内置节点或集中式控制 API。固定端点、协议和用户可配置端点发生变化时，必须同步修改本清单、[`PRIVACY.md`](../PRIVACY.md) 和发布审计。
