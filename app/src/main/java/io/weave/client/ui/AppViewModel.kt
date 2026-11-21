@@ -1893,6 +1893,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun discardBackupState() {
+        // The Activity can be recreated while this ViewModel still owns active backup work.
+        if (mutableBackupState.value.running) return
         backupGeneration++
         pendingRestore = null
         mutableBackupState.value = BackupState()
