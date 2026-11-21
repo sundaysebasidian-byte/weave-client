@@ -265,7 +265,7 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             IconButton(onClick = { paused = !paused }) {
                 Icon(if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, localizedContentDescription(if (paused) "继续" else "暂停"))
             }
-            IconButton(onClick = { scope.launch { api.closeAll(); connections = emptyList() } }, enabled = connections.isNotEmpty()) {
+            IconButton(onClick = { scope.launch { if (api.closeAll()) connections = emptyList() } }, enabled = connections.isNotEmpty()) {
                 Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("断开全部"))
             }
         },
