@@ -56,10 +56,10 @@ internal data class QuickStartState(
 
 internal object QuickStartPolicy {
     fun shouldOfferAutomatically(
-        seen: Boolean, dataLoaded: Boolean, upgradedInstall: Boolean, hasSubscriptions: Boolean,
+        seen: Boolean, dataLoaded: Boolean, upgradedInstall: () -> Boolean, hasSubscriptions: Boolean,
         hasRoutes: Boolean, hasSavedTarget: Boolean, disclosureAccepted: Boolean, externalLaunch: Boolean,
-    ) = !seen && dataLoaded && !upgradedInstall && !hasSubscriptions && !hasRoutes &&
-        !hasSavedTarget && !disclosureAccepted && !externalLaunch
+    ) = !seen && dataLoaded && !hasSubscriptions && !hasRoutes &&
+        !hasSavedTarget && !disclosureAccepted && !externalLaunch && !upgradedInstall()
 
     /** Direct and reject choices are valid routes, but cannot complete a proxy-node guide step. */
     fun hasProxyTarget(target: RouteTarget?, nodes: List<ProxyNode>, groups: List<CustomProxyGroup> = emptyList()): Boolean {
