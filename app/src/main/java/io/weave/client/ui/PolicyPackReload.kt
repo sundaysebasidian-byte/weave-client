@@ -16,6 +16,8 @@ internal class PolicyPackReload(
     private var nextRequest = 0L
     private var lastPublished = 0L
     private var deferred = false
+    private var readsInEpoch = 0
+    private var interruptedRead = false
 
     fun request() {
         if (state.value.running) {
@@ -24,21 +26,30 @@ internal class PolicyPackReload(
         }
         val epoch = mutationEpoch
         val request = ++nextRequest
+        readsInEpoch++
         scope.launch {
-            val packs = read() ?: return@launch
-            if (epoch != mutationEpoch || request < lastPublished || state.value.running) return@launch
+            val packs = try {
+                read()
+            } finally {
+                if (epoch == mutationEpoch) readsInEpoch--
+            }
+            if (packs == null || epoch != mutationEpoch || request < lastPublished || state.value.running) return@launch
             lastPublished = request
             state.update { it.copy(packs = packs) }
         }
     }
 
     fun mutationStarted() {
+        interruptedRead = readsInEpoch > 0
+        readsInEpoch = 0
         mutationEpoch++
     }
 
-    fun mutationFinished() {
-        if (!deferred) return
+    fun mutationFinished(succeeded: Boolean) {
+        // Successful mutations publish their own fresh list; failures may have retired the only read.
+        val needsRead = deferred || (!succeeded && interruptedRead)
         deferred = false
-        request()
+        interruptedRead = false
+        if (needsRead) request()
     }
 }
