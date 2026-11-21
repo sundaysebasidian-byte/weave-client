@@ -107,7 +107,10 @@ data class SubscriptionImportState(
     val running: Boolean = false,
     val error: String? = null,
     val completedId: String? = null,
-)
+    val externalPreviewId: Long? = null,
+) {
+    internal fun isRunningFor(previewId: Long): Boolean = running && externalPreviewId == previewId
+}
 
 @Immutable
 data class ClientImportState(
@@ -255,12 +258,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableExternalRequest.value = null
     }
 
+    private val externalImportSession = ExternalImportPreviewSession()
+    val externalImportPreview = externalImportSession.current
+
+    fun showExternalImport(value: io.weave.client.subscription.ExternalImport) =
+        externalImportSession.show(value)
+
+    fun updateExternalImportName(preview: ExternalImportPreview, name: String) =
+        externalImportSession.updateName(preview, name)
+
+    fun dismissExternalImport(preview: ExternalImportPreview) {
+        if (!mutableImportState.value.isRunningFor(preview.id)) externalImportSession.dismiss(preview)
+    }
+
     /** Runs only after the user confirmed the source shown in the external-import dialog. */
-    fun importExternal(value: io.weave.client.subscription.ExternalImport, name: String) {
-        when (value) {
-            is io.weave.client.subscription.ExternalImport.Remote -> importSubscription(name, value.url)
-            is io.weave.client.subscription.ExternalImport.Inline -> importSubscription(name, value.text)
-            is io.weave.client.subscription.ExternalImport.Document -> importSubscriptionFile(name, Uri.parse(value.uri))
+    fun importExternal(preview: ExternalImportPreview) {
+        if (mutableImportState.value.running || !externalImportSession.isCurrent(preview)) return
+        externalImportSession.clearError(preview)
+        val name = preview.name.value
+        runSubscriptionImport(externalPreview = preview) {
+            when (val value = preview.value) {
+                is io.weave.client.subscription.ExternalImport.Remote -> subscriptionRepository.importText(name, value.url)
+                is io.weave.client.subscription.ExternalImport.Inline -> subscriptionRepository.importText(name, value.text)
+                is io.weave.client.subscription.ExternalImport.Document -> subscriptionRepository.importFile(name, Uri.parse(value.uri))
+            }
         }
     }
 
@@ -1527,9 +1548,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         Result.failure(error)
     }
 
-    private fun runSubscriptionImport(importer: suspend () -> Subscription) {
+    private fun runSubscriptionImport(
+        externalPreview: ExternalImportPreview? = null,
+        importer: suspend () -> Subscription,
+    ) {
         if (mutableImportState.value.running) return
-        val active = SubscriptionImportState(running = true)
+        val active = SubscriptionImportState(running = true, externalPreviewId = externalPreview?.id)
         mutableImportState.value = active
 
         viewModelScope.launch {
@@ -1545,12 +1569,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     readNodes = { withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() } },
                 ).getOrElse { error ->
                     logSubscriptionImportFailure("Save", error)
-                    mutableImportState.value = SubscriptionImportState(error = error.message ?: "订阅导入失败")
+                    val message = error.message ?: "订阅导入失败"
+                    externalPreview?.let { externalImportSession.fail(it, message) }
+                    mutableImportState.value = SubscriptionImportState(error = message.takeIf { externalPreview == null })
                     return@launch
                 }
 
                 saved.nodes.onSuccess { mutableNodes.value = it }
                 saved.nodes.onFailure { logSubscriptionImportFailure("Refresh", it) }
+                externalPreview?.let(externalImportSession::dismiss)
                 mutableImportState.value = SubscriptionImportState(completedId = saved.subscription.id)
                 mutableDashboard.update {
                     it.copy(statusMessage = if (saved.nodes.isSuccess) {
