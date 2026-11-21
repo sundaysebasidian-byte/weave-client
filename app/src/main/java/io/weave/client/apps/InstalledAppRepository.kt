@@ -112,6 +112,8 @@ internal fun missingKnownApps(
 
 /** Exact identifiers only: a generic VPN-looking label must never become a migration prompt. */
 internal object ProxyClientDetector {
+    private val labelWhitespace = Regex("\\s+")
+
     val knownPackages = setOf(
         "com.github.kr328.clash",
         "com.github.kr328.clash.premium",
@@ -152,6 +154,6 @@ internal object ProxyClientDetector {
 
     fun matches(packageName: String, label: String): Boolean {
         if (packageName.trim().lowercase(java.util.Locale.ROOT) in knownPackages) return true
-        return label.trim().replace(Regex("\\s+"), " ").lowercase(java.util.Locale.ROOT) in knownLabels
+        return label.trim().replace(labelWhitespace, " ").lowercase(java.util.Locale.ROOT) in knownLabels
     }
 }
