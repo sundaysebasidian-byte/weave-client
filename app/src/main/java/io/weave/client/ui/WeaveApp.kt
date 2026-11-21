@@ -404,7 +404,7 @@ fun WeaveApp(
     var showNetworkPrivacyCenter by remember { mutableStateOf(false) }
     var browserPrivacyResult by remember { mutableStateOf<BrowserPrivacyResult?>(null) }
     var browserPrivacyError by remember { mutableStateOf<String?>(null) }
-    var browserProbeRunId by remember { mutableStateOf(0) }
+    var browserProbeRequest by remember { mutableStateOf<BrowserProbeRequest?>(null) }
     var showRecoveryCenter by remember { mutableStateOf(false) }
     var showPolicyPacks by remember { mutableStateOf(false) }
     var showLocalRouteRules by remember { mutableStateOf(false) }
@@ -515,7 +515,7 @@ fun WeaveApp(
         if (runFullCheck && viewModel.ipQualityState.value.report == null) {
             browserPrivacyResult = null
             browserPrivacyError = null
-            browserProbeRunId++
+            browserProbeRequest = BrowserProbeRequest()
             viewModel.runIpQualityProbe()
         }
     }
@@ -531,7 +531,7 @@ fun WeaveApp(
         showPolicyPacks ||
         showLocalRouteRules ||
         showRecoveryCenter ||
-        browserProbeRunId > 0
+        browserProbeRequest != null
     LaunchedEffect(sensitiveSurfaceVisible) {
         // Sensitive URLs, credentials and one-time transfer keys should not enter screenshots or
         // the recent-apps preview. Normal navigation remains screenshot-friendly.
@@ -570,7 +570,7 @@ fun WeaveApp(
             if (event == Lifecycle.Event.ON_STOP) {
                 viewModel.cancelForegroundDiagnostics()
                 showNetworkPrivacyCenter = false
-                browserProbeRunId = 0
+                browserProbeRequest = null
             }
             updateVisibility()
         }
@@ -854,13 +854,13 @@ fun WeaveApp(
     if (showNetworkPrivacyCenter) {
         val probeRuntime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
         val expectedRevision = probeRuntime.revision
-        val expectedBrowserRun = browserProbeRunId
+        val expectedBrowserRequest = browserProbeRequest
         var browserRevision by remember { mutableStateOf(expectedRevision) }
         LaunchedEffect(expectedRevision) {
             if (browserRevision != expectedRevision) {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRunId = 0
+                browserProbeRequest = null
                 browserRevision = expectedRevision
             }
         }
@@ -873,7 +873,7 @@ fun WeaveApp(
             diagnosticDashboard.routingMode, diagnosticDashboard.defaultRouteTarget,
             diagnosticRoutes, networkPreferences, resumeRevision) { viewModel.privacyReport() }
         NetworkPrivacyCenterDialog(
-            onCancel = { viewModel.clearIpQualityState(); browserProbeRunId = 0 },
+            onCancel = { viewModel.clearIpQualityState(); browserProbeRequest = null },
             downloadState = downloadState,
             onDownloadProbe = viewModel::runDownloadProbe,
             onOpenVpnSettings = onOpenVpnSettings,
@@ -881,36 +881,44 @@ fun WeaveApp(
             ipQualityState = ipQualityState,
             endpointState = commonEndpointState,
             browserResult = browserPrivacyResult,
-            browserProbeRunId = browserProbeRunId,
+            browserProbeRequest = browserProbeRequest,
             browserError = browserPrivacyError,
             onRunFullCheck = {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRunId++
+                browserProbeRequest = BrowserProbeRequest()
                 viewModel.runIpQualityProbe()
             },
             onRunBrowserCheck = {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRunId++
+                browserProbeRequest = BrowserProbeRequest()
             },
             onBrowserResult = {
-                if (io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision == expectedRevision &&
-                    browserProbeRunId == expectedBrowserRun) {
+                if (expectedBrowserRequest?.canPublish(
+                        browserProbeRequest,
+                        expectedRevision,
+                        io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision,
+                    ) == true
+                ) {
                     browserPrivacyError = null
                     browserPrivacyResult = it
                 }
             },
             onBrowserError = {
-                if (io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision == expectedRevision &&
-                    browserProbeRunId == expectedBrowserRun) {
+                if (expectedBrowserRequest?.canPublish(
+                        browserProbeRequest,
+                        expectedRevision,
+                        io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision,
+                    ) == true
+                ) {
                     browserPrivacyResult = null
                     browserPrivacyError = it
                 }
             },
             onDismiss = {
                 showNetworkPrivacyCenter = false
-                browserProbeRunId = 0
+                browserProbeRequest = null
                 viewModel.clearIpQualityState()
             },
         )
