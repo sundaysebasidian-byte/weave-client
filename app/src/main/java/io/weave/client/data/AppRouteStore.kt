@@ -20,29 +20,34 @@ class AppRouteStore(context: Context) {
     }
 
     fun save(routes: List<AppRoute>) = ProfileStorage.access(appContext) {
-        val packages = routes.mapTo(linkedSetOf()) { it.packageName }
-        val removedPackages = preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty() - packages
-        preferences.edit(commit = true) {
-            putStringSet(KEY_PACKAGES, packages)
-            removedPackages.forEach { packageName ->
-                ROUTE_FIELDS.forEach { field ->
-                    remove(key(packageName, field))
-                }
-            }
-            routes.forEach { route ->
-                putString(key(route.packageName, "name"), route.appName)
-                putString(key(route.packageName, "monogram"), route.monogram)
-                putLong(key(route.packageName, "tint"), route.tint)
-                putString(key(route.packageName, "kind"), route.target.kind.name)
-                putString(key(route.packageName, "label"), route.target.label)
-                putString(key(route.packageName, "subscription"), route.target.subscriptionId)
-                putString(key(route.packageName, "node"), route.target.nodeId)
-                putString(key(route.packageName, "group"), route.target.groupId)
-            }
-        }
+        writeAll({ preferences }, routes)
     }
 
     companion object {
+        // Use one fresh snapshot under the existing profile lock. The editor still merges on commit.
+        internal fun writeAll(acquire: () -> SharedPreferences, routes: List<AppRoute>) {
+            val packages = routes.mapTo(linkedSetOf()) { it.packageName }
+            val preferences = acquire()
+            val removedPackages = preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty() - packages
+            preferences.edit(commit = true) {
+                putStringSet(KEY_PACKAGES, packages)
+                removedPackages.forEach { packageName ->
+                    ROUTE_FIELDS.forEach { field ->
+                        remove(key(packageName, field))
+                    }
+                }
+                routes.forEach { route ->
+                    putString(key(route.packageName, "name"), route.appName)
+                    putString(key(route.packageName, "monogram"), route.monogram)
+                    putLong(key(route.packageName, "tint"), route.tint)
+                    putString(key(route.packageName, "kind"), route.target.kind.name)
+                    putString(key(route.packageName, "label"), route.target.label)
+                    putString(key(route.packageName, "subscription"), route.target.subscriptionId)
+                    putString(key(route.packageName, "node"), route.target.nodeId)
+                    putString(key(route.packageName, "group"), route.target.groupId)
+                }
+            }
+        }
         // TransactionalPreferences already owns a stable XML snapshot. Acquire it once under
         // the profile lock, never once per field, and never cache it across operations.
         internal fun readAll(
