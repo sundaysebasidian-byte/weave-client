@@ -190,6 +190,14 @@ import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
 
+private val SUBSCRIPTION_FILE_TYPES = arrayOf(
+    "text/*",
+    "application/json",
+    "application/yaml",
+    "application/x-yaml",
+    "application/octet-stream",
+)
+
 @Composable
 internal fun ImportSubscriptionDialog(
     state: SubscriptionImportState,
@@ -198,6 +206,7 @@ internal fun ImportSubscriptionDialog(
     onImportFile: (name: String, uri: Uri) -> Unit,
     onImportQrImage: (name: String, uri: Uri) -> Unit,
     onScanQr: (name: String, value: String) -> Unit,
+    startWith: io.weave.client.domain.SubscriptionSourceKind? = null,
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
@@ -228,6 +237,15 @@ internal fun ImportSubscriptionDialog(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         uri?.let { onImportQrImage(name, it) }
+    }
+    // Entered from the QR or file tile, go straight to that source once; the dialog stays behind it
+    // for naming, links and retries.
+    LaunchedEffect(startWith) {
+        when (startWith) {
+            io.weave.client.domain.SubscriptionSourceKind.QR_CODE -> launchCamera()
+            io.weave.client.domain.SubscriptionSourceKind.LOCAL_FILE -> filePicker.launch(SUBSCRIPTION_FILE_TYPES)
+            else -> Unit
+        }
     }
     if (showScanner) {
         LiveQrScanner(onDismiss = { showScanner = false }, onResult = { value ->
@@ -314,15 +332,7 @@ internal fun ImportSubscriptionDialog(
             Row {
                 TextButton(
                     onClick = {
-                        filePicker.launch(
-                            arrayOf(
-                                "text/*",
-                                "application/json",
-                                "application/yaml",
-                                "application/x-yaml",
-                                "application/octet-stream",
-                            ),
-                        )
+                        filePicker.launch(SUBSCRIPTION_FILE_TYPES)
                     },
                     enabled = !state.running,
                 ) {

@@ -383,6 +383,7 @@ fun WeaveApp(
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     val destinationState = rememberSaveableStateHolder()
     var showImportDialog by remember { mutableStateOf(false) }
+    var importStartWith by remember { mutableStateOf<io.weave.client.domain.SubscriptionSourceKind?>(null) }
     var showProxyMigration by remember { mutableStateOf(false) }
     var showConnectionActions by remember { mutableStateOf(false) }
     var showLanTransferDialog by remember { mutableStateOf(false) }
@@ -575,6 +576,7 @@ fun WeaveApp(
         snackbar = snackbar,
         onImportCompleted = {
             showImportDialog = false
+            importStartWith = null
             showProxyMigration = false
             externalImport = null
             quickStart = quickStart.imported(usableGuideNodes().isNotEmpty())
@@ -654,7 +656,8 @@ fun WeaveApp(
                 SubscriptionsScreen(
                     subscriptions = subscriptions,
                     migrationClients = installedApps.filter(InstalledApp::migrationCandidate),
-                    onAdd = { showImportDialog = true },
+                    onAdd = { importStartWith = null; showImportDialog = true },
+                    onAddFrom = { kind -> importStartWith = kind; showImportDialog = true },
                     onMigrate = { showProxyMigration = true },
                     onTransfer = { showLanTransferDialog = true },
                     refreshState = subscriptionRefreshState,
@@ -982,6 +985,7 @@ fun WeaveApp(
             onDismiss = {
                 if (!importState.running) {
                     showImportDialog = false
+                    importStartWith = null
                     quickStart = quickStart.cancelAction()
                     viewModel.resetImportState()
                 }
@@ -990,6 +994,7 @@ fun WeaveApp(
             onImportFile = viewModel::importSubscriptionFile,
             onImportQrImage = viewModel::importSubscriptionQrImage,
             onScanQr = viewModel::importSubscriptionQr,
+            startWith = importStartWith,
         )
     }
 
