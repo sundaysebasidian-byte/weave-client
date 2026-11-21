@@ -143,8 +143,9 @@ class SubscriptionPayloadParser {
         // as well as at the public parse boundary so a valid first `proxies:`/`outbounds` key is
         // not mistaken for an opaque URI list.
         val document = payload.trim().removePrefix("\uFEFF")
-        if (ClashSubscriptionDocument.hasRootKey(document, "proxies")) {
-            val nodes = parseClashNodes(document)
+        val clashRoot = ClashSubscriptionDocument.readRootWithKey(document, "proxies")
+        if (clashRoot != null) {
+            val nodes = parseClashNodes(clashRoot)
             val protocols = nodes.mapTo(sortedSetOf()) { it.protocol }
             return ParsedSubscription(
                 format = SubscriptionFormat.CLASH_YAML,
@@ -197,8 +198,8 @@ class SubscriptionPayloadParser {
         return null
     }
 
-    private fun parseClashNodes(payload: String): List<ParsedNode> =
-        ClashYamlCodec.nodes(ClashYamlCodec.read(payload)).map { node ->
+    private fun parseClashNodes(root: Map<String, Any?>): List<ParsedNode> =
+        ClashYamlCodec.nodes(root).map { node ->
             val name = node["name"]?.toString()?.takeIf(String::isNotBlank)
                 ?: throw SubscriptionImportException("节点缺少名称或协议类型")
             val protocol = node["type"]?.toString()?.lowercase(java.util.Locale.ROOT)?.takeIf(String::isNotBlank)
