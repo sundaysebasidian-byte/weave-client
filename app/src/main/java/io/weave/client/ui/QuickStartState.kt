@@ -39,6 +39,8 @@ internal data class QuickStartState(
         return if (requested == expected) copy(action = requested) else this
     }
     fun cancelAction() = copy(action = QuickStartAction.NONE)
+    fun afterConnectionProgress(runtimeChanged: Boolean, resumed: Boolean): QuickStartState =
+        if (action == QuickStartAction.CONNECT && (runtimeChanged || resumed)) cancelAction() else this
     fun imported(hasNodes: Boolean): QuickStartState =
         if (visible && action == QuickStartAction.IMPORT) copy(
             step = if (hasNodes) QuickStartStep.NODE else QuickStartStep.IMPORT,
