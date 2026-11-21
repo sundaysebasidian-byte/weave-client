@@ -1,0 +1,125 @@
+name: Weave Android round 007
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths: ['.github/workflows/weave-round007.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  close-all-display-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: bc2132382b155d10d6cf105e0a506905392ecb5d
+          path: weave-round007-baseline
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Extract actual before and after callbacks into disposable JVM fixture
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          path = Path("app/src/main/java/io/weave/client/ui/ToolScreens.kt")
+          pattern = r"onClick = \{ scope\.launch \{ (.*?) \} \}, enabled = connections\.isNotEmpty\(\)"
+          def extract(file):
+              matches = [body for body in re.findall(pattern, file.read_text()) if "api.closeAll()" in body]
+              if len(matches) != 1:
+                  raise SystemExit("Expected one real close-all callback")
+              return matches[0]
+          baseline = extract(Path("weave-round007-baseline") / path)
+          candidate = extract(path)
+          if baseline == candidate:
+              raise SystemExit("Callback did not change")
+          source = """package io.weave.client.ui
+
+          import kotlinx.coroutines.runBlocking
+          import org.junit.Assert.assertEquals
+          import org.junit.Test
+
+          class CloseAllCallbackRound007Test {
+              private class FakeCore(private val closed: Boolean) {
+                  var calls = 0
+                      private set
+                  suspend fun closeAll(): Boolean {
+                      calls += 1
+                      return closed
+                  }
+              }
+              private val initial = listOf("one", "two")
+
+              private suspend fun old(confirmed: Boolean): Pair<List<String>, Int> {
+                  var connections = initial
+                  val api = FakeCore(confirmed)
+                  BASELINE_CALLBACK
+                  return connections to api.calls
+              }
+
+              private suspend fun revised(confirmed: Boolean): Pair<List<String>, Int> {
+                  var connections = initial
+                  val api = FakeCore(confirmed)
+                  CANDIDATE_CALLBACK
+                  return connections to api.calls
+              }
+
+              @Test fun actualBaselineShowsProblem() = runBlocking {
+                  assertEquals(emptyList<String>() to 1, old(false))
+              }
+
+              @Test fun revisedCallbackKeepsFailedCloseRows() = runBlocking {
+                  assertEquals(initial to 1, revised(false))
+              }
+
+              @Test fun revisedCallbackClearsConfirmedCloseRows() = runBlocking {
+                  assertEquals(emptyList<String>() to 1, revised(true))
+              }
+          }
+          """
+          file = Path("app/src/test/java/io/weave/client/ui/CloseAllCallbackRound007Test.kt")
+          file.parent.mkdir(parents=True, exist_ok=True)
+          with file.open("x") as f:
+              f.write(source.replace("BASELINE_CALLBACK", baseline).replace("CANDIDATE_CALLBACK", candidate))
+          PY
+      - name: Compile Android and run close-all callback regression
+        shell: bash
+        run: ./gradlew :app:testDebugUnitTest --tests io.weave.client.ui.CloseAllCallbackRound007Test --no-build-cache --no-daemon --no-configuration-cache
+      - name: Verify exact JUnit receipt
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          suite = "io.weave.client.ui.CloseAllCallbackRound007Test"
+          results = list(Path("app/build/test-results").glob(f"**/TEST-{suite}.xml"))
+          if len(results) != 1:
+              raise SystemExit("Missing or ambiguous Kotlin receipt")
+          root = ET.parse(results[0]).getroot()
+          got = root.findall("testcase")
+          expected = {"actualBaselineShowsProblem", "revisedCallbackKeepsFailedCloseRows", "revisedCallbackClearsConfirmedCloseRows"}
+          if (root.tag != "testsuite" or root.get("name") != suite or len(got) != 3 or
+              {x.get("name") for x in got} != expected or
+              any(x.get("classname") != suite or x.find("skipped") is not None or
+                  x.find("failure") is not None or x.find("error") is not None for x in got) or
+              any(root.get(a) != b for a, b in (("tests", "3"), ("skipped", "0"), ("failures", "0"), ("errors", "0")))):
+              raise SystemExit("Receipt does not prove all three callback cases ran")
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "suite": suite, "passed": len(got), "failed": 0, "skipped": 0}))
+          PY
