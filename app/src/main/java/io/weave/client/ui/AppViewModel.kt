@@ -587,6 +587,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableDashboard.update { it.copy(statusMessage = null) }
     }
 
+    internal fun dismissDisplayedMessage(displayed: String) {
+        mutableDashboard.clearDisplayedStatus(displayed)
+    }
+
     fun privacyReport(): PrivacyObservationReport {
         val preferences = mutableNetworkPreferences.value
         return PrivacyObservatory.inspect(
