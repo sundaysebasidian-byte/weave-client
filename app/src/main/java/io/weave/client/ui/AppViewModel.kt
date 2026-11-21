@@ -518,7 +518,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (runtime != null) {
                         mutableDashboard.update { it.withRuntime(runtime) }
                         mutableTrafficHistory.update { history ->
-                            (history + runtime.downloadBytesPerSecond).takeLast(TRAFFIC_HISTORY_SAMPLES)
+                            appendTrafficHistorySample(history, runtime.downloadBytesPerSecond, TRAFFIC_HISTORY_SAMPLES)
                         }
                     }
                     delay(refreshPolicy.nextDelayMillis(runtime))
