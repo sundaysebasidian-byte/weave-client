@@ -237,17 +237,19 @@ class MainActivity : ComponentActivity() {
         else -> ExternalImportParser.fromLink(uri.toString())
     }
 
-    private fun sharedImport(intent: Intent): ExternalImport? {
-        intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
-            return ExternalImportParser.fromSharedText(text)
-        }
+    private fun sharedImport(intent: Intent): ExternalImport? = SharedSubscriptionImport.select(
+        intent.type,
+        intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0,
+        intent.getStringExtra(Intent.EXTRA_TEXT),
+        ExternalImportParser::fromSharedText,
+    ) {
         val stream = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         } else {
             @Suppress("DEPRECATION")
-            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri
         }
-        return stream?.takeIf { it.scheme == "content" }?.let { ExternalImport.Document(it.toString(), null) }
+        stream?.takeIf { it.scheme == "content" }?.let { ExternalImport.Document(it.toString(), null) }
     }
 
     private fun requestVpnPermission() {
