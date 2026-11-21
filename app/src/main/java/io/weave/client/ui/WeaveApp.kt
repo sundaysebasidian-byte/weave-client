@@ -105,6 +105,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text as MaterialText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -404,7 +405,7 @@ fun WeaveApp(
     var showRuleSets by remember { mutableStateOf(false) }
     var showCustomGroups by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
-    var externalImport by remember { mutableStateOf<io.weave.client.subscription.ExternalImport?>(null) }
+    val externalImport by viewModel.externalImportPreview.collectAsStateWithLifecycle()
     var resumeRevision by remember { mutableStateOf(0) }
     val quickStartStore = remember(LocalContext.current.applicationContext) {
         io.weave.client.data.QuickStartStore(viewModel.getApplication())
@@ -495,8 +496,7 @@ fun WeaveApp(
             }
             is ExternalRequest.Import -> {
                 destination = Destination.SUBSCRIPTIONS
-                viewModel.resetImportState()
-                externalImport = request.value
+                viewModel.showExternalImport(request.value)
             }
         }
         viewModel.consumeExternalRequest()
@@ -576,7 +576,6 @@ fun WeaveApp(
         onImportCompleted = {
             showImportDialog = false
             showProxyMigration = false
-            externalImport = null
             quickStart = quickStart.imported(usableGuideNodes().isNotEmpty())
         },
     )
@@ -1128,18 +1127,22 @@ fun WeaveApp(
         )
     }
 
-    externalImport?.let { value ->
-        val importState by viewModel.importState.collectAsStateWithLifecycle()
-        ExternalImportDialog(
-            value = value,
-            running = importState.running,
-            error = importState.error,
-            onDismiss = {
-                externalImport = null
-                viewModel.resetImportState()
-            },
-            onConfirm = { name -> viewModel.importExternal(value, name) },
-        )
+    externalImport?.let { preview ->
+        key(preview.id) {
+            val importState by viewModel.importState.collectAsStateWithLifecycle()
+            val name by preview.name.collectAsStateWithLifecycle()
+            val error by preview.error.collectAsStateWithLifecycle()
+            ExternalImportDialog(
+                value = preview.value,
+                running = importState.isRunningFor(preview.id),
+                confirmEnabled = !importState.running,
+                error = error,
+                name = name,
+                onNameChange = { viewModel.updateExternalImportName(preview, it) },
+                onDismiss = { viewModel.dismissExternalImport(preview) },
+                onConfirm = { viewModel.importExternal(preview) },
+            )
+        }
     }
 
     if (showConnections) {
