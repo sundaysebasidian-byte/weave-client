@@ -377,7 +377,10 @@ private fun CustomGroupEditor(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
-                            Switch(checked = chained, onCheckedChange = { chained = it })
+                            Switch(checked = chained, onCheckedChange = { enabled ->
+                                members = customGroupDraftMembers(members, entry, enabled)
+                                chained = enabled
+                            })
                         }
                         if (chained) {
                             OutlinedButton(onClick = { pickingEntry = true }, modifier = Modifier.fillMaxWidth()) {
@@ -452,7 +455,7 @@ private fun CustomGroupEditor(
                             Row(
                                 Modifier.fillMaxWidth().clickable {
                                     entry = ref
-                                    members = members - ref
+                                    members = customGroupDraftMembers(members, ref, chained = true)
                                     pickingEntry = false
                                 }.padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
