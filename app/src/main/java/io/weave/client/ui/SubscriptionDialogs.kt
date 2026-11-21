@@ -852,7 +852,7 @@ internal fun SubscriptionManagerDialog(
             }.thenBy { it.name },
         )
     }
-    val qualityRows = remember(health.nodes) { QualityMatrixBuilder.build(health.nodes) }
+    val qualityRows = remember(health.nodes) { QualityMatrixBuilder.previewRows(health.nodes) }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -1168,7 +1168,7 @@ internal fun SubscriptionManagerDialog(
                                     fontSize = 11.sp,
                                     lineHeight = 16.sp,
                                 )
-                                qualityRows.take(8).forEach { row ->
+                                qualityRows.forEach { row ->
                                     QualityMatrixEntry(row)
                                 }
                             }
