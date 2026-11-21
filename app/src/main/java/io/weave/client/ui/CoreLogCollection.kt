@@ -3,6 +3,8 @@ package io.weave.client.ui
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 
 internal suspend fun watchCoreLogCollection(
     collect: suspend () -> Unit,
@@ -18,4 +20,14 @@ internal suspend fun watchCoreLogCollection(
     }
     currentCoroutineContext().ensureActive()
     if (stillCurrent()) onStopped()
+}
+
+/** Main-owned row publication uses the same live ownership check as the terminal state. */
+internal suspend fun <T> Flow<T>.collectCurrentLogLines(
+    stillCurrent: () -> Boolean,
+    onLine: (T) -> Unit,
+) {
+    collect { line ->
+        if (stillCurrent()) onLine(line)
+    }
 }
