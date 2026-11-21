@@ -15,8 +15,17 @@ data class SubscriptionUpdatePreview(
 )
 
 /** Consume matching occurrences individually: duplicate labels must not hide removals. */
-internal fun <T, K> unmatchedOccurrences(items: List<T>, otherKeys: List<K>, key: (T) -> K): List<T> {
-    val remaining = otherKeys.groupingBy { it }.eachCount().toMutableMap()
+internal fun <T, U, K> unmatchedOccurrences(
+    items: List<T>,
+    other: List<U>,
+    key: (T) -> K,
+    otherKey: (U) -> K,
+): List<T> {
+    val remaining = HashMap<K, Int>()
+    for (item in other) {
+        val value = otherKey(item)
+        remaining[value] = (remaining[value] ?: 0) + 1
+    }
     return items.filter { item ->
         val value = key(item)
         val count = remaining[value] ?: 0
