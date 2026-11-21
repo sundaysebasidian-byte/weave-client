@@ -40,7 +40,9 @@ internal class MigrationBatchSession(private val clock: () -> Long = System::nan
         clear()
         require(values.isNotEmpty() && values.size <= 20) { "请选择有效的订阅，最多 20 个" }
         require(values.all { it.prepared.second.nodeCount > 0 }) { "订阅中没有可用节点" }
-        require(values.sumOf { it.prepared.first.toByteArray(Charsets.UTF_8).size.toLong() } <= 20L * 1024 * 1024) { "订阅内容超过大小限制" }
+        require(fitsMigrationUtf8Budget(values.asSequence().map { it.prepared.first }, 20L * 1024 * 1024)) {
+            "订阅内容超过大小限制"
+        }
         records = values.toList()
         val entries = values.map { value -> MigrationPreview(UUID.randomUUID().toString(), value.name,
             value.prepared.inputFormat, value.prepared.second.protocols, value.prepared.counts,
@@ -61,4 +63,30 @@ object ClientSourceCapabilities {
     fun cmfaAuthority(packageName: String): String? = packageName.takeIf { it in cmfaPackages }?.plus(".files")
     fun isCmfaAuthority(authority: String?): Boolean = cmfaPackages.any { "$it.files" == authority }
     fun isKaring(packageName: String): Boolean = packageName == "com.nebula.karing"
+}
+
+private val utf8ReplacementBytes = Charsets.UTF_8.newEncoder().replacement().size.toLong()
+
+/** Count the same bytes as String.toByteArray(UTF_8), without allocating a payload-sized array. */
+internal fun fitsMigrationUtf8Budget(payloads: Sequence<String>, limit: Long): Boolean {
+    var remaining = limit
+    for (payload in payloads) {
+        var offset = 0
+        while (offset < payload.length) {
+            val char = payload[offset++]
+            val bytes = when {
+                char.code < 0x80 -> 1L
+                char.code < 0x800 -> 2L
+                char.isHighSurrogate() && offset < payload.length && payload[offset].isLowSurrogate() -> {
+                    offset++
+                    4L
+                }
+                char.isHighSurrogate() || char.isLowSurrogate() -> utf8ReplacementBytes
+                else -> 3L
+            }
+            if (bytes > remaining) return false
+            remaining -= bytes
+        }
+    }
+    return remaining >= 0
 }
