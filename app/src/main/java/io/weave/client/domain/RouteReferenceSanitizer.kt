@@ -16,6 +16,31 @@ object RouteReferenceSanitizer {
         groups: Map<String, String> = emptyMap(),
     ): List<AppRoute> {
         val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
+        // Keep only requested keys and retain the first matching node, even if a list
+        // contains duplicates. Avoid a full scan per fixed route on startup.
+        val requested = HashMap<String, MutableMap<String, ProxyNode?>>()
+        var remaining = 0
+        for (route in routes) {
+            val target = route.target
+            if (target.kind != RouteKind.FIXED) continue
+            val subscriptionId = target.subscriptionId ?: continue
+            val nodeId = target.nodeId ?: continue
+            if (subscriptionId !in subscriptionIds) continue
+            val byId = requested.getOrPut(subscriptionId) { HashMap() }
+            if (nodeId !in byId) {
+                byId[nodeId] = null
+                remaining++
+            }
+        }
+        if (remaining > 0) {
+            for (node in nodes) {
+                val byId = requested[node.subscriptionId] ?: continue
+                if (node.id in byId && byId[node.id] == null) {
+                    byId[node.id] = node
+                    if (--remaining == 0) break
+                }
+            }
+        }
         return routes.map { route ->
             val target = route.target
             when (target.kind) {
@@ -34,19 +59,11 @@ object RouteReferenceSanitizer {
                 }
                 RouteKind.FIXED -> {
                     val subscriptionId = target.subscriptionId
-                    val nodeExists = subscriptionId in subscriptionIds && nodes.any {
-                        it.subscriptionId == subscriptionId && it.id == target.nodeId
-                    }
+                    val nodeId = target.nodeId
+                    val node = if (subscriptionId != null && nodeId != null) requested[subscriptionId]?.get(nodeId) else null
                     when {
-                        nodeExists -> route.copy(
-                            target = target.copy(
-                                label = NodeDisplayName.core(
-                                    nodes.first {
-                                        it.subscriptionId == subscriptionId &&
-                                            it.id == target.nodeId
-                                    }.name,
-                                ),
-                            ),
+                        node != null -> route.copy(
+                            target = target.copy(label = NodeDisplayName.core(node.name)),
                         )
                         else -> route.copy(target = target.copy(kind = RouteKind.BLOCK,
                             label = "出口已失效，请重新选择"))
