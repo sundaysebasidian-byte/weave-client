@@ -6,6 +6,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
+/** One immutable outcome list with the counters for that same point in the batch. */
+internal data class SubscriptionBatchProgress(
+    val results: List<SubscriptionRefreshResult> = emptyList(),
+    val completed: Int = 0,
+    val failed: Int = 0,
+    val reviewCount: Int = 0,
+)
+
 /** A small, fakeable refresh seam. It never decrypts sources or retains exception text. */
 internal object SubscriptionRefreshBatch {
     fun selectTargets(
@@ -20,12 +28,12 @@ internal object SubscriptionRefreshBatch {
         targets: List<Subscription>,
         refresh: suspend (String) -> Unit,
         onUpdated: suspend (String) -> Unit,
-        onProgress: (current: Subscription?, results: List<SubscriptionRefreshResult>) -> Unit,
-    ): List<SubscriptionRefreshResult> {
-        var results: List<SubscriptionRefreshResult> = emptyList()
+        onProgress: (current: Subscription?, progress: SubscriptionBatchProgress) -> Unit,
+    ): SubscriptionBatchProgress {
+        var progress = SubscriptionBatchProgress()
         for (subscription in targets) {
             currentCoroutineContext().ensureActive()
-            onProgress(subscription, results)
+            onProgress(subscription, progress)
             var reviewRequired = false
             val succeeded = try {
                 refresh(subscription.id)
@@ -41,12 +49,18 @@ internal object SubscriptionRefreshBatch {
             }
             val outcome = SubscriptionRefreshResult(subscription.id, subscription.name, succeeded, reviewRequired)
             // The next start and final return can share this immutable result snapshot.
-            results = buildList(results.size + 1) {
-                addAll(results)
+            val results = buildList(progress.results.size + 1) {
+                addAll(progress.results)
                 add(outcome)
             }
-            onProgress(null, results)
+            progress = SubscriptionBatchProgress(
+                results = results,
+                completed = progress.completed + if (outcome.succeeded) 1 else 0,
+                failed = progress.failed + if (!outcome.succeeded && !outcome.reviewRequired) 1 else 0,
+                reviewCount = progress.reviewCount + if (outcome.reviewRequired) 1 else 0,
+            )
+            onProgress(null, progress)
         }
-        return results
+        return progress
     }
 }
