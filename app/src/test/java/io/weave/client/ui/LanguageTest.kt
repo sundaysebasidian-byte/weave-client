@@ -278,4 +278,26 @@ class LanguageTest {
             ),
         )
     }
+
+    @Test fun `static lookup and recursive cutoff are unchanged in all five translated locales`() {
+        val expected = mapOf(
+            WeaveLanguage.TRADITIONAL_CHINESE to "設定",
+            WeaveLanguage.ENGLISH to "Settings",
+            WeaveLanguage.JAPANESE to "設定",
+            WeaveLanguage.FRENCH to "Réglages",
+            WeaveLanguage.GERMAN to "Einstellungen",
+        )
+        val source = "设置"
+        for ((language, translated) in expected) {
+            assertEquals(translated, localizeWeaveText(source, language))
+            assertEquals("fixture label", localizeWeaveText("fixture label", language))
+            val belowCutoff = " [S01]".repeat(11)
+            assertEquals(translated + belowCutoff, localizeWeaveText(source + belowCutoff, language))
+            val atCutoff = source + " [S01]".repeat(12)
+            assertEquals(atCutoff, localizeWeaveText(atCutoff, language))
+            assertEquals(translated, localizeWeaveText(source, language))
+        }
+        val simplified = source + " [S01]".repeat(11)
+        assertEquals(simplified, localizeWeaveText(simplified, WeaveLanguage.SIMPLIFIED_CHINESE))
+    }
 }
