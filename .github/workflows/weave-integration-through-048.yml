@@ -1,0 +1,66 @@
+name: Weave Android cumulative host acceptance through R048
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths:
+      - '.github/workflows/weave-integration-through-048.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android-host-acceptance:
+    name: Cumulative Android host acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install the project's locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run all Android local unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-build-cache --no-daemon --no-configuration-cache
+      - name: Record all JUnit results
+        shell: bash
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          results = Path("app/build/test-results/testDebugUnitTest")
+          reports = list(results.glob("TEST-*.xml"))
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          names = set()
+          for report in reports:
+              suite = ET.parse(report).getroot()
+              if suite.tag != "testsuite":
+                  raise SystemExit("Malformed Gradle XML result")
+              names.add(suite.get("name"))
+              for key in totals:
+                  totals[key] += int(suite.get(key, "0"))
+          required = {"io.weave.client.ui.SubscriptionLibraryModelTest",
+                      "io.weave.client.ui.LanImportDraftTest",
+                      "io.weave.client.subscription.SubscriptionUpdatePreviewTest",
+                      "io.weave.client.data.SupportDiagnosticsTest"}
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "suite_count": len(reports), **totals}))
+          if totals["tests"] < 100 or totals["failures"] or totals["errors"] or not required <= names:
+              raise SystemExit("Full host test result missing required suites or has failures")
+          PY
+      - name: Run Android lint and build debug APK
+        run: ./gradlew :app:lintDebug :app:assembleDebug --no-daemon --no-configuration-cache
+      - name: Verify actual debug APK without publication
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
