@@ -52,3 +52,19 @@ internal fun DashboardState.withRuntime(runtime: EngineRuntimeSnapshot): Dashboa
         attributedAppConnections = runtime.attributedAppConnections,
     )
 }
+
+/** Both the incoming history and returned window are immutable sample snapshots. */
+internal fun appendTrafficHistorySample(history: List<Long>, sample: Long, limit: Int): List<Long> {
+    require(limit > 0)
+    if (history.size == limit) {
+        // A full flat window would compare equal to the published one. Avoid copying it.
+        var index = history.lastIndex
+        while (index >= 0 && history[index] == sample) index--
+        if (index < 0) return history
+    }
+    val retained = minOf(history.size, limit - 1)
+    return buildList(retained + 1) {
+        for (index in (history.size - retained) until history.size) add(history[index])
+        add(sample)
+    }
+}
