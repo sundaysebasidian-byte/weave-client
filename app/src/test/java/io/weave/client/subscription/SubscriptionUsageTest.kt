@@ -29,6 +29,28 @@ class SubscriptionUsageTest {
         assertNull(SubscriptionUsage.parse("x".repeat(600)))
     }
 
+    @Test fun `only recognized valid fields replace earlier values`() {
+        assertEquals(SubscriptionUsage(34, 12, 0, null), SubscriptionUsage.parse(
+            " UPLOAD = 0012, upload=34; upload=broken; upload=-1;download=+12; expire=123; ExpIRe=-0.0; meta=9",
+        ))
+        assertNull(SubscriptionUsage.parse("meta=1,another=2;upload=bad"))
+        assertEquals(SubscriptionUsage(0, 0, 0, null), SubscriptionUsage.parse("expire=0"))
+    }
+
+    @Test fun `integer fast path preserves decimal and range behavior`() {
+        val usage = SubscriptionUsage.parse("upload=${Long.MAX_VALUE};download=9223372036854775808;total=٢٥;expire=3.99e1")
+        assertEquals(SubscriptionUsage(Long.MAX_VALUE, Long.MAX_VALUE, 25, 39), usage)
+        assertNull(SubscriptionUsage.parse("upload=${Long.MIN_VALUE}"))
+        assertEquals(SubscriptionUsage(0, 0, 0, null), SubscriptionUsage.parse("upload=0.99"))
+    }
+
+    @Test fun `header length boundary is unchanged`() {
+        val exact = "upload=7" + " ".repeat(504)
+        assertEquals(SubscriptionUsage(7, 0, 0, null), SubscriptionUsage.parse(exact))
+        assertNull(SubscriptionUsage.parse(exact + " "))
+        assertNull(SubscriptionUsage.parse(" ".repeat(512)))
+    }
+
     @Test fun `encode round trips`() {
         val usage = SubscriptionUsage(1, 2, 3, 4)
         assertEquals(usage, SubscriptionUsage.decode(usage.encode()))
