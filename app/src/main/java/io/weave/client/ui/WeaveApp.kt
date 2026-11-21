@@ -1282,9 +1282,9 @@ private fun DashboardEffects(
     val importState by viewModel.importState.collectAsStateWithLifecycle()
 
     LaunchedEffect(dashboard.statusMessage, language) {
-        dashboard.statusMessage?.let {
-            snackbar.showSnackbar(localizeWeaveText(it, language))
-            viewModel.dismissMessage()
+        dashboard.statusMessage?.let { displayed ->
+            snackbar.showSnackbar(localizeWeaveText(displayed, language))
+            viewModel.dismissDisplayedMessage(displayed)
         }
     }
 
