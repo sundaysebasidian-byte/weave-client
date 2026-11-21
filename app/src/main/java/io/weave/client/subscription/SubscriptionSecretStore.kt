@@ -274,23 +274,25 @@ class SubscriptionSecretStore(
     }
 
     fun list(): List<StoredSubscription> = locked {
-        preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
+        // The profile and store locks cover the whole list; read the index once.
+        val snapshot = preferences
+        snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
             .mapNotNull { id ->
-                val name = preferences.getString(key(id, "name"), null) ?: return@mapNotNull null
-                val format = preferences.getString(key(id, "format"), null)
+                val name = snapshot.getString(key(id, "name"), null) ?: return@mapNotNull null
+                val format = snapshot.getString(key(id, "format"), null)
                     ?.let { runCatching { SubscriptionFormat.valueOf(it) }.getOrNull() }
                     ?: return@mapNotNull null
                 StoredSubscription(
                     id = id,
                     name = name,
-                    nodeCount = preferences.getInt(key(id, "nodes"), 0),
+                    nodeCount = snapshot.getInt(key(id, "nodes"), 0),
                     format = format,
-                    nodes = readNodeMetadata(id)
+                    nodes = readNodeMetadata(id, snapshot)
                         .sortedBy { it.name.lowercase() },
-                    hasPayload = payloadFile(id).isFile,
-                    usage = SubscriptionUsage.decode(preferences.getString(key(id, "usage"), null)),
-                    updatedAtMillis = preferences.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
-                    updateIntervalHours = preferences.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
+                    hasPayload = payloadFile(id, snapshot).isFile,
+                    usage = SubscriptionUsage.decode(snapshot.getString(key(id, "usage"), null)),
+                    updatedAtMillis = snapshot.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
+                    updateIntervalHours = snapshot.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
                 )
             }
             .sortedBy { it.name.lowercase() }
@@ -393,8 +395,8 @@ class SubscriptionSecretStore(
         }
     }
 
-    private fun payloadFile(id: String): File {
-        val generation = preferences.getString(key(id, "payload_generation"), null)
+    private fun payloadFile(id: String, snapshot: SharedPreferences = preferences): File {
+        val generation = snapshot.getString(key(id, "payload_generation"), null)
         return File(
             payloadDirectory,
             generation?.let { payloadFileName(id, it) } ?: "$id.enc",
@@ -410,8 +412,8 @@ class SubscriptionSecretStore(
             associatedData = "$id:nodes".toByteArray(Charsets.UTF_8),
         )
 
-    private fun readNodeMetadata(id: String): List<StoredNode> {
-        val encrypted = preferences.getString(key(id, "node_metadata_encrypted"), null)
+    private fun readNodeMetadata(id: String, snapshot: SharedPreferences = preferences): List<StoredNode> {
+        val encrypted = snapshot.getString(key(id, "node_metadata_encrypted"), null)
         if (encrypted != null) {
             return runCatching {
                 secretBox.decrypt(
@@ -425,7 +427,7 @@ class SubscriptionSecretStore(
             }.getOrDefault(emptyList())
         }
         // Read the legacy plaintext field only long enough to migrate an older install.
-        return preferences.getStringSet(key(id, "node_metadata"), emptySet())
+        return snapshot.getStringSet(key(id, "node_metadata"), emptySet())
             .orEmpty()
             .mapNotNull(::decodeNode)
     }
