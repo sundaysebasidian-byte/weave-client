@@ -85,4 +85,13 @@ class LocalSubscriptionReaderTest {
         assertEquals("profile.backup", importedSubscriptionName("", "profile.backup.json"))
         assertEquals("Imported subscription", importedSubscriptionName("", null))
     }
+
+    @Test
+    fun `filename extension and trim still precede the Unicode-safe inferred name limit`() {
+        val prefix = "文".repeat(79)
+        val rocket = "\uD83D\uDE80"
+        assertEquals(prefix, importedSubscriptionName("", "  $prefix${rocket}.YAML  "))
+        assertEquals(prefix + rocket, importedSubscriptionName(" $prefix$rocket ", "ignored.yaml"))
+        assertEquals("Imported subscription", importedSubscriptionName("", " .yaml "))
+    }
 }
