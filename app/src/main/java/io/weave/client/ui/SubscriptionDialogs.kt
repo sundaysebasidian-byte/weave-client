@@ -343,11 +343,13 @@ internal fun LanTransferDialog(
     onDismiss: () -> Unit,
     onStartExport: (Set<String>) -> Unit,
     onStopExport: () -> Unit,
-    onImport: (String, String) -> Unit,
+    onImport: (String, String, Long) -> Unit,
     onScanQr: (String) -> Unit,
 ) {
-    var importLink by remember { mutableStateOf("") }
-    var confirmationCode by remember { mutableStateOf("") }
+    var importDraft by remember {
+        mutableStateOf(LanImportDraft().acceptValidatedScan(state.pendingLinkRevision, state.pendingLink))
+    }
+    fun visibleDraft() = importDraft.acceptValidatedScan(state.pendingLinkRevision, state.pendingLink)
     var selectedIds by remember {
         mutableStateOf<Set<String>>(emptySet())
     }
@@ -389,8 +391,11 @@ internal fun LanTransferDialog(
     var mode by rememberSaveable {
         mutableStateOf(if (state.pendingLink.isNotBlank()) LanTransferMode.IMPORT else LanTransferMode.EXPORT)
     }
-    LaunchedEffect(state.pendingLink) {
-        if (state.pendingLink.isNotBlank()) mode = LanTransferMode.IMPORT
+    LaunchedEffect(state.pendingLinkRevision) {
+        if (state.pendingLink.isNotBlank()) {
+            importDraft = visibleDraft()
+            mode = LanTransferMode.IMPORT
+        }
     }
     val exporting = state.exportLink.isNotEmpty()
     val allSelected = availableIds.isNotEmpty() && selectedIds.containsAll(availableIds)
@@ -540,10 +545,11 @@ internal fun LanTransferDialog(
                     }
                 }
                 if (mode == LanTransferMode.IMPORT) {
-                    val effectiveImportLink = importLink.ifBlank { state.pendingLink }
+                    val draft = visibleDraft()
+                    val effectiveImportLink = draft.link
                     // The sender's code must be typed out-of-band. Never reuse this device's own
                     // export code, even while this device is still sharing in the other tab.
-                    val effectiveConfirmationCode = confirmationCode
+                    val effectiveConfirmationCode = draft.confirmationCode
                     item(key = "import-heading", contentType = "lan-transfer-heading") {
                         Text("从另一台设备导入", fontWeight = FontWeight.SemiBold)
                     }
@@ -551,7 +557,7 @@ internal fun LanTransferDialog(
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedTextField(
                                 value = effectiveImportLink,
-                                onValueChange = { importLink = it.take(2_048) },
+                                onValueChange = { importDraft = visibleDraft().editLink(it) },
                                 label = { Text("weave://lan/…") },
                                 singleLine = true,
                                 enabled = !state.running,
@@ -574,7 +580,7 @@ internal fun LanTransferDialog(
                             }
                         }
                     }
-                    if (state.pendingLink.isNotBlank()) {
+                    if (state.pendingLink.isNotBlank() && effectiveImportLink == state.pendingLink) {
                         item(key = "import-pending", contentType = "lan-transfer-notice") {
                             WeaveNotice(
                                 icon = Icons.Rounded.QrCodeScanner,
@@ -586,7 +592,7 @@ internal fun LanTransferDialog(
                     item(key = "import-code", contentType = "lan-transfer-field") {
                         OutlinedTextField(
                             value = effectiveConfirmationCode,
-                            onValueChange = { confirmationCode = it.filter(Char::isDigit).take(6) },
+                            onValueChange = { importDraft = visibleDraft().editCode(it) },
                             label = {
                                 Text("确认短码", maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.testTag("lan-transfer-code-label"))
@@ -610,9 +616,13 @@ internal fun LanTransferDialog(
                     }
                     item(key = "import-action", contentType = "lan-transfer-action") {
                         Button(
-                            onClick = { onImport(effectiveImportLink, effectiveConfirmationCode) },
-                            enabled = effectiveImportLink.isNotBlank() &&
-                                effectiveConfirmationCode.length == 6 && !state.running,
+                            onClick = {
+                                val current = visibleDraft()
+                                if (current.canImport && !state.running) {
+                                    onImport(current.link, current.confirmationCode, current.lastScanRevision)
+                                }
+                            },
+                            enabled = draft.canImport && !state.running,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = WeaveUiTokens.minTouchTarget)
