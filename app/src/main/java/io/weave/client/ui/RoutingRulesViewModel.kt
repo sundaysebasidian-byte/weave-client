@@ -36,6 +36,9 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private val mutablePolicyPackState = MutableStateFlow(PolicyPackState())
     val policyPackState = mutablePolicyPackState.asStateFlow()
+    private val policyPackReload = PolicyPackReload(mutablePolicyPackState, viewModelScope) {
+        withContext(Dispatchers.IO) { probeSafely { policyPackStore.list() }.getOrNull() }
+    }
 
     private val mutableLocalRouteRuleState = MutableStateFlow(LocalRouteRuleState())
     val localRouteRuleState = mutableLocalRouteRuleState.asStateFlow()
@@ -50,9 +53,8 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private fun reload() {
+        policyPackReload.request()
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { probeSafely { policyPackStore.list() } }
-                .onSuccess { mutablePolicyPackState.value = PolicyPackState(packs = it) }
             withContext(Dispatchers.IO) { probeSafely { localRouteRuleStore.list() } }
                 .onSuccess { mutableLocalRouteRuleState.value = LocalRouteRuleState(rules = it) }
             withContext(Dispatchers.IO) { probeSafely { ruleSetStore.list() } }
@@ -63,6 +65,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     fun importPolicyPack(uri: Uri) {
         if (mutablePolicyPackState.value.running) return
+        policyPackReload.mutationStarted()
         mutablePolicyPackState.value = mutablePolicyPackState.value.copy(running = true, error = null)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -84,6 +87,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
             }.onFailure { error ->
                 mutablePolicyPackState.update { it.copy(running = false, error = "策略包导入失败") }
             }
+            policyPackReload.mutationFinished()
         }
     }
 
@@ -114,6 +118,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private fun mutatePolicyPack(message: String, failure: String, reloadMessage: String, mutation: () -> Unit) {
         if (mutablePolicyPackState.value.running) return
+        policyPackReload.mutationStarted()
         mutablePolicyPackState.update { it.copy(running = true, error = null, message = null) }
         viewModelScope.launch {
             withContext(Dispatchers.IO) { probeSafely { mutation(); policyPackStore.list() } }
@@ -123,6 +128,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
                 }.onFailure {
                     mutablePolicyPackState.update { it.copy(running = false, error = failure) }
                 }
+            policyPackReload.mutationFinished()
         }
     }
 
