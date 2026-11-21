@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,7 +70,11 @@ import io.weave.client.core.diagnostics.LogRedactor
 import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.domain.TrafficFormat
 import io.weave.client.subscription.ExternalImport
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @Composable
@@ -380,6 +385,7 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val api = remember { CoreApi(context.applicationContext) }
     val lines = remember { mutableStateListOf<CoreLogLine>() }
+    var appendedLines by remember { mutableLongStateOf(0L) }
     var level by remember { mutableStateOf("info") }
     var running by remember { mutableStateOf(true) }
     var redacted by remember { mutableStateOf(true) }
@@ -389,13 +395,21 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
         if (!running) return@LaunchedEffect
         error = false
         runCatching {
-            api.streamLogs(level) { line ->
+            // The socket callback runs on IO. Keep the buffer bounded and apply rows on Main.
+            channelFlow {
+                api.streamLogs(level) { line ->
+                    if (trySendBlocking(line).isClosed) {
+                        throw kotlinx.coroutines.CancellationException("Log collection ended")
+                    }
+                }
+            }.buffer(16).collect { line ->
                 lines.add(line)
                 if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
+                appendedLines++
             }
         }.onFailure { if (it !is kotlinx.coroutines.CancellationException) error = true }
     }
-    LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
+    LaunchedEffect(appendedLines, lines.isEmpty()) { if (lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex) }
     WeaveToolScreen(
         title = "内核日志",
         subtitle = "只在内存中保留最近 $MAX_LOG_LINES 行；关闭后清除",
