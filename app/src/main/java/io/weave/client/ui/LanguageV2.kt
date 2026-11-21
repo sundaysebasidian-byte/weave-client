@@ -8,6 +8,10 @@ import io.weave.client.domain.WeaveLanguage
  * the rest of the table; merged after the older supplemental entries.
  */
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
+    // Home metrics
+    "下载" to SupplementalTranslation("Download", "下載", "ダウンロード", "Réception", "Download"),
+    "上传" to SupplementalTranslation("Upload", "上傳", "アップロード", "Envoi", "Upload"),
+    "延迟" to SupplementalTranslation("Latency", "延遲", "遅延", "Latence", "Latenz"),
     // Compact first-use copy
     "已有可用节点，可以继续。" to SupplementalTranslation("Usable nodes are ready. Continue when you like.", "已有可用節點，可以繼續。", "利用可能なノードがあります。次に進めます。", "Des nœuds sont prêts. Vous pouvez continuer.", "Knoten sind bereit. Du kannst fortfahren."),
     "订阅由你提供，支持链接、二维码或文件。" to SupplementalTranslation("Bring your subscription as a link, QR code or file.", "訂閱由你提供，支援連結、QR 碼或檔案。", "お持ちのサブスクリプションをリンク、QR コード、ファイルで読み込みます。", "Importez votre abonnement par lien, code QR ou fichier.", "Importiere dein Abo per Link, QR-Code oder Datei."),
