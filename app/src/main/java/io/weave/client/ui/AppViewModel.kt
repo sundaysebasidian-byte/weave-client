@@ -376,6 +376,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val downloadState = mutableDownloadState.asStateFlow()
     private var subscriptionHealthJob: Job? = null
     private var activeHealthSubscriptionId: String? = null
+    private val passiveHealthRead = PassiveSubscriptionHealthRead()
     private var subscriptionsLoaded = false
     private val healthCache = object : LinkedHashMap<String, SubscriptionHealthState>(8, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SubscriptionHealthState>?) = size > 8
@@ -444,6 +445,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     subscriptionHealthJob?.cancel()
                     subscriptionHealthJob = null
                     activeHealthSubscriptionId = null
+                    passiveHealthRead.invalidate()
                     healthCache.clear()
                     mutableSubscriptionHealth.update { previous ->
                         SubscriptionHealthState(subscriptionId = previous.subscriptionId,
@@ -1028,12 +1030,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!mutableEditorState.value.running) {
             // Explicitly discard the decrypted source URL when the editor closes.
             mutableEditorState.value = SubscriptionEditorState()
+            passiveHealthRead.invalidate()
             mutableSubscriptionHealth.value = SubscriptionHealthState()
         }
     }
 
     fun checkSubscriptionHealth(subscriptionId: String) {
         if (subscriptionHealthJob?.isActive == true) return
+        passiveHealthRead.invalidate()
         val revision = VpnRuntimeState.snapshot.value.revision
         if (!VpnRuntimeState.acceptsEvidence(revision)) {
             mutableSubscriptionHealth.value = SubscriptionHealthState(
@@ -1090,6 +1094,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshSubscriptionHealth(subscriptionId: String) {
+        val read = passiveHealthRead.begin()
+        if (activeHealthSubscriptionId == subscriptionId && subscriptionHealthJob?.isActive == true) {
+            selectHealthSubscription(subscriptionId)
+            return
+        }
         healthCache[subscriptionId]?.let {
             mutableSubscriptionHealth.value = it
             return
@@ -1105,7 +1114,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val nodes = withContext(Dispatchers.IO) {
                 CoreClient.querySubscriptionHealth(subscriptionId)
             }
-            if (mutableEditorState.value.subscriptionId != subscriptionId || !VpnRuntimeState.acceptsEvidence(revision)) return@launch
+            if (!passiveHealthRead.isCurrent(read) ||
+                mutableEditorState.value.subscriptionId != subscriptionId ||
+                !VpnRuntimeState.acceptsEvidence(revision)
+            ) return@launch
             mutableSubscriptionHealth.value = if (nodes == null) {
                 SubscriptionHealthState(
                     subscriptionId = subscriptionId,
