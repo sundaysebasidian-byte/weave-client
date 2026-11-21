@@ -1529,36 +1529,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun runSubscriptionImport(importer: suspend () -> Subscription) {
         if (mutableImportState.value.running) return
-        mutableImportState.value = SubscriptionImportState(running = true)
+        val active = SubscriptionImportState(running = true)
+        mutableImportState.value = active
 
         viewModelScope.launch {
-            startupJob.join()
-            runCatching { importer() }
-                .onSuccess { subscription ->
-                    mutableSubscriptions.update { current ->
-                        (current + subscription).distinctBy { it.id }
-                    }
-                    mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
-                    mutableImportState.value = SubscriptionImportState(
-                        completedId = subscription.id,
-                    )
-                    mutableDashboard.update {
-                        it.copy(statusMessage = "已安全导入「${subscription.name}」")
-                    }
-                    reloadIfConnected("订阅已导入，正在安全更新运行配置")
+            try {
+                startupJob.join()
+                val saved = saveImportAndReadNodes(
+                    save = importer,
+                    onSaved = { subscription ->
+                        mutableSubscriptions.update { current ->
+                            (current + subscription).distinctBy { it.id }
+                        }
+                    },
+                    readNodes = { withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() } },
+                ).getOrElse { error ->
+                    logSubscriptionImportFailure("Save", error)
+                    mutableImportState.value = SubscriptionImportState(error = error.message ?: "订阅导入失败")
+                    return@launch
                 }
-                .onFailure { error ->
-                    // Diagnostics contain code locations only: never log exception messages,
-                    // which may include subscription URLs, credentials or YAML source lines.
-                    android.util.Log.e("WeaveImport", generateSequence(error) { it.cause }
-                        .take(4).joinToString("\nCaused by: ") { cause ->
-                            cause.javaClass.name + "\n" + cause.stackTrace.take(16).joinToString("\n")
-                        })
-                    mutableImportState.value = SubscriptionImportState(
-                        error = error.message ?: "订阅导入失败",
-                    )
+
+                saved.nodes.onSuccess { mutableNodes.value = it }
+                saved.nodes.onFailure { logSubscriptionImportFailure("Refresh", it) }
+                mutableImportState.value = SubscriptionImportState(completedId = saved.subscription.id)
+                mutableDashboard.update {
+                    it.copy(statusMessage = if (saved.nodes.isSuccess) {
+                        "已安全导入「${saved.subscription.name}」"
+                    } else {
+                        "订阅已保存，节点列表刷新失败，请重新打开应用"
+                    })
                 }
+                if (saved.nodes.isSuccess) reloadIfConnected("订阅已导入，正在安全更新运行配置")
+            } finally {
+                if (mutableImportState.value === active) {
+                    mutableImportState.value = SubscriptionImportState()
+                }
+            }
         }
+    }
+
+    private fun logSubscriptionImportFailure(phase: String, error: Throwable) {
+        // Diagnostics contain code locations only, not URLs, credentials or YAML.
+        val location = generateSequence(error) { it.cause }
+            .take(4).joinToString("\nCaused by: ") { cause ->
+                cause.javaClass.name + "\n" + cause.stackTrace.take(16).joinToString("\n")
+            }
+        android.util.Log.e("WeaveImport", "$phase: $location")
     }
 
     fun resetImportState() {
