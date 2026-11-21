@@ -44,6 +44,15 @@ class SubscriptionLibraryModelTest {
     }
 
     @Test
+    fun `node search remains clearable when a live list shrinks`() {
+        assertEquals(true, shouldShowSubscriptionNodeSearch(9, ""))
+        assertEquals(true, shouldShowSubscriptionNodeSearch(8, " Tokyo "))
+        assertEquals(true, shouldShowSubscriptionNodeSearch(0, "Tokyo"))
+        assertEquals(false, shouldShowSubscriptionNodeSearch(8, ""))
+        assertEquals(false, shouldShowSubscriptionNodeSearch(8, " \t\n"))
+    }
+
+    @Test
     fun `query and source combine`() {
         assertEquals(listOf("c"), ids(filterSubscriptions(all, "work", SubscriptionSourceFilter.LOCAL)))
         assertEquals(listOf("a"), ids(filterSubscriptions(all, "work", SubscriptionSourceFilter.REMOTE)))
