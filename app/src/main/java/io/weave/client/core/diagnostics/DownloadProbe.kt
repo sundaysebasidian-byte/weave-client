@@ -34,7 +34,7 @@ class DownloadProbe internal constructor(
                     .build()
                 val call = callFactory().newCall(request)
                 val start = System.nanoTime()
-                suspendCancellableCoroutine { continuation ->
+                suspendCancellableCoroutine<DownloadMeasurement> { continuation ->
                     continuation.invokeOnCancellation { call.cancel() }
                     if (!continuation.isActive) return@suspendCancellableCoroutine
                     call.enqueue(object : Callback {
