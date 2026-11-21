@@ -225,6 +225,9 @@ internal fun SubscriptionsScreen(
     val visible = remember(subscriptions, query, source) { filterSubscriptions(subscriptions, query, source) }
     val filtering = query.isNotBlank() || source != SubscriptionSourceFilter.ALL
     val now = rememberListClock(nowMillis)
+    val refreshResultsById = remember(refreshState.results) {
+        indexSubscriptionRefreshResults(refreshState.results)
+    }
     // The migration hint names a count only; detected package names stay on the device. Without
     // a detection the row title is self-explanatory, so there is no subtitle.
     val migrationSubtitle = if (migrationClients.isNotEmpty()) {
@@ -360,7 +363,9 @@ internal fun SubscriptionsScreen(
                 SubscriptionCard(
                     subscription = subscription,
                     nowMillis = now,
-                    refreshState = refreshState,
+                    refreshResult = refreshResultsById[subscription.id],
+                    refreshing = refreshState.running && refreshState.currentId == subscription.id,
+                    refreshEnabled = !refreshState.running,
                     onClick = { onSubscriptionClick(subscription.id) },
                     // Only a declared remote source can be fetched again; local files have no URL.
                     onRefresh = onRefreshSubscription?.takeIf { subscription.remote }
@@ -618,7 +623,9 @@ private fun ImportOptionRow(
 private fun SubscriptionCard(
     subscription: Subscription,
     nowMillis: Long,
-    refreshState: SubscriptionRefreshState,
+    refreshResult: SubscriptionRefreshResult?,
+    refreshing: Boolean,
+    refreshEnabled: Boolean,
     onClick: () -> Unit,
     onRefresh: (() -> Unit)?,
 ) {
@@ -632,8 +639,6 @@ private fun SubscriptionCard(
     val expiry = subscriptionExpiryStatus(expireAt, now)
     val attention = expiry == SubscriptionExpiryStatus.EXPIRED || expiry == SubscriptionExpiryStatus.EXPIRING_SOON
     val showUsage = quota != null && (hasBar || quota.usedBytes > 0)
-    val refreshing = refreshState.running && refreshState.currentId == subscription.id
-    val refreshResult = refreshState.results.lastOrNull { it.subscriptionId == subscription.id }
     val outcome = refreshResult?.succeeded
 
     LiquidGlassPanel(
@@ -714,7 +719,7 @@ private fun SubscriptionCard(
                     val busyLabel = localizeWeaveText("正在刷新", language)
                     IconButton(
                         onClick = onRefresh,
-                        enabled = !refreshState.running,
+                        enabled = refreshEnabled,
                         modifier = Modifier
                             .size(48.dp)
                             .testTag("subscription-refresh-${subscription.id}")
