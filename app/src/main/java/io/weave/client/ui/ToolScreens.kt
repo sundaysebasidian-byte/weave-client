@@ -262,11 +262,7 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
         }
     }
     val visible = remember(connections, query, labels.size) {
-        val needle = query.trim()
-        if (needle.isEmpty()) connections else connections.filter { connection ->
-            connection.destination.contains(needle, true) || connection.rule.contains(needle, true) ||
-                labels[connection.uid].orEmpty().contains(needle, true) || connection.process.contains(needle, true)
-        }
+        filterConnectionRows(connections, query, labels)
     }
     WeaveToolScreen(
         title = "实时连接",
@@ -331,7 +327,7 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             items(visible, key = { it.id }, contentType = { "connection" }) { connection ->
                 ConnectionRow(
                     connection = connection,
-                    appName = labels[connection.uid] ?: connection.process.ifBlank { "UID ${connection.uid}" },
+                    appName = connectionAppLabel(connection, labels[connection.uid]),
                     onClose = {
                         scope.launch {
                             displayReads.disconnected(api.close(connection.id)) {
