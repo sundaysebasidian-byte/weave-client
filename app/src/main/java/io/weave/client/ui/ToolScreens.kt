@@ -238,20 +238,26 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     // Until the first core answer arrives the list is unknown, not empty.
     var loaded by remember { mutableStateOf(false) }
     val labels = remember { mutableStateMapOf<Int, String>() }
+    val displayReads = remember { ConnectionDisplayReads() }
     LaunchedEffect(paused) {
         while (!paused) {
-            readConnectionSnapshotForDisplay { api.connections(latestFirst = true) }
-                .onSuccess { snapshot ->
-                    connections = snapshot.connections
-                    totals = snapshot.uploadTotal to snapshot.downloadTotal
-                    error = false
-                    val newLabels = resolveConnectionAppLabels(snapshot.connections.map { it.uid }, labels.keys) { uid ->
+            displayReads.read(
+                load = { api.connections(latestFirst = true) },
+                publishSnapshot = { result ->
+                    result.onSuccess { snapshot ->
+                        connections = snapshot.connections
+                        totals = snapshot.uploadTotal to snapshot.downloadTotal
+                        error = false
+                    }.onFailure { error = true }
+                },
+                resolveLabels = { snapshot ->
+                    resolveConnectionAppLabels(snapshot.connections.map { it.uid }, labels.keys) { uid ->
                         appLabel(context, uid)
                     }
-                    labels.putAll(newLabels)
-                }
-                .onFailure { error = true }
-            loaded = true
+                },
+                publishLabels = { labels.putAll(it) },
+                markLoaded = { loaded = true },
+            )
             delay(2_000)
         }
     }
@@ -271,7 +277,14 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             IconButton(onClick = { paused = !paused }) {
                 Icon(if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, localizedContentDescription(if (paused) "继续" else "暂停"))
             }
-            IconButton(onClick = { scope.launch { if (api.closeAll()) connections = emptyList() } }, enabled = connections.isNotEmpty()) {
+            IconButton(onClick = {
+                scope.launch {
+                    displayReads.disconnected(api.closeAll()) {
+                        connections = emptyList()
+                        loaded = true
+                    }
+                }
+            }, enabled = connections.isNotEmpty()) {
                 Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("断开全部"))
             }
         },
@@ -321,7 +334,10 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
                     appName = labels[connection.uid] ?: connection.process.ifBlank { "UID ${connection.uid}" },
                     onClose = {
                         scope.launch {
-                            if (api.close(connection.id)) connections = connections.filterNot { it.id == connection.id }
+                            displayReads.disconnected(api.close(connection.id)) {
+                                connections = connections.filterNot { it.id == connection.id }
+                                loaded = true
+                            }
                         }
                     },
                 )
