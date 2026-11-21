@@ -277,25 +277,27 @@ class SubscriptionSecretStore(
         // The profile and store locks cover the whole list; read the index once.
         val snapshot = preferences
         snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
-            .mapNotNull { id ->
-                val name = snapshot.getString(key(id, "name"), null) ?: return@mapNotNull null
-                val format = snapshot.getString(key(id, "format"), null)
-                    ?.let { runCatching { SubscriptionFormat.valueOf(it) }.getOrNull() }
-                    ?: return@mapNotNull null
-                StoredSubscription(
-                    id = id,
-                    name = name,
-                    nodeCount = snapshot.getInt(key(id, "nodes"), 0),
-                    format = format,
-                    nodes = readNodeMetadata(id, snapshot)
-                        .sortedBy { it.name.lowercase() },
-                    hasPayload = payloadFile(id, snapshot).isFile,
-                    usage = SubscriptionUsage.decode(snapshot.getString(key(id, "usage"), null)),
-                    updatedAtMillis = snapshot.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
-                    updateIntervalHours = snapshot.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
-                )
-            }
+            .mapNotNull { id -> readRecord(id, snapshot) }
             .sortedBy { it.name.lowercase() }
+    }
+
+    private fun readRecord(id: String, snapshot: SharedPreferences): StoredSubscription? {
+        val name = snapshot.getString(key(id, "name"), null) ?: return null
+        val format = snapshot.getString(key(id, "format"), null)
+            ?.let { runCatching { SubscriptionFormat.valueOf(it) }.getOrNull() }
+            ?: return null
+        return StoredSubscription(
+            id = id,
+            name = name,
+            nodeCount = snapshot.getInt(key(id, "nodes"), 0),
+            format = format,
+            nodes = readNodeMetadata(id, snapshot)
+                .sortedBy { it.name.lowercase() },
+            hasPayload = payloadFile(id, snapshot).isFile,
+            usage = SubscriptionUsage.decode(snapshot.getString(key(id, "usage"), null)),
+            updatedAtMillis = snapshot.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
+            updateIntervalHours = snapshot.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
+        )
     }
 
     /** Provider-declared quota and refresh interval; neither is secret nor an endpoint. */
@@ -317,7 +319,11 @@ class SubscriptionSecretStore(
         }
     }
 
-    fun get(id: String): StoredSubscription? = list().firstOrNull { it.id == id }
+    fun get(id: String): StoredSubscription? = locked {
+        val snapshot = preferences
+        if (id !in snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()) return@locked null
+        readRecord(id, snapshot)
+    }
 
     @SuppressLint("UseKtx") // commit() is required here because rename must report persistence failure.
     fun rename(id: String, name: String): StoredSubscription {
