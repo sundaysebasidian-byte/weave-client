@@ -1179,7 +1179,7 @@ internal fun SubscriptionManagerDialog(
                                     fontSize = 11.sp,
                                 )
                             }
-                            if (nodes.size > 8) {
+                            if (shouldShowSubscriptionNodeSearch(nodes.size, nodeQuery)) {
                                 OutlinedTextField(
                                     value = nodeQuery,
                                     onValueChange = { nodeQuery = it.take(120) },
