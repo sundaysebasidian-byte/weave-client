@@ -14,8 +14,13 @@ object TrafficFormat {
             scaled /= 1024
             unit++
         }
-        val pattern = if (scaled >= 100) "%.0f %s" else "%.1f %s"
-        return String.format(Locale.ROOT, pattern, scaled, UNITS[unit])
+        val suffix = UNITS[unit]
+        // Integer half-up boundaries are exact in binary (scaled is positive and at most 8192).
+        if (scaled >= 100) return "${Math.round(scaled)} $suffix"
+        val integer = scaled.toInt()
+        if (scaled == integer.toDouble()) return "$integer.0 $suffix"
+        // Preserve platform Formatter rounding at fractional decimal boundaries.
+        return String.format(Locale.ROOT, "%.1f %s", scaled, suffix)
     }
 
     fun rate(bytesPerSecond: Long): String = bytes(bytesPerSecond) + "/s"
