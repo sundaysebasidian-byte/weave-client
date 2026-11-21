@@ -9,6 +9,7 @@ import io.weave.client.security.SecretBox
 import io.weave.client.data.crossProcessPreferences
 import java.io.File
 import java.nio.file.Files
+import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -44,6 +45,36 @@ class SubscriptionStoreIntegrationTest {
             assertEquals(1, repository.loadNodes(record.id).size)
             assertEquals(repository.loadNodes(record.id), SubscriptionRepository(context).loadNodes(record.id))
         }
+    }
+
+    @Test fun listingMultipleSubscriptionsKeepsOneIndexSnapshot() = isolated { base ->
+        var pathReads = 0
+        val context = object : ContextWrapper(base) {
+            override fun getApplicationContext(): Context = this
+            override fun getApplicationInfo() = super.getApplicationInfo().also { pathReads++ }
+        }
+        val fixtureBox = object : SecretBox {
+            override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): String =
+                Base64.getEncoder().encodeToString(plaintext)
+
+            override fun decrypt(envelope: String, associatedData: ByteArray): ByteArray =
+                Base64.getDecoder().decode(envelope)
+        }
+        val store = SubscriptionSecretStore(context, fixtureBox)
+        pathReads = 0
+        assertTrue(store.list().isEmpty())
+        val emptyListReads = pathReads
+
+        val payload = "proxies: [{name: Fixture, type: socks5, server: example.test, port: 1080}]"
+        val parsed = SubscriptionPayloadParser().parse(payload)
+        val zeta = store.save("Zeta", "local://fixture", payload, parsed)
+        val alpha = store.save("alpha", "local://fixture", payload, parsed,
+            remoteMetadata = SubscriptionRemoteMetadata(SubscriptionUsage(1, 2, 100, null), 24))
+
+        pathReads = 0
+        assertEquals(listOf(alpha, zeta), store.list())
+        // The two outer-lock lookups and the preference snapshot all resolve the app data path.
+        assertEquals("list index snapshot reads must not grow with record count", emptyListReads, pathReads)
     }
 
     @Test fun reviewedUpdateCannotOverwriteANewerSavedPayload() = isolated { context ->
