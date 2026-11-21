@@ -270,11 +270,7 @@ internal fun RoutesScreen(
 
 @Composable
 private fun PolicySummaryCard(routes: List<AppRoute>) {
-    val proxied = routes.count {
-        it.target.kind == RouteKind.AUTO || it.target.kind == RouteKind.FIXED
-    }
-    val direct = routes.count { it.target.kind == RouteKind.DIRECT }
-    val blocked = routes.count { it.target.kind == RouteKind.BLOCK }
+    val (proxied, direct, blocked) = summarizeRouteKinds(routes)
 
     LiquidGlassPanel(
         modifier = Modifier
