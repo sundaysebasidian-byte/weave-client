@@ -8,29 +8,25 @@ internal object NodeDisplayName {
         val original = rawName.trim()
         if (original.isEmpty()) return "未命名节点"
 
-        var value = original
-        var removedDecoration = false
-        val escapedPrefix = ESCAPED_UNICODE_PREFIX.find(value)
-        if (escapedPrefix != null) {
-            value = value.removeRange(escapedPrefix.range)
-            removedDecoration = true
+        var offset = if (original[0] == '\\') {
+            ESCAPED_UNICODE_PREFIX.find(original)?.range?.last?.plus(1) ?: 0
+        } else {
+            0
         }
-
-        var offset = 0
-        while (offset < value.length) {
-            val codePoint = Character.codePointAt(value, offset)
+        while (offset < original.length) {
+            val codePoint = Character.codePointAt(original, offset)
             if (!isLeadingDecoration(codePoint)) break
             offset += Character.charCount(codePoint)
-            removedDecoration = true
         }
-        if (offset > 0) value = value.substring(offset)
+        if (offset == 0) return original
 
-        if (removedDecoration) {
-            value = value.trimStart { char ->
-                char.isWhitespace() || char in LEADING_SEPARATORS
-            }
+        // original is already right-trimmed; only the prefix newly exposed by the decoration can change.
+        while (offset < original.length) {
+            val char = original[offset]
+            if (!char.isWhitespace() && char !in LEADING_SEPARATORS) break
+            offset++
         }
-        return value.trim().ifEmpty { original }
+        return if (offset == original.length) original else original.substring(offset)
     }
 
     private fun isLeadingDecoration(codePoint: Int): Boolean =
