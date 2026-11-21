@@ -397,7 +397,8 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
     val requestedEpoch = collectionEpoch
     val shouldCollect = running
     LaunchedEffect(collectionLevel, shouldCollect, requestedEpoch) {
-        if (!shouldCollect || !running || collectionEpoch != requestedEpoch) return@LaunchedEffect
+        val stillCurrent = { running && collectionEpoch == requestedEpoch }
+        if (!shouldCollect || !stillCurrent()) return@LaunchedEffect
         error = false
         watchCoreLogCollection(
             collect = {
@@ -408,13 +409,13 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
                             throw kotlinx.coroutines.CancellationException("Log collection ended")
                         }
                     }
-                }.buffer(16).collect { line ->
+                }.buffer(16).collectCurrentLogLines(stillCurrent) { line ->
                     lines.add(line)
                     if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
                     appendedLines++
                 }
             },
-            stillCurrent = { running && collectionEpoch == requestedEpoch },
+            stillCurrent = stillCurrent,
             onStopped = { error = true; running = false },
         )
     }
