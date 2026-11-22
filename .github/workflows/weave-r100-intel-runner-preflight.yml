@@ -137,10 +137,52 @@ jobs:
           trap 'printf "::error::R001 device phase failed at script line %s\n" "$LINENO" >&2' ERR
           run_adb() { bounded 45 "$adb" -P "$WEAVE_TEST_ADB_PORT" "$@"; }
           emulator_pid=''
+          instrumentation_started=0
+          capture_package_events() {
+            local destination=$1
+            # Only synthetic test-guest package matches leave ADB's buffer.
+            bounded 15 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" logcat -b events -d -t 500 -v epoch -s \
+              'am_proc_start:I' 'am_proc_died:I' 'am_kill:I' 'am_crash:I' 'am_anr:I' '*:S' |
+              awk '/(^|[^[:alnum:]_.])io[.]weave[.]client[.]acceptance([.]test)?(:[[:alnum:]_]+)?([^[:alnum:]_.]|$)/' >"$destination"
+          }
+          capture_exit_info() {
+            local phase=$1 package
+            for package in "$app_id" "$test_id"; do
+              printf 'R001 package exit-info [%s] %s\n' "$phase" "$package"
+              # System may lose Binder during teardown; preserve original exit status.
+              bounded 18 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell dumpsys -t 12 activity exit-info "$package" |
+                head -n 80 || :
+            done
+          }
           cleanup() {
             local rc=$?
             if (( rc != 0 )) && [[ -n "$emulator_pid" ]]; then
               printf 'R001 failure diagnostics before emulator teardown (exit %s)\n' "$rc"
+              if [[ "$instrumentation_started" == 1 ]]; then
+                capture_exit_info after-instrumentation || :
+                if capture_package_events "$out/package-events-after.txt"; then
+                  echo 'R001 new matching process events during instrumentation (bounded tail):'
+                  if [[ -f "$out/package-events-before.txt" ]]; then
+                    python3 - "$out/package-events-before.txt" "$out/package-events-after.txt" <<'WEAVE_EVENT_DIFF'
+          from collections import Counter
+          from pathlib import Path
+          import sys
+
+          before, after = (Path(p).read_text().splitlines() for p in sys.argv[1:])
+          prior = Counter(before)
+          for line in after:
+              if prior[line]:
+                  prior[line] -= 1
+              else:
+                  print(line)
+          WEAVE_EVENT_DIFF
+                  else
+                    echo 'No usable pre-instrumentation event baseline; differential unavailable.'
+                  fi
+                else
+                  echo 'Post-instrumentation events unavailable.'
+                fi
+              fi
               bounded 12 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" logcat -d -b crash -t 120 -v brief 2>&1 | tail -n 120 || :
               for command in 'pidof system_server' 'pidof io.weave.client.acceptance' 'service check activity' 'service check package'; do
                 printf 'Guest: %s\n' "$command"
@@ -194,6 +236,12 @@ jobs:
           runner="$test_id/androidx.test.runner.AndroidJUnitRunner"
           guest pm list instrumentation "$app_id" | grep -Fx "instrumentation:$runner (target=$app_id)"
           # Installation and runner registration are verified above. Android handles dex loading on launch.
+          capture_exit_info before-instrumentation || :
+          if ! capture_package_events "$out/package-events-before.txt"; then
+            rm -f "$out/package-events-before.txt"
+            echo 'Pre-instrumentation events unavailable.'
+          fi
+          instrumentation_started=1
           printf 'Starting exact R001 instrumentation (maximum 360 s)\n'
           bounded 360 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell am instrument --user 0 -w -r \
             -e class "$class#$method" -e weaveIsolatedEmulator 1 -e weaveFreshBackupProfile 1 "$runner" |
