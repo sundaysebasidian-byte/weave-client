@@ -65,8 +65,7 @@ class InstalledAppRepository(
                 null
             }
         }
-        return (launchable + known).distinctBy { it.packageName }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+        return sortDistinctLauncherAndKnownApps(launchable, known)
     }
 
     private fun String.monogram(): String = LauncherLabelMonogram.of(this)
@@ -82,6 +81,31 @@ class InstalledAppRepository(
         )
     }
 }
+
+/**
+ * The launcher stream is already unique by package; the known stream looks up a set minus
+ * those package names and returns each row under its requested package. Keep that concatenation
+ * order for ties and use the same fixed-size JVM result as sortedWith for two or more rows.
+ */
+internal fun sortDistinctLauncherAndKnownApps(
+    launchable: List<InstalledApp>,
+    known: List<InstalledApp>,
+): List<InstalledApp> {
+    val launcherCount = launchable.size
+    val size = launcherCount + known.size
+    if (size == 0) return emptyList()
+    if (size == 1) return listOf(launchable.firstOrNull() ?: known.first())
+
+    val launchableRows = launchable.iterator()
+    val knownRows = known.iterator()
+    val rows = Array(size) { index ->
+        if (index < launcherCount) launchableRows.next() else knownRows.next()
+    }
+    rows.sortWith(LauncherAppLabelOrder)
+    return rows.asList()
+}
+
+private val LauncherAppLabelOrder = compareBy<InstalledApp, String>(String.CASE_INSENSITIVE_ORDER) { it.label }
 
 /** Resolve only the first launcher label for each package, retaining PackageManager order. */
 internal fun <T> describeDistinctLauncherPackages(
