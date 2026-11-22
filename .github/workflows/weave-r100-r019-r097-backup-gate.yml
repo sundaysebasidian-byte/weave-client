@@ -1,0 +1,545 @@
+name: Weave R019-R097 isolated backup acceptance
+"on":
+  push:
+    branches: [dot/weave-android-r100-runner-preflight]
+    paths: ['.github/workflows/weave-r100-r019-r097-backup-gate.yml']
+permissions:
+  contents: read
+concurrency:
+  group: weave-r019-r097-backup-acceptance
+  cancel-in-progress: false
+jobs:
+  backup-acceptance:
+    runs-on: macos-15-intel
+    timeout-minutes: 85
+    steps:
+      - name: Check out historical proof floor
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 70524a8dafafa4cd9037ca4c17b40ac6a44ca662
+          persist-credentials: false
+      - name: Build and run both isolated controls on one hosted image
+        shell: bash
+        run: |
+          set -eEuo pipefail
+          phase=hosted-runner
+          fail() { printf '::error::Backup gate preflight (%s): %s\n' "$phase" "$1" >&2; exit 1; }
+          trap 'printf "::error::Backup gate failed in %s at script line %s\n" "$phase" "$LINENO" >&2' ERR
+          [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]] || fail 'Expected GitHub-hosted Actions, not a self-hosted or personal device'
+          phase=intel-macos
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == x86_64 ]] || fail 'Expected Darwin x86_64 on macos-15-intel'
+          phase=runner-temp
+          [[ -d ${RUNNER_TEMP:-} && -w $RUNNER_TEMP ]] || fail 'RUNNER_TEMP missing or not writable'
+          out="$RUNNER_TEMP/weave-r019-r097-receipts"
+          work="$(mktemp -d "$RUNNER_TEMP/weave-backup-lanes.XXXXXX")"
+          helpers="$work/helpers"
+          mkdir -p "$helpers" "$out/positive" "$out/negative"
+          check_stage() { phase=$1; printf 'Preflight guard: %s\n' "$phase" | tee -a "$out/preflight-stages.txt"; }
+          check_stage pinned-source
+          floor=70524a8dafafa4cd9037ca4c17b40ac6a44ca662
+          [[ "$(git rev-parse HEAD)" == "$floor" ]] || fail 'Historical checkout SHA does not match'
+          source_status="$(git status --porcelain=v1 --untracked-files=all)"
+          [[ -z "$source_status" ]] || fail 'Historical checkout is not pristine'
+          check_stage fixture-unpacking
+          cat >"$helpers/backup-race-fixture.b64" <<'WEAVE_PATCH_B64'
+          ZGlmZiAtLWdpdCBhL2FwcC9zcmMvYW5kcm9pZFRlc3QvamF2YS9pby93ZWF2ZS9jbGllbnQvdWkv
+          QmFja3VwU3RhdGVPd25lcnNoaXBJbnRlZ3JhdGlvblRlc3Qua3QgYi9hcHAvc3JjL2FuZHJvaWRU
+          ZXN0L2phdmEvaW8vd2VhdmUvY2xpZW50L3VpL0JhY2t1cFN0YXRlT3duZXJzaGlwSW50ZWdyYXRp
+          b25UZXN0Lmt0CmluZGV4IGEyNjJhNzkyYWE3ZTg0YzdjMzNlY2JiZTg5Zjg0NzJmMWQ2YThjOWQu
+          LjRmZmVkZmQ1YjliZDQ1YTUwOGM2OTA3MWY0ZjZkODBlZjhlZTVmNTkgMTAwNjQ0Ci0tLSBhL2Fw
+          cC9zcmMvYW5kcm9pZFRlc3QvamF2YS9pby93ZWF2ZS9jbGllbnQvdWkvQmFja3VwU3RhdGVPd25l
+          cnNoaXBJbnRlZ3JhdGlvblRlc3Qua3QKKysrIGIvYXBwL3NyYy9hbmRyb2lkVGVzdC9qYXZhL2lv
+          L3dlYXZlL2NsaWVudC91aS9CYWNrdXBTdGF0ZU93bmVyc2hpcEludGVncmF0aW9uVGVzdC5rdApA
+          QCAtMSwxMCArMSwyMiBAQAogcGFja2FnZSBpby53ZWF2ZS5jbGllbnQudWkKIAogaW1wb3J0IGFu
+          ZHJvaWQubmV0LlVyaQoraW1wb3J0IGFuZHJvaWQub3MuU3lzdGVtQ2xvY2sKIGltcG9ydCBhbmRy
+          b2lkeC5saWZlY3ljbGUuVmlld01vZGVsUHJvdmlkZXIKIGltcG9ydCBhbmRyb2lkeC50ZXN0LmNv
+          cmUuYXBwLkFjdGl2aXR5U2NlbmFyaW8KIGltcG9ydCBhbmRyb2lkeC50ZXN0LnBsYXRmb3JtLmFw
+          cC5JbnN0cnVtZW50YXRpb25SZWdpc3RyeQogaW1wb3J0IGlvLndlYXZlLmNsaWVudC5NYWluQWN0
+          aXZpdHkKK2ltcG9ydCBpby53ZWF2ZS5jbGllbnQuZGF0YS5Qcm9maWxlU3RvcmFnZQoraW1wb3J0
+          IGlvLndlYXZlLmNsaWVudC5kYXRhLmNyb3NzUHJvY2Vzc1ByZWZlcmVuY2VzCitpbXBvcnQgaW8u
+          d2VhdmUuY2xpZW50LmRvbWFpbi5XZWF2ZVBhbGV0dGUKK2ltcG9ydCBpby53ZWF2ZS5jbGllbnQu
+          dHJhbnNmZXIuQmFja3VwQ29kZWMKK2ltcG9ydCBpby53ZWF2ZS5jbGllbnQudHJhbnNmZXIuV2Vh
+          dmVCYWNrdXAKK2ltcG9ydCBrb3RsaW54LmNvcm91dGluZXMuZmxvdy5maXJzdAoraW1wb3J0IGtv
+          dGxpbnguY29yb3V0aW5lcy5ydW5CbG9ja2luZworaW1wb3J0IGtvdGxpbnguY29yb3V0aW5lcy53
+          aXRoVGltZW91dAoraW1wb3J0IG9yZy5qc29uLkpTT05PYmplY3QKK2ltcG9ydCBvcmcuanVuaXQu
+          QXNzZXJ0LmFzc2VydEVxdWFscworaW1wb3J0IG9yZy5qdW5pdC5Bc3NlcnQuYXNzZXJ0TnVsbAog
+          aW1wb3J0IG9yZy5qdW5pdC5Bc3NlcnQuYXNzZXJ0VHJ1ZQogaW1wb3J0IG9yZy5qdW5pdC5UZXN0
+          CiBpbXBvcnQgamF2YS5pby5GaWxlCkBAIC0zMCw0ICs0Miw5MyBAQCBjbGFzcyBCYWNrdXBTdGF0
+          ZU93bmVyc2hpcEludGVncmF0aW9uVGVzdCB7CiAgICAgICAgICAgICB9CiAgICAgICAgIH0KICAg
+          ICB9CisKKyAgICBAVGVzdAorICAgIGZ1biBzZXR0aW5nc1JlZW50cnlQcmVzZXJ2ZXNUaGVPd25l
+          ckFuZEFDb21taXR0ZWRSZXN0b3JlUmVmcmVzaGVzT25jZSgpIHsKKyAgICAgICAgdmFsIGluc3Ry
+          dW1lbnRhdGlvbiA9IEluc3RydW1lbnRhdGlvblJlZ2lzdHJ5LmdldEluc3RydW1lbnRhdGlvbigp
+          CisgICAgICAgIHZhbCBhcmd1bWVudHMgPSBJbnN0cnVtZW50YXRpb25SZWdpc3RyeS5nZXRBcmd1
+          bWVudHMoKQorICAgICAgICBjaGVjayhhcmd1bWVudHMuZ2V0U3RyaW5nKCJ3ZWF2ZUlzb2xhdGVk
+          RW11bGF0b3IiKSA9PSAiMSIgJiYKKyAgICAgICAgICAgIGFyZ3VtZW50cy5nZXRTdHJpbmcoIndl
+          YXZlRnJlc2hCYWNrdXBQcm9maWxlIikgPT0gIjEiKSB7CisgICAgICAgICAgICAiVGhpcyB0ZXN0
+          IHJlcGxhY2VzIGFwcCBwcm9maWxlIGNvbnRlbnRzOyB1c2UgYSBuZXcgZGlzcG9zYWJsZSBlbXVs
+          YXRvciBpbnN0YWxsIgorICAgICAgICB9CisgICAgICAgIHZhbCBjb250ZXh0ID0gaW5zdHJ1bWVu
+          dGF0aW9uLnRhcmdldENvbnRleHQKKyAgICAgICAgY2hlY2soY29udGV4dC5wYWNrYWdlTmFtZSA9
+          PSAiaW8ud2VhdmUuY2xpZW50LmFjY2VwdGFuY2UiKSB7CisgICAgICAgICAgICAiUmVmdXNpbmcg
+          dG8gcmVwbGFjZSBhIHByaW1hcnkgYXBwIHByb2ZpbGUiCisgICAgICAgIH0KKyAgICAgICAgLy8g
+          SW5kZXBlbmRlbnRseSByZWFkIG9ubHkgdGhlIGNvc21ldGljIHNlbnRpbmVsIGZyb20gdGhlIGR1
+          cmFibGUgcHJlZmVyZW5jZXMuIFRoZSBwcm9maWxlCisgICAgICAgIC8vIGxvY2sgcHJldmVudHMg
+          b2JzZXJ2aW5nIHRoZSBuZXcgdmFsdWUgYmVmb3JlIHRoZSByZXN0b3JlIGpvdXJuYWwgaGFzIGNv
+          bW1pdHRlZC4KKyAgICAgICAgZnVuIGRpc2tQYWxldHRlKCk6IFN0cmluZz8gPSBQcm9maWxlU3Rv
+          cmFnZS5hY2Nlc3MoY29udGV4dCkgeworICAgICAgICAgICAgY29udGV4dC5jcm9zc1Byb2Nlc3NQ
+          cmVmZXJlbmNlcygicnVudGltZV9zZXR0aW5nc192MSIpLmdldFN0cmluZygid2VhdmVfcGFsZXR0
+          ZSIsIG51bGwpCisgICAgICAgIH0KKworICAgICAgICB2YWwgZml4dHVyZSA9IEZpbGUuY3JlYXRl
+          VGVtcEZpbGUoImJhY2t1cC1vd25lcnNoaXAtIiwgIi53ZWF2ZWJhY2t1cCIsIGNvbnRleHQuY2Fj
+          aGVEaXIpCisgICAgICAgIHRyeSB7CisgICAgICAgICAgICBBY3Rpdml0eVNjZW5hcmlvLmxhdW5j
+          aChNYWluQWN0aXZpdHk6OmNsYXNzLmphdmEpLnVzZSB7IHNjZW5hcmlvIC0+CisgICAgICAgICAg
+          ICAgICAgbGF0ZWluaXQgdmFyIG1vZGVsOiBBcHBWaWV3TW9kZWwKKyAgICAgICAgICAgICAgICBz
+          Y2VuYXJpby5vbkFjdGl2aXR5IHsgYWN0aXZpdHkgLT4KKyAgICAgICAgICAgICAgICAgICAgbW9k
+          ZWwgPSBWaWV3TW9kZWxQcm92aWRlcihhY3Rpdml0eSlbQXBwVmlld01vZGVsOjpjbGFzcy5qYXZh
+          XQorICAgICAgICAgICAgICAgIH0KKyAgICAgICAgICAgICAgICB2YWwgb3JpZ2luYWxQYWxldHRl
+          ID0gbW9kZWwubmV0d29ya1ByZWZlcmVuY2VzLnZhbHVlLndlYXZlUGFsZXR0ZQorICAgICAgICAg
+          ICAgICAgIHZhbCBiZWZvcmVEaXNrID0gZGlza1BhbGV0dGUoKQorICAgICAgICAgICAgICAgIHZh
+          bCBleHBlY3RlZCA9IFdlYXZlUGFsZXR0ZS5lbnRyaWVzLmZpcnN0IHsgaXQgIT0gb3JpZ2luYWxQ
+          YWxldHRlICYmIGl0Lm5hbWUgIT0gYmVmb3JlRGlzayB9CisgICAgICAgICAgICAgICAgdmFsIGVu
+          dHJpZXMgPSBtYXBPZigKKyAgICAgICAgICAgICAgICAgICAgV2VhdmVCYWNrdXAuTUFOSUZFU1Qg
+          dG8gSlNPTk9iamVjdCgpCisgICAgICAgICAgICAgICAgICAgICAgICAucHV0KCJmb3JtYXQiLCBX
+          ZWF2ZUJhY2t1cC5GT1JNQVQpCisgICAgICAgICAgICAgICAgICAgICAgICAucHV0KCJ2ZXJzaW9u
+          IiwgMikKKyAgICAgICAgICAgICAgICAgICAgICAgIC5wdXQoImNyZWF0ZWRBdCIsIDFMKS50b1N0
+          cmluZygpLAorICAgICAgICAgICAgICAgICAgICBXZWF2ZUJhY2t1cC5TVUJTQ1JJUFRJT05TIHRv
+          ICJbXSIsCisgICAgICAgICAgICAgICAgICAgIFdlYXZlQmFja3VwLlJPVVRFUyB0byAiW10iLAor
+          ICAgICAgICAgICAgICAgICAgICBXZWF2ZUJhY2t1cC5TRVRUSU5HUyB0byBKU09OT2JqZWN0KCku
+          cHV0KCJwYWxldHRlIiwgZXhwZWN0ZWQubmFtZSkudG9TdHJpbmcoKSwKKyAgICAgICAgICAgICAg
+          ICAgICAgV2VhdmVCYWNrdXAuTE9DQUxfUlVMRVMgdG8gIltdIiwKKyAgICAgICAgICAgICAgICAg
+          ICAgV2VhdmVCYWNrdXAuUlVMRV9TRVRTIHRvICJbXSIsCisgICAgICAgICAgICAgICAgICAgIFdl
+          YXZlQmFja3VwLkdST1VQUyB0byAiW10iLAorICAgICAgICAgICAgICAgICAgICBXZWF2ZUJhY2t1
+          cC5QT0xJQ0lFUyB0byAiW10iLAorICAgICAgICAgICAgICAgICkKKyAgICAgICAgICAgICAgICB2
+          YWwgZml4dHVyZVBhc3NwaHJhc2UgPSAiZGlzcG9zYWJsZS1yZXN0b3JlLWZpeHR1cmUiCisgICAg
+          ICAgICAgICAgICAgdmFsIGV4cG9ydFBhc3NwaHJhc2UgPSBmaXh0dXJlUGFzc3BocmFzZS50b0No
+          YXJBcnJheSgpCisgICAgICAgICAgICAgICAgdHJ5IHsKKyAgICAgICAgICAgICAgICAgICAgZml4
+          dHVyZS53cml0ZUJ5dGVzKEJhY2t1cENvZGVjLmVuY3J5cHQoZW50cmllcywgZXhwb3J0UGFzc3Bo
+          cmFzZSkpCisgICAgICAgICAgICAgICAgfSBmaW5hbGx5IHsKKyAgICAgICAgICAgICAgICAgICAg
+          ZXhwb3J0UGFzc3BocmFzZS5maWxsKCdcdTAwMDAnKQorICAgICAgICAgICAgICAgIH0KKyAgICAg
+          ICAgICAgICAgICBzY2VuYXJpby5vbkFjdGl2aXR5IHsKKyAgICAgICAgICAgICAgICAgICAgbW9k
+          ZWwucmVhZEJhY2t1cChVcmkuZnJvbUZpbGUoZml4dHVyZSksIGZpeHR1cmVQYXNzcGhyYXNlLnRv
+          Q2hhckFycmF5KCkpCisgICAgICAgICAgICAgICAgfQorICAgICAgICAgICAgICAgIHZhbCBwcmV2
+          aWV3ID0gcnVuQmxvY2tpbmcgeworICAgICAgICAgICAgICAgICAgICB3aXRoVGltZW91dCgzMF8w
+          MDBMKSB7IG1vZGVsLmJhY2t1cFN0YXRlLmZpcnN0IHsgaXQucHJldmlldyAhPSBudWxsIHx8IGl0
+          LmVycm9yICE9IG51bGwgfSB9CisgICAgICAgICAgICAgICAgfQorICAgICAgICAgICAgICAgIGFz
+          c2VydE51bGwocHJldmlldy5lcnJvcikKKyAgICAgICAgICAgICAgICBhc3NlcnRUcnVlKHByZXZp
+          ZXcucHJldmlldyAhPSBudWxsKQorICAgICAgICAgICAgICAgIHZhbCBiZWZvcmVFdmVudCA9IExv
+          Y2FsRGF0YUV2ZW50cy5yZXZpc2lvbi52YWx1ZQorICAgICAgICAgICAgICAgIHZhciBwcmVzZXJ2
+          ZWQgPSBmYWxzZQorICAgICAgICAgICAgICAgIHNjZW5hcmlvLm9uQWN0aXZpdHkgeworICAgICAg
+          ICAgICAgICAgICAgICBtb2RlbC5jb25maXJtUmVzdG9yZSgpCisgICAgICAgICAgICAgICAgICAg
+          IGFzc2VydFRydWUobW9kZWwuYmFja3VwU3RhdGUudmFsdWUucnVubmluZykKKyAgICAgICAgICAg
+          ICAgICAgICAgLy8gU2FtZSBjYWxsIG1hZGUgYnkgU2V0dGluZ3Mgb24gcmVlbnRyeS4gTm8gY29y
+          b3V0aW5lIGNvbXBsZXRpb24gY2FuIHJ1bgorICAgICAgICAgICAgICAgICAgICAvLyBiZXR3ZWVu
+          IHRoZXNlIHR3byBzdGF0ZW1lbnRzIGluIHRoZSBzYW1lIE1haW4gY2FsbGJhY2suCisgICAgICAg
+          ICAgICAgICAgICAgIG1vZGVsLmRpc2NhcmRCYWNrdXBTdGF0ZSgpCisgICAgICAgICAgICAgICAg
+          ICAgIHByZXNlcnZlZCA9IG1vZGVsLmJhY2t1cFN0YXRlLnZhbHVlLnJ1bm5pbmcKKyAgICAgICAg
+          ICAgICAgICB9CisKKyAgICAgICAgICAgICAgICAvLyBFc3RhYmxpc2ggdGhhdCB0aGUgcmVzdG9y
+          ZSBhY3R1YWxseSBjb21taXR0ZWQsIGluY2x1ZGluZyBpbiB0aGUgdW5ndWFyZGVkCisgICAgICAg
+          ICAgICAgICAgLy8gbmVnYXRpdmUgY29udHJvbC4gQSBmYWlsdXJlIGFib3ZlIHdvdWxkIG90aGVy
+          d2lzZSBoaWRlIHRoZSBwb3N0LWNvbW1pdCBidWcuCisgICAgICAgICAgICAgICAgdmFsIGRlYWRs
+          aW5lID0gU3lzdGVtQ2xvY2suZWxhcHNlZFJlYWx0aW1lKCkgKyAzMF8wMDBMCisgICAgICAgICAg
+          ICAgICAgd2hpbGUgKGRpc2tQYWxldHRlKCkgIT0gZXhwZWN0ZWQubmFtZSAmJiBTeXN0ZW1DbG9j
+          ay5lbGFwc2VkUmVhbHRpbWUoKSA8IGRlYWRsaW5lKSB7CisgICAgICAgICAgICAgICAgICAgIFN5
+          c3RlbUNsb2NrLnNsZWVwKDI1TCkKKyAgICAgICAgICAgICAgICB9CisgICAgICAgICAgICAgICAg
+          YXNzZXJ0RXF1YWxzKCJyZXN0b3JlIG11c3QgaGF2ZSBjb21taXR0ZWQgaXRzIHN5bnRoZXRpYyBw
+          YWxldHRlIiwgZXhwZWN0ZWQubmFtZSwgZGlza1BhbGV0dGUoKSkKKyAgICAgICAgICAgICAgICB2
+          YWwgdGVybWluYWwgPSBydW5CbG9ja2luZyB7CisgICAgICAgICAgICAgICAgICAgIHdpdGhUaW1l
+          b3V0KDMwXzAwMEwpIHsgbW9kZWwuYmFja3VwU3RhdGUuZmlyc3QgeyAhaXQucnVubmluZyB9IH0K
+          KyAgICAgICAgICAgICAgICB9CisgICAgICAgICAgICAgICAgaW5zdHJ1bWVudGF0aW9uLndhaXRG
+          b3JJZGxlU3luYygpCisgICAgICAgICAgICAgICAgYXNzZXJ0RXF1YWxzKCJvbmUgcG9zdC1jb21t
+          aXQgcmVmcmVzaCBwdWJsaWNhdGlvbiIsIGJlZm9yZUV2ZW50ICsgMSwgTG9jYWxEYXRhRXZlbnRz
+          LnJldmlzaW9uLnZhbHVlKQorICAgICAgICAgICAgICAgIGFzc2VydEVxdWFscygiVmlld01vZGVs
+          IG11c3QgcmVhZCBiYWNrIHRoZSBjb21taXR0ZWQgcGFsZXR0ZSIsIGV4cGVjdGVkLCBtb2RlbC5u
+          ZXR3b3JrUHJlZmVyZW5jZXMudmFsdWUud2VhdmVQYWxldHRlKQorICAgICAgICAgICAgICAgIGFz
+          c2VydFRydWUoInJlb3BlbmluZyBTZXR0aW5ncyByZXRpcmVkIGFuIGluLWZsaWdodCByZXN0b3Jl
+          IiwgcHJlc2VydmVkKQorICAgICAgICAgICAgICAgIGFzc2VydE51bGwodGVybWluYWwuZXJyb3Ip
+          CisgICAgICAgICAgICAgICAgYXNzZXJ0VHJ1ZSh0ZXJtaW5hbC5tZXNzYWdlICE9IG51bGwpCisg
+          ICAgICAgICAgICB9CisgICAgICAgIH0gZmluYWxseSB7CisgICAgICAgICAgICBmaXh0dXJlLmRl
+          bGV0ZSgpCisgICAgICAgIH0KKyAgICB9CiB9Cg==
+          WEAVE_PATCH_B64
+          python3 - "$helpers/backup-race-fixture.b64" "$helpers/backup-race-fixture.patch" <<'DECODE_PY'
+          from base64 import b64decode
+          from pathlib import Path
+          import sys
+          source, target = map(Path, sys.argv[1:])
+          target.write_bytes(b64decode(b"".join(source.read_bytes().splitlines()), validate=True))
+          DECODE_PY
+          cat >"$helpers/prepare-source.sh" <<'WEAVE_SOURCE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mode=${1:?positive or negative}
+          patch=${2:?fixture path}
+          proof=${3:?source proof file}
+          floor=70524a8dafafa4cd9037ca4c17b40ac6a44ca662
+          folder=app/src/main/java/io/weave/client/ui
+          model=$folder/AppViewModel.kt
+          restore=$folder/BackupRestoreUi.kt
+          test_source=app/src/androidTest/java/io/weave/client/ui/BackupStateOwnershipIntegrationTest.kt
+          ready=tools/wait-android-ready.py
+          fixture_sha=daef6f4450578c388e9ea19562f1edb475c76874df65a3f958bae486a911e2d6
+          [[ "$mode" == positive || "$mode" == negative ]]
+          [[ "$(git rev-parse HEAD)" == "$floor" ]]
+          source_status="$(git status --porcelain=v1 --untracked-files=all)"
+          [[ -z "$source_status" ]]
+          [[ "$(shasum -a 256 "$patch" | awk '{print $1}')" == "$fixture_sha" ]]
+          [[ "$(git hash-object "$test_source")" == a262a792aa7e84c7c33ecbbe89f8472f1d6a8c9d ]]
+          [[ "$(git hash-object "$model")" == b551c14ec25b57f45df2b9721302617ec7e1a2a9 ]]
+          [[ "$(git hash-object "$restore")" == 60a0041fec79135331bfc763c49e984b06a5fec0 ]]
+          [[ "$(git hash-object "$ready")" == 3b1a7e3178bdaa3da7ba0a9d7101ee155c092ba8 ]]
+          git apply --check "$patch"
+          git apply "$patch"
+          [[ "$(git hash-object "$test_source")" == 4ffedfd5b9bd45a508c69071f4f6d80ef8ee5f59 ]]
+
+          if [[ "$mode" == negative ]]; then
+            python3 - "$model" <<'MUTATE_PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          before = path.read_bytes()
+          guard = b"        if (mutableBackupState.value.running) return\n"
+          target = (
+              b"    fun discardBackupState() {\n"
+              b"        // The Activity can be recreated while this ViewModel still owns active backup work.\n"
+              + guard + b"        backupGeneration++\n"
+          )
+          if before.count(target) != 1:
+              raise SystemExit("Expected one exact historical R019 guard")
+          path.write_bytes(before.replace(target, target.replace(guard, b""), 1))
+          MUTATE_PY
+            [[ "$(git diff --numstat -- "$model")" == "$(printf '0\t1\t%s' "$model")" ]]
+            [[ "$(git hash-object "$model")" == 2be7d7bf385dbaa011a3e6b6a17015001e8303ca ]]
+            [[ "$(git diff --name-only)" == "$(printf '%s\n%s' "$test_source" "$model")" ]]
+          else
+            [[ "$(git diff --name-only)" == "$test_source" ]]
+          fi
+          [[ -z "$(git ls-files --others --exclude-standard)" ]]
+          git diff --check
+          {
+            printf 'source_floor=%s\nfixture_sha256=%s\nworkflow_sha=%s\nmode=%s\n' "$floor" "$fixture_sha" "${GITHUB_SHA:?}" "$mode"
+            printf 'test_blob=%s\nmodel_blob=%s\nrestore_blob=%s\nreadiness_blob=%s\n' \
+              "$(git hash-object "$test_source")" "$(git hash-object "$model")" \
+              "$(git hash-object "$restore")" "$(git hash-object "$ready")"
+            git diff --numstat
+            git diff -- "$model"
+          } >"$proof"
+          WEAVE_SOURCE
+          cat >"$helpers/verify-receipt.py" <<'WEAVE_RECEIPT'
+          """Check the single exact method on both Android raw JUnit outcomes."""
+          from pathlib import Path
+          import json
+          import re
+          import sys
+
+
+          def require(condition, reason):
+              if not condition:
+                  raise SystemExit("Invalid backup gate receipt: " + reason)
+
+
+          mode, path, destination = sys.argv[1:]
+          require(mode in {"positive", "negative"}, "unrecognized mode")
+          clazz = "io.weave.client.ui.BackupStateOwnershipIntegrationTest"
+          method = "settingsReentryPreservesTheOwnerAndACommittedRestoreRefreshesOnce"
+          body = Path(path).read_text(encoding="utf-8")
+          require(not re.search(r"INSTRUMENTATION_(?:FAILED|ABORTED)|Process crashed|shortMsg=", body, re.I),
+                  "runner crashed, aborted or failed before completing")
+          lines = body.splitlines()
+          status_prefix = "INSTRUMENTATION_STATUS: "
+          result_prefix = "INSTRUMENTATION_RESULT: "
+          code_prefix = "INSTRUMENTATION_STATUS_CODE: "
+          final_code = "INSTRUMENTATION_CODE: -1"
+          statuses, fields, result_fields = [], {}, {}
+          section = "status"
+          for line in lines:
+              if line.startswith(status_prefix):
+                  require(section == "status", "method fields after final result")
+                  key, eq, value = line[len(status_prefix):].partition("=")
+                  require(bool(key and eq) and key not in fields, "malformed or duplicate method field")
+                  fields[key] = value
+              elif line.startswith(code_prefix):
+                  require(section == "status" and bool(fields), "status code without corresponding method")
+                  statuses.append((line[len(code_prefix):], fields))
+                  fields = {}
+              elif line.startswith(result_prefix):
+                  require(not fields and section in {"status", "result"}, "unexpected final result transition")
+                  section = "result"
+                  key, eq, value = line[len(result_prefix):].partition("=")
+                  require(bool(key and eq) and key not in result_fields, "malformed or duplicate final result field")
+                  result_fields[key] = value
+              elif line.startswith("INSTRUMENTATION_CODE:"):
+                  require(section == "result" and line == final_code, "missing, duplicate or unexpected final code")
+                  section = "done"
+              elif section == "done":
+                  require(not line.strip(), "non-empty trailing material after final code")
+          require(section == "done" and "stream" in result_fields, "missing terminal result bundle")
+          terminal = "0" if mode == "positive" else "-2"
+          require([code for code, _ in statuses] == ["1", terminal], "unexpected number/outcome of method records")
+          for _, record in statuses:
+              require(all(record.get(key) == value for key, value in {
+                  "id": "AndroidJUnitRunner", "class": clazz, "test": method, "current": "1", "numtests": "1",
+              }.items()), "runner, method, or test count differs")
+          require("stack" not in statuses[0][1], "unexpected failure in the method start bundle")
+          summary = body.split("INSTRUMENTATION_RESULT: stream=", 1)[1]
+          if mode == "positive":
+              require("stack" not in statuses[1][1] and summary.splitlines().count("OK (1 test)") == 1
+                      and "FAILURES!!!" not in summary, "expected a clean single-method pass")
+              outcome = "single-test-pass"
+          else:
+              failure = statuses[1][1].get("stack", "")
+              error = re.fullmatch(
+                  r"java\.lang\.AssertionError: one post-commit refresh publication expected:<([0-9]+)> but was:<([0-9]+)>",
+                  failure,
+              )
+              require(error and int(error[1]) == int(error[2]) + 1, "wrong assertion or refresh delta")
+              require(re.search(rf"(?m)^\s*at {re.escape(clazz)}\.{method}\(BackupStateOwnershipIntegrationTest\.kt:\d+\)$", body),
+                      "assertion is not anchored to the exact device-test method")
+              require(re.search(r"(?m)^Tests run:\s*1,\s*Failures:\s*1\s*$", summary)
+                      and summary.splitlines().count("FAILURES!!!") == 1 and "OK (" not in summary,
+                      "expected one JUnit assertion failure")
+              require("restore must have committed its synthetic palette" not in body,
+                      "the durable commit was not demonstrated")
+              outcome = "durable-commit-with-missing-refresh"
+          Path(destination).write_text(json.dumps({
+              "mode": mode, "class": clazz, "method": method, "status_codes": [1, int(terminal)],
+              "final_code": -1, "result": outcome,
+          }, indent=2) + "\n")
+          print(f"{mode}: {outcome}")
+          WEAVE_RECEIPT
+          cat >"$helpers/run-device.sh" <<'WEAVE_DEVICE'
+          #!/usr/bin/env bash
+          set -eEuo pipefail
+          mode=${1:?positive or negative}
+          out=${2:?receipt directory}
+          tools=${3:?generated helper directory}
+          [[ "$mode" == positive || "$mode" == negative ]]
+          [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]]
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == x86_64 ]]
+          pid=''
+          adb_started=0
+          stage=setup
+          trap 'printf "::error::Backup gate %s failed in %s at line %s\n" "$mode" "$stage" "$LINENO" >&2' ERR
+          bounded() {
+            python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[2:],timeout=int(sys.argv[1])).returncode)' "$@"
+          }
+          sdk=${ANDROID_HOME:?}
+          adb="$sdk/platform-tools/adb"
+          emulator="$sdk/emulator/emulator"
+          aapt="$sdk/build-tools/37.0.0/aapt2"
+          image='system-images;android-36;google_apis;x86_64'
+          serial=emulator-5554
+          export WEAVE_ISOLATED_EMULATOR=1 WEAVE_TEST_ADB_PORT=5037 WEAVE_TEST_BOOT_TIMEOUT=900
+          export ANDROID_ADB_SERVER_PORT=$WEAVE_TEST_ADB_PORT ADB_MDNS_AUTO_CONNECT=''
+          private="$(mktemp -d "${RUNNER_TEMP:?}/weave-backup-$mode.XXXXXX")"
+          export ANDROID_USER_HOME="$private/user" ANDROID_EMULATOR_HOME="$private/emulator" ANDROID_AVD_HOME="$private/avd"
+          mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME"
+
+          run_adb() { bounded 45 "$adb" -P "$WEAVE_TEST_ADB_PORT" "$@"; }
+          guest() { run_adb -s "$serial" shell "$@" | tr -d '\r'; }
+          cleanup() {
+            result=$?
+            trap - EXIT ERR
+            if [[ -n "$pid" ]]; then
+              kill "$pid" 2>/dev/null || :
+              for ((attempt = 0; attempt < 20; attempt++)); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 1
+              done
+              if kill -0 "$pid" 2>/dev/null; then
+                kill -KILL "$pid" 2>/dev/null || :
+                result=1
+              else
+                wait "$pid" 2>/dev/null || :
+              fi
+            fi
+            if [[ "$adb_started" == 1 ]]; then
+              bounded 10 "$adb" -P "$WEAVE_TEST_ADB_PORT" kill-server || result=1
+            fi
+            printf 'stage=%s\nexit=%s\n' "$stage" "$result" >"$out/exit.txt"
+            exit "$result"
+          }
+          trap cleanup EXIT
+
+          # No connection to, installation on, or destruction of an existing device/profile.
+          python3 - "$WEAVE_TEST_ADB_PORT" <<'ENSURE_PORT_PY'
+          import socket
+          import sys
+
+          for port in (int(sys.argv[1]), 5554, 5555):
+              with socket.socket() as sock:
+                  sock.settimeout(1)
+                  if sock.connect_ex(("127.0.0.1", port)) == 0:
+                      raise SystemExit(f"Refusing to reuse occupied emulator or ADB port {port}")
+          ENSURE_PORT_PY
+          # Retain the operator's known-good Intel port, graphics, image, memory and boot flags.
+          run_adb start-server
+          adb_started=1
+          initial_devices="$(run_adb devices)"
+          [[ "$(awk 'NR > 1 && NF {print}' <<<"$initial_devices")" == "" ]]
+          printf 'no\n' | bounded 60 "${WEAVE_AVDMANAGER:?}" create avd -n weave_gate -k "$image"
+          stage=boot
+          "$emulator" -avd weave_gate -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$out/emulator.log" 2>&1 &
+          pid=$!
+          export WEAVE_TEST_EMULATOR_PID="$pid"
+          bounded 900 python3 -u tools/wait-android-ready.py "$serial" | tee "$out/readiness.txt"
+          [[ "$(run_adb devices | awk 'NR > 1 && NF {print $1 " " $2}')" == "$serial device" ]]
+          [[ "$(guest getprop ro.kernel.qemu)" == 1 && "$(guest getprop ro.product.cpu.abi)" == x86_64 ]]
+          [[ "$(guest getprop ro.build.version.sdk)" == 36 && "$(guest am get-current-user)" == 0 ]]
+          fingerprint="$(guest getprop ro.build.fingerprint)"
+          [[ -n "$fingerprint" ]]
+          printf '%s\n' "$fingerprint" >"$out/guest-fingerprint.txt"
+          printf '%s\n' "$serial" "$image" "$WEAVE_TEST_BOOT_TIMEOUT" >"$out/guest-configuration.txt"
+          if [[ "$mode" == negative ]]; then
+            cmp "$out/../positive/guest-fingerprint.txt" "$out/guest-fingerprint.txt"
+            cmp "$out/../positive/guest-configuration.txt" "$out/guest-configuration.txt"
+          fi
+
+          stage=preinstall
+          app=app/build/outputs/apk/debug/app-x86_64-debug.apk
+          tests=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          [[ -s "$app" && -s "$tests" ]]
+          app_id=io.weave.client.acceptance
+          test_id=io.weave.client.acceptance.test
+          package_id() { "$aapt" dump badging "$1" | sed -n "s/^package: name='\([^']*\)'.*/\1/p"; }
+          [[ "$(package_id "$app")" == "$app_id" && "$(package_id "$tests")" == "$test_id" ]]
+          existing_weave="$(guest pm list packages io.weave.client)"
+          [[ -z "$existing_weave" ]]
+          shasum -a 256 "$app" "$tests" >"$out/apk-sha256.txt"
+
+          # The R001 v2 run hit the old 45-second generic command limit before the
+          # first install returned. Bound each install separately; never retry it.
+          install_and_verify() {
+            local role=$1 apk=$2 expected_id=$3
+            stage="install-$role"
+            printf 'Installing %s on %s (240-second limit)\n' "$expected_id" "$serial"
+            if ! bounded 240 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" install --user 0 "$apk" \
+              2>&1 | tr -d '\r' | tee "$out/install-$role.txt"; then
+              printf '::error::Install of %s failed or timed out\n' "$expected_id" >&2
+              return 1
+            fi
+            if ! awk '$0 == "Success" { successes++ } /(^|[[:space:]])Failure([[:space:]]|$)/ { failed = 1 } END { exit !(successes == 1 && !failed) }' "$out/install-$role.txt"; then
+              printf '::error::Install of %s did not report one clean Success\n' "$expected_id" >&2
+              return 1
+            fi
+            stage="pm-path-$role"
+            if ! guest pm path --user 0 "$expected_id" | tee "$out/pm-path-$role.txt"; then
+              printf '::error::Package manager could not read back %s for user 0\n' "$expected_id" >&2
+              return 1
+            fi
+            if ! awk '/^package:\/data\/app\/[^[:space:]]+\/base\.apk$/ { bases++ } END { exit !(NR == 1 && bases == 1) }' "$out/pm-path-$role.txt"; then
+              printf '::error::Package manager did not report the installed base APK for %s\n' "$expected_id" >&2
+              return 1
+            fi
+          }
+          install_and_verify app "$app" "$app_id"
+          install_and_verify test "$tests" "$test_id"
+          stage=instrumentation-runner
+          runner="$test_id/androidx.test.runner.AndroidJUnitRunner"
+          guest pm list instrumentation "$app_id" | grep -Fx "instrumentation:$runner (target=$app_id)" >"$out/runner.txt"
+          stage=dex-compile
+          bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$app_id"
+          bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$test_id"
+
+          stage=instrumentation
+          test_target='io.weave.client.ui.BackupStateOwnershipIntegrationTest#settingsReentryPreservesTheOwnerAndACommittedRestoreRefreshesOnce'
+          printf '%s\n' "$test_target" 'weaveIsolatedEmulator=1' 'weaveFreshBackupProfile=1' >"$out/test-selection.txt"
+          bounded 240 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell am instrument --user 0 -w -r \
+            -e class "$test_target" -e weaveIsolatedEmulator 1 -e weaveFreshBackupProfile 1 "$runner" \
+            2>"$out/adb-stderr.txt" | tr -d '\r' | tee "$out/instrumentation.txt"
+          python3 "$tools/verify-receipt.py" "$mode" "$out/instrumentation.txt" "$out/verified.json"
+          stage=verified
+          WEAVE_DEVICE
+          check_stage java-17
+          JAVA_HOME="$(/usr/libexec/java_home -v 17)" || fail 'java_home could not resolve Java 17'
+          [[ -x "$JAVA_HOME/bin/java" ]] || fail 'Resolved Java 17 has no executable java'
+          export JAVA_HOME
+          export PATH="$JAVA_HOME/bin:$PATH"
+          java_version="$("$JAVA_HOME/bin/java" -version 2>&1)" || fail 'Resolved Java failed to start'
+          grep -Eq 'version "17([."]|$)' <<<"$java_version" || fail 'Resolved Java is not major version 17'
+
+          check_stage sdk-root
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          [[ -n "$ANDROID_HOME" && -d "$ANDROID_HOME" && -w "$ANDROID_HOME" ]] || fail 'ANDROID_HOME missing, invalid, or not writable'
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          sdk="$ANDROID_HOME"
+          check_stage sdk-manager-and-avd-manager
+          sdkmanager=''
+          shopt -s nullglob
+          for bin in "$sdk"/cmdline-tools/latest/bin "$sdk"/cmdline-tools/*/bin "$sdk"/tools/bin; do
+            if [[ -x "$bin/sdkmanager" && -x "$bin/avdmanager" ]]; then
+              sdkmanager="$bin/sdkmanager"
+              export WEAVE_AVDMANAGER="$bin/avdmanager"
+              break
+            fi
+          done
+          [[ -n "$sdkmanager" ]] || fail 'No stock executable sdkmanager and avdmanager pair'
+          {
+            printf 'workflow=%s\nsource_floor=%s\nrun=%s\nrun_attempt=%s\nrunner_image=%s\nrunner_image_version=%s\nsdkmanager=%s\n' \
+              "$GITHUB_SHA" "$floor" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${ImageOS:-unknown}" "${ImageVersion:-unknown}" "$sdkmanager"
+            sw_vers
+            printf '%s\n' "$java_version"
+          } 2>&1 | tee "$out/host-sdk.txt"
+          check_stage sdk-package-provisioning
+          if ! python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[2:],timeout=int(sys.argv[1])).returncode)' \
+            600 "$sdkmanager" 'platform-tools' 'build-tools;37.0.0' 'platforms;android-37.0' 'ndk;29.0.14206865' 'cmake;3.31.6' 'system-images;android-36;google_apis;x86_64' \
+            2>&1 | tee -a "$out/host-sdk.txt"; then
+            fail 'SDK package install failed or timed out; inspect host-sdk.txt for repositories, licensing or Darwin package availability'
+          fi
+
+          check_stage sdk-adb
+          [[ -x "$sdk/platform-tools/adb" ]] || fail 'Missing stock executable platform-tools adb'
+          "$sdk/platform-tools/adb" version | tee -a "$out/host-sdk.txt"
+          check_stage sdk-build-tools-37
+          [[ -x "$sdk/build-tools/37.0.0/aapt2" ]] || fail 'Missing build-tools 37.0.0 aapt2 (do not substitute aapt)'
+          "$sdk/build-tools/37.0.0/aapt2" version | tee -a "$out/host-sdk.txt"
+          check_stage sdk-platform-37
+          [[ -s "$sdk/platforms/android-37.0/android.jar" ]] || fail 'Missing Android 37.0 platform android.jar'
+          check_stage sdk-ndk-29
+          [[ -s "$sdk/ndk/29.0.14206865/build/cmake/android.toolchain.cmake" ]] || fail 'Missing NDK 29.0.14206865 toolchain'
+          check_stage sdk-cmake-3.31.6
+          [[ -x "$sdk/cmake/3.31.6/bin/cmake" ]] || fail 'Missing executable CMake 3.31.6'
+          check_stage stock-emulator
+          [[ -x "$sdk/emulator/emulator" && -s "$sdk/emulator/source.properties" ]] || fail 'Missing stock emulator or package revision'
+          "$sdk/emulator/emulator" -version 2>&1 | tee -a "$out/host-sdk.txt"
+          check_stage android-36-google-apis-x86_64-image
+          image_dir="$sdk/system-images/android-36/google_apis/x86_64"
+          [[ -s "$image_dir/source.properties" && -s "$image_dir/system.img" ]] || fail 'Missing Android 36 Google APIs x86_64 image or package revision'
+          cat "$image_dir/source.properties" | tee -a "$out/host-sdk.txt"
+          check_stage intel-hardware-hypervisor
+          hv="$(/usr/sbin/sysctl -n kern.hv_support)" || fail 'Could not read kern.hv_support'
+          [[ "$hv" == 1 ]] || fail 'Host reports no hardware virtualization'
+          check_stage emulator-hypervisor-framework
+          if ! "$sdk/emulator/emulator" -accel-check 2>&1 | tee "$out/acceleration.txt"; then
+            fail 'Emulator acceleration probe failed'
+          fi
+          grep -q 'Hypervisor.Framework' "$out/acceleration.txt" || fail 'Probe did not report Hypervisor.Framework'
+          check_stage fingerprint-sdk
+          shasum -a 256 "$sdk/emulator/emulator" "$sdk/platform-tools/adb" "$sdk/build-tools/37.0.0/aapt2" \
+            "$sdk/emulator/source.properties" "$image_dir/source.properties" >"$out/sdk-sha256.txt"
+          check_stage preflight-verified
+          echo 'All pre-build guards passed; no emulator has been launched.'
+
+          for mode in positive negative; do
+            phase="$mode-source-preparation"
+            src="$work/$mode"
+            git worktree add --detach "$src" "$floor"
+            (
+              cd "$src"
+              bash "$helpers/prepare-source.sh" "$mode" "$helpers/backup-race-fixture.patch" "$out/$mode/source-proof.txt"
+              phase="$mode-gradle-assemble"
+              ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true --no-daemon --no-configuration-cache \
+                2>&1 | tee "$out/$mode/gradle.log"
+              phase="$mode-device"
+              bash "$helpers/run-device.sh" "$mode" "$out/$mode" "$helpers"
+            )
+            phase="$mode-sdk-identity"
+            shasum -a 256 -c "$out/sdk-sha256.txt"
+          done
+          [[ -s "$out/positive/verified.json" && -s "$out/negative/verified.json" ]]
+          printf 'Both controls verified on the same hosted runner and matching guest fingerprints.\n' | tee "$out/pair-verified.txt"
+      - name: Retain receipt and diagnostics only, never APKs or AVD data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: weave-r019-r097-receipts-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weave-r019-r097-receipts/
+          if-no-files-found: error
+          retention-days: 14
