@@ -48,7 +48,10 @@ data class SubscriptionUsage(
         }
 
         fun decode(value: String?): SubscriptionUsage? {
-            val parts = value?.split(',')?.map { it.toLongOrNull() ?: return null } ?: return null
+            if (value == null) return null
+            StoredUsageDecoder.decodeAscii(value)?.let { return it }
+            // Signed and non-ASCII digits from older snapshots keep the exact legacy parser.
+            val parts = value.split(',').map { it.toLongOrNull() ?: return null }
             if (parts.size != 4 || parts.any { it < 0 }) return null
             return SubscriptionUsage(parts[0], parts[1], parts[2], parts[3].takeIf { it > 0 })
         }
