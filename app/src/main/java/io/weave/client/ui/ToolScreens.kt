@@ -363,7 +363,7 @@ private fun ConnectionRow(connection: CoreConnection, appName: String, onClose: 
                     translate = false,
                 )
                 Text(
-                    listOf(connection.rule, connection.chain.asReversed().joinToString(" → ")).filter(String::isNotBlank).joinToString(" · "),
+                    ConnectionRowLabel.format(connection.rule, connection.chain),
                     color = MaterialTheme.colorScheme.secondary,
                     fontSize = 11.sp,
                     maxLines = 2,
