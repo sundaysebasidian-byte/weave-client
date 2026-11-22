@@ -38,7 +38,22 @@ jobs:
           done
           test -n "$sdkmanager"
           echo "Using stock command-line tools from ${sdkmanager%/*}"
-          "$sdkmanager" 'platform-tools' 'build-tools;37.0.0' 'platforms;android-37.0' 'ndk;29.0.14206865' 'cmake;3.31.6' 'system-images;android-36;google_apis;x86_64'
+          export WEAVE_AVD_IMAGE='system-images;android-36;default;x86_64'
+          # A GSI or a Google APIs emulator image is not this exact AOSP package.
+          catalog="$(mktemp "$RUNNER_TEMP/weave-aosp-sdk-catalog.XXXXXX")"
+          python3 - "$sdkmanager" "$catalog" <<'CATALOG_PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+          with Path(sys.argv[2]).open("wb") as out:
+              subprocess.run([sys.argv[1], "--list", "--channel=0"], stdout=out, timeout=180, check=True)
+          CATALOG_PY
+          if ! awk -F '|' -v wanted="$WEAVE_AVD_IMAGE" '{ key=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", key); if (key == wanted) found=1 } END { exit !found }' "$catalog"; then
+            echo "::error::Stable SDK catalogue did not confirm exact $WEAVE_AVD_IMAGE; no emulator built, booted, or substituted"
+            exit 1
+          fi
+          printf 'Stable SDK catalogue verified: %s\n' "$WEAVE_AVD_IMAGE"
+          "$sdkmanager" 'platform-tools' 'build-tools;37.0.0' 'platforms;android-37.0' 'ndk;29.0.14206865' 'cmake;3.31.6' "$WEAVE_AVD_IMAGE"
           die() { printf '::error::%s\n' "$1" >&2; exit 1; }
           printf 'Runner class: %s, OS: %s, arch: %s\n' "${RUNNER_ENVIRONMENT:-unset}" "$(uname -s)" "$(uname -m)"
           [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]] || die "Expected GitHub-hosted runner"
@@ -48,7 +63,10 @@ jobs:
           [[ -x "$sdk/platform-tools/adb" ]] || die "Missing SDK adb"
           [[ -x "$WEAVE_AVDMANAGER" ]] || die "Missing SDK avdmanager"
           [[ -x "$sdk/emulator/emulator" ]] || die "Missing SDK emulator"
-          [[ -d "$sdk/system-images/android-36/google_apis/x86_64" ]] || die "Missing Android 36 Google APIs x86_64 image"
+          aosp_dir="$sdk/system-images/android-36/default/x86_64"
+          [[ -s "$aosp_dir/system.img" && -s "$aosp_dir/source.properties" ]] || die "Missing installed Android 36 default AOSP x86_64 image or revision"
+          grep -Eq '^SystemImage.TagId[[:space:]]*=[[:space:]]*default[[:space:]]*$' "$aosp_dir/source.properties" || die "Installed Android image is not tagged default"
+          grep -E '^(Pkg.Revision|SystemImage.TagId|SystemImage.Abi|AndroidVersion.ApiLevel)[[:space:]]*=' "$aosp_dir/source.properties"
           export WEAVE_AAPT="$sdk/build-tools/37.0.0/aapt2"
           [[ -x "$WEAVE_AAPT" ]] || die "Missing SDK build-tools 37.0.0 aapt2"
           [[ "$(/usr/sbin/sysctl -n kern.hv_support)" == 1 ]] || die "Intel hardware virtualization unavailable"
@@ -112,7 +130,8 @@ jobs:
           aapt="$sdk/build-tools/37.0.0/aapt"
           # If the known runner/build requests another aapt build-tools version, configure its exact path.
           aapt="${WEAVE_AAPT:-$aapt}"
-          image="${WEAVE_AVD_IMAGE:-system-images;android-36;google_apis;x86_64}"
+          image="${WEAVE_AVD_IMAGE:?}"
+          [[ "$image" == "system-images;android-36;default;x86_64" ]]
           echo "Starting isolated ADB and AVD setup"
           set -E
           trap 'printf "::error::R001 device phase failed at script line %s\n" "$LINENO" >&2' ERR
@@ -137,7 +156,7 @@ jobs:
           adb_devices="$(run_adb devices)" || { echo '::error::Could not query fresh ADB server'; exit 1; }
           [[ "$(awk 'NR > 1 && NF {print}' <<< "$adb_devices")" == "" ]] || { echo '::error::Existing device on ADB server'; exit 1; }
           printf 'no\n' | bounded 60 "$avdmanager" create avd -n weave_gate -k "$image"
-          echo "Launching Android 36 Google APIs with the proven Intel boot configuration"
+          echo "Launching exact Android 36 AOSP default image with identical Intel emulator flags"
           "$emulator" -avd weave_gate -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$out/emulator.log" 2>&1 &
           emulator_pid=$!
           export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
@@ -145,6 +164,9 @@ jobs:
           guest() { run_adb -s "$serial" shell "$@" | tr -d '\r'; }
           [[ "$(guest getprop ro.kernel.qemu)" == 1 && "$(guest getprop ro.product.cpu.abi)" == x86_64 ]]
           [[ "$(guest getprop ro.build.version.sdk)" == 36 && "$(guest am get-current-user)" == 0 ]]
+          guest_fingerprint="$(guest getprop ro.build.fingerprint)"
+          [[ -n "$guest_fingerprint" ]]
+          printf 'R001 guest fingerprint: %s\n' "$guest_fingerprint"
           app=app/build/outputs/apk/debug/app-x86_64-debug.apk
           tests=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           test -s "$app" || { echo '::error::Missing x86_64 application APK'; exit 1; }
