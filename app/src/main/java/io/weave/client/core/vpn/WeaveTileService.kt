@@ -32,7 +32,9 @@ class WeaveTileService : TileService() {
         super.onStartListening()
         observer?.cancel()
         observer = scope.launch {
-            VpnRuntimeState.snapshot.collect { render(it.state) }
+            kotlinx.coroutines.flow.combine(VpnRuntimeState.snapshot, VpnRuntimeState.exitName) { snapshot, exit ->
+                snapshot.state to exit
+            }.collect { (state, exit) -> render(state, exit) }
         }
     }
 
@@ -60,7 +62,8 @@ class WeaveTileService : TileService() {
         }
     }
 
-    private fun render(state: ConnectionState) {
+    /** Connected, the subtitle names the exit once the core reports it. */
+    private fun render(state: ConnectionState, exit: String?) {
         val tile = qsTile ?: return
         tile.label = getString(R.string.tile_label)
         tile.state = when (state) {
@@ -68,7 +71,7 @@ class WeaveTileService : TileService() {
             else -> Tile.STATE_INACTIVE
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = getString(
+            tile.subtitle = exit?.takeIf { state == ConnectionState.CONNECTED } ?: getString(
                 when (state) {
                     ConnectionState.CONNECTED -> R.string.tile_connected
                     ConnectionState.CONNECTING -> R.string.tile_connecting

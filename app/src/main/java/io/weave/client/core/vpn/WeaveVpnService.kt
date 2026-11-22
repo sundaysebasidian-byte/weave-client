@@ -94,6 +94,7 @@ class WeaveVpnService : VpnService() {
     private var preferredUnderlyingNetwork: Network? = null
     @Volatile
     private var connectedStatus = "已连接"
+    private var connectedAtMillis = 0L
     private var trafficNotificationJob: Job? = null
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
@@ -111,6 +112,7 @@ class WeaveVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        WeaveStatusWidget.observe(this)
         ContextCompat.registerReceiver(
             this,
             screenReceiver,
@@ -648,6 +650,7 @@ class WeaveVpnService : VpnService() {
         } else {
             "已连接 · ${prepared.assembled.usableSubscriptions} 个订阅"
         }
+        connectedAtMillis = System.currentTimeMillis()
         notifyStatus(connectedStatus)
         VpnRuntimeState.update(ConnectionState.CONNECTED, message)
         startTrafficNotification()
@@ -686,16 +689,17 @@ class WeaveVpnService : VpnService() {
                 nextDelay = policy.nextDelayMillis(
                     runtime.uploadBytesPerSecond > 0 || runtime.downloadBytesPerSecond > 0,
                 )
-                val node = runtime.nodeName.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()
+                val node = runtime.nodeName.takeIf(String::isNotBlank)
+                VpnRuntimeState.exitChanged(node)
                 val detail = getString(
                     R.string.notification_speed,
                     TrafficFormat.bytes(runtime.uploadBytesPerSecond),
                     TrafficFormat.bytes(runtime.downloadBytesPerSecond),
-                ) + node
-                if (!policy.shouldPublish("$connectedStatus|$detail")) continue
+                )
+                if (!policy.shouldPublish("$connectedStatus|$node|$detail")) continue
                 getSystemService(NotificationManager::class.java).notify(
                     NOTIFICATION_ID,
-                    buildNotification(connectedStatus, detail),
+                    buildNotification(connectedStatus, detail, exit = node),
                 )
             }
         }
@@ -866,18 +870,47 @@ class WeaveVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(status: String, detail: String? = null): android.app.Notification {
+    /**
+     * While connected the title names the exit once the core reports it, the text carries the
+     * live rates and the system clock counts the session; other states show their status alone.
+     */
+    private fun buildNotification(status: String, detail: String? = null, exit: String? = null): android.app.Notification {
         val language = settingsStore.language()
         val title = localizeWeaveText(status, language)
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val connected = status == connectedStatus && connectedAtMillis > 0L
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_weave)
-            .setContentTitle(if (detail == null) "Weave" else title)
+            .setColor(NOTIFICATION_ACCENT)
+            .setContentTitle(
+                when {
+                    connected && exit != null -> localizeWeaveText("已连接", language) + " · " + exit
+                    detail == null -> "Weave"
+                    else -> title
+                },
+            )
             .setContentText(detail ?: title)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setShowWhen(false)
+            .setShowWhen(connected)
+            .setUsesChronometer(connected)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        if (connected) {
+            builder.setWhen(connectedAtMillis)
+            builder.addAction(
+                0,
+                getString(R.string.action_choose_exit),
+                PendingIntent.getActivity(
+                    this,
+                    REQUEST_CHOOSE_EXIT,
+                    Intent(this, MainActivity::class.java)
+                        .setAction(MainActivity.ACTION_CHOOSE_EXIT)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+        }
+        return builder
             .addAction(
                 0,
                 getString(R.string.action_disconnect),
@@ -917,6 +950,8 @@ class WeaveVpnService : VpnService() {
         private const val LOG_TAG = "WeaveVpnService"
         private const val TEARDOWN_TIMEOUT_MS = 20_000L
         private const val REQUEST_DISCONNECT = 11
+        private const val REQUEST_CHOOSE_EXIT = 12
+        private const val NOTIFICATION_ACCENT = 0xFF2F4858.toInt()
         // Process-wide: outlives a destroyed service instance until its core stop completes.
         private val TEARDOWN_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         @Volatile private var teardown: Job? = null

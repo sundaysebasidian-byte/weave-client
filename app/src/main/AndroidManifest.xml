@@ -116,6 +116,19 @@
             android:process=":vpn"
             android:exported="false" />
 
+        <receiver
+            android:name=".core.vpn.WeaveStatusWidget"
+            android:process=":vpn"
+            android:exported="false"
+            android:label="@string/tile_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/weave_status_widget" />
+        </receiver>
+
         <service
             android:name=".core.vpn.WeaveTileService"
             android:process=":vpn"

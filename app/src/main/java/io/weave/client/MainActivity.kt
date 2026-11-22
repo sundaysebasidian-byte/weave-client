@@ -225,6 +225,7 @@ class MainActivity : ComponentActivity() {
         val request = when (intent?.action) {
             ACTION_CONNECT -> ExternalRequest.Connect
             ACTION_IMPORT -> ExternalRequest.OpenImport
+            ACTION_CHOOSE_EXIT -> ExternalRequest.ChooseExit
             Intent.ACTION_VIEW -> intent.data?.let(::importFromUri)?.let(ExternalRequest::Import)
             Intent.ACTION_SEND -> sharedImport(intent)?.let(ExternalRequest::Import)
             else -> null
@@ -279,5 +280,6 @@ class MainActivity : ComponentActivity() {
         const val ACTION_CONNECT = "io.weave.client.action.CONNECT"
         const val ACTION_DISCONNECT = "io.weave.client.action.DISCONNECT"
         const val ACTION_IMPORT = "io.weave.client.action.IMPORT"
+        const val ACTION_CHOOSE_EXIT = "io.weave.client.action.CHOOSE_EXIT"
     }
 }
