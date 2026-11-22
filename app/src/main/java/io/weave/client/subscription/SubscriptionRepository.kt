@@ -193,25 +193,10 @@ class SubscriptionRepository(
     /** One encrypted-index read for both UI lists; caller owns the IO dispatcher. */
     fun loadSnapshot(): Pair<List<Subscription>, List<ProxyNode>> {
         val records = store.list()
-        return records.map(::toDomain) to records.flatMap { subscription ->
-            subscription.nodes.map { node ->
-                ProxyNode(node.id, node.name, "", subscription.id, node.protocol, null)
-            }
-        }
+        return records.map(::toDomain) to projectStoredSubscriptionNodes(records)
     }
 
-    fun loadNodes(): List<ProxyNode> = store.list().flatMap { subscription ->
-        subscription.nodes.map { node ->
-            ProxyNode(
-                id = node.id,
-                name = node.name,
-                region = "",
-                subscriptionId = subscription.id,
-                protocol = node.protocol,
-                latencyMs = null,
-            )
-        }
-    }
+    fun loadNodes(): List<ProxyNode> = projectStoredSubscriptionNodes(store.list())
 
     fun loadNodes(subscriptionId: String): List<ProxyNode> =
         loadNodes().filter { it.subscriptionId == subscriptionId }
