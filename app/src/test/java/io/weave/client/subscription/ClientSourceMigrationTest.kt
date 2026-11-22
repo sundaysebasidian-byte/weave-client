@@ -95,6 +95,33 @@ proxies: []
         }
     }
 
+    @Test fun indexedSelectionVisitsOnlyRequestedIdsAndPreservesCatalogueRecordIdentity() {
+        val rows = List(256) { index ->
+            ClientSourceRecord(ClientSourceEntry("id-$index", "Source $index", index != 128), "fixture") {
+                error("Selecting metadata must not read a document")
+            }
+        }
+        val session = ClientSourceSession()
+        val catalogue = session.prepare("Fixture", rows)
+        val requested = linkedSetOf("id-255", "id-63", "id-0")
+        var membershipChecks = 0
+        val ids = object : Set<String> by requested {
+            override fun contains(element: String): Boolean {
+                membershipChecks++
+                return element in requested
+            }
+        }
+        val selected = session.select(catalogue.token, ids)
+        assertEquals(0, membershipChecks)
+        assertEquals(3, selected.size)
+        assertSame(rows[0], selected[0])
+        assertSame(rows[63], selected[1])
+        assertSame(rows[255], selected[2])
+        assertThrows(IllegalArgumentException::class.java) { session.select(catalogue.token, setOf("id-128")) }
+        assertThrows(IllegalArgumentException::class.java) { session.prepare("Duplicate", listOf(rows[0], rows[0])) }
+        assertThrows(IllegalArgumentException::class.java) { session.select(catalogue.token, setOf("id-0")) }
+    }
+
     @Test fun sourceCatalogueTokensReplaceExpireAndRejectUnknownOrTooManySelections() {
         var now = 0L
         val session = ClientSourceSession { now }
