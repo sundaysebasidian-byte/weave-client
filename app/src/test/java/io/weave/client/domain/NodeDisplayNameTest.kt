@@ -7,6 +7,25 @@ import org.junit.Test
 
 class NodeDisplayNameTest {
     @Test
+    fun preservesVisibleProviderNamesAfterEscapedDecorations() {
+        assertEquals("Berlin", NodeDisplayName.core("""\u2708Berlin"""))
+        assertEquals("DE01", NodeDisplayName.core("""\u2708\uFE0FDE01"""))
+        assertEquals("0a-edge", NodeDisplayName.core("""\u200d\u20e30a-edge"""))
+        assertEquals("Berlin", NodeDisplayName.core("""\U0001F6EBBerlin"""))
+    }
+
+    @Test
+    fun preservesSupportedLongerEscapesAndUndecoratedLabels() {
+        assertEquals("JP", NodeDisplayName.core("""\u27080 JP"""))
+        assertEquals("JP", NodeDisplayName.core("""\uFE0FA JP"""))
+        assertEquals("JP", NodeDisplayName.core("""\u002708 JP"""))
+        assertEquals("JP", NodeDisplayName.core("""\uD8000 JP"""))
+        assertEquals("JP", NodeDisplayName.core("""\U00027080 JP"""))
+        assertEquals("JP", NodeDisplayName.core("""\u2708 JP"""))
+        assertEquals("""edge \u2708Berlin""", NodeDisplayName.core("""edge \u2708Berlin"""))
+    }
+
+    @Test
     fun `keeps support for extended lowercase unicode escape prefix`() {
         assertEquals("JP", NodeDisplayName.core("""\uD8000 JP"""))
     }
