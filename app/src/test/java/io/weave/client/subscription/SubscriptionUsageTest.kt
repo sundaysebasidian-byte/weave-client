@@ -58,6 +58,35 @@ class SubscriptionUsageTest {
         assertNull(SubscriptionUsage.decode("1,2"))
     }
 
+    @Test fun decodeKeepsCanonicalAndLegacyStoredValues() {
+        val fields = listOf("", "0", "-0", "+0", "+1", "-1", "١٢", "９", "01", "1 ",
+            "\t1", "9223372036854775807", "9223372036854775808", "-9223372036854775808")
+        for (first in fields) for (second in fields) {
+            for (value in listOf("$first,$second,3,0", "3,4,$first,$second", "$first,$second,3,4,5")) {
+                assertEquals(value, previousDecode(value), SubscriptionUsage.decode(value))
+            }
+        }
+        assertEquals(previousDecode(null), SubscriptionUsage.decode(null))
+        assertEquals(SubscriptionUsage(Long.MAX_VALUE, 12, 999, Long.MAX_VALUE),
+            SubscriptionUsage.decode("9223372036854775807,12,999,9223372036854775807"))
+    }
+
+    @Test fun asciiDecoderMatchesPersistedCanonicalFixtures() {
+        val random = kotlin.random.Random(114)
+        repeat(2048) {
+            val source = SubscriptionUsage(random.nextLong().ushr(1), random.nextLong().ushr(1),
+                random.nextLong().ushr(1), if (it % 2 == 0) null else random.nextLong().ushr(1).coerceAtLeast(1))
+            assertEquals(source, StoredUsageDecoder.decodeAscii(source.encode()))
+            assertEquals(source, SubscriptionUsage.decode(source.encode()))
+        }
+    }
+
+    private fun previousDecode(value: String?): SubscriptionUsage? {
+        val parts = value?.split(',')?.map { it.toLongOrNull() ?: return null } ?: return null
+        if (parts.size != 4 || parts.any { it < 0 }) return null
+        return SubscriptionUsage(parts[0], parts[1], parts[2], parts[3].takeIf { it > 0 })
+    }
+
     @Test fun `saturates huge sums`() {
         assertEquals(Long.MAX_VALUE, SubscriptionUsage(Long.MAX_VALUE, 5, 0, null).usedBytes)
     }
