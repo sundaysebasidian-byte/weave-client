@@ -12,7 +12,7 @@ class SubscriptionRefreshBatchTest {
         val applied = mutableListOf<String>()
         val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB), {
             if (it == "a") throw io.weave.client.subscription.SubscriptionReviewRequiredException()
-        }, { applied += it }, { _, _ -> })
+        }, { applied += it }, { _, _ -> }).results
         assertEquals(listOf("b"), applied)
         assertTrue(results[0].reviewRequired)
         assertFalse(results[0].succeeded)
@@ -39,7 +39,7 @@ class SubscriptionRefreshBatchTest {
         val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB), {
             called += it
             if (it == "a") throw IllegalStateException("https://private.example/token-must-never-enter-state")
-        }, { applied += it }, { _, snapshot -> snapshots += snapshot })
+        }, { applied += it }, { _, snapshot -> snapshots += snapshot.results }).results
         assertEquals(listOf("a", "b"), called)
         assertEquals(listOf("b"), applied)
         assertEquals(listOf(false, true), results.map { it.succeeded })
@@ -69,7 +69,7 @@ class SubscriptionRefreshBatchTest {
             SubscriptionRefreshBatch.run(listOf(remoteA, remoteB), {
                 called += it
                 throw CancellationException("fixture cancellation")
-            }, { fail("Cancelled refresh cannot be applied") }, { _, results -> completed += results })
+            }, { fail("Cancelled refresh cannot be applied") }, { _, progress -> completed += progress.results })
             fail("Cancellation must propagate")
         } catch (_: CancellationException) { }
         assertEquals(listOf("a"), called)
@@ -81,7 +81,7 @@ class SubscriptionRefreshBatchTest {
         val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB), {}, {
             applied += it
             if (it == "a") throw IllegalStateException("Fixture reference reload failure")
-        }, { _, _ -> })
+        }, { _, _ -> }).results
         assertEquals(listOf("a", "b"), applied)
         assertEquals(listOf(false, true), results.map { it.succeeded })
     }
@@ -90,10 +90,11 @@ class SubscriptionRefreshBatchTest {
         val third = remoteB.copy(id = "c", name = "Provider C")
         val callbackIds = mutableListOf<String?>()
         val snapshots = mutableListOf<List<SubscriptionRefreshResult>>()
-        val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB, third), {}, {}) { current, snapshot ->
+        val finalProgress = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB, third), {}, {}) { current, snapshot ->
             callbackIds += current?.id
-            snapshots += snapshot
+            snapshots += snapshot.results
         }
+        val results = finalProgress.results
         assertEquals(listOf("a", null, "b", null, "c", null), callbackIds)
         assertEquals(listOf(0, 1, 1, 2, 2, 3), snapshots.map { it.size })
         assertEquals(listOf("a"), snapshots[1].map { it.subscriptionId })
@@ -104,5 +105,36 @@ class SubscriptionRefreshBatchTest {
         assertNotSame(snapshots[1], snapshots[3])
         assertNotSame(snapshots[3], results)
         assertEquals(listOf("a", "b", "c"), results.map { it.subscriptionId })
+    }
+
+    @Test fun `incremental counters match old rescans through empty and mixed progress`() = runBlocking {
+        val empty = SubscriptionRefreshBatch.run(emptyList(), { fail("no refresh") }, { fail("no update") }) { _, _ ->
+            fail("empty batch has no progress callbacks")
+        }
+        assertEquals(SubscriptionBatchProgress(), empty)
+
+        val targets = List(256) { index -> remoteA.copy(id = index.toString(), name = "Fixture $index") }
+        val observed = mutableListOf<SubscriptionBatchProgress>()
+        val final = SubscriptionRefreshBatch.run(targets, refresh = { id ->
+            when (id.toInt() % 4) {
+                0 -> throw io.weave.client.subscription.SubscriptionReviewRequiredException()
+                1 -> throw IllegalStateException("fixture refresh failure")
+                else -> Unit
+            }
+        }, onUpdated = { id ->
+            if (id.toInt() % 4 == 2) throw IllegalStateException("fixture update failure")
+        }) { _, progress ->
+            observed += progress
+            assertEquals(progress.results.count { it.succeeded }, progress.completed)
+            assertEquals(progress.results.count { !it.succeeded && !it.reviewRequired }, progress.failed)
+            assertEquals(progress.results.count { it.reviewRequired }, progress.reviewCount)
+        }
+        assertEquals(512, observed.size)
+        assertSame(final, observed.last())
+        for (index in 1 until targets.size) assertSame(observed[index * 2 - 1], observed[index * 2])
+        assertEquals(64, final.completed)
+        assertEquals(128, final.failed)
+        assertEquals(64, final.reviewCount)
+        assertEquals(targets.map { it.id }, final.results.map { it.subscriptionId })
     }
 }
