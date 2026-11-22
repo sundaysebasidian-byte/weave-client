@@ -20,9 +20,20 @@ internal object SubscriptionRefreshBatch {
         subscriptions: List<Subscription>,
         remoteIds: Set<String>,
         requestedIds: Set<String>?,
-    ): List<Subscription> = subscriptions
-        .filter { it.id in remoteIds && (requestedIds == null || it.id in requestedIds) }
-        .distinctBy { it.id }
+    ): List<Subscription> {
+        val limit = minOf(remoteIds.size, requestedIds?.size ?: remoteIds.size)
+        if (limit == 0) return emptyList()
+        val seen = HashSet<String>()
+        return buildList {
+            for (subscription in subscriptions) {
+                val id = subscription.id
+                if (id in remoteIds && (requestedIds == null || id in requestedIds) && seen.add(id)) {
+                    add(subscription)
+                    if (size == limit) break
+                }
+            }
+        }
+    }
 
     suspend fun run(
         targets: List<Subscription>,
