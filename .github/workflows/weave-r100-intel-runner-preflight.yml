@@ -7,7 +7,7 @@ permissions: {}
 jobs:
   emulator-capability:
     runs-on: macos-15-intel
-    timeout-minutes: 21
+    timeout-minutes: 26
     steps:
       - name: Read the runner capability without modifying it
         shell: bash
@@ -74,8 +74,27 @@ jobs:
                   return "timeout"
               return (p.stdout.strip() if p.returncode == 0 else "unavailable").replace("\r", "")
 
-          deadline = time.monotonic() + 540
+          started = time.monotonic()
+          deadline = started + 900
+          next_sample = 480
           previous = None
+          ready_polls = 0
+          milestones = {
+              "boot_progress_start", "boot_progress_system_run", "boot_progress_pms_start",
+              "boot_progress_pms_system_scan_start", "boot_progress_pms_data_scan_start",
+              "boot_progress_pms_scan_end", "boot_progress_pms_ready",
+              "boot_progress_ams_ready", "boot_progress_enable_screen",
+          }
+
+          def sample(elapsed):
+              animation = query("-s", serial, "shell", "getprop", "init.svc.bootanim")
+              secondary = query("-s", serial, "shell", "getprop", "dev.bootcomplete")
+              print(f"elapsed={elapsed}s animation={animation!r} secondary_boot={secondary!r}", flush=True)
+              events = query("-s", serial, "logcat", "-b", "events", "-d", "-v", "brief")
+              observed = sorted({line.split("(", 1)[0].split("/", 1)[-1].strip()
+                                 for line in events.splitlines()} & milestones)
+              print(f"Boot milestones: {', '.join(observed) or 'none returned'}", flush=True)
+
           while time.monotonic() < deadline:
               try:
                   os.kill(pid, 0)
@@ -89,18 +108,27 @@ jobs:
                   boot = query("-s", serial, "shell", "getprop", "sys.boot_completed")
                   pkg = query("-s", serial, "shell", "service", "check", "package")
                   activity = query("-s", serial, "shell", "service", "check", "activity")
+              elapsed = int(time.monotonic() - started)
+              if state == "device" and elapsed >= next_sample:
+                  sample(elapsed)
+                  next_sample = elapsed + 120
               summary = (state, boot, pkg, activity)
               if summary != previous:
-                  print(f"ADB={state!r} boot_completed={boot!r} package={pkg!r} activity={activity!r}", flush=True)
+                  print(f"elapsed={elapsed}s ADB={state!r} boot_completed={boot!r} package={pkg!r} activity={activity!r}", flush=True)
                   previous = summary
-              if boot == "1" and pkg == "Service package: found" and activity == "Service activity: found":
+              ready = boot == "1" and pkg == "Service package: found" and activity == "Service activity: found"
+              ready_polls = ready_polls + 1 if ready else 0
+              if ready_polls == 2:
                   sdk = query("-s", serial, "shell", "getprop", "ro.build.version.sdk")
                   abi = query("-s", serial, "shell", "getprop", "ro.product.cpu.abi")
                   if (sdk, abi) != ("36", "x86_64"):
                       sys.exit(f"Unexpected ready emulator: SDK={sdk!r} ABI={abi!r}")
-                  print("Android 36 x86_64 and both services verified; no APK installed.", flush=True)
+                  sample(elapsed)
+                  print("Android 36 x86_64 and both services verified in two consecutive polls; no APK installed.", flush=True)
                   break
               time.sleep(5)
           else:
+              if previous and previous[0] == "device":
+                  sample(int(time.monotonic() - started))
               sys.exit(f"Android readiness deadline expired; last state {previous!r}.")
           PY
