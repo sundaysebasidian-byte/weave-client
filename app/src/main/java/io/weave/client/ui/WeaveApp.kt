@@ -494,6 +494,11 @@ fun WeaveApp(
                 destination = Destination.SUBSCRIPTIONS
                 showImportDialog = true
             }
+            ExternalRequest.ChooseExit -> {
+                destination = Destination.HOME
+                viewModel.awaitReady()
+                showDefaultRoutePicker = true
+            }
             is ExternalRequest.Import -> {
                 destination = Destination.SUBSCRIPTIONS
                 viewModel.resetImportState()

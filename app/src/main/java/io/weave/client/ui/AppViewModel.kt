@@ -84,6 +84,7 @@ import kotlinx.coroutines.withContext
 sealed interface ExternalRequest {
     data object Connect : ExternalRequest
     data object OpenImport : ExternalRequest
+    data object ChooseExit : ExternalRequest
     data class Import(val value: io.weave.client.subscription.ExternalImport) : ExternalRequest
 }
 
