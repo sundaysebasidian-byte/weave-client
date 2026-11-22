@@ -26,15 +26,22 @@ internal fun filterConnectionRows(
 
 /** Resolve only the current screen's missing labels, away from the UI thread. */
 internal suspend fun resolveConnectionAppLabels(
-    uids: Iterable<Int>,
+    connections: List<CoreConnection>,
     knownUids: Set<Int>,
     labelForUid: (Int) -> String,
 ): Map<Int, String> {
     // Materialize the delta before crossing dispatchers: knownUids can be Compose-backed.
-    val missing = uids.filterTo(linkedSetOf()) { it > 0 && it !in knownUids }
-    if (missing.isEmpty()) return emptyMap()
+    var missing: LinkedHashSet<Int>? = null
+    for (connection in connections) {
+        val uid = connection.uid
+        if (uid > 0 && uid !in knownUids) {
+            val delta = missing ?: linkedSetOf<Int>().also { missing = it }
+            delta.add(uid)
+        }
+    }
+    val delta = missing ?: return emptyMap()
     return withContext(Dispatchers.IO) {
-        missing.associateWith { uid ->
+        delta.associateWith { uid ->
             ensureActive()
             labelForUid(uid)
         }
