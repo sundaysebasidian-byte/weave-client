@@ -1419,7 +1419,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 mutableSubscriptionRefreshState.update {
                     it.copy(total = targets.size, message = null)
                 }
-                val results = SubscriptionRefreshBatch.run(
+                val finalProgress = SubscriptionRefreshBatch.run(
                     targets = targets,
                     refresh = { subscriptionRepository.refreshRemote(it) },
                     onUpdated = { refreshSubscriptionsAndReferences(it) },
@@ -1428,16 +1428,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             it.copy(
                                 currentId = current?.id,
                                 currentName = current?.name,
-                                completed = finished.count { result -> result.succeeded },
-                                failed = finished.count { result -> !result.succeeded && !result.reviewRequired },
-                                results = finished,
+                                completed = finished.completed,
+                                failed = finished.failed,
+                                results = finished.results,
                             )
                         }
                     },
                 )
-                val completed = results.count { it.succeeded }
-                val failed = results.count { !it.succeeded && !it.reviewRequired }
-                val needsReview = results.any { it.reviewRequired }
+                val completed = finalProgress.completed
+                val failed = finalProgress.failed
+                val needsReview = finalProgress.reviewCount > 0
                 mutableSubscriptionRefreshState.update {
                     it.copy(
                         running = false,
