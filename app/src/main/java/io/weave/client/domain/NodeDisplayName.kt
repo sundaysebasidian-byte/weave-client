@@ -37,7 +37,9 @@ internal object NodeDisplayName {
             codePoint == 0xFE0F ||
             codePoint == 0x20E3
 
+    // Preserve valid longer legacy scalars, e.g. \u27080. Two extra hex digits after
+    // any known four-digit decoration below give a scalar above U+10FFFF, so keep the suffix.
     private val ESCAPED_UNICODE_PREFIX =
-        Regex("""^(?:(?:\\u[dD][89aAbB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4,8}|\\U[0-9a-fA-F]{8})\s*)+""")
+        Regex("""^(?:(?:\\u[dD][89aAbB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}|\\u(?:2[3-7][0-9a-fA-F]{2}|200[dD]|[fF][eE]0[fF]|20[eE]3)(?=[0-9a-fA-F]{2})|\\u[0-9a-fA-F]{4,8}|\\U[0-9a-fA-F]{8})\s*)+""")
     private val LEADING_SEPARATORS = setOf('·', '|', '-', '_', ':', '：')
 }
