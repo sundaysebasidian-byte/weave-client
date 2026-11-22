@@ -1,0 +1,89 @@
+name: Weave Android appearance integration build
+on:
+  push:
+    branches: [dot/weave-android-r100-runner-preflight]
+    paths: ['.github/workflows/weave-r100-appearance-build.yml']
+permissions:
+  contents: read
+jobs:
+  appearance-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Fetch the exact diagnostic fixture commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: fixture
+          persist-credentials: false
+      - name: Fetch the historical Android proof floor
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 70524a8dafafa4cd9037ca4c17b40ac6a44ca662
+          path: source
+          persist-credentials: false
+      - name: Apply and verify the Android-only appearance overlay
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+          import re
+          import subprocess
+
+          def git(*args, input=None):
+              return subprocess.run(["git", *args], input=input, capture_output=True, check=True).stdout
+          def digest(data):
+              return hashlib.sha256(data).hexdigest()
+
+          p = Path("../fixture/tools/acceptance/r100-appearance-delta.json.gz.b64")
+          packed = p.read_bytes()
+          assert digest(packed) == "a2a83c1adc457c1d54098113f6e15b2f184c37f4b9618beb1f6806a81315f2a4"
+          manifest = json.loads(gzip.decompress(base64.b64decode(packed.rstrip(), validate=True)))
+          assert manifest["format"] == 1
+          assert git("rev-parse", "HEAD").decode().strip() == manifest["historical_app_floor"] == "70524a8dafafa4cd9037ca4c17b40ac6a44ca662"
+          assert not git("status", "--porcelain=v1", "--untracked-files=all")
+          files = manifest["files"]
+          assert len(files) == 43
+          for name, row in files.items():
+              source = Path(name)
+              assert re.fullmatch(r"app/src/[A-Za-z0-9._/-]+", name) and ".." not in source.parts
+              assert source.resolve().is_relative_to(Path.cwd().resolve())
+              assert (digest(source.read_bytes()) if source.exists() else None) == row["before_sha256"], name
+          patch = manifest["patch"].encode()
+          git("apply", "--check", "--whitespace=error", input=patch)
+          git("apply", "--whitespace=error", input=patch)
+          changed = git("diff", "--name-only", "-z") + git("ls-files", "--others", "--exclude-standard", "-z")
+          assert {p.decode() for p in changed.split(b"\0") if p} == set(files)
+          for name, row in files.items():
+              assert digest(Path(name).read_bytes()) == row["after_sha256"], name
+          for name in ("MainActivity.kt", "core/vpn/WeaveVpnService.kt"):
+              assert "ACTION_CHOOSE_EXIT" not in (Path("app/src/main/java/io/weave/client") / name).read_text()
+          print("Verified 43 exact Android paths, with notification open-app fallback. Historical diagnostic overlay, not a release candidate.")
+          PY
+      - name: Build diagnostic APKs, run host tests and lint
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="${JAVA_HOME_17_X64:?Hosted runner Java 17 is unavailable}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          java -version
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?}}"
+          shopt -s nullglob
+          sdkmanager=''
+          for tool in "$sdk"/cmdline-tools/latest/bin/sdkmanager "$sdk"/cmdline-tools/*/bin/sdkmanager "$sdk"/tools/bin/sdkmanager; do
+            if [[ -x "$tool" ]]; then sdkmanager="$tool"; break; fi
+          done
+          test -n "$sdkmanager"
+          "$sdkmanager" 'build-tools;37.0.0' 'platforms;android-37.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true --no-daemon --no-configuration-cache
+          test -s app/build/outputs/apk/debug/app-x86_64-debug.apk
+          test -s app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          sha256sum app/build/outputs/apk/debug/app-x86_64-debug.apk app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          echo 'No device launch or instrumentation. This job cannot count as Round 100 acceptance.'
