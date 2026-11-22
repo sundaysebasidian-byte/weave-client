@@ -7,7 +7,7 @@ permissions: {}
 jobs:
   emulator-capability:
     runs-on: macos-15-intel
-    timeout-minutes: 16
+    timeout-minutes: 21
     steps:
       - name: Read the runner capability without modifying it
         shell: bash
@@ -24,7 +24,7 @@ jobs:
           "$sdk/emulator/emulator" -version
           "$sdk/emulator/emulator" -accel-check
           echo 'Emulator acceleration capability only; no Android boot or app test performed.'
-      - name: Boot a disposable Android 36 x86_64 emulator
+      - name: Diagnose Android guest startup and ADB separately
         shell: bash
         run: |
           set -euo pipefail
@@ -51,22 +51,56 @@ jobs:
           printf 'no\n' | "$avdmanager" create avd -n weave-r100-boot -k "$image" --force
           adb="$sdk/platform-tools/adb"
           log="$RUNNER_TEMP/weave-r100-emulator.log"
-          "$sdk/emulator/emulator" @weave-r100-boot -port 5556 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 >"$log" 2>&1 &
+          "$adb" version
+          "$adb" start-server
+          "$adb" devices
+          "$sdk/emulator/emulator" @weave-r100-boot -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$log" 2>&1 &
           pid=$!
-          trap 'kill "$pid" 2>/dev/null || true; tail -n 40 "$log"' EXIT
-          ready=0
-          serial=emulator-5556
-          for i in $(seq 1 120); do
-            kill -0 "$pid"
-            if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == 1 ]] &&
-                "$adb" -s "$serial" shell service check package 2>/dev/null | grep -q ': found' &&
-                "$adb" -s "$serial" shell service check activity 2>/dev/null | grep -q ': found'; then
-              ready=1
-              break
-            fi
-            sleep 3
-          done
-          test "$ready" = 1
-          test "$("$adb" -s "$serial" shell getprop ro.build.version.sdk | tr -d '\r')" = 36
-          "$adb" -s "$serial" shell getprop ro.product.cpu.abi
-          echo 'Android boot and Package/Activity services verified. No APK installed; no app tests performed.'
+          trap 'kill "$pid" 2>/dev/null || true; grep -Eai "kernel panic|unable to|failed to|watchdog|boot completed|system_server|zygote|init: starting|fatal" "$log" | grep -viE "pubkey|token|auth" | tail -n 24 || true' EXIT
+          python3 - "$adb" "$pid" <<'PY'
+          import os
+          import subprocess
+          import sys
+          import time
+
+          adb, pid_text = sys.argv[1:]
+          pid = int(pid_text)
+          serial = "emulator-5554"
+
+          def query(*args):
+              try:
+                  p = subprocess.run([adb, *args], capture_output=True, text=True, timeout=5)
+              except subprocess.TimeoutExpired:
+                  return "timeout"
+              return (p.stdout.strip() if p.returncode == 0 else "unavailable").replace("\r", "")
+
+          deadline = time.monotonic() + 540
+          previous = None
+          while time.monotonic() < deadline:
+              try:
+                  os.kill(pid, 0)
+              except ProcessLookupError:
+                  sys.exit("Emulator process exited before Android was ready.")
+              listed = [row.split()[1] for row in query("devices").splitlines()
+                        if row.startswith(serial + "\t") and len(row.split()) == 2]
+              state = listed[0] if listed else "not-discovered"
+              boot = pkg = activity = "not-queried"
+              if state == "device":
+                  boot = query("-s", serial, "shell", "getprop", "sys.boot_completed")
+                  pkg = query("-s", serial, "shell", "service", "check", "package")
+                  activity = query("-s", serial, "shell", "service", "check", "activity")
+              summary = (state, boot, pkg, activity)
+              if summary != previous:
+                  print(f"ADB={state!r} boot_completed={boot!r} package={pkg!r} activity={activity!r}", flush=True)
+                  previous = summary
+              if boot == "1" and pkg == "Service package: found" and activity == "Service activity: found":
+                  sdk = query("-s", serial, "shell", "getprop", "ro.build.version.sdk")
+                  abi = query("-s", serial, "shell", "getprop", "ro.product.cpu.abi")
+                  if (sdk, abi) != ("36", "x86_64"):
+                      sys.exit(f"Unexpected ready emulator: SDK={sdk!r} ABI={abi!r}")
+                  print("Android 36 x86_64 and both services verified; no APK installed.", flush=True)
+                  break
+              time.sleep(5)
+          else:
+              sys.exit(f"Android readiness deadline expired; last state {previous!r}.")
+          PY
