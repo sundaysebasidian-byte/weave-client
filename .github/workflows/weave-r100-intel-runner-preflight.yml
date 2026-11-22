@@ -29,8 +29,21 @@ jobs:
         run: |
           set -euo pipefail
           sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          sdkmanager="$(command -v sdkmanager)"
-          avdmanager="$(command -v avdmanager)"
+          shopt -s nullglob
+          sdkmanager=''
+          avdmanager=''
+          for tools_bin in "$sdk"/cmdline-tools/latest/bin "$sdk"/cmdline-tools/*/bin "$sdk"/tools/bin; do
+            if [[ -x "$tools_bin/sdkmanager" && -x "$tools_bin/avdmanager" ]]; then
+              sdkmanager="$tools_bin/sdkmanager"
+              avdmanager="$tools_bin/avdmanager"
+              break
+            fi
+          done
+          if [[ -z "$sdkmanager" ]]; then
+            echo 'Android SDK has no stock command-line tools; emulator did not start.'
+            exit 1
+          fi
+          echo "Using stock command-line tools from $sdkmanager"
           image='system-images;android-36;google_apis;x86_64'
           "$sdkmanager" 'platform-tools' "$image"
           export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-r100-avd"
