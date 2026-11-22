@@ -8,7 +8,7 @@ permissions:
 jobs:
   r001:
     runs-on: macos-15-intel
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - name: Check out the exact historical source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -124,7 +124,8 @@ jobs:
           }
           trap cleanup EXIT
           run_adb start-server
-          [[ "$(run_adb devices | awk 'NR > 1 && NF {print}')" == '' ]]
+          adb_devices="$(run_adb devices)" || { echo '::error::Could not query fresh ADB server'; exit 1; }
+          [[ "$(awk 'NR > 1 && NF {print}' <<< "$adb_devices")" == "" ]] || { echo '::error::Existing device on ADB server'; exit 1; }
           printf 'no\n' | bounded 60 "$avdmanager" create avd -n weave_gate -k "$image"
           echo "Launching Android 36 Google APIs with the proven Intel boot configuration"
           "$emulator" -avd weave_gate -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$out/emulator.log" 2>&1 &
@@ -142,10 +143,22 @@ jobs:
           test_id=io.weave.client.acceptance.test
           package_id() { "$aapt" dump badging "$1" | sed -n "s/^package: name='\([^']*\)'.*/\1/p"; }
           [[ "$(package_id "$app")" == "$app_id" && "$(package_id "$tests")" == "$test_id" ]] || { echo '::error::APK package IDs do not match the isolated test IDs'; exit 1; }
-          [[ "$(guest pm list packages "$app_id")" == "" ]] # Never replace or clear an existing profile.
+          existing_app="$(guest pm list packages "$app_id")" || { echo '::error::Could not check for existing app'; exit 1; }
+          existing_test="$(guest pm list packages "$test_id")" || { echo '::error::Could not check for existing test app'; exit 1; }
+          [[ -z "$existing_app" && -z "$existing_test" ]] || { echo '::error::Acceptance package already installed; refusing to replace a profile'; exit 1; }
           shasum -a 256 "$app" "$tests" | tee "$out/apk-sha256.txt"
-          run_adb -s "$serial" install --user 0 "$app"
-          run_adb -s "$serial" install --user 0 "$tests"
+          install_isolated() {
+            local apk="$1" package="$2" result path
+            printf 'Installing %s (maximum 240 s, %s bytes)\n' "$package" "$(stat -f %z "$apk")"
+            result="$(bounded 240 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" install --user 0 "$apk" | tr -d '\r')" || { echo "::error::Install failed or timed out for $package"; return 1; }
+            printf '%s\n' "$result"
+            grep -Fxq Success <<< "$result" || { echo "::error::ADB did not report Success for $package"; return 1; }
+            path="$(guest pm path --user 0 "$package")" || { echo "::error::Package Manager did not respond for $package"; return 1; }
+            [[ "$path" == package:* ]] || { echo "::error::Package Manager did not find installed $package"; return 1; }
+            printf 'Verified installed package: %s\n' "$package"
+          }
+          install_isolated "$app" "$app_id"
+          install_isolated "$tests" "$test_id"
           runner="$test_id/androidx.test.runner.AndroidJUnitRunner"
           guest pm list instrumentation "$app_id" | grep -Fx "instrumentation:$runner (target=$app_id)"
           bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$app_id"
