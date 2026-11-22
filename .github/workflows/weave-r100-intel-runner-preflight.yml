@@ -119,8 +119,18 @@ jobs:
           run_adb() { bounded 45 "$adb" -P "$WEAVE_TEST_ADB_PORT" "$@"; }
           emulator_pid=''
           cleanup() {
+            local rc=$?
+            if (( rc != 0 )) && [[ -n "$emulator_pid" ]]; then
+              printf 'R001 failure diagnostics before emulator teardown (exit %s)\n' "$rc"
+              bounded 12 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" logcat -d -b crash -t 120 -v brief 2>&1 | tail -n 120 || :
+              for command in 'pidof system_server' 'pidof io.weave.client.acceptance' 'service check activity' 'service check package'; do
+                printf 'Guest: %s\n' "$command"
+                bounded 8 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell "$command" || :
+              done
+            fi
             if [[ -n "$emulator_pid" ]]; then kill "$emulator_pid" 2>/dev/null || :; fi
             bounded 10 "$adb" -P "$WEAVE_TEST_ADB_PORT" kill-server || :
+            return "$rc"
           }
           trap cleanup EXIT
           run_adb start-server
