@@ -39,8 +39,24 @@ jobs:
           test -n "$sdkmanager"
           echo "Using stock command-line tools from ${sdkmanager%/*}"
           "$sdkmanager" 'platform-tools' 'build-tools;37.0.0' 'platforms;android-37.0' 'ndk;29.0.14206865' 'cmake;3.31.6' 'system-images;android-36;google_apis;x86_64'
+          die() { printf '::error::%s\n' "$1" >&2; exit 1; }
+          printf 'Runner class: %s, OS: %s, arch: %s\n' "${RUNNER_ENVIRONMENT:-unset}" "$(uname -s)" "$(uname -m)"
+          [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]] || die "Expected GitHub-hosted runner"
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == x86_64 ]] || die "Expected Intel macOS runner"
+          [[ -d ${RUNNER_TEMP:-} && -w $RUNNER_TEMP ]] || die "Runner temporary directory is unavailable"
+          isolated="$(mktemp -d "$RUNNER_TEMP/weave-exact-r001.XXXXXX")" || die "Cannot create isolated runner directory"
+          [[ -x "$sdk/platform-tools/adb" ]] || die "Missing SDK adb"
+          [[ -x "$WEAVE_AVDMANAGER" ]] || die "Missing SDK avdmanager"
+          [[ -x "$sdk/emulator/emulator" ]] || die "Missing SDK emulator"
+          [[ -d "$sdk/system-images/android-36/google_apis/x86_64" ]] || die "Missing Android 36 Google APIs x86_64 image"
+          export WEAVE_AAPT="$sdk/build-tools/37.0.0/aapt2"
+          [[ -x "$WEAVE_AAPT" ]] || die "Missing SDK build-tools 37.0.0 aapt2"
+          [[ "$(/usr/sbin/sysctl -n kern.hv_support)" == 1 ]] || die "Intel hardware virtualization unavailable"
+          "$sdk/emulator/emulator" -accel-check >"$isolated/acceleration.txt" 2>&1 || { cat "$isolated/acceleration.txt"; die "Android emulator acceleration check failed"; }
+          cat "$isolated/acceleration.txt"
+          grep -q 'Hypervisor.Framework' "$isolated/acceleration.txt" || die "Expected Hypervisor.Framework backend"
+          echo "Hosted Intel runner and SDK preflight passed; no emulator has started"
           ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true --no-daemon --no-configuration-cache
-          isolated="$(mktemp -d "$RUNNER_TEMP/weave-exact-r001.XXXXXX")"
           cat >"$isolated/verify-receipt.py" <<'RECEIPT_PY'
           """Validate only the exact requested JUnit method and explicitly expected outcome."""
           from pathlib import Path
@@ -97,11 +113,9 @@ jobs:
           # If the known runner/build requests another aapt build-tools version, configure its exact path.
           aapt="${WEAVE_AAPT:-$aapt}"
           image="${WEAVE_AVD_IMAGE:-system-images;android-36;google_apis;x86_64}"
-          test -x "$aapt"; test -x "$avdmanager"; test -x "$adb"; test -x "$emulator"
-          test -d "$sdk/${image//;/\/}"
-          [[ "$(sysctl -n kern.hv_support)" == 1 ]]
-          "$emulator" -accel-check | tee "$out/acceleration.txt"
-          grep -q 'Hypervisor.Framework' "$out/acceleration.txt"
+          echo "Starting isolated ADB and AVD setup"
+          set -E
+          trap 'printf "::error::R001 device phase failed at script line %s\n" "$LINENO" >&2' ERR
           run_adb() { bounded 45 "$adb" -P "$WEAVE_TEST_ADB_PORT" "$@"; }
           emulator_pid=''
           cleanup() {
@@ -112,6 +126,7 @@ jobs:
           run_adb start-server
           [[ "$(run_adb devices | awk 'NR > 1 && NF {print}')" == '' ]]
           printf 'no\n' | bounded 60 "$avdmanager" create avd -n weave_gate -k "$image"
+          echo "Launching Android 36 Google APIs with the proven Intel boot configuration"
           "$emulator" -avd weave_gate -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$out/emulator.log" 2>&1 &
           emulator_pid=$!
           export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
@@ -121,11 +136,12 @@ jobs:
           [[ "$(guest getprop ro.build.version.sdk)" == 36 && "$(guest am get-current-user)" == 0 ]]
           app=app/build/outputs/apk/debug/app-x86_64-debug.apk
           tests=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-          test -s "$app"; test -s "$tests"
+          test -s "$app" || { echo '::error::Missing x86_64 application APK'; exit 1; }
+          test -s "$tests" || { echo '::error::Missing test APK'; exit 1; }
           app_id=io.weave.client.acceptance
           test_id=io.weave.client.acceptance.test
           package_id() { "$aapt" dump badging "$1" | sed -n "s/^package: name='\([^']*\)'.*/\1/p"; }
-          [[ "$(package_id "$app")" == "$app_id" && "$(package_id "$tests")" == "$test_id" ]]
+          [[ "$(package_id "$app")" == "$app_id" && "$(package_id "$tests")" == "$test_id" ]] || { echo '::error::APK package IDs do not match the isolated test IDs'; exit 1; }
           [[ "$(guest pm list packages "$app_id")" == "" ]] # Never replace or clear an existing profile.
           shasum -a 256 "$app" "$tests" | tee "$out/apk-sha256.txt"
           run_adb -s "$serial" install --user 0 "$app"
