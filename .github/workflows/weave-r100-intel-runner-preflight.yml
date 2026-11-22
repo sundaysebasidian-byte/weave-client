@@ -1,0 +1,26 @@
+name: Weave Android acceptance runner capability
+on:
+  push:
+    branches: [dot/weave-android-r100-runner-preflight]
+    paths: ['.github/workflows/weave-r100-intel-runner-preflight.yml']
+permissions: {}
+jobs:
+  emulator-capability:
+    runs-on: macos-15-intel
+    timeout-minutes: 6
+    steps:
+      - name: Read the runner capability without modifying it
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m
+          test "$(uname -m)" = x86_64
+          /usr/sbin/sysctl kern.hv_support || true
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$sdk" || ! -x "$sdk/emulator/emulator" ]]; then
+            echo 'Stock image does not provide the Android emulator binary.'
+            exit 1
+          fi
+          "$sdk/emulator/emulator" -version
+          "$sdk/emulator/emulator" -accel-check
+          echo 'Emulator acceleration capability only; no Android boot or app test performed.'
