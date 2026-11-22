@@ -13,22 +13,46 @@ internal data class PreparedSourceMigration(val name: String, val source: String
 /** Only one source catalogue; replacing/resetting it makes old selection handles unusable. */
 internal class ClientSourceSession(private val clock: () -> Long = System::nanoTime) {
     private var catalogue: ClientSourceCatalogue? = null
-    private var records = emptyMap<String, ClientSourceRecord>()
+    private var records = emptyList<ClientSourceRecord>()
+    private var ordinalById = emptyMap<String, Int>()
     private var expiresAt = 0L
     @Synchronized fun prepare(sourceName: String, values: List<ClientSourceRecord>): ClientSourceCatalogue {
         clear()
-        require(values.size <= 256 && values.map { it.entry.id }.distinct().size == values.size) { "订阅文件格式无效" }
-        records = values.associateBy { it.entry.id }
-        return ClientSourceCatalogue(UUID.randomUUID().toString(), sourceName, values.map { it.entry }).also {
+        require(values.size <= 256) { "订阅文件格式无效" }
+        val entries = ArrayList<ClientSourceEntry>(values.size)
+        val ordered = ArrayList<ClientSourceRecord>(values.size)
+        val ordinals = HashMap<String, Int>(values.size * 4 / 3 + 1)
+        for (record in values) {
+            require(ordinals.put(record.entry.id, ordered.size) == null) { "订阅文件格式无效" }
+            entries.add(record.entry)
+            ordered.add(record)
+        }
+        records = ordered
+        ordinalById = ordinals
+        return ClientSourceCatalogue(UUID.randomUUID().toString(), sourceName, entries).also {
             catalogue = it; expiresAt = clock() + 300_000_000_000L
         }
     }
     @Synchronized fun select(token: String, ids: Set<String>): List<ClientSourceRecord> {
         require(catalogue?.token == token && clock() < expiresAt) { "预览已失效，请重新获取" }
-        require(ids.isNotEmpty() && ids.size <= 20 && ids.all { records[it]?.entry?.available == true }) { "请选择有效的订阅，最多 20 个" }
-        return catalogue!!.entries.filter { it.id in ids }.map { records.getValue(it.id) }
+        require(ids.isNotEmpty() && ids.size <= 20) { "请选择有效的订阅，最多 20 个" }
+        val selected = IntArray(ids.size)
+        var index = 0
+        for (id in ids) {
+            val ordinal = ordinalById[id]
+            require(ordinal != null && records[ordinal].entry.available) { "请选择有效的订阅，最多 20 个" }
+            selected[index++] = ordinal
+        }
+        // At most 20 ordinals; use their original positions instead of walking the whole catalogue.
+        selected.sort()
+        return selected.map { records[it] }
     }
-    @Synchronized fun clear() { catalogue = null; records = emptyMap(); expiresAt = 0 }
+    @Synchronized fun clear() {
+        catalogue = null
+        records = emptyList()
+        ordinalById = emptyMap()
+        expiresAt = 0
+    }
 }
 
 /** Whole selected batch is prepared before any write and consumed only once. */
