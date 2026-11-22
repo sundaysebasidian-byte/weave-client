@@ -326,6 +326,12 @@ jobs:
             (
               cd "$tree"
               cp "$kit/physical.kt" "$fixture"
+              test_manifest=app/src/androidTest/AndroidManifest.xml
+              test "$(git hash-object "$test_manifest")" = 90f31c8b041629bfd924adbdca5bf985cab165ad
+              # The USB lane runs Routes only. Do not ship the unrelated exported backup fixture
+              # to a personal device; prevent Android cloud restore for the runner package as well.
+              printf '%s\n' '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:allowBackup="false"/></manifest>' > "$test_manifest"
+              sha256sum "$test_manifest" > "$out/$mode/physical-test-manifest.sha256"
               printf '%s  %s\n' '0b71d95423d10cd7173ef9576a92cd376305ebd94ba19e4a36ba5cc28a822924' "$fixture" | sha256sum -c
               ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true -PweaveArm64Only=true --no-daemon --no-configuration-cache
               app=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
@@ -335,7 +341,11 @@ jobs:
               grep -E "^package: name='io[.]weave[.]client[.]acceptance' " "$kit/app.badging"
               grep -Fx "native-code: 'arm64-v8a'" "$kit/app.badging"
               grep -E "^package: name='io[.]weave[.]client[.]acceptance[.]test' " "$kit/test.badging"
+              "$aapt" dump xmltree --file AndroidManifest.xml "$app" > "$kit/app.manifest"
               "$aapt" dump xmltree --file AndroidManifest.xml "$test" > "$kit/test.manifest"
+              grep -Eq 'android:allowBackup[^=]*=(false|\(type 0x12\)0x0+)$' "$kit/app.manifest"
+              grep -Eq 'android:allowBackup[^=]*=(false|\(type 0x12\)0x0+)$' "$kit/test.manifest"
+              ! grep -q 'KaringBackupFixtureReceiver' "$kit/test.manifest"
               grep -E 'android:targetPackage[^=]*="io[.]weave[.]client[.]acceptance"' "$kit/test.manifest"
               "$apksigner" verify --print-certs "$app" > "$kit/app.cert"
               "$apksigner" verify --print-certs "$test" > "$kit/test.cert"
