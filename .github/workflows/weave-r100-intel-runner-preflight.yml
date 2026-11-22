@@ -1,134 +1,142 @@
-name: Weave Android acceptance runner capability
+name: Weave exact historical Android R001 acceptance
 on:
   push:
     branches: [dot/weave-android-r100-runner-preflight]
     paths: ['.github/workflows/weave-r100-intel-runner-preflight.yml']
-permissions: {}
+permissions:
+  contents: read
 jobs:
-  emulator-capability:
+  r001:
     runs-on: macos-15-intel
-    timeout-minutes: 26
+    timeout-minutes: 45
     steps:
-      - name: Read the runner capability without modifying it
+      - name: Check out the exact historical source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 70524a8dafafa4cd9037ca4c17b40ac6a44ca662
+          persist-credentials: false
+      - name: Build isolated APKs and run the exact R001 device test
         shell: bash
         run: |
           set -euo pipefail
-          uname -m
+          test "$(git rev-parse HEAD)" = 70524a8dafafa4cd9037ca4c17b40ac6a44ca662
+          git diff --exit-code
           test "$(uname -m)" = x86_64
-          /usr/sbin/sysctl kern.hv_support || true
-          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          if [[ -z "$sdk" || ! -x "$sdk/emulator/emulator" ]]; then
-            echo 'Stock image does not provide the Android emulator binary.'
-            exit 1
-          fi
-          "$sdk/emulator/emulator" -version
-          "$sdk/emulator/emulator" -accel-check
-          echo 'Emulator acceleration capability only; no Android boot or app test performed.'
-      - name: Diagnose Android guest startup and ADB separately
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          java -version
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?}}"
+          sdk="$ANDROID_HOME"
           shopt -s nullglob
           sdkmanager=''
-          avdmanager=''
-          for tools_bin in "$sdk"/cmdline-tools/latest/bin "$sdk"/cmdline-tools/*/bin "$sdk"/tools/bin; do
-            if [[ -x "$tools_bin/sdkmanager" && -x "$tools_bin/avdmanager" ]]; then
-              sdkmanager="$tools_bin/sdkmanager"
-              avdmanager="$tools_bin/avdmanager"
+          for bin in "$sdk"/cmdline-tools/latest/bin "$sdk"/cmdline-tools/*/bin "$sdk"/tools/bin; do
+            if [[ -x "$bin/sdkmanager" && -x "$bin/avdmanager" ]]; then
+              sdkmanager="$bin/sdkmanager"
+              export WEAVE_AVDMANAGER="$bin/avdmanager"
               break
             fi
           done
-          if [[ -z "$sdkmanager" ]]; then
-            echo 'Android SDK has no stock command-line tools; emulator did not start.'
-            exit 1
-          fi
-          echo "Using stock command-line tools from $sdkmanager"
-          image='system-images;android-36;google_apis;x86_64'
-          "$sdkmanager" 'platform-tools' "$image"
-          export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-r100-avd"
-          mkdir -p "$ANDROID_AVD_HOME"
-          printf 'no\n' | "$avdmanager" create avd -n weave-r100-boot -k "$image" --force
-          adb="$sdk/platform-tools/adb"
-          log="$RUNNER_TEMP/weave-r100-emulator.log"
-          "$adb" version
-          "$adb" start-server
-          "$adb" devices
-          "$sdk/emulator/emulator" @weave-r100-boot -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$log" 2>&1 &
-          pid=$!
-          trap 'kill "$pid" 2>/dev/null || true; grep -Eai "kernel panic|unable to|failed to|watchdog|boot completed|system_server|zygote|init: starting|fatal" "$log" | grep -viE "pubkey|token|auth" | tail -n 24 || true' EXIT
-          python3 - "$adb" "$pid" <<'PY'
-          import os
-          import subprocess
+          test -n "$sdkmanager"
+          echo "Using stock command-line tools from ${sdkmanager%/*}"
+          "$sdkmanager" 'platform-tools' 'build-tools;37.0.0' 'platforms;android-37.0' 'ndk;29.0.14206865' 'cmake;3.31.6' 'system-images;android-36;google_apis;x86_64'
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PweaveDeviceTest=true --no-daemon --no-configuration-cache
+          isolated="$(mktemp -d "$RUNNER_TEMP/weave-exact-r001.XXXXXX")"
+          cat >"$isolated/verify-receipt.py" <<'RECEIPT_PY'
+          """Validate only the exact requested JUnit method and explicitly expected outcome."""
+          from pathlib import Path
+          import re
           import sys
-          import time
 
-          adb, pid_text = sys.argv[1:]
-          pid = int(pid_text)
-          serial = "emulator-5554"
-
-          def query(*args):
-              try:
-                  p = subprocess.run([adb, *args], capture_output=True, text=True, timeout=5)
-              except subprocess.TimeoutExpired:
-                  return "timeout"
-              return (p.stdout.strip() if p.returncode == 0 else "unavailable").replace("\r", "")
-
-          started = time.monotonic()
-          deadline = started + 900
-          next_sample = 480
-          previous = None
-          ready_polls = 0
-          milestones = {
-              "boot_progress_start", "boot_progress_system_run", "boot_progress_pms_start",
-              "boot_progress_pms_system_scan_start", "boot_progress_pms_data_scan_start",
-              "boot_progress_pms_scan_end", "boot_progress_pms_ready",
-              "boot_progress_ams_ready", "boot_progress_enable_screen",
-          }
-
-          def sample(elapsed):
-              animation = query("-s", serial, "shell", "getprop", "init.svc.bootanim")
-              secondary = query("-s", serial, "shell", "getprop", "dev.bootcomplete")
-              print(f"elapsed={elapsed}s animation={animation!r} secondary_boot={secondary!r}", flush=True)
-              events = query("-s", serial, "logcat", "-b", "events", "-d", "-v", "brief")
-              observed = sorted({line.split("(", 1)[0].split("/", 1)[-1].strip()
-                                 for line in events.splitlines()} & milestones)
-              print(f"Boot milestones: {', '.join(observed) or 'none returned'}", flush=True)
-
-          while time.monotonic() < deadline:
-              try:
-                  os.kill(pid, 0)
-              except ProcessLookupError:
-                  sys.exit("Emulator process exited before Android was ready.")
-              listed = [row.split()[1] for row in query("devices").splitlines()
-                        if row.startswith(serial + "\t") and len(row.split()) == 2]
-              state = listed[0] if listed else "not-discovered"
-              boot = pkg = activity = "not-queried"
-              if state == "device":
-                  boot = query("-s", serial, "shell", "getprop", "sys.boot_completed")
-                  pkg = query("-s", serial, "shell", "service", "check", "package")
-                  activity = query("-s", serial, "shell", "service", "check", "activity")
-              elapsed = int(time.monotonic() - started)
-              if state == "device" and elapsed >= next_sample:
-                  sample(elapsed)
-                  next_sample = elapsed + 120
-              summary = (state, boot, pkg, activity)
-              if summary != previous:
-                  print(f"elapsed={elapsed}s ADB={state!r} boot_completed={boot!r} package={pkg!r} activity={activity!r}", flush=True)
-                  previous = summary
-              ready = boot == "1" and pkg == "Service package: found" and activity == "Service activity: found"
-              ready_polls = ready_polls + 1 if ready else 0
-              if ready_polls == 2:
-                  sdk = query("-s", serial, "shell", "getprop", "ro.build.version.sdk")
-                  abi = query("-s", serial, "shell", "getprop", "ro.product.cpu.abi")
-                  if (sdk, abi) != ("36", "x86_64"):
-                      sys.exit(f"Unexpected ready emulator: SDK={sdk!r} ABI={abi!r}")
-                  sample(elapsed)
-                  print("Android 36 x86_64 and both services verified in two consecutive polls; no APK installed.", flush=True)
-                  break
-              time.sleep(5)
+          mode, clazz, method, path = sys.argv[1:]
+          body = Path(path).read_text()
+          lines = body.splitlines()
+          assert not re.search(r"INSTRUMENTATION_(?:FAILED|ABORTED)|Process crashed", body, re.I)
+          assert f"INSTRUMENTATION_STATUS: class={clazz}" in lines
+          assert f"INSTRUMENTATION_STATUS: test={method}" in lines
+          assert lines.count("INSTRUMENTATION_CODE: -1") == 1
+          codes = re.findall(r"^INSTRUMENTATION_STATUS_CODE: (-?\d+)$", body, re.M)
+          if mode == "backup-negative":
+              assert codes == ["1", "-2"], codes
+              assert re.search(r"Tests run:\s*1,\s*Failures:\s*1\b", body), body
+              assert re.search(r"AssertionError: one post-commit refresh publication", body), body
+              assert "restore must have committed its synthetic palette" not in body
+              print("Expected negative result: durable commit reached, post-commit UI publication assertion failed.")
           else:
-              if previous and previous[0] == "device":
-                  sample(int(time.monotonic() - started))
-              sys.exit(f"Android readiness deadline expired; last state {previous!r}.")
-          PY
+              assert codes == ["1", "0"], codes
+              assert lines.count("OK (1 test)") == 1 and "FAILURES!!!" not in body
+              print("Exact isolated Android JUnit method passed.")
+          RECEIPT_PY
+          cat >"$isolated/acceptance.sh" <<'ACCEPTANCE_BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted ]]
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == x86_64 ]]
+          mode=${1:?use r001, backup-positive, or backup-negative}
+          case "$mode" in
+            r001) class=io.weave.client.ui.ImportViewModelIntegrationTest; method=persistedImportUnblocksWithoutResavingOrReloadingAfterNodeReadFails ;;
+            backup-positive|backup-negative) class=io.weave.client.ui.BackupStateOwnershipIntegrationTest; method=settingsReentryPreservesTheOwnerAndACommittedRestoreRefreshesOnce ;;
+            *) exit 64 ;;
+          esac
+          export ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:?}}
+          sdk=$ANDROID_HOME
+          export WEAVE_ISOLATED_EMULATOR=1 WEAVE_TEST_ADB_PORT=5037 WEAVE_TEST_BOOT_TIMEOUT=900
+          export ANDROID_ADB_SERVER_PORT=$WEAVE_TEST_ADB_PORT ADB_MDNS_AUTO_CONNECT=''
+          serial=emulator-5554
+          private_dir="$(mktemp -d "${RUNNER_TEMP:?}/weave-intel.XXXXXX")"
+          out="${RUNNER_TEMP}/weave-intel-receipt"
+          mkdir "$out"
+          export ANDROID_AVD_HOME="$private_dir/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          bounded() {
+            python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[2:],timeout=int(sys.argv[1])).returncode)' "$@"
+          }
+          adb="$sdk/platform-tools/adb"
+          emulator="$sdk/emulator/emulator"
+          avdmanager="${WEAVE_AVDMANAGER:?}"
+          aapt="$sdk/build-tools/37.0.0/aapt"
+          # If the known runner/build requests another aapt build-tools version, configure its exact path.
+          aapt="${WEAVE_AAPT:-$aapt}"
+          image="${WEAVE_AVD_IMAGE:-system-images;android-36;google_apis;x86_64}"
+          test -x "$aapt"; test -x "$avdmanager"; test -x "$adb"; test -x "$emulator"
+          test -d "$sdk/${image//;/\/}"
+          [[ "$(sysctl -n kern.hv_support)" == 1 ]]
+          "$emulator" -accel-check | tee "$out/acceleration.txt"
+          grep -q 'Hypervisor.Framework' "$out/acceleration.txt"
+          run_adb() { bounded 45 "$adb" -P "$WEAVE_TEST_ADB_PORT" "$@"; }
+          emulator_pid=''
+          cleanup() {
+            if [[ -n "$emulator_pid" ]]; then kill "$emulator_pid" 2>/dev/null || :; fi
+            bounded 10 "$adb" -P "$WEAVE_TEST_ADB_PORT" kill-server || :
+          }
+          trap cleanup EXIT
+          run_adb start-server
+          [[ "$(run_adb devices | awk 'NR > 1 && NF {print}')" == '' ]]
+          printf 'no\n' | bounded 60 "$avdmanager" create avd -n weave_gate -k "$image"
+          "$emulator" -avd weave_gate -port 5554 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 -show-kernel >"$out/emulator.log" 2>&1 &
+          emulator_pid=$!
+          export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
+          python3 tools/wait-android-ready.py "$serial" | tee "$out/readiness.txt"
+          guest() { run_adb -s "$serial" shell "$@" | tr -d '\r'; }
+          [[ "$(guest getprop ro.kernel.qemu)" == 1 && "$(guest getprop ro.product.cpu.abi)" == x86_64 ]]
+          [[ "$(guest getprop ro.build.version.sdk)" == 36 && "$(guest am get-current-user)" == 0 ]]
+          app=app/build/outputs/apk/debug/app-x86_64-debug.apk
+          tests=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          test -s "$app"; test -s "$tests"
+          app_id=io.weave.client.acceptance
+          test_id=io.weave.client.acceptance.test
+          package_id() { "$aapt" dump badging "$1" | sed -n "s/^package: name='\([^']*\)'.*/\1/p"; }
+          [[ "$(package_id "$app")" == "$app_id" && "$(package_id "$tests")" == "$test_id" ]]
+          [[ "$(guest pm list packages "$app_id")" == "" ]] # Never replace or clear an existing profile.
+          shasum -a 256 "$app" "$tests" | tee "$out/apk-sha256.txt"
+          run_adb -s "$serial" install --user 0 "$app"
+          run_adb -s "$serial" install --user 0 "$tests"
+          runner="$test_id/androidx.test.runner.AndroidJUnitRunner"
+          guest pm list instrumentation "$app_id" | grep -Fx "instrumentation:$runner (target=$app_id)"
+          bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$app_id"
+          bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$test_id"
+          bounded 240 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell am instrument --user 0 -w -r \
+            -e class "$class#$method" -e weaveIsolatedEmulator 1 -e weaveFreshBackupProfile 1 "$runner" |
+            tr -d '\r' | tee "$out/instrumentation.txt"
+          python3 "$(dirname "$0")/verify-receipt.py" "$mode" "$class" "$method" "$out/instrumentation.txt"
+          ACCEPTANCE_BASH
+          bash "$isolated/acceptance.sh" r001
