@@ -251,7 +251,7 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
                     }.onFailure { error = true }
                 },
                 resolveLabels = { snapshot ->
-                    resolveConnectionAppLabels(snapshot.connections.map { it.uid }, labels.keys) { uid ->
+                    resolveConnectionAppLabels(snapshot.connections, labels.keys) { uid ->
                         appLabel(context, uid)
                     }
                 },
