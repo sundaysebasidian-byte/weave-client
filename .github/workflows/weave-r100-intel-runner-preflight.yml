@@ -7,7 +7,7 @@ permissions: {}
 jobs:
   emulator-capability:
     runs-on: macos-15-intel
-    timeout-minutes: 6
+    timeout-minutes: 16
     steps:
       - name: Read the runner capability without modifying it
         shell: bash
@@ -24,3 +24,36 @@ jobs:
           "$sdk/emulator/emulator" -version
           "$sdk/emulator/emulator" -accel-check
           echo 'Emulator acceleration capability only; no Android boot or app test performed.'
+      - name: Boot a disposable Android 36 x86_64 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          sdkmanager="$(command -v sdkmanager)"
+          avdmanager="$(command -v avdmanager)"
+          image='system-images;android-36;google_apis;x86_64'
+          "$sdkmanager" 'platform-tools' "$image"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-r100-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'no\n' | "$avdmanager" create avd -n weave-r100-boot -k "$image" --force
+          adb="$sdk/platform-tools/adb"
+          log="$RUNNER_TEMP/weave-r100-emulator.log"
+          "$sdk/emulator/emulator" @weave-r100-boot -port 5556 -no-window -no-boot-anim -no-audio -no-snapshot -accel on -gpu swiftshader -memory 2048 >"$log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; tail -n 40 "$log"' EXIT
+          ready=0
+          serial=emulator-5556
+          for i in $(seq 1 120); do
+            kill -0 "$pid"
+            if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == 1 ]] &&
+                "$adb" -s "$serial" shell service check package 2>/dev/null | grep -q ': found' &&
+                "$adb" -s "$serial" shell service check activity 2>/dev/null | grep -q ': found'; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ready" = 1
+          test "$("$adb" -s "$serial" shell getprop ro.build.version.sdk | tr -d '\r')" = 36
+          "$adb" -s "$serial" shell getprop ro.product.cpu.abi
+          echo 'Android boot and Package/Activity services verified. No APK installed; no app tests performed.'
