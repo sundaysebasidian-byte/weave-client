@@ -1,0 +1,71 @@
+name: Weave Android round 111
+
+on:
+  push:
+    branches: [dot/weave-android-round001]
+    paths:
+      - '.github/workflows/weave-round111.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regressions:
+    name: Android regression ${{ matrix.round }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - round: '111'
+            suite: io.weave.client.ui.SubscriptionRefreshNoticeNamesTest
+            cases: 2
+    env:
+      SUITE: ${{ matrix.suite }}
+      EXPECTED_CASES: ${{ matrix.cases }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '15859902'
+      - name: Install the project's locked Android toolchain
+        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run focused Kotlin regression
+        run: ./gradlew :app:testDebugUnitTest --tests "$SUITE" --no-build-cache --no-daemon --no-configuration-cache
+      - name: Verify exact JUnit receipt
+        shell: bash
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          suite = os.environ["SUITE"]
+          expected = int(os.environ["EXPECTED_CASES"])
+          reports = list(Path("app/build/test-results").glob(f"**/TEST-{suite}.xml"))
+          if len(reports) != 1:
+              raise SystemExit("Expected exactly one focused JUnit XML result")
+          root = ET.parse(reports[0]).getroot()
+          cases = root.findall("testcase")
+          names = {case.get("name") for case in cases}
+          counters = {"tests": str(expected), "failures": "0", "errors": "0", "skipped": "0"}
+          if (root.tag != "testsuite" or root.get("name") != suite
+              or len(cases) != expected or len(names) != expected or None in names
+              or any(root.get(key) != value for key, value in counters.items())
+              or any(case.get("classname") != suite or any(
+                  case.find(tag) is not None for tag in ("failure", "error", "skipped"))
+                  for case in cases)):
+              raise SystemExit("Focused JUnit receipt failed to match expected passing cases")
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "suite": suite,
+                            "passed": len(cases), "failed": 0, "skipped": 0}))
+          PY
