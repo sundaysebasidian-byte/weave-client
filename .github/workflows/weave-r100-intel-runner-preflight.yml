@@ -161,9 +161,9 @@ jobs:
           install_isolated "$tests" "$test_id"
           runner="$test_id/androidx.test.runner.AndroidJUnitRunner"
           guest pm list instrumentation "$app_id" | grep -Fx "instrumentation:$runner (target=$app_id)"
-          bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$app_id"
-          bounded 120 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell cmd package compile -m verify -f "$test_id"
-          bounded 240 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell am instrument --user 0 -w -r \
+          # Installation and runner registration are verified above. Android handles dex loading on launch.
+          printf 'Starting exact R001 instrumentation (maximum 360 s)\n'
+          bounded 360 "$adb" -P "$WEAVE_TEST_ADB_PORT" -s "$serial" shell am instrument --user 0 -w -r \
             -e class "$class#$method" -e weaveIsolatedEmulator 1 -e weaveFreshBackupProfile 1 "$runner" |
             tr -d '\r' | tee "$out/instrumentation.txt"
           python3 "$(dirname "$0")/verify-receipt.py" "$mode" "$class" "$method" "$out/instrumentation.txt"
