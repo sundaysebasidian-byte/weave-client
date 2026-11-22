@@ -418,12 +418,26 @@ private fun RefreshStatus(
 ) {
     val language = LocalWeaveLanguage.current
     val modifier = Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)
-    val failedNames = refreshState.results.filter { !it.succeeded && !it.reviewRequired }.map { it.name }
-    val reviewNames = refreshState.results.filter { it.reviewRequired }.map { it.name }
+    val names = remember(refreshState.running, refreshState.results) {
+        SubscriptionRefreshNoticeNames.collect(
+            refreshState.running,
+            refreshState.results,
+            { it.succeeded },
+            { it.reviewRequired },
+            { it.name },
+        )
+    }
+    val failedNames = names.failed()
+    val reviewNames = names.review()
     when {
         refreshState.running -> {
+            val processed = if (refreshState.total > 0) {
+                refreshState.completed + refreshState.failed + refreshState.reviewCount
+            } else {
+                0
+            }
             val progress = if (refreshState.total > 0) {
-                (refreshState.completed + refreshState.failed + refreshState.reviewCount).toFloat() / refreshState.total
+                processed.toFloat() / refreshState.total
             } else {
                 null
             }
@@ -438,7 +452,7 @@ private fun RefreshStatus(
                             listOf(
                                 localizeWeaveText("正在刷新", language),
                                 refreshState.currentName ?: localizeWeaveText("远程订阅", language),
-                            ).joinToString(" ") + " · ${refreshState.completed + refreshState.failed + refreshState.reviewCount}/${refreshState.total}"
+                            ).joinToString(" ") + " · ${processed}/${refreshState.total}"
                         } else {
                             localizeWeaveText(refreshState.message ?: "正在刷新", language)
                         },
