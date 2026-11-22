@@ -8,6 +8,29 @@ import org.junit.Test
 
 /** Repository operations are fake callbacks. These tests cannot use VPN or a network. */
 class SubscriptionRefreshBatchTest {
+    @Test fun `single requested match leaves the unrelated tail unread`() {
+        var reads = 0
+        val rows = object : AbstractList<Subscription>() {
+            override val size = 10000
+            override fun get(index: Int): Subscription {
+                reads++
+                return if (index == 0) remoteA else remoteB
+            }
+        }
+        assertEquals(listOf(remoteA), SubscriptionRefreshBatch.selectTargets(rows, setOf("a", "b"), setOf("a")))
+        assertEquals(1, reads)
+        assertTrue(SubscriptionRefreshBatch.selectTargets(rows, emptySet(), null).isEmpty())
+        assertTrue(SubscriptionRefreshBatch.selectTargets(rows, setOf("a"), emptySet()).isEmpty())
+        assertEquals(1, reads)
+    }
+
+    @Test fun `partial overlap and renamed duplicate preserve first matching rows in source order`() {
+        val rows = listOf(remoteB, remoteB.copy(name = "Duplicate B"), local, remoteA)
+        assertEquals(listOf(remoteB, remoteA), SubscriptionRefreshBatch.selectTargets(
+            rows, setOf("a", "b", "absent"), setOf("b", "missing", "a"),
+        ))
+    }
+
     @Test fun `changed nodes require review without becoming a failure or applying the candidate`() = runBlocking {
         val applied = mutableListOf<String>()
         val results = SubscriptionRefreshBatch.run(listOf(remoteA, remoteB), {
