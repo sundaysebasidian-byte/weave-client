@@ -18,7 +18,7 @@ class ConnectionAppLabelsTest {
             }
         }
         val lookedUp = mutableListOf<Int>()
-        val result = resolveConnectionAppLabels(listOf(-1, 62, 31, 0, 62, 49), known) { uid ->
+        val result = resolveConnectionAppLabels(listOf(-1, 62, 31, 0, 62, 49).map { row("$it", it) }, known) { uid ->
             assertNotSame(caller, Thread.currentThread())
             lookedUp.add(uid)
             if (uid == 49) "UID 49" else "Reader"
@@ -30,10 +30,33 @@ class ConnectionAppLabelsTest {
 
     @Test
     fun noMissingLabelsMeansNoLookups() = runBlocking {
-        val result = resolveConnectionAppLabels(listOf(0, 31, 31), setOf(31)) {
+        val result = resolveConnectionAppLabels(listOf(0, 31, 31).map { row("$it", it) }, setOf(31)) {
             error("Unexpected label lookup for $it")
         }
         assertEquals(emptyMap<Int, String>(), result)
+    }
+
+    @Test
+    fun fullPollReadsEachRowOnceAndResolvesOnlyTheOrderedDelta() = runBlocking {
+        var rowReads = 0
+        val repeated = listOf(0, 300, 120, 77, 120, -1)
+        val uids = List(500) { index -> repeated[index % repeated.size] }
+        val rows = object : AbstractList<CoreConnection>() {
+            override val size = uids.size
+            override fun get(index: Int): CoreConnection {
+                rowReads++
+                return row("$index", uids[index])
+            }
+        }
+        val lookedUp = mutableListOf<Int>()
+        val result = resolveConnectionAppLabels(rows, setOf(120)) { uid ->
+            assertEquals(uids.size, rowReads)
+            lookedUp.add(uid)
+            "Label $uid"
+        }
+        assertEquals(uids.size, rowReads)
+        assertEquals(listOf(300, 77), lookedUp)
+        assertEquals(linkedMapOf(300 to "Label 300", 77 to "Label 77"), result)
     }
 
     @Test
