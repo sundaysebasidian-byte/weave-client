@@ -24,7 +24,9 @@ data class CoreConnection(
     val uploadBytes: Long,
     val downloadBytes: Long,
     val startedAt: String,
-)
+) {
+    internal val startedAtInstant = ConnectionStartTime.parse(startedAt)
+}
 
 @Immutable
 data class CoreConnectionsSnapshot(
@@ -32,6 +34,24 @@ data class CoreConnectionsSnapshot(
     val uploadTotal: Long,
     val downloadTotal: Long,
 )
+
+internal fun List<CoreConnection>.latestFirst(): List<CoreConnection> =
+    sortedByDescending { it.startedAtInstant }
+
+internal fun connectionRuleLabel(rule: String, payload: String): String {
+    val limit = 160
+    val separator = " · "
+    if (rule.isBlank()) return if (payload.isBlank()) "" else payload.take(limit)
+    if (rule.length >= limit || payload.isBlank()) return rule.take(limit)
+    val remaining = limit - rule.length
+    val separatorEnd = minOf(separator.length, remaining)
+    val payloadEnd = minOf(payload.length, remaining - separatorEnd)
+    return buildString(rule.length + separatorEnd + payloadEnd) {
+        append(rule)
+        append(separator, 0, separatorEnd)
+        append(payload, 0, payloadEnd)
+    }
+}
 
 @Immutable
 data class CoreLogLine(val level: String, val message: String)
@@ -41,9 +61,10 @@ data class CoreLogLine(val level: String, val message: String)
  * Works from either process; nothing read here is written to disk.
  */
 class CoreApi(private val context: Context) {
-    suspend fun connections(): CoreConnectionsSnapshot = withContext(Dispatchers.IO) {
+    suspend fun connections(latestFirst: Boolean = false): CoreConnectionsSnapshot = withContext(Dispatchers.IO) {
         val body = request("GET", "/connections", MAX_RESPONSE_BYTES)
-        parseConnections(JSONObject(body))
+        val snapshot = parseConnections(JSONObject(body))
+        if (latestFirst) snapshot.copy(connections = snapshot.connections.latestFirst()) else snapshot
     }
 
     suspend fun close(id: String): Boolean = withContext(Dispatchers.IO) {
@@ -76,9 +97,10 @@ class CoreApi(private val context: Context) {
                     val status = reader.readLine().orEmpty()
                     if (!status.contains(" 200")) throw IOException("log stream refused")
                     while (reader.readLine()?.isNotEmpty() == true) Unit // headers
+                    val logLines = BoundedLogLineReader(reader, MAX_LOG_LINE)
                     while (continuation.isActive) {
-                        val line = reader.readLine() ?: break
-                        if (line.length > MAX_LOG_LINE) continue
+                        val line = logLines.readLine() ?: break
+                        if (line.isEmpty()) continue
                         val event = runCatching { JSONObject(line) }.getOrNull() ?: continue
                         onLine(CoreLogLine(event.optString("type"), event.optString("payload")))
                     }
@@ -99,7 +121,7 @@ class CoreApi(private val context: Context) {
             "$method $path HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII),
         )
         socket.outputStream.flush()
-        val response = socket.inputStream.readBytesBounded(limit).toString(Charsets.UTF_8)
+        val response = BoundedCoreResponse.readUtf8(socket.inputStream, limit)
         val statusLine = response.substringBefore("\r\n")
         val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull() ?: throw IOException("bad response")
         if (code !in 200..299) throw IOException("HTTP $code")
@@ -127,11 +149,8 @@ class CoreApi(private val context: Context) {
                     uid = metadata.optInt("uid", -1),
                     process = metadata.optString("process").take(120),
                     network = metadata.optString("network").take(16),
-                    destination = (if (port.isBlank()) host else "$host:$port").take(260),
-                    rule = listOf(value.optString("rule"), value.optString("rulePayload"))
-                        .filter(String::isNotBlank)
-                        .joinToString(" · ")
-                        .take(160),
+                    destination = (if (port.isBlank()) host else ConnectionEndpoint.withPort(host, port)).take(260),
+                    rule = connectionRuleLabel(value.optString("rule"), value.optString("rulePayload")),
                     chain = (0 until minOf(chains?.length() ?: 0, 12)).map { chains!!.optString(it).take(160) },
                     uploadBytes = value.optLong("upload"),
                     downloadBytes = value.optLong("download"),

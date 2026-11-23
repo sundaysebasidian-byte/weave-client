@@ -250,7 +250,33 @@ private fun materialColors(
     )
 }
 
+/**
+ * Eight sizes: 52 status, 36 page title, 26 metric, 22 card total, 15 list, 13 action, 12 caption
+ * and 11 label. Only the status and page titles use the serif face; everything a user compares or
+ * scans stays in the sans face with tabular figures where it holds numbers.
+ */
 private val WeaveTypography = Typography(
+    displayMedium = TextStyle(
+        fontFamily = FontFamily.Serif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 52.sp,
+        lineHeight = 56.sp,
+        letterSpacing = (-1).sp,
+    ),
+    displaySmall = TextStyle(
+        fontFamily = FontFamily.Serif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 36.sp,
+        lineHeight = 40.sp,
+        letterSpacing = (-0.6).sp,
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 26.sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.6).sp,
+    ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
@@ -307,7 +333,7 @@ private val WeaveTypography = Typography(
 private val WeaveShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
+    medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(26.dp),
     extraLarge = RoundedCornerShape(30.dp),
 )

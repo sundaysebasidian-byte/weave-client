@@ -1,5 +1,7 @@
 package io.weave.client.subscription
 
+import java.util.Base64
+
 import org.junit.Assert.*
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
@@ -60,10 +62,26 @@ proxies: []
         val resolved = CmfaProviderSnapshot.materialize(raw) { paths += it; payload }
         val prepared = pipeline.prepare(resolved, "local://user-selected-file")
         assertEquals(listOf("providers/cache.yaml"), paths)
+        paths.clear()
+        val wrapped = Base64.getEncoder().encodeToString(raw.toByteArray())
+        val resolvedWrapped = CmfaProviderSnapshot.materialize(wrapped) { paths += it; payload }
+        assertEquals(resolved, resolvedWrapped)
+        assertEquals(listOf("providers/cache.yaml"), paths)
         assertEquals(1, prepared.counts.providers)
         assertEquals(1, prepared.counts.imported)
         assertTrue(prepared.first.contains("udp: true"))
         assertFalse(prepared.first.contains("proxy-providers"))
+    }
+
+    @Test fun nestedProviderMetadataKeepsTheOriginalInputAndReadsNoChild() {
+        val raw = "metadata:\n  proxy-providers: {cache: {type: file, path: providers/unused.yaml}}\n$payload"
+        val wrapped = Base64.getEncoder().encodeToString(raw.toByteArray())
+        for (input in listOf(raw, wrapped)) {
+            assertEquals(input, CmfaProviderSnapshot.materialize(input) { error("No provider read expected") })
+        }
+        assertThrows(SubscriptionImportException::class.java) {
+            CmfaProviderSnapshot.materialize("proxy-providers:") { error("No provider read expected") }
+        }
     }
 
     @Test fun providerTraversalAndRecursiveCollectionsAreRejectedBeforeAnySave() {
@@ -75,6 +93,33 @@ proxies: []
                 "proxy-providers: {nested: {type: file, path: providers/again.yaml}}"
             }
         }
+    }
+
+    @Test fun indexedSelectionVisitsOnlyRequestedIdsAndPreservesCatalogueRecordIdentity() {
+        val rows = List(256) { index ->
+            ClientSourceRecord(ClientSourceEntry("id-$index", "Source $index", index != 128), "fixture") {
+                error("Selecting metadata must not read a document")
+            }
+        }
+        val session = ClientSourceSession()
+        val catalogue = session.prepare("Fixture", rows)
+        val requested = linkedSetOf("id-255", "id-63", "id-0")
+        var membershipChecks = 0
+        val ids = object : Set<String> by requested {
+            override fun contains(element: String): Boolean {
+                membershipChecks++
+                return element in requested
+            }
+        }
+        val selected = session.select(catalogue.token, ids)
+        assertEquals(0, membershipChecks)
+        assertEquals(3, selected.size)
+        assertSame(rows[0], selected[0])
+        assertSame(rows[63], selected[1])
+        assertSame(rows[255], selected[2])
+        assertThrows(IllegalArgumentException::class.java) { session.select(catalogue.token, setOf("id-128")) }
+        assertThrows(IllegalArgumentException::class.java) { session.prepare("Duplicate", listOf(rows[0], rows[0])) }
+        assertThrows(IllegalArgumentException::class.java) { session.select(catalogue.token, setOf("id-0")) }
     }
 
     @Test fun sourceCatalogueTokensReplaceExpireAndRejectUnknownOrTooManySelections() {
@@ -117,5 +162,36 @@ proxies: []
         assertFalse(ClientSourceCapabilities.isCmfaAuthority("malicious.files"))
         assertTrue(ClientSourceCapabilities.isKaring("com.nebula.karing"))
         assertFalse(ClientSourceCapabilities.isKaring("x2ray"))
+    }
+
+    @Test fun utf8BudgetMatchesJavaAcrossSurrogateBoundariesAndPayloads() {
+        assertArrayEquals(byteArrayOf('?'.code.toByte()), "\uD800".toByteArray(Charsets.UTF_8))
+        val symbols = listOf("", "A", "é", "路", "🚇", "\uD800", "\uDC00")
+        for (first in symbols) for (second in symbols) for (third in symbols) {
+            for (payloads in listOf(listOf(first + second + third), listOf(first, second, third))) {
+                val bytes = payloads.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
+                assertTrue(fitsMigrationUtf8Budget(payloads.asSequence(), bytes))
+                if (bytes > 0) assertFalse(fitsMigrationUtf8Budget(payloads.asSequence(), bytes - 1))
+            }
+        }
+    }
+
+    @Test fun batchAcceptsExactBudgetAndRejectsOneExtraByte() = runBlocking<Unit> {
+        val normalized = pipeline.prepare(payload, "local://fixture")
+        val oneMiB = 1024 * 1024
+        val base = normalized.first + "\n#"
+        val text = base + "x".repeat(oneMiB - base.toByteArray(Charsets.UTF_8).size)
+        val records = List(20) { index ->
+            PreparedSourceMigration("Local $index", "local://fixture", normalized.copy(first = text))
+        }
+        val session = MigrationBatchSession()
+        val accepted = session.prepare(records)
+        assertEquals(20, accepted.entries.size)
+        val extra = records.last().copy(prepared = normalized.copy(first = text + "x"))
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            session.prepare(records.dropLast(1) + extra)
+        }
+        assertEquals("订阅内容超过大小限制", error.message)
+        assertThrows(IllegalArgumentException::class.java) { session.consume(accepted.token) }
     }
 }
