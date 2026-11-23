@@ -8,6 +8,10 @@ internal enum class SubscriptionExpiryStatus { UNKNOWN, ACTIVE, EXPIRING_SOON, E
 
 private const val EXPIRING_SOON_WINDOW_MILLIS = 7L * 24 * 60 * 60 * 1000
 
+/** Keep an active filter editable when replacement or refresh shrinks an open detail list. */
+internal fun shouldShowSubscriptionNodeSearch(nodeCount: Int, query: String): Boolean =
+    nodeCount > 8 || query.isNotBlank()
+
 /**
  * Narrows the list by source and by a trimmed, case-insensitive name match. A blank query keeps
  * every name. The original objects and their order are returned untouched.
@@ -40,3 +44,8 @@ internal fun subscriptionExpiryStatus(expireAtMillis: Long?, nowMillis: Long): S
     }
     return if (expireAtMillis <= soonLimit) SubscriptionExpiryStatus.EXPIRING_SOON else SubscriptionExpiryStatus.ACTIVE
 }
+
+/** Match the most recent outcome for each ID, including when a list repeats an ID. */
+internal fun indexSubscriptionRefreshResults(
+    results: List<SubscriptionRefreshResult>,
+): Map<String, SubscriptionRefreshResult> = results.associateBy { it.subscriptionId }

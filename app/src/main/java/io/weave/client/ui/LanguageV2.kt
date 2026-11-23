@@ -8,12 +8,49 @@ import io.weave.client.domain.WeaveLanguage
  * the rest of the table; merged after the older supplemental entries.
  */
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
+    // Official release settings and local save feedback.
+    "订阅已保存，节点列表刷新失败，请重新打开应用" to SupplementalTranslation("Subscription saved, but the node list could not refresh. Reopen the app.", "訂閱已儲存，但無法重新整理節點清單。請重新開啟應用程式。", "購読は保存されましたが、ノード一覧を更新できませんでした。アプリを開き直してください。", "Abonnement enregistré, mais la liste des nœuds n’a pas pu être actualisée. Rouvrez l’application.", "Abo gespeichert, aber die Knotenliste konnte nicht aktualisiert werden. Öffne die App erneut."),
+    "订阅已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。" to SupplementalTranslation(
+        "Subscription saved, but the VPN configuration reload could not be started. Reconnect to apply the changes.",
+        "訂閱已儲存，但無法啟動 VPN 設定重新載入。請重新連線以套用變更。",
+        "購読は保存されましたが、VPN 設定の再読み込みを開始できませんでした。変更を適用するには、再接続してください。",
+        "Abonnement enregistré, mais le rechargement de la configuration VPN n’a pas pu démarrer. Reconnectez-vous pour appliquer les changements.",
+        "Das Abo wurde gespeichert, aber das Neuladen der VPN-Konfiguration konnte nicht gestartet werden. Verbinde dich erneut, um die Änderungen zu übernehmen.",
+    ),
+    "GitHub 暂时限制访问，请稍后再试。" to SupplementalTranslation("GitHub is temporarily limiting requests. Try again later.", "GitHub 暫時限制請求，請稍後再試。", "GitHub が一時的にリクエストを制限しています。しばらくしてから再試行してください。", "GitHub limite temporairement les requêtes. Réessayez plus tard.", "GitHub begrenzt vorübergehend die Anfragen. Versuche es später erneut."),
+    "GitHub 拒绝了本次访问，可尝试打开官方发布页。" to SupplementalTranslation("GitHub denied the request. Try opening the official releases page.", "GitHub 拒絕了這次請求，可試著開啟官方版本頁面。", "GitHub がリクエストを拒否しました。公式リリースページを開いてみてください。", "GitHub a refusé la requête. Essayez d’ouvrir la page officielle des versions.", "GitHub hat die Anfrage abgelehnt. Öffne stattdessen die offizielle Release-Seite."),
+    "GitHub 暂时未能提供版本信息。" to SupplementalTranslation("GitHub could not provide version information at this time.", "GitHub 暫時無法提供版本資訊。", "GitHub からバージョン情報を取得できませんでした。", "GitHub n’a pas pu fournir les informations de version pour le moment.", "GitHub konnte die Versionsinformationen momentan nicht bereitstellen."),
+    "发布列表过大，请查看官方发布页。" to SupplementalTranslation("The release list is too large. See the official releases page.", "版本清單過大，請查看官方版本頁面。", "リリース一覧が大きすぎます。公式リリースページをご覧ください。", "La liste des versions est trop volumineuse. Consultez la page officielle des versions.", "Die Liste der Releases ist zu groß. Sieh auf der offiziellen Release-Seite nach."),
+    "发布列表较长，未能完整核对。" to SupplementalTranslation("The release list is too long to check in full.", "版本清單過長，無法完整檢查。", "リリース一覧が長すぎてすべて確認できませんでした。", "La liste des versions est trop longue pour être vérifiée en entier.", "Die Liste der Releases ist zu lang für eine vollständige Prüfung."),
+    "仅供浏览：当前构建或设备不属于官方 ARM64 发布渠道。" to SupplementalTranslation("Browse releases only: this build or device is not on the official ARM64 release channel.", "僅可瀏覽版本：此組建或裝置不屬於官方 ARM64 發行管道。", "閲覧のみ：このビルドまたは端末は公式 ARM64 リリースの対象外です。", "Consultation uniquement : cette version ou cet appareil ne relève pas du canal ARM64 officiel.", "Nur zum Ansehen: Dieser Build oder dieses Gerät gehört nicht zum offiziellen ARM64-Release-Kanal."),
+    "无法保存检查时间，未连接 GitHub。" to SupplementalTranslation("Could not save the check time, so no request was made to GitHub.", "無法儲存檢查時間，因此未向 GitHub 發出請求。", "確認時刻を保存できなかったため、GitHub にリクエストを送信しませんでした。", "L’heure de vérification n’a pas pu être enregistrée. Aucune requête n’a été envoyée à GitHub.", "Der Prüfzeitpunkt konnte nicht gespeichert werden. Daher wurde keine Anfrage an GitHub gesendet."),
+    "未找到适用的 Android 生产签名发布包。" to SupplementalTranslation("No compatible Android package with a production signature was found.", "找不到適用且具有正式簽章的 Android 套件。", "対応する正式署名済みの Android パッケージが見つかりませんでした。", "Aucun paquet Android compatible signé pour la distribution n’a été trouvé.", "Es wurde kein kompatibles Android-Paket mit Produktionssignatur gefunden."),
+    "暂时连不上 GitHub，请检查网络后再试。" to SupplementalTranslation("Could not reach GitHub. Check your connection and try again.", "暫時無法連線到 GitHub，請檢查網路後再試。", "GitHub に接続できませんでした。ネットワークを確認して再試行してください。", "Impossible de joindre GitHub. Vérifiez votre connexion et réessayez.", "GitHub ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."),
+    "无法读取 GitHub 发布信息，请稍后再试。" to SupplementalTranslation("Could not read GitHub release information. Try again later.", "無法讀取 GitHub 版本資訊，請稍後再試。", "GitHub のリリース情報を読み取れませんでした。しばらくしてから再試行してください。", "Impossible de lire les informations de version sur GitHub. Réessayez plus tard.", "Die Release-Informationen von GitHub konnten nicht gelesen werden. Versuche es später erneut."),
+    "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或自动下载安装；应用可向 GitHub 查询公开版本，启动检查可在关于中关闭；主动选择的第三方端点仍按隐私说明工作。" to SupplementalTranslation(
+        "This repository uses the local-open-source configuration. Weave has no cloud control, node relays, built-in credentials, or automatic downloads or installation. The app can check GitHub for public releases. You can turn off startup checks in About. Third-party endpoints you choose work as described in the privacy notice.",
+        "此儲存庫使用 local-open-source 設定：沒有 Weave 雲端控制、節點中繼、內建憑證或自動下載安裝。應用程式可向 GitHub 查詢公開版本，啟動檢查可在「關於」關閉。你主動選擇的第三方端點仍依隱私說明運作。",
+        "local-open-source 構成では、Weave によるクラウド制御、ノード中継、組み込み認証情報、自動ダウンロードやインストールはありません。GitHub の公開リリースを確認できます。起動時の確認は「アプリについて」で無効にできます。選択した第三者の接続先はプライバシーの説明に従って動作します。",
+        "Ce dépôt utilise la configuration local-open-source. Weave ne fournit ni pilotage dans le cloud, ni relais de nœuds, ni identifiants intégrés. L’application ne télécharge ni n’installe rien automatiquement. Elle peut consulter les versions publiques sur GitHub. Vous pouvez désactiver la vérification au démarrage dans À propos. Les points de connexion tiers que vous choisissez fonctionnent comme indiqué dans la notice de confidentialité.",
+        "Dieses Repository nutzt die Konfiguration local-open-source. Weave bietet weder Cloud-Steuerung noch Knoten-Relays oder integrierte Zugangsdaten. Die App lädt und installiert nichts automatisch. Sie kann auf GitHub nach öffentlichen Releases suchen. Die Prüfung beim Start lässt sich unter „Über“ ausschalten. Selbst gewählte Drittanbieter-Endpunkte funktionieren wie in den Datenschutzhinweisen beschrieben.",
+    ),
+    "启动时检查应用更新" to SupplementalTranslation("Check for app updates on startup", "啟動時檢查應用程式更新", "起動時にアプリの更新を確認", "Vérifier les mises à jour au démarrage", "Beim Start nach App-Updates suchen"),
+    "每天最多一次。GitHub 可看到连接 IP，不会收到节点、订阅或设备标识。" to SupplementalTranslation("At most once a day. GitHub can see your connection’s IP address, but receives no node or subscription details or device identifiers.", "每天最多一次。GitHub 可看到連線 IP，但不會收到節點、訂閱資料或裝置識別碼。", "1 日に最大 1 回。GitHub には接続元の IP アドレスが見えますが、ノードや購読の情報、端末識別子は送信されません。", "Au plus une fois par jour. GitHub peut voir l’adresse IP de la connexion, mais ne reçoit aucune information sur les nœuds ou les abonnements, ni aucun identifiant d’appareil.", "Höchstens einmal pro Tag. GitHub kann die IP-Adresse der Verbindung sehen, erhält aber keine Knoten- oder Abo-Daten und keine Gerätekennungen."),
+    "检查应用更新" to SupplementalTranslation("Check for app updates", "檢查應用程式更新", "アプリの更新を確認", "Vérifier les mises à jour", "Nach App-Updates suchen"),
+    "正在查询 GitHub…" to SupplementalTranslation("Checking GitHub…", "正在查詢 GitHub…", "GitHub を確認中…", "Vérification sur GitHub…", "Suche auf GitHub…"),
+    "只查询 Android 发布，不会下载或安装。" to SupplementalTranslation("Checks Android releases only. Nothing is downloaded or installed.", "只查詢 Android 版本，不會下載或安裝。", "Android のリリース情報を確認するだけで、ダウンロードやインストールは行いません。", "Consulte uniquement les versions Android, sans téléchargement ni installation.", "Prüft nur Android-Releases. Es wird nichts heruntergeladen oder installiert."),
+    "没有可打开网页的应用。" to SupplementalTranslation("No app can open this web page.", "沒有應用程式可開啟此網頁。", "このウェブページを開けるアプリがありません。", "Aucune application ne peut ouvrir cette page web.", "Keine App kann diese Webseite öffnen."),
+    "所有 GitHub 发布" to SupplementalTranslation("All GitHub releases", "GitHub 上的所有版本", "GitHub の全リリース", "Toutes les versions sur GitHub", "Alle GitHub-Releases"),
+    "订阅名称保存失败" to SupplementalTranslation("Could not save the subscription name.", "無法儲存訂閱名稱。", "購読名を保存できませんでした。", "Impossible d’enregistrer le nom de l’abonnement.", "Der Abo-Name konnte nicht gespeichert werden."),
+    "名称已保存，刷新失败，请关闭并重新打开订阅" to SupplementalTranslation("Name saved, but the subscription could not refresh. Close and reopen it.", "名稱已儲存，但無法重新整理訂閱。請關閉後再開啟。", "名前は保存されましたが、購読を更新できませんでした。購読画面を開き直してください。", "Nom enregistré, mais l’abonnement n’a pas pu être actualisé. Fermez-le, puis rouvrez-le.", "Der Name wurde gespeichert, aber das Abo konnte nicht aktualisiert werden. Schließe das Abo und öffne es erneut."),
     // Home metrics
     "下载" to SupplementalTranslation("Download", "下載", "ダウンロード", "Réception", "Download"),
     "上传" to SupplementalTranslation("Upload", "上傳", "アップロード", "Envoi", "Upload"),
     "延迟" to SupplementalTranslation("Latency", "延遲", "遅延", "Latence", "Latenz"),
     // Subscriptions
     "添加方式" to SupplementalTranslation("Add from", "新增方式", "追加方法", "Ajouter depuis", "Hinzufügen aus"),
+    "搜索设置" to SupplementalTranslation("Search settings", "搜尋設定", "設定を検索", "Rechercher dans les réglages", "Einstellungen durchsuchen"),
+    "没有匹配的设置" to SupplementalTranslation("No matching settings", "沒有相符的設定", "一致する設定はありません", "Aucun réglage correspondant", "Keine passenden Einstellungen"),
     // Routes
     "全局模式下分流不生效" to SupplementalTranslation("App rules are off in global mode", "全局模式下分流不生效", "グローバルモードではアプリのルールは無効です", "Les règles d’app sont inactives en mode global", "App-Regeln gelten im globalen Modus nicht"),
     "直连模式下分流不生效" to SupplementalTranslation("App rules are off in direct mode", "直連模式下分流不生效", "直接接続モードではアプリのルールは無効です", "Les règles d’app sont inactives en mode direct", "App-Regeln gelten im Direktmodus nicht"),
@@ -231,6 +268,13 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "无法读取备份" to SupplementalTranslation("Cannot read the backup", "無法讀取備份", "バックアップを読み取れません", "Impossible de lire la sauvegarde", "Backup kann nicht gelesen werden"),
     "恢复失败，请重新预览后重试" to SupplementalTranslation("Restore failed; preview the backup again and retry", "還原失敗，請重新預覽後重試", "復元できませんでした。バックアップを再確認してからやり直してください", "Échec de la restauration ; prévisualisez à nouveau la sauvegarde et réessayez", "Wiederherstellung fehlgeschlagen; prüfen Sie die Vorschau erneut und versuchen Sie es noch einmal"),
     "已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启" to SupplementalTranslation("Restored from backup. Device-specific settings (system proxy, LAN sharing) need to be turned on again.", "已從備份還原；裝置相關設定（系統代理、區域網路共享）需重新開啟", "バックアップから復元しました。端末固有の設定（システムプロキシ、LAN 共有）は再度オンにしてください。", "Restauré. Les réglages propres à l’appareil (proxy système, partage LAN) doivent être réactivés.", "Wiederhergestellt. Geräteeinstellungen (System-Proxy, LAN-Freigabe) bitte erneut aktivieren."),
+    "部分界面可能没有更新；请完全关闭应用后重新打开" to SupplementalTranslation(
+        "Some screens may not have updated. Close the app completely, then reopen it.",
+        "部分畫面可能尚未更新；請完全關閉應用程式後重新開啟",
+        "一部の画面が更新されていない可能性があります。アプリを完全に閉じてから開き直してください。",
+        "Certains écrans peuvent ne pas s’être actualisés. Fermez complètement l’application, puis rouvrez-la.",
+        "Einige Ansichten sind möglicherweise noch nicht aktualisiert. Schließe die App vollständig und öffne sie erneut.",
+    ),
     "正在应用恢复的配置" to SupplementalTranslation("Applying the restored configuration", "正在套用還原的設定", "復元した設定を適用中", "Application de la configuration restaurée", "Wiederhergestellte Konfiguration wird angewendet"),
     "这不是有效的 Weave 备份" to SupplementalTranslation("This is not a valid Weave backup", "這不是有效的 Weave 備份", "有効な Weave バックアップではありません", "Ce n’est pas une sauvegarde Weave valide", "Kein gültiges Weave-Backup"),
     "不支持的备份版本" to SupplementalTranslation("Unsupported backup version", "不支援的備份版本", "未対応のバックアップ形式です", "Version de sauvegarde non prise en charge", "Nicht unterstützte Backup-Version"),
@@ -343,8 +387,34 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
 
 private data class CountTemplate(val pattern: String, val translation: SupplementalTranslation)
 
-/** `%d` in each translation is replaced by the captured number. */
+// Keep in step with the release tag shape in AndroidReleasePolicy; group 1 excludes the v prefix.
+private const val RELEASE_VERSION_CAPTURE = "([0-9]+[.][0-9]+[.][0-9]+(?:-rc[1-9][0-9]*)?)"
+private const val RELEASE_BUILD_CAPTURE = "([0-9]{1,10})"
+
+/** `%d` and `%t` are replaced by the first and second captured values. */
 private val COUNT_TEMPLATES = listOf(
+    CountTemplate("^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用$", SupplementalTranslation(
+        "%d · Build %t available", "%d · Build %t 可用", "%d · ビルド %t を利用できます",
+        "%d · Build %t disponible", "%d · Build %t verfügbar",
+    )),
+    CountTemplate("^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用（上次检查）$", SupplementalTranslation(
+        "%d · Build %t available (last check)", "%d · Build %t 可用（上次檢查）", "%d · ビルド %t を利用できます（前回の確認）",
+        "%d · Build %t disponible (dernière vérification)", "%d · Build %t verfügbar (letzte Prüfung)",
+    )),
+    CountTemplate("^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$", SupplementalTranslation(
+        "No compatible release is newer than the current build (%d).", "沒有比目前 Build %d 更新的適用版本。",
+        "現在のビルド（%d）より新しい対応リリースはありません。", "Aucune version compatible n’est plus récente que le build actuel (%d).",
+        "Es gibt kein kompatibles Release, das neuer als der aktuelle Build (%d) ist.",
+    )),
+    CountTemplate("^查看 v${RELEASE_VERSION_CAPTURE} 发布说明$", SupplementalTranslation(
+        "View v%d release notes", "查看 v%d 發行說明", "v%d のリリースノートを見る",
+        "Voir les notes de version de v%d", "Versionshinweise zu v%d ansehen",
+    )),
+    CountTemplate("^Weave ${RELEASE_VERSION_CAPTURE} 可用，可在设置中查看。$", SupplementalTranslation(
+        "Weave %d is available. See Settings.", "Weave %d 已可使用，可在設定中查看。",
+        "Weave %d を利用できます。設定で確認してください。", "Weave %d est disponible. Consultez les paramètres.",
+        "Weave %d ist verfügbar. Details findest du in den Einstellungen.",
+    )),
     CountTemplate("^检测到 (\\d+) 个兼容客户端$", SupplementalTranslation("%d compatible clients detected", "偵測到 %d 個相容用戶端", "互換クライアントを %d 個検出", "%d clients compatibles détectés", "%d kompatible Clients erkannt")),
     CountTemplate("^每 (\\d+) 小时$", SupplementalTranslation("Every %d h", "每 %d 小時", "%d 時間ごと", "Toutes les %d h", "Alle %d Std.")),
     CountTemplate("^(\\d+) 分钟前更新$", SupplementalTranslation("Updated %d min ago", "%d 分鐘前更新", "%d 分前に更新", "Mis à jour il y a %d min", "Vor %d Min. aktualisiert")),

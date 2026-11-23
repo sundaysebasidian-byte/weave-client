@@ -189,11 +189,18 @@ internal fun heroIssue(state: DashboardState): HeroIssue? = when {
         message = "原生内核加载失败，已禁止建立 VPN",
         offersExitChange = false,
     )
-    state.connectionState == ConnectionState.ERROR -> HeroIssue(
-        kind = HeroIssueKind.CONNECTION_FAILED,
-        message = state.statusMessage?.takeIf { it.isNotBlank() }
-            ?: "连接未能建立。可直接重试，或更换出口后再连接。",
-        offersExitChange = exitReadiness(state) != ExitReadiness.NOT_USED,
-    )
+    state.connectionState == ConnectionState.ERROR -> {
+        val readiness = exitReadiness(state)
+        val fallback = when (readiness) {
+            ExitReadiness.INVALID -> INVALID_EXIT_LABEL
+            ExitReadiness.NOT_USED -> "重试连接"
+            ExitReadiness.MISSING, ExitReadiness.READY -> "连接未能建立。可直接重试，或更换出口后再连接。"
+        }
+        HeroIssue(
+            kind = HeroIssueKind.CONNECTION_FAILED,
+            message = state.statusMessage?.takeIf { it.isNotBlank() } ?: fallback,
+            offersExitChange = readiness != ExitReadiness.NOT_USED,
+        )
+    }
     else -> null
 }

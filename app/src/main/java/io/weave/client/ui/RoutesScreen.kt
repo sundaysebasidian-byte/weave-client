@@ -52,7 +52,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -116,6 +116,7 @@ import androidx.compose.material3.Text as MaterialText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -127,6 +128,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -252,38 +259,66 @@ internal fun RoutesScreen(
         }
         if (proxied.isNotEmpty()) {
             item(key = "proxy-label") { RouteGroupLabel("代理", Modifier.graphicsLayer { alpha = listAlpha }) }
-            item(key = "proxy") {
-                RouteGroupPanel(Modifier.graphicsLayer { alpha = listAlpha }) {
-                    proxied.forEachIndexed { index, route ->
-                        if (index > 0) WeaveInsetDivider()
+            itemsIndexed(
+                items = proxied,
+                key = { _, route -> routeItemKey(route.packageName) },
+                contentType = { _, _ -> "app-route" },
+            ) { index, route ->
+                RoutePanelPiece(
+                    first = index == 0,
+                    last = index == proxied.lastIndex,
+                    panelAlpha = listAlpha,
+                ) {
+                    AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
+                }
+            }
+        }
+        if (direct.isNotEmpty()) {
+            item(key = "routes:direct") {
+                RoutePanelPiece(
+                    first = true,
+                    last = !directOpen && blocked.isEmpty(),
+                    panelAlpha = listAlpha,
+                    topSpacing = 12.dp,
+                ) {
+                    CollapsedGroup("直连", RouteDot.DIRECT, direct, directOpen) {
+                        directOpen = !directOpen
+                    }
+                }
+            }
+            if (directOpen) {
+                itemsIndexed(
+                    items = direct,
+                    key = { _, route -> routeItemKey(route.packageName) },
+                    contentType = { _, _ -> "app-route" },
+                ) { index, route ->
+                    RoutePanelPiece(first = false, last = index == direct.lastIndex && blocked.isEmpty(), panelAlpha = listAlpha) {
                         AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
                     }
                 }
             }
         }
-        if (direct.isNotEmpty() || blocked.isNotEmpty()) {
-            item(key = "collapsed") {
-                RouteGroupPanel(Modifier.padding(top = 12.dp).graphicsLayer { alpha = listAlpha }) {
-                    if (direct.isNotEmpty()) {
-                        CollapsedGroup(
-                            label = "直连",
-                            dot = RouteDot.DIRECT,
-                            routes = direct,
-                            open = directOpen,
-                            onToggle = { directOpen = !directOpen },
-                            onRouteClick = onRouteClick,
-                        )
+        if (blocked.isNotEmpty()) {
+            item(key = "routes:block") {
+                RoutePanelPiece(
+                    first = direct.isEmpty(),
+                    last = !blockedOpen,
+                    panelAlpha = listAlpha,
+                    topSpacing = if (direct.isEmpty()) 12.dp else 0.dp,
+                ) {
+                    CollapsedGroup("阻止", RouteDot.BLOCK, blocked, blockedOpen) {
+                        blockedOpen = !blockedOpen
                     }
-                    if (direct.isNotEmpty() && blocked.isNotEmpty()) WeaveInsetDivider()
-                    if (blocked.isNotEmpty()) {
-                        CollapsedGroup(
-                            label = "阻止",
-                            dot = RouteDot.BLOCK,
-                            routes = blocked,
-                            open = blockedOpen,
-                            onToggle = { blockedOpen = !blockedOpen },
-                            onRouteClick = onRouteClick,
-                        )
+                }
+            }
+            if (blockedOpen) {
+                itemsIndexed(
+                    items = blocked,
+                    key = { _, route -> routeItemKey(route.packageName) },
+                    contentType = { _, _ -> "app-route" },
+                ) { index, route ->
+                    RoutePanelPiece(first = false, last = index == blocked.lastIndex, panelAlpha = listAlpha) {
+                        AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
                     }
                 }
             }
@@ -511,6 +546,62 @@ private fun RouteGroupPanel(modifier: Modifier = Modifier, content: @Composable 
     }
 }
 
+/** Each lazy item paints its part of the same panel; no full border between rows. */
+@Composable
+private fun RoutePanelPiece(
+    first: Boolean,
+    last: Boolean,
+    panelAlpha: Float,
+    topSpacing: Dp = 0.dp,
+    content: @Composable () -> Unit,
+) {
+    val top = if (first) WeaveUiTokens.panelRadius else 0.dp
+    val bottom = if (last) WeaveUiTokens.panelRadius else 0.dp
+    val shape = RoundedCornerShape(top, top, bottom, bottom)
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .padding(start = WeaveUiTokens.screenHorizontal, end = WeaveUiTokens.screenHorizontal, top = topSpacing)
+            .fillMaxWidth()
+            .graphicsLayer { alpha = panelAlpha }
+            .clip(shape)
+            .background(scheme.surface)
+            .drawWithCache {
+                val stroke = WeaveUiTokens.panelBorderWidth.toPx()
+                val half = stroke / 2
+                val left = half
+                val right = size.width - half
+                val low = size.height - half
+                val radius = (WeaveUiTokens.panelRadius.toPx() - half)
+                    .coerceAtMost(minOf(right - left, low - half) / 2)
+                    .coerceAtLeast(0f)
+                fun cap(y: Float, topEdge: Boolean): Path = Path().apply {
+                    val capTop = if (topEdge) y else y - radius * 2
+                    val capBottom = capTop + radius * 2
+                    val sweep = if (topEdge) 90f else -90f
+                    arcTo(Rect(left, capTop, left + radius * 2, capBottom), 180f, sweep, false)
+                    lineTo(right - radius, y)
+                    arcTo(Rect(right - radius * 2, capTop, right, capBottom), if (topEdge) 270f else 90f, sweep, false)
+                }
+                val topCap = if (first) cap(half, true) else null
+                val bottomCap = if (last) cap(low, false) else null
+                onDrawWithContent {
+                    drawContent()
+                    val start = if (first) half + radius else 0f
+                    val end = if (last) low - radius else size.height
+                    drawLine(scheme.outlineVariant, Offset(left, start), Offset(left, end), stroke)
+                    drawLine(scheme.outlineVariant, Offset(right, start), Offset(right, end), stroke)
+                    topCap?.let { drawPath(it, scheme.outlineVariant, style = Stroke(stroke)) }
+                    bottomCap?.let { drawPath(it, scheme.outlineVariant, style = Stroke(stroke)) }
+                }
+            }
+            .padding(top = if (first) 2.dp else 0.dp, bottom = if (last) 2.dp else 0.dp),
+    ) {
+        if (!first) WeaveInsetDivider()
+        content()
+    }
+}
+
 @Composable
 private fun RouteActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
@@ -538,78 +629,75 @@ private fun CollapsedGroup(
     routes: List<AppRoute>,
     open: Boolean,
     onToggle: () -> Unit,
-    onRouteClick: (String) -> Unit,
 ) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(role = Role.Button, onClick = onToggle)
-                .heightIn(min = WeaveUiTokens.rowMinHeight)
-                .padding(horizontal = 14.dp)
-                .testTag("routes-group-${dot.name.lowercase()}")
-                .semantics {
-                    if (open) collapse { onToggle(); true } else expand { onToggle(); true }
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(routeDotColor(dot)))
-            Spacer(Modifier.width(12.dp))
-            Text(label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
-            if (!open) {
-                Row(
-                    modifier = Modifier.clearAndSetSemantics {},
-                    horizontalArrangement = Arrangement.spacedBy((-9).dp),
-                ) {
-                    routes.take(4).forEach { route ->
-                        val badge = appBadgeColors(route.tint)
-                        Box(
-                            modifier = Modifier
-                                .size(26.dp)
-                                .border(2.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(badge.background),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(route.monogram.take(1), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
-                        }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onToggle)
+            .heightIn(min = WeaveUiTokens.rowMinHeight)
+            .padding(horizontal = 14.dp)
+            .testTag("routes-group-${dot.name.lowercase()}")
+            .semantics {
+                if (open) collapse { onToggle(); true } else expand { onToggle(); true }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(routeDotColor(dot)))
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
+        if (!open) {
+            Row(
+                modifier = Modifier.clearAndSetSemantics {},
+                horizontalArrangement = Arrangement.spacedBy((-9).dp),
+            ) {
+                routes.take(4).forEach { route ->
+                    val badge = appBadgeColors(route.tint)
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .border(2.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(badge.background),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(route.monogram.take(1), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
                     }
                 }
-                Text(
-                    "${routes.size}",
-                    style = MaterialTheme.typography.labelLarge.merge(TabularNumbers),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    translate = false,
-                    modifier = Modifier.padding(start = 2.dp, end = 4.dp),
-                )
             }
-            Icon(
-                Icons.Rounded.KeyboardArrowDown,
-                null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = if (open) 180f else 0f },
+            Text(
+                "${routes.size}",
+                style = MaterialTheme.typography.labelLarge.merge(TabularNumbers),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                translate = false,
+                modifier = Modifier.padding(start = 2.dp, end = 4.dp),
             )
         }
-        androidx.compose.animation.AnimatedVisibility(
-            visible = open,
-            enter = WeaveMotion.expandEnter,
-            exit = WeaveMotion.expandExit,
-        ) {
-            Column {
-                routes.forEach { route ->
-                    WeaveInsetDivider()
-                    AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
-                }
-            }
-        }
+        Icon(
+            Icons.Rounded.KeyboardArrowDown,
+            null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = if (open) 180f else 0f },
+        )
     }
 }
+
+internal fun routeItemKey(packageName: String): String = "route:$packageName"
+
+/** Test-only observer; absent from ordinary row composition. */
+internal val LocalRouteRowCompositionObserver = staticCompositionLocalOf<((String, Boolean) -> Unit)?> { null }
 
 @Composable
 private fun AppRouteRow(
     route: AppRoute,
     onClick: () -> Unit,
 ) {
+    val observer = LocalRouteRowCompositionObserver.current
+    if (observer != null) {
+        DisposableEffect(observer, route.packageName) {
+            observer(route.packageName, true)
+            onDispose { observer(route.packageName, false) }
+        }
+    }
     val badge = appBadgeColors(route.tint)
     val scheme = MaterialTheme.colorScheme
     val dot = when (route.target.kind) {

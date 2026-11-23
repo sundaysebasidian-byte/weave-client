@@ -70,13 +70,5 @@ object PrivateCoreConnections {
     }
 }
 
-internal fun java.io.InputStream.readBytesBounded(limit: Int): ByteArray {
-    val output = java.io.ByteArrayOutputStream()
-    val buffer = ByteArray(8192)
-    while (true) {
-        val count = read(buffer)
-        if (count < 0) return output.toByteArray()
-        check(output.size() + count <= limit) { "Local response too large" }
-        output.write(buffer, 0, count)
-    }
-}
+internal fun java.io.InputStream.readBytesBounded(limit: Int): ByteArray =
+    BoundedCoreResponse.readBytes(this, limit)

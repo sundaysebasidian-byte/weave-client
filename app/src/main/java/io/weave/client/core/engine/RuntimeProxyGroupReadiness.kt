@@ -20,8 +20,6 @@ internal object RuntimeProxyGroupReadiness {
         // name here keeps the gate compatible with older/repacked CMFA builds that omit the
         // override in the query response. The fallback names above are the only values Mihomo
         // can expose when a provider is empty; every other non-blank member is a real candidate.
-        val realMembers = memberNames.filterNot(::isSynthetic)
-        val hasRealMember = realMembers.isNotEmpty()
         // CMFA's automatic groups intentionally do not have a stable `now` during their first
         // load: URLTest/Fallback choose after their first probe, and LoadBalance chooses per
         // connection. They still need at least one real provider member before TUN is exposed.
@@ -29,7 +27,7 @@ internal object RuntimeProxyGroupReadiness {
         // YAML spelling (url-test/load-balance) across CMFA releases. Normalize punctuation so a
         // valid automatic group is not rejected solely because the bridge changed presentation.
         when (groupType?.filter(Char::isLetterOrDigit)?.lowercase()) {
-            "loadbalance", "urltest", "fallback" -> return hasRealMember
+            "loadbalance", "urltest", "fallback" -> return memberNames.any { !isSynthetic(it) }
         }
         return selectedName != null &&
             !isSynthetic(selectedName) && selectedName in memberNames
