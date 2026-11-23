@@ -29,11 +29,62 @@ class SubscriptionUsageTest {
         assertNull(SubscriptionUsage.parse("x".repeat(600)))
     }
 
+    @Test fun `only recognized valid fields replace earlier values`() {
+        assertEquals(SubscriptionUsage(34, 12, 0, null), SubscriptionUsage.parse(
+            " UPLOAD = 0012, upload=34; upload=broken; upload=-1;download=+12; expire=123; ExpIRe=-0.0; meta=9",
+        ))
+        assertNull(SubscriptionUsage.parse("meta=1,another=2;upload=bad"))
+        assertEquals(SubscriptionUsage(0, 0, 0, null), SubscriptionUsage.parse("expire=0"))
+    }
+
+    @Test fun `integer fast path preserves decimal and range behavior`() {
+        val usage = SubscriptionUsage.parse("upload=${Long.MAX_VALUE};download=9223372036854775808;total=٢٥;expire=3.99e1")
+        assertEquals(SubscriptionUsage(Long.MAX_VALUE, Long.MAX_VALUE, 25, 39), usage)
+        assertNull(SubscriptionUsage.parse("upload=${Long.MIN_VALUE}"))
+        assertEquals(SubscriptionUsage(0, 0, 0, null), SubscriptionUsage.parse("upload=0.99"))
+    }
+
+    @Test fun `header length boundary is unchanged`() {
+        val exact = "upload=7" + " ".repeat(504)
+        assertEquals(SubscriptionUsage(7, 0, 0, null), SubscriptionUsage.parse(exact))
+        assertNull(SubscriptionUsage.parse(exact + " "))
+        assertNull(SubscriptionUsage.parse(" ".repeat(512)))
+    }
+
     @Test fun `encode round trips`() {
         val usage = SubscriptionUsage(1, 2, 3, 4)
         assertEquals(usage, SubscriptionUsage.decode(usage.encode()))
         assertEquals(SubscriptionUsage(1, 2, 3, null), SubscriptionUsage.decode(SubscriptionUsage(1, 2, 3, null).encode()))
         assertNull(SubscriptionUsage.decode("1,2"))
+    }
+
+    @Test fun decodeKeepsCanonicalAndLegacyStoredValues() {
+        val fields = listOf("", "0", "-0", "+0", "+1", "-1", "١٢", "９", "01", "1 ",
+            "\t1", "9223372036854775807", "9223372036854775808", "-9223372036854775808")
+        for (first in fields) for (second in fields) {
+            for (value in listOf("$first,$second,3,0", "3,4,$first,$second", "$first,$second,3,4,5")) {
+                assertEquals(value, previousDecode(value), SubscriptionUsage.decode(value))
+            }
+        }
+        assertEquals(previousDecode(null), SubscriptionUsage.decode(null))
+        assertEquals(SubscriptionUsage(Long.MAX_VALUE, 12, 999, Long.MAX_VALUE),
+            SubscriptionUsage.decode("9223372036854775807,12,999,9223372036854775807"))
+    }
+
+    @Test fun asciiDecoderMatchesPersistedCanonicalFixtures() {
+        val random = kotlin.random.Random(114)
+        repeat(2048) {
+            val source = SubscriptionUsage(random.nextLong().ushr(1), random.nextLong().ushr(1),
+                random.nextLong().ushr(1), if (it % 2 == 0) null else random.nextLong().ushr(1).coerceAtLeast(1))
+            assertEquals(source, StoredUsageDecoder.decodeAscii(source.encode()))
+            assertEquals(source, SubscriptionUsage.decode(source.encode()))
+        }
+    }
+
+    private fun previousDecode(value: String?): SubscriptionUsage? {
+        val parts = value?.split(',')?.map { it.toLongOrNull() ?: return null } ?: return null
+        if (parts.size != 4 || parts.any { it < 0 }) return null
+        return SubscriptionUsage(parts[0], parts[1], parts[2], parts[3].takeIf { it > 0 })
     }
 
     @Test fun `saturates huge sums`() {

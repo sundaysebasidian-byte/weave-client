@@ -201,7 +201,7 @@ internal fun WeaveStrands(stage: WeaveStage, modifier: Modifier = Modifier) {
 /** Left-to-right order on the dial: global, rule, direct. */
 internal val DialModes = listOf(RoutingMode.GLOBAL, RoutingMode.RULE, RoutingMode.DIRECT)
 
-private fun strokeIcon(name: String, vararg paths: String): ImageVector =
+internal fun strokeIcon(name: String, vararg paths: String): ImageVector =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
         paths.forEach { data ->
             addPath(

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Weave</string>
+    <string name="app_name" translatable="false">Weave Next</string>
     <string name="vpn_channel_name">Proxy connection</string>
     <string name="vpn_channel_description">Shows Weave\'s proxy connection status</string>
     <string name="updates_channel_name">Subscription updates</string>
@@ -29,4 +29,6 @@
     <string name="notification_control_enabled">Shown in the notification drawer, with a disconnect action.</string>
     <string name="notification_control_disabled">Notifications are off. The tunnel can run, but its status and disconnect action may be hidden.</string>
     <string name="notification_control_action">Manage notifications</string>
+    <string name="action_choose_exit">Choose exit</string>
+    <string name="widget_description">Connection status with a one-tap switch</string>
 </resources>

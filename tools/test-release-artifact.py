@@ -20,4 +20,12 @@ class ReleaseArtifactPolicyTest(unittest.TestCase):
     def test_production_candidate_requires_exact_previous_certificate_when_requested(self):
         self.assertIn('Production signer does not match the confirmed certificate',check.violations(self.metadata(),'candidate','0.4.0-rc1',107,'a'*64))
         self.assertEqual([],check.violations(self.metadata(signer_sha256=['a'*64],debug_signer_dn=False),'candidate','0.4.0-rc1',107,'a'*64))
+    def test_package_channels_are_not_interchangeable(self):
+        next_permissions=[p.replace(check.LEGACY_APP_ID,check.NEXT_APP_ID) for p in check.ALLOWED_PERMISSIONS]
+        next_apk=self.metadata(application_id=check.NEXT_APP_ID,permissions=next_permissions)
+        self.assertIn('Wrong application ID',check.violations(next_apk,'candidate','0.4.0-rc1',107))
+        self.assertEqual([],check.violations(next_apk,'candidate','0.4.0-rc1',107,expected_application_id=check.NEXT_APP_ID))
+        self.assertIn('Wrong application ID',check.violations(self.metadata(),'candidate','0.4.0-rc1',107,expected_application_id=check.NEXT_APP_ID))
+        bad_next=next_apk|{'permissions':list(check.ALLOWED_PERMISSIONS)}
+        self.assertIn('Unexpected Android permission',check.violations(bad_next,'candidate','0.4.0-rc1',107,expected_application_id=check.NEXT_APP_ID))
 if __name__=='__main__':unittest.main()

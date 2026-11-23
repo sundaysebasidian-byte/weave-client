@@ -39,11 +39,12 @@ object WeaveLocales {
         if (!store.isLocaleMigrated()) {
             // Versions before 0.4 kept the in-app choice only in the store. Hand it to the system
             // once instead of treating the empty system setting as "follow the device".
-            store.markLocaleMigrated()
-            store.explicitLanguage()?.let { language ->
-                manager.applicationLocales = LocaleList.forLanguageTags(language.localeTag)
-                return
-            }
+            if (migrateLegacyAppLanguage(
+                    language = store.explicitLanguage(),
+                    applyToSystem = { manager.applicationLocales = LocaleList.forLanguageTags(it.localeTag) },
+                    markMigrated = store::markLocaleMigrated,
+                )
+            ) return
         }
         val locales = manager.applicationLocales
         val selected = if (locales.isEmpty) null else WeaveLanguage.fromSystem(locales[0])
@@ -61,4 +62,15 @@ object WeaveLocales {
                 language?.let { LocaleList.forLanguageTags(it.localeTag) } ?: LocaleList.getEmptyLocaleList()
         }
     }
+}
+
+/** Keep the stored choice eligible for retry until Android has accepted it. */
+internal fun migrateLegacyAppLanguage(
+    language: WeaveLanguage?,
+    applyToSystem: (WeaveLanguage) -> Unit,
+    markMigrated: () -> Unit,
+): Boolean {
+    if (language != null) applyToSystem(language)
+    markMigrated()
+    return language != null
 }
