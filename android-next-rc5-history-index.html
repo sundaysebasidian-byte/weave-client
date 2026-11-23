@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>历史验证索引 | Weave Next</title><link rel="stylesheet" href="styles.css"></head>
+<body><a class="skip" href="#content">跳到正文</a><header class="mast"><div>Weave Next / Android</div></header>
+<div class="layout"><nav aria-label="页面导航"><a href="android-next-rc5.html">改动与迁移指南</a><a href="android-next-rc5-history-index.html" aria-current="page">历史验证索引</a></nav><main id="content"><h1 id="weave-next-android99-项历史改动与验证索引">Weave Next
+Android：99 项历史改动与验证索引</h1>
+<p>这份索引列出 Build 111 集成选用的 99
+项历史结果。改动名称取自历史源码记录；实际集成时纳入的是该项审定的改动范围，不是整份历史提交。右侧链接指向历史记录中成功的定向验证或补充任务。标有用例数的链接另有
+JUnit 校验记录；其余只列任务入口。R049
+有改动记录，但历史证据未附公开成功任务链接。</p>
+<p>第 100 项是把历史结果与 Android
+的界面改动合起来的整体验收，与表中的历史编号 R100
+不是一回事。 整体验收已通过，见<a href="android-next-rc5.html#验证了什么">本版验证结果</a>。历史任务使用各自的构建，不能当成最终签名安装包的整体验收。最终安装包的迁移验证见<a
+href="android-next-rc5.html">改动与迁移指南</a>。</p>
+<p>未纳入本次集成的历史编号：R001、R002、R003、R004、R005、R006、R007、R008、R009、R015、R019、R022、R057、R086、R093、R094、R099、R103、R112。</p>
+<table>
+<thead>
+<tr class="header">
+<th>历史编号</th>
+<th>改动内容（源码记录原文）</th>
+<th>历史验证</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>R010</td>
+<td>preserve identifiers after escaped country flags</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44911650619/job/136868559867">6
+项</a></td>
+</tr>
+<tr class="even">
+<td>R011</td>
+<td>add an inspector-only endpoint formatter；format IPv6 endpoints in
+the connection inspector</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44914983615/job/136878552819">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R012</td>
+<td>use the strict verifier in Android integrity checks</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44915056062/job/136878780481">任务
+1</a></td>
+</tr>
+<tr class="even">
+<td>R013</td>
+<td>parse connection start times as instants；sort inspector snapshots
+in the existing background context</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44915439118/job/136879929036">1
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44915439118/job/136879929261">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R014</td>
+<td>read local backup envelopes without geometric buffer growth；use
+bounded chunks when opening a local backup</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44915963535/job/136881515604">4
+项</a></td>
+</tr>
+<tr class="even">
+<td>R016</td>
+<td>filter routed app packages using a single membership index；reuse
+app picker filtering while inputs stay the same</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44916582232/job/136883390054">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R017</td>
+<td>normalize one leading UTF-8 signature in local subscriptions</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44916957573/job/136884513266">6
+项</a></td>
+</tr>
+<tr class="even">
+<td>R018</td>
+<td>resolve missing app labels using the I/O dispatcher；keep package
+label lookup off the live inspector UI thread</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44922642343/job/136901797206">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R020</td>
+<td>Bound Android download probe duration；Specify Android probe
+continuation type</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44930533967/job/136925943042">4
+项</a></td>
+</tr>
+<tr class="even">
+<td>R021</td>
+<td>Add Android policy pack reload coordinator；Coalesce Android policy
+pack reloads during edits</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44930646581/job/136926286574">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R023</td>
+<td>Build Android node health index in one pass</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44933680204/job/136935576195">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R024</td>
+<td>Cap connection rule label during construction</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44936662142/job/136944661951">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R025</td>
+<td>Stop waiting after the active core log stream closes；Guard stale
+Android log collection stop events</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44937348173/job/136946771330">4
+项</a></td>
+</tr>
+<tr class="even">
+<td>R026</td>
+<td>publish DNS results without batch delay；add a shared bounded DNS
+probe window</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44938079816/job/136949020435">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R027</td>
+<td>reduce usage header parse allocations</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44938634614/job/136950721681">10
+项</a></td>
+</tr>
+<tr class="even">
+<td>R028</td>
+<td>add bounded log record reader；cap memory retained per diagnostic
+log record</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44939416542/job/136953116535">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R029</td>
+<td>avoid entry copies when reading local backups</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44939743246/job/136954097736">6
+项</a></td>
+</tr>
+<tr class="even">
+<td>R030</td>
+<td>read recovery state from one preferences snapshot；disambiguate
+recovery constructor delegation</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44940397495/job/136956098635">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R031</td>
+<td>avoid describing duplicate launcher activities</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44940643058/job/136956841630">2
+项</a></td>
+</tr>
+<tr class="even">
+<td>R032</td>
+<td>add a bounded immutable traffic window；avoid copies when dashboard
+traffic history is unchanged</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44940994552/job/136957934848">11
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R033</td>
+<td>persist migration marker only after applying app language</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44941335402/job/136958987090">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R034</td>
+<td>introduce binding-owned reply endpoint；ignore messages queued by an
+obsolete local binding</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44941809056/job/136960434713">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R035</td>
+<td>tally subscription changes with one keyed table</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44942045881/job/136961171809">4
+项</a></td>
+</tr>
+<tr class="even">
+<td>R036</td>
+<td>count local import text bytes without copying payloads</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44942656360/job/136963036490">11
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R037</td>
+<td>defer package metadata until guide eligibility；avoid unused package
+query at startup</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44943079676/job/136964338779">14
+项</a></td>
+</tr>
+<tr class="even">
+<td>R038</td>
+<td>keep validated Clash document root for reuse；avoid duplicate
+parsing while detecting Clash subscriptions</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44943462682/job/136965517999">3
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44943462682/job/136965518180">26
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R039</td>
+<td>track latest trace refresh generation；prevent delayed trace refresh
+from overriding current state</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44943775802/job/136966496376">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R040</td>
+<td>distinguish granted attachment from share caption；select shared
+subscription attachment without changing deep links</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44944222467/job/136967851754">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R041</td>
+<td>reuse immutable progress between subscription refreshes</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44944231669/job/136967880463">7
+项</a></td>
+</tr>
+<tr class="even">
+<td>R042</td>
+<td>keep invalid group guidance across sanitization；retain invalid
+target versus explicit block wording</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44944524138/job/136968787243">5
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44944524138/job/136968787396">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R043</td>
+<td>cache numeric labels within a notification session；reuse numeric
+rates without changing notification cadence</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44944830217/job/136969733988">7
+项</a></td>
+</tr>
+<tr class="even">
+<td>R044</td>
+<td>keep the LAN import form ephemeral and revision-owned；reject stale
+accepted-scan confirmation before import</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44945907165/job/136973040470">4
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R045</td>
+<td>track owned bundled geodata staging file；remove an interrupted
+bundled-resource staging file</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44945980691/job/136973262933">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R046</td>
+<td>hash subscription revision in bounded UTF-8 chunks</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44946436952/job/136974685224">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R047</td>
+<td>add finite recovery category projection；distinguish verified
+rollback outcomes in support report</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44946792569/job/136977238525">3
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44946792569/job/136977240323">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R048</td>
+<td>index latest subscription refresh outcome once；avoid rescanning
+refresh outcomes per subscription row</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44946938348/job/136976197557">12
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R049</td>
+<td>translate missing release and subscription feedback across
+locales；localize the unavailable browser feedback</td>
+<td>历史证据未附公开成功任务</td>
+</tr>
+<tr class="even">
+<td>R050</td>
+<td>track visible local rule list request order；keep older local reads
+from hiding committed edits</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44947606528/job/136978258510">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R051</td>
+<td>track this temporary clipboard copy without reading its text；do not
+clear separately copied clipboard text</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44948127774/job/136979856652">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R052</td>
+<td>keep an active subscription node filter editable；retain the search
+field after an active node list shrinks</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44948306596/job/136980412974">13
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R053</td>
+<td>Fix localized update status on Android；Use the current language for
+startup notices</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44948756537/job/136981801665">10
+项</a></td>
+</tr>
+<tr class="even">
+<td>R054</td>
+<td>Add a bounded freshness check for the attribution cache；Avoid
+sweeping fresh socket ownership cache entries</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44949098851/job/136982870289">3
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44949098851/job/136982870660">6
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R055</td>
+<td>Short-circuit Android proxy group readiness checks；Pin bounded work
+in proxy group readiness</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44949107681/job/136982897343">6
+项</a></td>
+</tr>
+<tr class="even">
+<td>R056</td>
+<td>Reduce temporary allocations in Android health summaries</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44949419851/job/136983833362">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R058</td>
+<td>Avoid an extra copy for complete diagnostic log lines</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44949904702/job/136985317951">5
+项</a></td>
+</tr>
+<tr class="even">
+<td>R059</td>
+<td>Add a per-APK native payload presence probe；Reuse APK archives
+during the installed payload check</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44950199444/job/136986219070">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R060</td>
+<td>Decode local subscription bytes without copying the buffer；Avoid a
+full input copy when importing a local subscription</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44950420100/job/136986893177">3
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44950420100/job/136986893385">7
+项</a></td>
+</tr>
+<tr class="even">
+<td>R061</td>
+<td>Reduce repeated copying in node label formatting</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44950654617/job/136987619985">8
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R062</td>
+<td>Retain new Android trace events after clock rollback</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44950994117/job/136988664445">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R063</td>
+<td>Reduce formatter work for whole-number Android traffic labels</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44951452326/job/136990063377">4
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R064</td>
+<td>Reuse the parsed CMFA root for provider materialization</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44951494036/job/136990197479">3
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44951494036/job/136990197639">12
+项</a></td>
+</tr>
+<tr class="even">
+<td>R065</td>
+<td>Reuse the locked preferences snapshot for an app route save</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44952084448/job/136992017380">1
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44952084448/job/136992017644">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R066</td>
+<td>Keep a complete Unicode character at the inferred name
+limit；Preserve Unicode when inferring local subscription names</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44951800264/job/136991164543">3
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44951800264/job/136991164757">8
+项</a></td>
+</tr>
+<tr class="even">
+<td>R067</td>
+<td>Index legacy names while preserving original node identity；Avoid
+repeated scans during private subscription index repair</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44952605433/job/136993616620">4
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44952605433/job/136993616929">1
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R068</td>
+<td>Match no-reason connection failure advice to available actions</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44952827038/job/136994299856">13
+项</a></td>
+</tr>
+<tr class="even">
+<td>R069</td>
+<td>Add a bounded Unicode prefix for launcher labels；Avoid temporary
+code-point arrays when reading application labels</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44953012642/job/136994888068">2
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44953012642/job/136994888236">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R070</td>
+<td>Fence buffered log rows by current collection；Ignore stale log rows
+after pausing or changing levels</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44953433204/job/136996197723">5
+项</a></td>
+</tr>
+<tr class="even">
+<td>R071</td>
+<td>Avoid formatting duplicate rules in offline package compilation</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44953924798/job/136997718439">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R072</td>
+<td>Keep one owner for installed-app refresh requests；Queue an explicit
+installed-app rescan while a scan is active</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44954295645/job/136998887121">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R073</td>
+<td>Observe app resume without treating navigation as foreground；Keep
+quick-start waiting tied to real progress</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44954815567/job/137000463915">14
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44954815567/job/137000464091">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R074</td>
+<td>Add a bounded inverted QR image fallback；Use the normal decoder
+before trying a dark QR image</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44955667771/job/137003064020">2
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44955667771/job/137003064166">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R075</td>
+<td>Serialize a recovery failure increment with profile resets</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44956281374/job/137005005810">4
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R076</td>
+<td>Rank matching routes with one health lookup per node；Reuse cached
+sort keys when showing selectable route nodes</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44956677725/job/137006219085">2
+项</a></td>
+</tr>
+<tr class="even">
+<td>R077</td>
+<td>Keep connection snapshot outcomes tied to the active screen
+read；Stop treating canceled connection polling as a read failure</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44956736732/job/137006402305">4
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R078</td>
+<td>Use a unique local diagnostic request identity；Keep each diagnostic
+view owned by its request</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44957154324/job/137007690505">2
+项</a></td>
+</tr>
+<tr class="even">
+<td>R079</td>
+<td>Use the bounded group predicate in Quick Start</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44957349783/job/137008275836">14
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44957349783/job/137008276078">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R080</td>
+<td>Share the same entry separation rule for group drafts；Keep the
+preserved chain entry out of draft exit members</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44957511508/job/137008768070">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R081</td>
+<td>Read bounded text without making a second entire byte array；Use the
+owned UTF-8 response buffer for local diagnostic text</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44958137800/job/137010707724">1
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44958137800/job/137010707777">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R082</td>
+<td>Count repeated subscription entries without cloning their
+maps；Avoid key lists when comparing subscription previews</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44957913869/job/137010020942">6
+项</a></td>
+</tr>
+<tr class="even">
+<td>R083</td>
+<td>Build only the eight visible quality rows；Use the bounded quality
+preview in subscription details</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44958361929/job/137011411213">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R084</td>
+<td>Clear only the notice that actually finished displaying；Preserve a
+newer notice when an older snackbar finishes</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44958575969/job/137012072445">3
+项</a></td>
+</tr>
+<tr class="even">
+<td>R085</td>
+<td>Represent route explanations and validation errors exclusively；Show
+only the current Route Lens result or error</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44958739008/job/137012575675">2
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44958739008/job/137012575898">5
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R087</td>
+<td>Retire a display read after a successful disconnect；Keep closed
+connections out of an older connection snapshot</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44959099965/job/137013701132">7
+项</a></td>
+</tr>
+<tr class="even">
+<td>R088</td>
+<td>Separate reviewed import completion from refresh and reload
+dispatch；Preserve completed migration after a saved import</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44959980423/job/137016429242">1
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44959980423/job/137016429412">10
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44959980423/job/137016429466">7
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R089</td>
+<td>Reuse the launcher label normalization pattern</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44959728206/job/137015654410">6
+项</a></td>
+</tr>
+<tr class="even">
+<td>R090</td>
+<td>Classify group route rules as proxied in the summary；Use the exact
+configured rule counts in the routes overview</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44960165371/job/137016994979">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R091</td>
+<td>Use one bounded read for a tightly packed camera luma
+plane；Delegate frame copying while keeping the scanner unchanged</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44960538641/job/137018132691">5
+项</a></td>
+</tr>
+<tr class="even">
+<td>R092</td>
+<td>Compute exact probe summary with a primitive latency buffer；Reuse
+the pure subscription probe summary for one snapshot</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44960788175/job/137018906829">3
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R095</td>
+<td>Keep validation separate from accepted custom group
+persistence；Return custom group validation errors to the editing
+dialog</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44961403724/job/137020785404">5
+项</a></td>
+</tr>
+<tr class="even">
+<td>R096</td>
+<td>Avoid copying compact Base64 during Clash subscription
+unwrapping；Reuse the whitespace compactor before local subscription
+decoding</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44961507485/job/137021093133">5
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44961507485/job/137021093356">26
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R097</td>
+<td>Represent a confirmed restore independently from local
+reread；Finish a restored backup even if the interface cannot
+refresh</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44962295078/job/137023537595">5
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44962295078/job/137023537807">1
+项</a></td>
+</tr>
+<tr class="even">
+<td>R098</td>
+<td>Retain overflow evidence before enabling Add；Prevent a long pasted
+local rule from becoming a different rule</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44961938681/job/137022456620">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R100</td>
+<td>atomically claim the current launcher request after
+readiness；dispatch only a claimed launcher request</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44962820255/job/137025166001">5
+项</a></td>
+</tr>
+<tr class="even">
+<td>R101</td>
+<td>stream exact sparkline coordinates；draw the dashboard sparkline
+without a boxed point list</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44962937553/job/137025531762">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R102</td>
+<td>avoid recursion bookkeeping on static translation hits；preserve
+static and recursive limits across locales</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963258450/job/137026522502">11
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963258450/job/137026522694">1
+项</a></td>
+</tr>
+<tr class="even">
+<td>R104</td>
+<td>recover a retired policy pack list read after a failed
+mutation；pass local policy listing mutation result to refresh
+owner</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963581149/job/137027505474">7
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R105</td>
+<td>group matching custom group nodes in one traversal；use the exact
+grouped projection in the custom group editor</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963734266/job/137027987878">5
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963734266/job/137027988087">2
+项</a></td>
+</tr>
+<tr class="even">
+<td>R106</td>
+<td>match synthetic UID labels in local connection search</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963968865/job/137028706665">4
+项</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44963968865/job/137028706819">7
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R107</td>
+<td>count subscription progress incrementally at snapshot
+publication；display exact subscription refresh counters without
+rescanning</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44976916577/job/137068762978">8
+项</a></td>
+</tr>
+<tr class="even">
+<td>R108</td>
+<td>stop scanning once the selected subscription IDs are found</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44979258973/job/137075930658">10
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R109</td>
+<td>preserve visible label suffix after unambiguous escaped
+decorations</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44980890417/job/137080927996">10
+项</a></td>
+</tr>
+<tr class="even">
+<td>R110</td>
+<td>avoid Formatter for equivalent fractional traffic display；match the
+original formatter in the PB boundary test</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44981723920/job/137083455374">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R111</td>
+<td>project subscription notice names only for terminal results；skip
+unused subscriber name projection while refreshing</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44981449266/job/137082614751">2
+项</a></td>
+</tr>
+<tr class="even">
+<td>R113</td>
+<td>reduce connection label intermediates；render connection hop summary
+in one pass</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44983221114/job/137088069925">2
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R114</td>
+<td>scan persisted usage digits without token allocations；retain exact
+legacy stored-usage decode fallback</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44984532026/job/137092096075">12
+项</a></td>
+</tr>
+<tr class="even">
+<td>R115</td>
+<td>sort unique picker rows in exact-size storage</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44984784039/job/137092860528">4
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R116</td>
+<td>project only missing display labels from connection rows；skip
+copying connection label identifiers</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44984819661/job/137092969307">5
+项</a></td>
+</tr>
+<tr class="even">
+<td>R117</td>
+<td>index local catalogue selection in original order</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44987147115/job/137100099448">13
+项</a></td>
+</tr>
+<tr class="odd">
+<td>R118</td>
+<td>project stored nodes directly into final list；remove
+per-subscription node list copies</td>
+<td><a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44987220129/job/137100320924">2
+项</a></td>
+</tr>
+</tbody>
+</table>
+</main></div>
+</body></html>

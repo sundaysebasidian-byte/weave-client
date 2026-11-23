@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>改动与迁移指南 | Weave Next</title><link rel="stylesheet" href="styles.css"></head>
+<body><a class="skip" href="#content">跳到正文</a><header class="mast"><div>Weave Next / Android</div></header>
+<div class="layout"><nav aria-label="页面导航"><a href="android-next-rc5.html" aria-current="page">改动与迁移指南</a><a href="android-next-rc5-history-index.html">历史验证索引</a></nav><main id="content"><h1 id="weave-next-040-rc5android-版改动与迁移指南">Weave Next 0.4.0
+RC5：Android 版改动与迁移指南</h1>
+<p>如果你正在用 Weave Build 110，<strong>先别卸载旧版</strong>。Weave
+Next（Build 111）是单独安装的 Android
+应用。两者可以共存，但不会自动共享订阅、规则或系统授权。以下说明针对
+ARM64 版 Android，不涉及桌面端。</p>
+<h2 id="从旧版带走自己的配置">从旧版带走自己的配置</h2>
+<ol type="1">
+<li>在旧版 Weave
+导出一份加密备份。记住密码，把文件保存在自己能找到的位置。迁移不需要上传文件或密码。</li>
+<li>安装并打开 Weave Next，在备份恢复界面通过 Android
+文件选择器选中刚才的文件，输入导出时用的密码。</li>
+<li>完全退出
+Next，再打开。核对常用订阅、节点、固定路由、分组成员和本地规则，确认它们指向原来的目标。用了自定义配色的话，也看一眼是否保留。</li>
+<li>准备使用 Next 连接时，按 Android 提示重新授予 VPN
+权限。旧版的小组件和快捷设置磁贴不会变成新版入口；需要的话，重新添加
+Next 的那一项。</li>
+</ol>
+<p>保留旧版和原备份，直到你确认新配置可用。如果在 Next
+里改过规则，别指望切回旧版时它也跟着变：两份配置是分开的。</p>
+<h2 id="日常用起来有什么不同">日常用起来有什么不同</h2>
+<p><strong>首页和系统入口。</strong>
+首页、路由、订阅和设置页面重新整理了布局；桌面小组件、快捷设置磁贴和通知操作也做了调整。首页的流量曲线不再为每次绘制单独创建一整份坐标列表，曲线样式和原有采样方式保持不变。</p>
+<p><strong>选节点、改规则。</strong>
+路由目标选择器仍按收藏、测速结果和名称排列；在自定义分组里搜索节点时，现在可以直接按来源整理匹配项，不必先生成一份中间列表。粘贴过长的本地规则时，编辑框会提示修改，而不是偷偷截掉尾部，再把另一个域名存进去。用路由解释工具查询时，如果这次域名为空或端口无效，界面只显示这次的错误，不会把上一次的答案留在旁边。</p>
+<p><strong>导入订阅。</strong>
+订阅已经保存、但节点列表没能刷新的情况，与订阅根本没存成功的情况分开提示。连接期间，如果新节点已经读出，但通知运行中的服务重新加载失败，也不会把它误报成保存失败。处理没有空白字符的
+Base64
+编码订阅时，不再为了清理空白重复复制整段文本；带换行的订阅仍按原规则解析。</p>
+<p>这些调整减少的是手机本地的重复工作，不能据此推算代理网速、延迟或续航的变化。</p>
+<h2 id="验证了什么">验证了什么</h2>
+<p>2026 年 11 月 23 日，在离线 ARM64 Android 测试环境（API
+36）中，用旧版和签名版 Next
+走通了实际迁移：两款应用并存，通过系统文件选择器导入旧格式备份，冷启动后核对数据，再从
+Next
+导出新格式备份。样例中的订阅与节点内容、固定路由、分组路由与成员、本地规则和配色都保留了，旧备份未被改写。验证使用的是专门构造的配置，不是用户的手机或真实订阅；也不代表每种设备、显示密度和网络条件都已覆盖。</p>
+<p>想看开发过程，可查阅<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/44950246584">阶段性
+Android
+构建与回归测试</a>。这是开发阶段的记录，不是上述签名安装包的迁移报告。</p>
+<p>2026 年 11 月 23 日，源码 <code>f527945</code> 的 Android CI <a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/45181245151">运行记录</a>
+显示汇总通过。可单独查看<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/45181245151/job/137715296524">Linux</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/45181245151/job/137715296056">Intel
+AOSP</a>、<a
+href="https://github.com/sundaysebasidian-byte/weave-client/actions/runs/45181245151/job/137731783526">汇总检查</a>。这是该源码的托管测试结果，与上面的签名安装包迁移验证分开。</p>
+<p>Intel AOSP 测试的原始结果经独立复核：8 个测试类，87 项开始、87 项通过，没有失败。<a href="https://github.com/sundaysebasidian-byte/weave-client/pull/23">集成改动 #23</a> 已合并到 <code>e89e830</code>。这完成了 99 项历史改动与 Android 界面改动的整体验收。托管测试与签名安装包的离线迁移实测是两份证据；没有在用户手机上做安装，且本版不支持覆盖旧版的原地升级。</p>
+<h2 id="历史改动索引">历史改动索引</h2>
+<p><a href="android-next-rc5-history-index.html">查看 99
+项历史改动和对应的验证记录</a>。这些记录与最终安装包的整体验收分开列出。</p>
+</main></div>
+</body></html>

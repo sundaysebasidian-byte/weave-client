@@ -1,0 +1,10 @@
+:root{color-scheme:light;--text:#171717;--muted:#525252;--accent:#145851;--line:#e8e8e8;font-family:-apple-system,"SF Pro Text",Inter,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+*{box-sizing:border-box}body{margin:0;color:var(--text);background:#fff;font-size:15px;line-height:1.7;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-underline-offset:3px;transition:background-color 150ms ease-out}a:hover{background:#f1f5f4}a:active{background:#e5edeb}a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.skip{position:absolute;left:12px;top:-64px;background:white;padding:8px}.skip:focus{top:8px}.mast{border-bottom:1px solid var(--line)}.mast div,.layout{max-width:1200px;margin:auto;padding-inline:32px}.mast div{padding-block:16px;font-weight:600}
+.layout{display:grid;grid-template-columns:216px minmax(0,1fr);gap:48px;padding-block:48px}
+nav{align-self:start;border-right:1px solid var(--line);padding-right:24px;font-size:14px}nav a{display:block;padding:8px;text-decoration:none}nav a[aria-current]{background:#f1f5f4;color:var(--accent);font-weight:600;border-radius:6px}
+main{max-width:784px;min-width:0}h1,h2,strong{font-weight:600}h1{font-size:40px;line-height:1.25;margin:0 0 24px}h2{font-size:20px;line-height:1.4;margin:32px 0 12px}p,ol{margin:0 0 16px}ol{padding-left:24px}li+li{margin-top:8px}table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:14px}th,td{border-bottom:1px solid var(--line);text-align:left;vertical-align:top;padding:12px 8px;overflow-wrap:anywhere}th{font-weight:600}th:first-child,td:first-child{width:64px;text-align:right}th:last-child{width:36%}td:first-child{color:var(--muted)}td a{white-space:nowrap}
+@media(max-width:800px){.layout{display:block;padding-block:24px}nav{border-right:0;border-bottom:1px solid var(--line);display:flex;gap:8px;padding:0 0 12px;margin-bottom:32px;flex-wrap:wrap}}
+@media(max-width:480px){.mast div,.layout{padding-inline:16px}h1{font-size:32px}th:first-child,td:first-child{width:52px}th,td{padding-inline:4px}}
+@media(prefers-reduced-motion:reduce){a{transition:none}}
