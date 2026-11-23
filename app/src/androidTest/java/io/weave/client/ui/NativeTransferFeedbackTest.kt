@@ -82,7 +82,7 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
         var imports = 0
         val subscriptions = listOf(Subscription("fixture-a", "Fixture A", 12), Subscription("fixture-b", "Fixture B", 3))
         compose.setContent { CompositionLocalProvider(LocalWeaveLanguage provides language) { WeaveTheme {
-            LanTransferDialog(LanTransferState(), subscriptions, {}, { exported = it }, { stopped++ }, { _, _ -> imports++ }, {})
+            LanTransferDialog(LanTransferState(), subscriptions, {}, { exported = it }, { stopped++ }, { _, _, _ -> imports++ }, {})
         } } }
         scrollToText(localizeWeaveText("导出所选 0 个订阅", language)).assertIsNotEnabled()
         assertNull(exported)
@@ -96,13 +96,18 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
     }
     @Test fun incomingTransferRequiresIndependentConfirmationCode() {
         var imported: Pair<String, String>? = null
+        var submittedRevision: Long? = null
         var exports = 0
         var stops = 0
         // This device's export code must never be reused for an incoming transfer.
         val state = LanTransferState(exportLink = "weave://lan/local-fixture", confirmationCode = "987654",
-            pendingLink = "weave://lan/incoming-fixture", sharedNames = listOf("Fixture A"))
+            pendingLink = "weave://lan/incoming-fixture", sharedNames = listOf("Fixture A"),
+            pendingLinkRevision = 1L)
         compose.setContent { CompositionLocalProvider(LocalWeaveLanguage provides language) { WeaveTheme {
-            LanTransferDialog(state, emptyList(), {}, { exports++ }, { stops++ }, { link, code -> imported = link to code }, {})
+            LanTransferDialog(state, emptyList(), {}, { exports++ }, { stops++ }, { link, code, revision ->
+                imported = link to code
+                submittedRevision = revision
+            }, {})
         } } }
         scrollToTag("lan-transfer-import").assertIsNotEnabled()
         assertNull(imported)
@@ -116,6 +121,7 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
         capture("lan-import-$width-$scale-${language.name}.png")
         compose.onNodeWithTag("lan-transfer-import").performClick()
         assertEquals("weave://lan/incoming-fixture" to "123456", imported)
+        assertEquals(1L, submittedRevision)
         assertEquals(0, exports)
         assertEquals(0, stops)
     }
@@ -123,7 +129,7 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
         val state = mutableStateOf(LanTransferState())
         var exports = 0
         compose.setContent { CompositionLocalProvider(LocalWeaveLanguage provides language) { WeaveTheme {
-            LanTransferDialog(state.value, listOf(Subscription("fixture-a", "Fixture A", 12)), {}, { exports++ }, {}, { _, _ -> }, {})
+            LanTransferDialog(state.value, listOf(Subscription("fixture-a", "Fixture A", 12)), {}, { exports++ }, {}, { _, _, _ -> }, {})
         } } }
         scrollToText("Fixture A").performClick()
         compose.runOnIdle { state.value = LanTransferState(running = true) }
@@ -138,7 +144,7 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
         var imports = 0
         val state = LanTransferState(exportLink = "weave://lan/local-fixture", confirmationCode = "123456", sharedNames = listOf("Fixture A"))
         compose.setContent { CompositionLocalProvider(LocalWeaveLanguage provides language) { WeaveTheme {
-            LanTransferDialog(state, emptyList(), {}, { exports++ }, { stops++ }, { _, _ -> imports++ }, {})
+            LanTransferDialog(state, emptyList(), {}, { exports++ }, { stops++ }, { _, _, _ -> imports++ }, {})
         } } }
         scrollToTag("lan-transfer-code").assertIsDisplayed()
         val node = compose.onNodeWithTag("lan-transfer-code", useUnmergedTree = true).fetchSemanticsNode()

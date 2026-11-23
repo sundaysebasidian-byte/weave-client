@@ -22,4 +22,15 @@ class NodeHealthIndexTest {
         ))
         assertNull(index["JP-1"])
     }
+
+    @Test fun `additional collisions remain ambiguous without affecting other names`() {
+        val original = NodeHealthSnapshot("duplicate", "http", 30)
+        val unique = NodeHealthSnapshot("Unique", "http", 40)
+        val caseVariant = NodeHealthSnapshot("Duplicate", "http", 50)
+        val index = NodeHealthIndex(listOf(original, unique, caseVariant, original, original))
+        assertNull(index["duplicate"])
+        assertSame(unique, index["Unique"])
+        assertSame(caseVariant, index["Duplicate"])
+        assertNull(NodeHealthIndex(emptyList())["duplicate"])
+    }
 }

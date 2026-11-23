@@ -27,31 +27,59 @@ data class QualityMatrixRow(
 
 object QualityMatrixBuilder {
     fun build(nodes: List<NodeHealthSnapshot>): List<QualityMatrixRow> = nodes
-        .map { node ->
-            val score = score(node)
-            QualityMatrixRow(
-                name = node.name,
-                protocol = node.protocol,
-                medianLatencyMs = node.latencyMs,
-                p95LatencyMs = node.p95LatencyMs,
-                jitterMs = node.jitterMs,
-                packetLossPercent = node.packetLossPercent,
-                successfulSamples = node.successfulSamples,
-                totalSamples = node.samples,
-                stabilityScore = score,
-                stabilityLabel = when {
-                    score == null -> "未完成"
-                    score >= 85 -> "稳定"
-                    score >= 65 -> "一般"
-                    else -> "波动"
-                },
-            )
-        }
+        .map { node -> row(node, score(node)) }
         .sortedWith(
             compareBy<QualityMatrixRow> { it.stabilityScore == null }
                 .thenByDescending { it.stabilityScore ?: -1 }
                 .thenBy { it.medianLatencyMs ?: Int.MAX_VALUE }
                 .thenBy { it.name },
+        )
+
+    /** Only the leading eight rows are displayed. Keep equal ranks in input order. */
+    internal fun previewRows(nodes: List<NodeHealthSnapshot>): List<QualityMatrixRow> {
+        val limit = minOf(8, nodes.size)
+        if (limit == 0) return emptyList()
+        val best = ArrayList<NodeHealthSnapshot>(limit)
+        // Real scores are 0..100; -1 is the missing score and sorts after all real values.
+        val scores = IntArray(limit)
+        for (node in nodes) {
+            val rank = score(node) ?: -1
+            val latency = node.latencyMs ?: Int.MAX_VALUE
+            var position = 0
+            while (position < best.size) {
+                val existing = best[position]
+                val existingLatency = existing.latencyMs ?: Int.MAX_VALUE
+                if (rank > scores[position] || (rank == scores[position] &&
+                    (latency < existingLatency || (latency == existingLatency && node.name < existing.name)))
+                ) break
+                position++
+            }
+            if (position == limit) continue
+            if (best.size == limit) best.removeAt(limit - 1)
+            for (index in best.size downTo position + 1) scores[index] = scores[index - 1]
+            best.add(position, node)
+            scores[position] = rank
+        }
+        return best.mapIndexed { index, node -> row(node, scores[index].takeIf { it >= 0 }) }
+    }
+
+    private fun row(node: NodeHealthSnapshot, score: Int?): QualityMatrixRow =
+        QualityMatrixRow(
+            name = node.name,
+            protocol = node.protocol,
+            medianLatencyMs = node.latencyMs,
+            p95LatencyMs = node.p95LatencyMs,
+            jitterMs = node.jitterMs,
+            packetLossPercent = node.packetLossPercent,
+            successfulSamples = node.successfulSamples,
+            totalSamples = node.samples,
+            stabilityScore = score,
+            stabilityLabel = when {
+                score == null -> "未完成"
+                score >= 85 -> "稳定"
+                score >= 65 -> "一般"
+                else -> "波动"
+            },
         )
 
     /**

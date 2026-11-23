@@ -231,7 +231,7 @@ internal fun CustomGroupsScreen(
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
     error: String?,
-    onSave: (CustomProxyGroup) -> Boolean,
+    onSave: (CustomProxyGroup) -> Result<Unit>,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -301,7 +301,7 @@ internal fun CustomGroupsScreen(
             subscriptions = subscriptions,
             nodes = nodes,
             onDismiss = { creating = false; editing = null },
-            onSave = { group -> if (onSave(group)) { creating = false; editing = null } },
+            onSave = { group -> onSave(group).onSuccess { creating = false; editing = null } },
             onDelete = target?.let { group -> { onDelete(group.id); editing = null } },
         )
     }
@@ -314,7 +314,7 @@ private fun CustomGroupEditor(
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
     onDismiss: () -> Unit,
-    onSave: (CustomProxyGroup) -> Unit,
+    onSave: (CustomProxyGroup) -> Result<Unit>,
     onDelete: (() -> Unit)?,
 ) {
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
@@ -325,11 +325,9 @@ private fun CustomGroupEditor(
     var query by remember { mutableStateOf("") }
     var pickingEntry by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    var saveRejection by remember(initial?.id) { mutableStateOf<String?>(null) }
     val subscriptionNames = remember(subscriptions) { subscriptions.associate { it.id to it.name } }
-    val filtered = remember(nodes, query) {
-        val needle = query.trim()
-        nodes.filter { needle.isEmpty() || it.name.contains(needle, true) }
-    }
+    val groupedNodes = remember(nodes, query) { groupMatchingCustomGroupNodes(nodes, query) }
     WeaveToolScreen(
         title = if (initial == null) "新建策略组" else "编辑策略组",
         subtitle = "已选 ${members.size} 个节点",
@@ -346,11 +344,19 @@ private fun CustomGroupEditor(
                     onSave(
                         (initial ?: CustomProxyGroup(name = name, members = members.toList()))
                             .copy(name = name, strategy = strategy, members = members.toList(), entry = entry.takeIf { chained }),
-                    )
+                    ).onFailure { saveRejection = it.message }
                 },
             ) { Text("保存") }
         },
     ) {
+        saveRejection?.let {
+            WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = it,
+                tone = WeaveStatusTone.CRITICAL,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -377,7 +383,10 @@ private fun CustomGroupEditor(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
-                            Switch(checked = chained, onCheckedChange = { chained = it })
+                            Switch(checked = chained, onCheckedChange = { enabled ->
+                                members = customGroupDraftMembers(members, entry, enabled)
+                                chained = enabled
+                            })
                         }
                         if (chained) {
                             OutlinedButton(onClick = { pickingEntry = true }, modifier = Modifier.fillMaxWidth()) {
@@ -398,7 +407,7 @@ private fun CustomGroupEditor(
                 OutlinedTextField(value = query, onValueChange = { query = it.take(100) }, label = { Text("搜索节点") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
             }
-            filtered.groupBy { it.subscriptionId }.forEach { (subscriptionId, subscriptionNodes) ->
+            groupedNodes.forEach { (subscriptionId, subscriptionNodes) ->
                 item(key = "header.$subscriptionId") { TargetSectionLabel(subscriptionNames[subscriptionId] ?: "") }
                 items(subscriptionNodes, key = { "${it.subscriptionId}/${it.id}" }) { node ->
                     val ref = NodeRef(node.subscriptionId, node.id)
@@ -452,7 +461,7 @@ private fun CustomGroupEditor(
                             Row(
                                 Modifier.fillMaxWidth().clickable {
                                     entry = ref
-                                    members = members - ref
+                                    members = customGroupDraftMembers(members, ref, chained = true)
                                     pickingEntry = false
                                 }.padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,

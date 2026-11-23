@@ -164,6 +164,25 @@ class HomeHeroModelTest {
     }
 
     @Test
+    fun `error fallback suggests only available actions`() {
+        val invalidExit = state(ConnectionState.ERROR, target = invalid, message = "  ")
+        assertFalse(heroModel(invalidExit).actionEnabled)
+        assertEquals(INVALID_EXIT_LABEL, heroIssue(invalidExit)?.message)
+        assertTrue(heroIssue(invalidExit)!!.offersExitChange)
+
+        val direct = state(ConnectionState.ERROR, target = invalid, mode = RoutingMode.DIRECT)
+        assertEquals(HeroAction.RETRY, heroModel(direct).action)
+        assertTrue(heroModel(direct).actionEnabled)
+        assertEquals("重试连接", heroIssue(direct)?.message)
+        assertFalse(heroIssue(direct)!!.offersExitChange)
+
+        val specific = "Fixture: service reported a specific error"
+        assertEquals(specific, heroIssue(invalidExit.copy(statusMessage = specific))?.message)
+        assertEquals(specific, heroIssue(direct.copy(statusMessage = specific))?.message)
+        assertEquals(HeroIssueKind.CORE_UNAVAILABLE, heroIssue(invalidExit.copy(coreAvailable = false))?.kind)
+    }
+
+    @Test
     fun `only the hero actions the callbacks support are offered`() {
         // One action per state, and every label is a stable source string with translations.
         val labels = ConnectionState.entries.flatMap { connection ->

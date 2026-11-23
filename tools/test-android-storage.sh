@@ -30,17 +30,37 @@ trap cleanup EXIT
 python3 "$root/tools/wait-android-ready.py" "$serial" | tee "$results/readiness.txt"
 abi=$("${target[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')
 case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported emulator ABI' >&2; exit 1 ;; esac
-"${target[@]}" install -r "$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
-"${target[@]}" install -r "$root/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+product_apk="$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
+test_apk="$root/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+# Resolve installed identities from the actual paired artifacts, not the source namespace.
+aapt2="$ANDROID_HOME/build-tools/36.0.0/aapt2"
+[[ -x $aapt2 ]] || { echo 'Android build-tools aapt2 is required.' >&2; exit 1; }
+product_id=$("$aapt2" dump packagename "$product_apk")
+test_id=$("$aapt2" dump packagename "$test_apk")
+[[ $product_id =~ ^io\.weave\.client(\.next)?$ && $test_id == "$product_id.test" ]] ||
+  { echo 'Unexpected debug/test APK identities.' >&2; exit 1; }
+component="$test_id/androidx.test.runner.AndroidJUnitRunner"
+"${target[@]}" install -r "$product_apk"
+"${target[@]}" install -r "$test_apk"
+"${target[@]}" shell pm list instrumentation "$product_id" | tr -d '\r' |
+  grep -Fx "instrumentation:$component (target=$product_id)" > \
+  "$results/instrumentation-registration.txt"
 # ART verification of cold APKs can exhaust the process-start deadline under software
 # emulation. Do the same verification first, without disabling checks or clearing data.
-python3 "$root/tools/verify-android-test-code.py" "$adb" "$port" "$serial" "$results"
+python3 "$root/tools/verify-android-test-code.py" "$adb" "$port" "$serial" "$results" "$product_id" "$test_id"
 classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest,io.weave.client.routing.RemoteRuleSetStoreIntegrationTest,io.weave.client.subscription.SubscriptionTransferIntegrationTest,io.weave.client.transfer.BackupRestoreIntegrationTest,io.weave.client.data.ProfileRecoveryIntegrationTest,io.weave.client.ui.StartupRecoveryIntegrationTest
-"${target[@]}" shell am instrument -w -r -e weaveIsolatedEmulator 1 -e class "$classes" \
-  io.weave.client.test/androidx.test.runner.AndroidJUnitRunner > "$results/instrumentation.txt" 2>&1
+instrument_args=(-e weaveIsolatedEmulator 1 -e class "$classes")
+if [[ ${WEAVE_HOSTED_SLOW_TIMING:-} == 1 ]]; then
+  instrument_args+=(-e weaveHostedSlowTiming 1)
+fi
+"${target[@]}" shell am instrument -w -r "${instrument_args[@]}" \
+  "$component" 2>&1 | tee "$results/instrumentation.txt" | awk '
+    /^INSTRUMENTATION_STATUS: (class|current|test)=[A-Za-z0-9_.$]+\r?$/ ||
+    /^INSTRUMENTATION_STATUS_CODE: -?[0-9]+\r?$/ { print; fflush() }
+  '
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' "$results/instrumentation.txt" ||
    ! grep -Eq '^OK \([1-9][0-9]* tests?\)' "$results/instrumentation.txt"; then
-  cat "$results/instrumentation.txt"
+  echo "Storage instrumentation failed; see the preserved instrumentation receipt." >&2
   exit 1
 fi
 grep -E '^Time:|^OK \(' "$results/instrumentation.txt"
