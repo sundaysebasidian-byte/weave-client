@@ -28,4 +28,6 @@
     <string name="notification_control_enabled">通知欄に接続状態と切断操作を表示します。</string>
     <string name="notification_control_disabled">通知はオフです。トンネルは動作できますが、状態と切断操作が通知欄に表示されない場合があります。</string>
     <string name="notification_control_action">通知を管理</string>
+    <string name="action_choose_exit">出口を切り替え</string>
+    <string name="widget_description">接続状態とワンタップの切り替え</string>
 </resources>

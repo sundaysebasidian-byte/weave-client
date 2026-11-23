@@ -5,6 +5,8 @@ from pathlib import Path
 
 DEVELOPMENT_CERT = '54271ffd8e45ca026f886b96a78a55fa97ff4175c7403f4938310047a4f784c2'
 CORE_SHA256 = 'd98ef51225c40b89e2ddc8eecb0677c677b80ae7298eee08859b9392d136f6df'
+LEGACY_APP_ID = 'io.weave.client'
+NEXT_APP_ID = 'io.weave.client.next'
 ALLOWED_PERMISSIONS = {'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
     'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
     'android.permission.POST_NOTIFICATIONS', 'android.permission.CAMERA',
@@ -23,15 +25,17 @@ def parse_metadata(badging, certificates):
         'permissions':sorted(re.findall(r"uses-permission: name='([^']+)'", badging)),
         'signer_sha256':[x.lower() for x in signers], 'debug_signer_dn':'CN=Android Debug' in certificates}
 
-def violations(metadata, channel, expected_version, expected_code, production_certificate=None):
+def violations(metadata, channel, expected_version, expected_code, production_certificate=None, expected_application_id=LEGACY_APP_ID):
     errors=[]
-    if metadata['application_id'] != 'io.weave.client':errors.append('Wrong application ID')
+    if expected_application_id not in {LEGACY_APP_ID, NEXT_APP_ID} or metadata['application_id'] != expected_application_id:errors.append('Wrong application ID')
     if metadata['version_name'] != expected_version or metadata['version_code'] != expected_code:errors.append('Unexpected application version')
     if metadata['debuggable']:errors.append('APK is debuggable')
     if metadata['abis'] != ['arm64-v8a']:errors.append('Expected exactly one ARM64 ABI')
     if metadata['min_sdk'] != 26:errors.append('Unexpected minimum Android API')
     if len(metadata['signer_sha256']) != 1:errors.append('Expected one verified signer')
-    if set(metadata['permissions']) - ALLOWED_PERMISSIONS:errors.append('Unexpected Android permission')
+    allowed = ALLOWED_PERMISSIONS - {LEGACY_APP_ID + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'}
+    allowed.add(expected_application_id + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION')
+    if set(metadata['permissions']) - allowed:errors.append('Unexpected Android permission')
     if channel == 'candidate':
         if not re.fullmatch(r'\d+\.\d+\.\d+-rc\d+', expected_version):errors.append('Candidate must carry an RC version')
         if production_certificate and metadata['signer_sha256'] != [production_certificate.lower()]:
@@ -46,6 +50,7 @@ def violations(metadata, channel, expected_version, expected_code, production_ce
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('apk',type=Path);parser.add_argument('--channel',choices=['candidate','stable'],required=True)
+    parser.add_argument('--application-id',choices=[LEGACY_APP_ID,NEXT_APP_ID],default=LEGACY_APP_ID)
     parser.add_argument('--version',required=True);parser.add_argument('--version-code',type=int,required=True)
     parser.add_argument('--production-certificate-sha256',help='Public certificate fingerprint only; never pass a private key')
     parser.add_argument('--sdk',type=Path,default=os.environ.get('ANDROID_HOME'))
@@ -58,7 +63,7 @@ def main():
     certificates=run('apksigner','verify','--verbose','--print-certs',args.apk)
     manifest=run('aapt2','dump','xmltree',args.apk,'--file','AndroidManifest.xml')
     metadata=parse_metadata(badging,certificates)
-    errors=violations(metadata,args.channel,args.version,args.version_code,args.production_certificate_sha256)
+    errors=violations(metadata,args.channel,args.version,args.version_code,args.production_certificate_sha256,args.application_id)
     if re.search(r'android:testOnly[^\n]*0xffffffff',manifest):errors.append('APK is marked testOnly')
     if 'android:allowBackup' not in manifest or re.search(r'android:allowBackup[^\n]*0xffffffff',manifest):errors.append('Android app backup must remain disabled')
     if re.search(r'android:usesCleartextTraffic[^\n]*0xffffffff',manifest):errors.append('App-wide cleartext traffic must remain disabled')

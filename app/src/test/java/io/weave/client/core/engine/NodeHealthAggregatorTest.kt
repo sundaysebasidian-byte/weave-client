@@ -1,5 +1,7 @@
 package io.weave.client.core.engine
 
+import kotlin.math.abs
+import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -63,4 +65,61 @@ class NodeHealthAggregatorTest {
         assertEquals(66, result.packetLossPercent)
         assertNull(result.jitterMs)
     }
+
+    @Test
+    fun `jitter uses arrival order and an invalid last row still supplies protocol`() {
+        val result = NodeHealthAggregator.aggregate(
+            listOf(
+                listOf(NodeHealthSnapshot("z", "SS", 300), NodeHealthSnapshot("A", "SS", 100)),
+                listOf(NodeHealthSnapshot("z", "VMess", null), NodeHealthSnapshot("z", "VLESS", 100)),
+                listOf(NodeHealthSnapshot("z", "VLESS", 200), NodeHealthSnapshot("z", "Trojan", 65_535)),
+                listOf(NodeHealthSnapshot("a", "Mihomo", null)),
+            ),
+        )
+        assertEquals(listOf("A", "a", "z"), result.map { it.name })
+        val samples = result.last()
+        assertEquals("Trojan", samples.protocol)
+        assertEquals(4, samples.samples)
+        assertEquals(3, samples.successfulSamples)
+        assertEquals(25, samples.packetLossPercent)
+        assertEquals(150, samples.jitterMs)
+        assertEquals(200, samples.latencyMs)
+        assertEquals(300, samples.p95LatencyMs)
+        assertNull(result[1].latencyMs)
+    }
+
+    @Test
+    fun `one pass aggregation matches the prior calculation for sparse repeated and tied inputs`() {
+        val random = Random(0x056)
+        val names = listOf("Tokyo", "Tokyo #2", "tokyo", "Paris", "Zürich")
+        val delays = listOf(null, -1, 0, 1, 90, 90, 120, 8_000, 10_000, 10_001, 65_535)
+        repeat(256) {
+            val rounds = List(random.nextInt(8)) {
+                List(random.nextInt(24)) { row ->
+                    NodeHealthSnapshot(names[random.nextInt(names.size)], "Protocol $row", delays[random.nextInt(delays.size)])
+                }
+            }
+            assertEquals(previousAggregation(rounds), NodeHealthAggregator.aggregate(rounds))
+        }
+    }
+
+    private fun previousAggregation(rounds: List<List<NodeHealthSnapshot>>): List<NodeHealthSnapshot> =
+        rounds.flatten().groupBy { it.name }.map { (name, rows) ->
+            val delays = rows.mapNotNull { LatencySamplePolicy.sanitize(it.latencyMs) }
+            val sorted = delays.sorted()
+            val jitter = if (delays.size < 2) null else {
+                (delays.zipWithNext().sumOf { (before, after) -> abs(after - before) }.toDouble() /
+                    (delays.size - 1)).toInt()
+            }
+            NodeHealthSnapshot(
+                name = name,
+                protocol = rows.last().protocol,
+                latencyMs = sorted.getOrNull(sorted.size / 2),
+                samples = rounds.size,
+                successfulSamples = delays.size,
+                jitterMs = jitter,
+                packetLossPercent = ((rounds.size - delays.size) * 100 / rounds.size).coerceIn(0, 100),
+                p95LatencyMs = if (sorted.isEmpty()) null else sorted[((sorted.lastIndex * 95) + 99) / 100],
+            )
+        }.sortedBy { it.name }
 }

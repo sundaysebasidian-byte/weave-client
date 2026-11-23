@@ -24,6 +24,7 @@ internal class SocketUidAttributionCache(
     )
 
     private val entries = LinkedHashMap<FlowKey, Entry>(16, 0.75f, true)
+    private val expiryWindow = SocketUidExpiryWindow()
 
     init {
         require(ttlMillis > 0)
@@ -56,10 +57,21 @@ internal class SocketUidAttributionCache(
     @Synchronized
     fun clear() {
         entries.clear()
+        expiryWindow.clear()
     }
 
     private fun trim(now: Long) {
-        entries.entries.removeAll { now - it.value.observedAtMillis > ttlMillis }
+        if (expiryWindow.needsSweep(now, ttlMillis)) {
+            expiryWindow.clear()
+            val entriesByAccess = entries.values.iterator()
+            while (entriesByAccess.hasNext()) {
+                val observedAt = entriesByAccess.next().observedAtMillis
+                if (now - observedAt > ttlMillis) entriesByAccess.remove()
+                else expiryWindow.observe(observedAt)
+            }
+        } else {
+            expiryWindow.observe(now)
+        }
         while (entries.size > maxEntries) {
             entries.remove(entries.keys.first())
         }
