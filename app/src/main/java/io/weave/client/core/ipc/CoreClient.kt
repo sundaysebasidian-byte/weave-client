@@ -36,12 +36,12 @@ object CoreClient {
     // Three rounds with an 8 s per-round native timeout plus polling.
     private const val HEALTH_TIMEOUT_MS = 45_000L
 
-    private val incoming = Messenger(Handler(Looper.getMainLooper()) { message -> handle(message); true })
+    private data class Messengers(val service: Messenger, val reply: Messenger)
+    private val binding = CoreReplyBinding<Messengers>()
     private val pending = ConcurrentHashMap<Int, CompletableDeferred<Bundle>>()
     private val nextRequestId = AtomicInteger(1)
     private val connected = MutableStateFlow(false)
 
-    @Volatile private var service: Messenger? = null
     @Volatile var lockdownEnabled: Boolean? = null
         private set
     private var appContext: Context? = null
@@ -49,15 +49,27 @@ object CoreClient {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            val messenger = Messenger(binder ?: return)
-            service = messenger
+            if (bindCount == 0 || binder == null) return
+            if (binding.current != null) {
+                send(CoreIpc.MSG_UNREGISTER)
+                binding.clear()
+                connected.value = false
+                failPending()
+            }
+            binding.replace { token ->
+                val reply = Messenger(Handler(Looper.getMainLooper()) { message ->
+                    if (binding.accepts(token)) handle(message)
+                    true
+                })
+                Messengers(Messenger(binder), reply)
+            }
             send(CoreIpc.MSG_REGISTER)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             // The :vpn process died. Android restarts a sticky VPN service and reconnects this
             // binding; until then never keep presenting a tunnel that no longer exists.
-            service = null
+            binding.clear()
             connected.value = false
             failPending()
             val current = VpnRuntimeState.snapshot.value
@@ -69,7 +81,7 @@ object CoreClient {
         override fun onBindingDied(name: ComponentName?) {
             val context = appContext ?: return
             runCatching { context.unbindService(this) }
-            service = null
+            binding.clear()
             connected.value = false
             failPending()
             if (bindCount > 0) bind(context)
@@ -92,7 +104,7 @@ object CoreClient {
         if (--bindCount > 0) return
         send(CoreIpc.MSG_UNREGISTER)
         appContext?.let { context -> runCatching { context.unbindService(connection) } }
-        service = null
+        binding.clear()
         connected.value = false
         failPending()
     }
@@ -161,11 +173,11 @@ object CoreClient {
     }
 
     private fun send(what: Int, data: Bundle = Bundle(), requestId: Int = 0): Boolean {
-        val target = service ?: return false
+        val messengers = binding.current ?: return false
         return try {
-            target.send(Message.obtain(null, what, requestId, 0).apply {
+            messengers.service.send(Message.obtain(null, what, requestId, 0).apply {
                 this.data = data
-                replyTo = incoming
+                replyTo = messengers.reply
             })
             true
         } catch (_: RemoteException) {
@@ -180,7 +192,7 @@ object CoreClient {
                 lockdownEnabled = data.lockdown()
                 // The first state after (re)binding replays what :vpn already had.
                 VpnRuntimeState.mirror(CoreIpc.decodeState(data).copy(replayed = !connected.value))
-                if (service != null) connected.value = true
+                connected.value = true
             }
             CoreIpc.MSG_REPLY -> pending.remove(message.arg1)?.complete(Bundle(message.data))
         }
