@@ -109,14 +109,14 @@ object BackupCodec {
         val entries = linkedMapOf<String, String>()
         var total = 0
         ZipInputStream(ByteArrayInputStream(zip)).use { stream ->
+            val chunk = ByteArray(8192)
             while (true) {
                 val entry = stream.nextEntry ?: break
                 if (entry.isDirectory || !ENTRY_NAME.matches(entry.name) || entry.name in entries || entries.size >= MAX_ENTRIES) {
                     throw BackupException("备份内容格式无效")
                 }
                 if (entry.size > minOf(MAX_ENTRY_BYTES, MAX_EXPANDED_BYTES - total)) throw BackupException("备份内容过大")
-                val output = ByteArrayOutputStream()
-                val chunk = ByteArray(8192)
+                val output = ArchiveTextOutput()
                 while (true) {
                     val read = stream.read(chunk)
                     if (read < 0) break
@@ -124,8 +124,7 @@ object BackupCodec {
                     output.write(chunk, 0, read)
                     total += read
                 }
-                entries[entry.name] = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(output.toByteArray())).toString()
+                entries[entry.name] = output.decodeUtf8()
             }
         }
         if (entries.isEmpty()) throw BackupException("备份内容格式无效")
@@ -157,6 +156,15 @@ object BackupCodec {
             if (bytes > MAX_ENTRY_BYTES) throw BackupException("备份内容过大")
         }
         return bytes
+    }
+
+    /** Decode only the written prefix without making a second full copy of the entry bytes. */
+    private class ArchiveTextOutput : ByteArrayOutputStream() {
+        fun decodeUtf8(): String = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(buf, 0, count))
+            .toString()
     }
 
     private class BoundedOutput(private val limit: Int) : ByteArrayOutputStream() {

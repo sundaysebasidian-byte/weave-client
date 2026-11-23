@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Weave</string>
+    <string name="app_name" translatable="false">Weave Next</string>
     <string name="vpn_channel_name">Proxy connection</string>
     <string name="vpn_channel_description">Shows Weave\'s proxy connection status</string>
     <string name="updates_channel_name">Subscription updates</string>

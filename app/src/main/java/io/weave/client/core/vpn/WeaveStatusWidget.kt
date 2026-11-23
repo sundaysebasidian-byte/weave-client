@@ -31,11 +31,26 @@ class WeaveStatusWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         observe(context)
         render(context, manager, appWidgetIds)
+        signalInstanceChange(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        signalInstanceChange(context)
+    }
+
+    private fun signalInstanceChange(context: Context) {
+        context.sendBroadcast(Intent(ACTION_INSTANCES_CHANGED).setPackage(context.packageName))
     }
 
     companion object {
+        internal const val ACTION_INSTANCES_CHANGED = "io.weave.client.widget.INSTANCES_CHANGED"
+        internal fun hasInstances(context: Context): Boolean =
+            AppWidgetManager.getInstance(context)
+                .getAppWidgetIds(ComponentName(context, WeaveStatusWidget::class.java)).isNotEmpty()
+
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         private val observing = AtomicBoolean(false)
+        private const val REQUEST_OPEN_WIDGET = 1123
         private const val REQUEST_CONNECT = 21
         private const val REQUEST_DISCONNECT = 22
 
@@ -102,6 +117,8 @@ class WeaveStatusWidget : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_exit, exit)
                 views.setViewVisibility(R.id.widget_exit, View.VISIBLE)
             } else {
+                // A launcher may reapply RemoteViews to the existing view tree.
+                views.setTextViewText(R.id.widget_exit, "")
                 views.setViewVisibility(R.id.widget_exit, View.GONE)
             }
             views.setContentDescription(
@@ -133,7 +150,7 @@ class WeaveStatusWidget : AppWidgetProvider() {
                 R.id.widget_root,
                 PendingIntent.getActivity(
                     context,
-                    0,
+                    REQUEST_OPEN_WIDGET,
                     Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 ),

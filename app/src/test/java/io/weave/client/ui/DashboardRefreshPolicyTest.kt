@@ -82,4 +82,36 @@ class DashboardRefreshPolicyTest {
         assertNotSame(state.activeNode, next.activeNode)
         assertNull(next.withRuntime(idle.copy(latencyMs = null)).activeNode?.latencyMs)
     }
+
+    @Test fun `full flat window reuses the published snapshot`() {
+        val full = List(40) { 0L }
+        val repeated = appendTrafficHistorySample(full, 0L, 40)
+        assertSame(full, repeated)
+        val next = appendTrafficHistorySample(full, 100L, 40)
+        assertNotSame(full, next)
+        assertEquals(List(39) { 0L } + 100L, next)
+        assertEquals(List(40) { 0L }, full)
+    }
+
+    @Test fun `mixed and flat samples match baseline values across the capacity boundary`() {
+        var current: List<Long> = emptyList()
+        var baseline: List<Long> = emptyList()
+        val samples = listOf(0L, 1L, 0L, 15L, 15L, 15L, 15L, 15L, 0L, Long.MAX_VALUE)
+        for (sample in samples) {
+            baseline = (baseline + sample).takeLast(4)
+            current = appendTrafficHistorySample(current, sample, 4)
+            assertEquals(baseline, current)
+        }
+        assertEquals(listOf(15L, 15L, 0L, Long.MAX_VALUE), current)
+    }
+
+    @Test fun `partial updates copy only their own immutable history`() {
+        val initial = listOf(2L, 3L)
+        val next = appendTrafficHistorySample(initial, 4L, 40)
+        assertNotSame(initial, next)
+        assertEquals(listOf(2L, 3L, 4L), next)
+        assertEquals(listOf(2L, 3L, 4L, 5L), appendTrafficHistorySample(next, 5L, 40))
+        assertEquals(listOf(2L, 3L, 4L), next)
+        assertEquals(listOf(2L, 3L), initial)
+    }
 }

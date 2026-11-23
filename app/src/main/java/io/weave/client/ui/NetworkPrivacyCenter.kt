@@ -89,7 +89,7 @@ internal fun NetworkPrivacyCenterDialog(
     ipQualityState: IpQualityProbeState,
     endpointState: CommonEndpointProbeState,
     browserResult: BrowserPrivacyResult?,
-    browserProbeRunId: Int,
+    browserProbeRequest: BrowserProbeRequest?,
     browserError: String?,
     onRunFullCheck: () -> Unit,
     onRunBrowserCheck: () -> Unit,
@@ -103,11 +103,12 @@ internal fun NetworkPrivacyCenterDialog(
 ) {
     val context = LocalContext.current
     val language = LocalWeaveLanguage.current
-    var webView by remember { mutableStateOf<WebView?>(null) }
+    // Give even a retiring callback its own state delegate, never the new request's view.
+    var webView by remember(browserProbeRequest) { mutableStateOf<WebView?>(null) }
     var summaryPreview by remember { mutableStateOf<String?>(null) }
     var summaryCopied by remember(report, ipQualityState.report, endpointState.report, browserResult,
         ipQualityState.stale, endpointState.stale) { mutableStateOf(false) }
-    val browserRunning = browserProbeRunId > 0 && browserResult == null && browserError == null
+    val browserRunning = browserProbeRequest != null && browserResult == null && browserError == null
     val running = ipQualityState.running || endpointState.running || browserRunning || downloadState.running
 
     fun l(source: String): String = localizeWeaveText(source, language)
@@ -163,7 +164,7 @@ internal fun NetworkPrivacyCenterDialog(
             Column {
                 // Keep the probe owned by the dialog, outside LazyColumn's recycling lifecycle.
                 if (browserRunning) {
-                    key(browserProbeRunId) {
+                    key(browserProbeRequest) {
                         PrivacyProbeWebView(
                             onCreated = { webView = it },
                             onResult = {

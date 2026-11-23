@@ -37,6 +37,7 @@ internal fun ConnectionTracePanel(routes: List<AppRoute>, mode: RoutingMode,
     var names by remember { mutableStateOf(emptyMap<Int, String>()) }
     var routesByUid by remember { mutableStateOf(emptyMap<Int, AppRoute>()) }
     val scope = rememberCoroutineScope()
+    val traceRequests = remember { TraceSnapshotRequests() }
     val runtime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsState()
     var coreEntries by remember { mutableStateOf(emptyList<io.weave.client.core.diagnostics.PrivateCoreConnections.Entry>()) }
     var coreError by remember { mutableStateOf(false) }
@@ -58,7 +59,12 @@ internal fun ConnectionTracePanel(routes: List<AppRoute>, mode: RoutingMode,
         }
         names = routesByUid.mapValues { it.value.appName }
     }
-    DisposableEffect(Unit) { onDispose { CoreClient.stopTrace() } }
+    DisposableEffect(Unit) {
+        onDispose {
+            traceRequests.invalidate()
+            CoreClient.stopTrace()
+        }
+    }
     Column {
         Text(l("内核实际命中"), style = MaterialTheme.typography.titleSmall)
         Text(l("仅手动读取当前活跃连接；不保存域名或地址，结果两分钟后清除。链路按内核返回顺序显示。"), fontSize = 12.sp)
@@ -87,14 +93,25 @@ internal fun ConnectionTracePanel(routes: List<AppRoute>, mode: RoutingMode,
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row {
             TextButton(onClick = {
+                traceRequests.invalidate()
                 capturing = !capturing
                 if (capturing) CoreClient.startTrace() else CoreClient.stopTrace()
                 records = emptyList()
             }) { Text(l(if (capturing) "停止记录" else "开始记录")) }
-            TextButton(enabled = capturing, onClick = { scope.launch { records = CoreClient.traceSnapshot() } }) {
+            TextButton(enabled = capturing, onClick = {
+                val request = traceRequests.begin()
+                scope.launch {
+                    val snapshot = CoreClient.traceSnapshot()
+                    if (capturing) traceRequests.publishIfCurrent(request) { records = snapshot }
+                }
+            }) {
                 Text(l("刷新记录"))
             }
-            TextButton(onClick = { CoreClient.clearTrace(); records = emptyList() }) { Text(l("清除记录")) }
+            TextButton(onClick = {
+                traceRequests.invalidate()
+                CoreClient.clearTrace()
+                records = emptyList()
+            }) { Text(l("清除记录")) }
         }
         records.take(12).forEach { entry ->
             val protocol = if (entry.protocol == 6) "TCP" else if (entry.protocol == 17) "UDP" else entry.protocol.toString()
