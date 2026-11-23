@@ -67,9 +67,8 @@ class ConnectionRefinementCaptureTest {
         ConnectionState.entries.forEach { state ->
             compose.runOnIdle { connection.value = state }
             compose.waitForIdle()
-            // A title immediately after the hero measures its complete occupied height, including gaps.
-            val exitHeading = compose.onAllNodes(hasText(localizeWeaveText("当前出口", language))
-                or hasText(localizeWeaveText("出口", language)))
+            // The first metric label after the hero and the weave measures their occupied height.
+            val exitHeading = compose.onAllNodes(hasText(localizeWeaveText("下载", language)))
                 .fetchSemanticsNodes().firstOrNull()
             if (exitHeading != null && state != ConnectionState.ERROR) {
                 normalAnchors += exitHeading.boundsInRoot.top

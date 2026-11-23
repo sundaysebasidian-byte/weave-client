@@ -36,23 +36,21 @@ class InstalledAppRepository(
             context.packageManager.queryIntentActivities(intent, 0)
         }
 
-        val launchable = resolved.asSequence()
-            .mapNotNull { info ->
-                val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-                if (packageName == context.packageName) return@mapNotNull null
-                val label = info.loadLabel(context.packageManager).toString().trim()
-                    .ifEmpty { packageName.substringAfterLast('.') }
-                InstalledApp(
-                    packageName = packageName,
-                    label = label,
-                    monogram = label.monogram(),
-                    tint = APP_TINTS[(packageName.hashCode() and Int.MAX_VALUE) % APP_TINTS.size],
-                    migrationCandidate = ProxyClientDetector.matches(packageName, label),
-                )
-            }
-            .distinctBy { it.packageName }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
-            .toList()
+        val launchable = describeDistinctLauncherPackages(
+            resolved,
+            context.packageName,
+            packageName = { it.activityInfo?.packageName },
+        ) { info, packageName ->
+            val label = info.loadLabel(context.packageManager).toString().trim()
+                .ifEmpty { packageName.substringAfterLast('.') }
+            InstalledApp(
+                packageName = packageName,
+                label = label,
+                monogram = label.monogram(),
+                tint = APP_TINTS[(packageName.hashCode() and Int.MAX_VALUE) % APP_TINTS.size],
+                migrationCandidate = ProxyClientDetector.matches(packageName, label),
+            )
+        }
         // Exact package queries also find known clients whose launcher entry is hidden/disabled.
         // Never enumerate all packages or open another app's private configuration.
         val known = ProxyClientDetector.knownPackages.mapNotNull { packageName ->
@@ -67,15 +65,10 @@ class InstalledAppRepository(
                 null
             }
         }
-        return (launchable + known).distinctBy { it.packageName }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+        return sortDistinctLauncherAndKnownApps(launchable, known)
     }
 
-    private fun String.monogram(): String {
-        val codePoints = codePoints().limit(2).toArray()
-        return codePoints.joinToString(separator = "") { String(Character.toChars(it)) }
-            .uppercase()
-    }
+    private fun String.monogram(): String = LauncherLabelMonogram.of(this)
 
     private companion object {
         val APP_TINTS = longArrayOf(
@@ -89,8 +82,51 @@ class InstalledAppRepository(
     }
 }
 
+/** Sort once into an exact-size result, preserving launcher precedence and stable ties. */
+internal fun sortDistinctLauncherAndKnownApps(
+    launchable: List<InstalledApp>,
+    known: List<InstalledApp>,
+): List<InstalledApp> {
+    // The public picker still looks up every known client. A visible launcher row wins
+    // if the same package also appears among the independently queried known clients.
+    val launcherNames = launchable.mapTo(HashSet(launchable.size)) { it.packageName }
+    val additional = known.filterNot { it.packageName in launcherNames }
+    val launcherCount = launchable.size
+    val size = launcherCount + additional.size
+    if (size == 0) return emptyList()
+    if (size == 1) return listOf(launchable.firstOrNull() ?: additional.first())
+
+    val launchableRows = launchable.iterator()
+    val knownRows = additional.iterator()
+    val rows = Array(size) { index ->
+        if (index < launcherCount) launchableRows.next() else knownRows.next()
+    }
+    rows.sortWith(LauncherAppLabelOrder)
+    return rows.asList()
+}
+
+private val LauncherAppLabelOrder = compareBy<InstalledApp, String>(String.CASE_INSENSITIVE_ORDER) { it.label }
+
+/** Resolve only the first launcher label for each package, retaining PackageManager order. */
+internal fun <T> describeDistinctLauncherPackages(
+    rows: Iterable<T>,
+    ownPackage: String,
+    packageName: (T) -> String?,
+    describe: (T, String) -> InstalledApp,
+): List<InstalledApp> {
+    val seen = HashSet<String>()
+    return buildList {
+        for (row in rows) {
+            val name = packageName(row) ?: continue
+            if (name != ownPackage && seen.add(name)) add(describe(row, name))
+        }
+    }
+}
+
 /** Exact identifiers only: a generic VPN-looking label must never become a migration prompt. */
 internal object ProxyClientDetector {
+    private val labelWhitespace = Regex("\\s+")
+
     val knownPackages = setOf(
         "com.github.kr328.clash",
         "com.github.kr328.clash.premium",
@@ -131,6 +167,6 @@ internal object ProxyClientDetector {
 
     fun matches(packageName: String, label: String): Boolean {
         if (packageName.trim().lowercase(java.util.Locale.ROOT) in knownPackages) return true
-        return label.trim().replace(Regex("\\s+"), " ").lowercase(java.util.Locale.ROOT) in knownLabels
+        return label.trim().replace(labelWhitespace, " ").lowercase(java.util.Locale.ROOT) in knownLabels
     }
 }

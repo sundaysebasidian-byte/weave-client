@@ -34,6 +34,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
         run: |
+          python3 tools/test-android-core-hashes.py
           python3 tools/test-android-ready.py
           python3 tools/test-android-failure.py
           python3 tools/test-android-test-code.py
@@ -97,8 +98,4 @@ jobs:
       - name: Ensure no universal APK is published
         run: test -z "$(find app/build/outputs/apk -iname '*universal*.apk' -print -quit)"
       - name: Verify bundled core hashes
-        run: |
-          test "$(sha256sum app/src/main/jniLibs/arm64-v8a/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.arm64-v8a.sha256=//p' core-lock.properties)"
-          test "$(sha256sum app/src/main/jniLibs/armeabi-v7a/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.armeabi-v7a.sha256=//p' core-lock.properties)"
-          test "$(sha256sum app/src/main/jniLibs/x86/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.x86.sha256=//p' core-lock.properties)"
-          test "$(sha256sum app/src/main/jniLibs/x86_64/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.x86_64.sha256=//p' core-lock.properties)"
+        run: bash tools/verify-android-core-hashes.sh

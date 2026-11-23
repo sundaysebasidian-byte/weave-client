@@ -117,6 +117,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
@@ -186,9 +187,34 @@ import io.weave.client.ui.theme.LocalWeavePalette
 import io.weave.client.routing.LocalRouteRule
 import io.weave.client.routing.LocalRuleAction
 import io.weave.client.routing.LocalRuleType
+import io.weave.client.domain.SubscriptionSourceKind
 import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
+
+private val SUBSCRIPTION_FILE_TYPES = arrayOf(
+    "text/*",
+    "application/json",
+    "application/yaml",
+    "application/x-yaml",
+    "application/octet-stream",
+)
+
+/** Consume before opening: a busy import drops the tap so it cannot replay on remount. */
+internal fun dispatchSubscriptionSource(
+    source: SubscriptionSourceKind?,
+    running: Boolean,
+    consume: (SubscriptionSourceKind) -> Boolean,
+    openQr: () -> Unit,
+    openFile: () -> Unit,
+) {
+    if (source == null || !consume(source) || running) return
+    when (source) {
+        SubscriptionSourceKind.QR_CODE -> openQr()
+        SubscriptionSourceKind.LOCAL_FILE -> openFile()
+        else -> Unit
+    }
+}
 
 @Composable
 internal fun ImportSubscriptionDialog(
@@ -198,6 +224,8 @@ internal fun ImportSubscriptionDialog(
     onImportFile: (name: String, uri: Uri) -> Unit,
     onImportQrImage: (name: String, uri: Uri) -> Unit,
     onScanQr: (name: String, value: String) -> Unit,
+    startWith: SubscriptionSourceKind? = null,
+    consumeStartWith: (SubscriptionSourceKind) -> Boolean = { false },
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
@@ -228,6 +256,13 @@ internal fun ImportSubscriptionDialog(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         uri?.let { onImportQrImage(name, it) }
+    }
+    // Only an explicit, unconsumed tile tap can open a source outside the dialog.
+    val currentRunning by rememberUpdatedState(state.running)
+    LaunchedEffect(startWith) {
+        dispatchSubscriptionSource(startWith, currentRunning, consumeStartWith, ::launchCamera) {
+            filePicker.launch(SUBSCRIPTION_FILE_TYPES)
+        }
     }
     if (showScanner) {
         LiveQrScanner(onDismiss = { showScanner = false }, onResult = { value ->
@@ -314,15 +349,7 @@ internal fun ImportSubscriptionDialog(
             Row {
                 TextButton(
                     onClick = {
-                        filePicker.launch(
-                            arrayOf(
-                                "text/*",
-                                "application/json",
-                                "application/yaml",
-                                "application/x-yaml",
-                                "application/octet-stream",
-                            ),
-                        )
+                        filePicker.launch(SUBSCRIPTION_FILE_TYPES)
                     },
                     enabled = !state.running,
                 ) {
@@ -343,11 +370,13 @@ internal fun LanTransferDialog(
     onDismiss: () -> Unit,
     onStartExport: (Set<String>) -> Unit,
     onStopExport: () -> Unit,
-    onImport: (String, String) -> Unit,
+    onImport: (String, String, Long) -> Unit,
     onScanQr: (String) -> Unit,
 ) {
-    var importLink by remember { mutableStateOf("") }
-    var confirmationCode by remember { mutableStateOf("") }
+    var importDraft by remember {
+        mutableStateOf(LanImportDraft().acceptValidatedScan(state.pendingLinkRevision, state.pendingLink))
+    }
+    fun visibleDraft() = importDraft.acceptValidatedScan(state.pendingLinkRevision, state.pendingLink)
     var selectedIds by remember {
         mutableStateOf<Set<String>>(emptySet())
     }
@@ -389,8 +418,11 @@ internal fun LanTransferDialog(
     var mode by rememberSaveable {
         mutableStateOf(if (state.pendingLink.isNotBlank()) LanTransferMode.IMPORT else LanTransferMode.EXPORT)
     }
-    LaunchedEffect(state.pendingLink) {
-        if (state.pendingLink.isNotBlank()) mode = LanTransferMode.IMPORT
+    LaunchedEffect(state.pendingLinkRevision) {
+        if (state.pendingLink.isNotBlank()) {
+            importDraft = visibleDraft()
+            mode = LanTransferMode.IMPORT
+        }
     }
     val exporting = state.exportLink.isNotEmpty()
     val allSelected = availableIds.isNotEmpty() && selectedIds.containsAll(availableIds)
@@ -540,10 +572,11 @@ internal fun LanTransferDialog(
                     }
                 }
                 if (mode == LanTransferMode.IMPORT) {
-                    val effectiveImportLink = importLink.ifBlank { state.pendingLink }
+                    val draft = visibleDraft()
+                    val effectiveImportLink = draft.link
                     // The sender's code must be typed out-of-band. Never reuse this device's own
                     // export code, even while this device is still sharing in the other tab.
-                    val effectiveConfirmationCode = confirmationCode
+                    val effectiveConfirmationCode = draft.confirmationCode
                     item(key = "import-heading", contentType = "lan-transfer-heading") {
                         Text("从另一台设备导入", fontWeight = FontWeight.SemiBold)
                     }
@@ -551,7 +584,7 @@ internal fun LanTransferDialog(
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedTextField(
                                 value = effectiveImportLink,
-                                onValueChange = { importLink = it.take(2_048) },
+                                onValueChange = { importDraft = visibleDraft().editLink(it) },
                                 label = { Text("weave://lan/…") },
                                 singleLine = true,
                                 enabled = !state.running,
@@ -574,7 +607,7 @@ internal fun LanTransferDialog(
                             }
                         }
                     }
-                    if (state.pendingLink.isNotBlank()) {
+                    if (state.pendingLink.isNotBlank() && effectiveImportLink == state.pendingLink) {
                         item(key = "import-pending", contentType = "lan-transfer-notice") {
                             WeaveNotice(
                                 icon = Icons.Rounded.QrCodeScanner,
@@ -586,7 +619,7 @@ internal fun LanTransferDialog(
                     item(key = "import-code", contentType = "lan-transfer-field") {
                         OutlinedTextField(
                             value = effectiveConfirmationCode,
-                            onValueChange = { confirmationCode = it.filter(Char::isDigit).take(6) },
+                            onValueChange = { importDraft = visibleDraft().editCode(it) },
                             label = {
                                 Text("确认短码", maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.testTag("lan-transfer-code-label"))
@@ -610,9 +643,13 @@ internal fun LanTransferDialog(
                     }
                     item(key = "import-action", contentType = "lan-transfer-action") {
                         Button(
-                            onClick = { onImport(effectiveImportLink, effectiveConfirmationCode) },
-                            enabled = effectiveImportLink.isNotBlank() &&
-                                effectiveConfirmationCode.length == 6 && !state.running,
+                            onClick = {
+                                val current = visibleDraft()
+                                if (current.canImport && !state.running) {
+                                    onImport(current.link, current.confirmationCode, current.lastScanRevision)
+                                }
+                            },
+                            enabled = draft.canImport && !state.running,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = WeaveUiTokens.minTouchTarget)
@@ -765,23 +802,22 @@ private fun LanExportActiveSection(
 /** Marks one-time transfer keys as sensitive and removes our copy after a short grace period. */
 private fun copySensitiveText(context: Context, label: String, value: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val copy = SensitiveClipboardCopy()
     val clip = ClipData.newPlainText(label, value).apply {
         description.extras = PersistableBundle().apply {
             // Compatibility literal is consumed by Android 13+ and many older OEM clipboard UIs.
             putBoolean("android.content.extra.IS_SENSITIVE", true)
+            putString(SensitiveClipboardCopy.EXTRA_COPY_TOKEN, copy.token())
         }
     }
     clipboard.setPrimaryClip(clip)
     Handler(Looper.getMainLooper()).postDelayed({
         // Background clipboard reads can be denied by newer Android versions or OEM policy.
-        // Failure to clear must never crash the app or replace a newer clipboard value.
+        // Checking copy metadata and clearing it are separate, best-effort Android calls.
         runCatching {
-            val stillOurValue = clipboard.primaryClip
-                ?.takeIf { it.itemCount > 0 }
-                ?.getItemAt(0)
-                ?.coerceToText(context)
-                ?.toString() == value
-            if (stillOurValue) {
+            val currentToken = clipboard.primaryClipDescription
+                ?.extras?.getString(SensitiveClipboardCopy.EXTRA_COPY_TOKEN)
+            if (copy.owns(currentToken)) {
                 if (Build.VERSION.SDK_INT >= 28) {
                     clipboard.clearPrimaryClip()
                 } else {
@@ -843,7 +879,7 @@ internal fun SubscriptionManagerDialog(
             }.thenBy { it.name },
         )
     }
-    val qualityRows = remember(health.nodes) { QualityMatrixBuilder.build(health.nodes) }
+    val qualityRows = remember(health.nodes) { QualityMatrixBuilder.previewRows(health.nodes) }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -1115,10 +1151,8 @@ internal fun SubscriptionManagerDialog(
                                 )
                             }
                             if (health.checkedAtMillis != null && health.nodes.isNotEmpty()) {
-                                val measured = health.nodes.mapNotNull { it.latencyMs }.sorted()
-                                val available = health.nodes.count { it.successfulSamples > 0 }
-                                val median = measured.getOrNull(measured.size / 2)
-                                val worstP95 = health.nodes.mapNotNull { it.p95LatencyMs }.maxOrNull()
+                                val summary = remember(health.nodes) { SubscriptionProbeSummary.fromNodes(health.nodes) }
+                                val available = summary.availableNodes
                                 val language = LocalWeaveLanguage.current
                                 // The same three measured values as before, as compact tiles.
                                 // A missing value stays "—"; no tile is invented for DNS/TLS.
@@ -1135,13 +1169,13 @@ internal fun SubscriptionManagerDialog(
                                         ),
                                         WeaveMetric(
                                             label = localizeWeaveText("中位延迟", language),
-                                            value = median?.let { "$it ms" } ?: "—",
+                                            value = summary.medianLatencyMs?.let { "$it ms" } ?: "—",
                                         ),
-                                        WeaveMetric(label = "P95", value = worstP95?.let { "$it ms" } ?: "—"),
+                                        WeaveMetric(label = "P95", value = summary.worstP95Ms?.let { "$it ms" } ?: "—"),
                                     ),
                                 )
                                 Text(
-                                    probeResultText(health.nodes.sumOf { it.samples }, health.nodes.sumOf { it.successfulSamples }, LocalWeaveLanguage.current),
+                                    probeResultText(summary.attempts, summary.successes, LocalWeaveLanguage.current),
                                     translate = false, fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1159,7 +1193,7 @@ internal fun SubscriptionManagerDialog(
                                     fontSize = 11.sp,
                                     lineHeight = 16.sp,
                                 )
-                                qualityRows.take(8).forEach { row ->
+                                qualityRows.forEach { row ->
                                     QualityMatrixEntry(row)
                                 }
                             }
@@ -1170,7 +1204,7 @@ internal fun SubscriptionManagerDialog(
                                     fontSize = 11.sp,
                                 )
                             }
-                            if (nodes.size > 8) {
+                            if (shouldShowSubscriptionNodeSearch(nodes.size, nodeQuery)) {
                                 OutlinedTextField(
                                     value = nodeQuery,
                                     onValueChange = { nodeQuery = it.take(120) },

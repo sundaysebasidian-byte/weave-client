@@ -10,12 +10,12 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.weave.client"
+        applicationId = "io.weave.client.next"
         minSdk = 26
         targetSdk = 36
-        // Release candidate. Keep the app ID; production signing needs a separate release gate.
-        versionCode = 110
-        versionName = "0.4.0-rc4"
+        // New install identity: never presented as an in-place update to io.weave.client.
+        versionCode = 111
+        versionName = "0.4.0-rc5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -166,6 +166,7 @@ dependencies {
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestRuntimeOnly("androidx.test.espresso:espresso-core:3.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

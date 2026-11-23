@@ -37,9 +37,9 @@ internal class CmfaDocumentsSource(private val resolver: ContentResolver, privat
 internal object CmfaProviderSnapshot {
     fun materialize(input: String, readProvider: (String) -> String): String {
         val plain = ClashSubscriptionDocument.unwrap(input)
-        if (!ClashSubscriptionDocument.hasRootKey(plain, "proxy-providers")) return input
+        val parsedRoot = ClashSubscriptionDocument.readRootWithKey(plain, "proxy-providers") ?: return input
         var readBytes = input.toByteArray(Charsets.UTF_8).size.toLong()
-        val root = ClashYamlCodec.read(plain).toMutableMap()
+        val root = parsedRoot.toMutableMap()
         val providers = root["proxy-providers"] as? Map<*, *> ?: throw SubscriptionImportException("订阅节点集合格式无效")
         require(providers.size <= 16) { "订阅引用的节点集合过多" }
         root["proxy-providers"] = providers.mapValues { (_, raw) ->

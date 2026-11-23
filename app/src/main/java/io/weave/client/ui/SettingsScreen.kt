@@ -1,5 +1,12 @@
 package io.weave.client.ui
 
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.foundation.horizontalScroll
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -253,6 +260,181 @@ internal fun SettingsScreen(
     var routingExpanded by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
 
+    var query by rememberSaveable { mutableStateOf("") }
+    val sections = listOf(
+        SettingsSection(
+            key = "quick-start",
+            title = "开始使用",
+            entries = listOf(
+                LinkEntry(Icons.Rounded.AutoAwesome, "新手引导", "导入、选节点，再连接", onOpenQuickStart),
+                ToggleEntry(
+                    Icons.Rounded.AutoAwesome, "减弱引导动画", "引导页面使用即时转场",
+                    quickStartReducedMotion, onQuickStartMotionChanged,
+                ),
+            ),
+        ),
+        SettingsSection(
+            key = "appearance",
+            title = "外观与语言",
+            entries = listOf(
+                ThemeEntry(
+                    title = "外观",
+                    subtitle = listOf(preferences.weavePalette.group.label, preferences.weavePalette.label)
+                        .joinToString(" · ") { localizeWeaveText(it, language) },
+                    selected = preferences.weavePalette,
+                    onSelect = onPaletteSelected,
+                    onOpen = { showPalette = true },
+                ),
+                LinkEntry(
+                    Icons.Rounded.Language,
+                    "语言",
+                    if (languageFollowsSystem) {
+                        localizeWeaveText("跟随系统", language) + " · " + language.nativeLabel
+                    } else {
+                        language.nativeLabel
+                    },
+                ) { showLanguage = true },
+            ),
+        ),
+        SettingsSection(
+            key = "dns-connection",
+            title = "DNS 与连接",
+            entries = listOf(
+                LinkEntry(
+                    Icons.Rounded.Dns,
+                    "DNS",
+                    listOf(
+                        preferences.dnsProfile.label,
+                        preferences.dnsTransport.label,
+                        preferences.dnsRoutingMode.label,
+                    ).joinToString(" · ") { localizeWeaveText(it, language) },
+                ) { showDnsSettings = true },
+                LinkEntry(Icons.Rounded.Language, "IPv4 / IPv6", preferences.ipv6Mode.label) { showIpv6Mode = true },
+                LinkEntry(Icons.Rounded.Speed, "自动节点策略", preferences.automaticStrategy.label) {
+                    showAutomaticStrategy = true
+                },
+                LinkEntry(Icons.Rounded.Bolt, "Always-on 与断网保护", "需同时开启 Always-on 与阻止无 VPN 连接", onOpenVpnSettings),
+            ),
+        ),
+        SettingsSection(
+            key = "protection",
+            title = "安全保护",
+            entries = listOf(
+                LinkEntry(Icons.Rounded.Security, "安全与隐私", null) { showSecurityDetails = true },
+                LinkEntry(Icons.Rounded.Visibility, "网络与隐私检测", null, onOpenPrivacyObservatory),
+                ToggleEntry(
+                    Icons.Rounded.Block, "阻止 UDP STUN", "降低 WebRTC 暴露风险；可能影响音视频通话",
+                    preferences.blockUdpStun, onBlockUdpStunChanged,
+                ),
+                LinkEntry(Icons.Rounded.Lock, "恢复中心", "查看失败记录、解除安全模式", onOpenRecoveryCenter),
+            ),
+        ),
+        SettingsSection(
+            key = "data",
+            title = "数据管理",
+            entries = listOf(
+                LinkEntry(
+                    Icons.Rounded.Sync,
+                    "自动更新订阅",
+                    when (preferences.subscriptionAutoUpdateHours) {
+                        0 -> "关闭 · 仅手动刷新"
+                        else -> listOf(
+                            "每 ${preferences.subscriptionAutoUpdateHours} 小时",
+                            if (preferences.subscriptionAutoUpdateUnmeteredOnly) "仅不计流量网络" else "任意网络",
+                        ).joinToString(" · ") { localizeWeaveText(it, language) }
+                    },
+                ) { showAutoUpdate = true },
+                LinkEntry(Icons.Rounded.Lock, "备份与恢复", null, onOpenBackup),
+                LinkEntry(Icons.Rounded.SyncAlt, "局域网互传", null, onOpenLanTransfer),
+            ),
+        ),
+        // Advanced settings: collapsed by default, but every entry stays one tap away and a
+        // collapsed group still reports switches that are currently on.
+        SettingsSection(
+            key = "connection-advanced",
+            title = "连接进阶",
+            icon = Icons.Rounded.Tune,
+            activeTitles = listOfNotNull(
+                "直连应用绕过 VPN".takeIf { preferences.bypassDirectApps },
+                "系统 HTTP 代理".takeIf { preferences.systemHttpProxy },
+                "局域网代理共享".takeIf { preferences.lanSharing },
+            ),
+            expanded = connectionAdvancedExpanded,
+            onExpandedChange = { connectionAdvancedExpanded = it },
+            entries = listOf(
+                LinkEntry(Icons.Rounded.SwapVert, "策略组范围", preferences.strategyScope.label) { showStrategyScope = true },
+                LinkEntry(Icons.Rounded.Dns, "引导 DNS", localizeWeaveText(preferences.bootstrapDns.label, language)) {
+                    showBootstrapDns = true
+                },
+                ToggleEntry(
+                    Icons.Rounded.Apps, "直连应用绕过 VPN", "选为直连的应用不进入隧道；Always-on 阻断时可能无法联网",
+                    preferences.bypassDirectApps, onBypassDirectAppsChanged,
+                ),
+                // Port text mirrors MihomoConfigAssembler.MIXED_PORT.
+                ToggleEntry(
+                    Icons.Rounded.Language, "系统 HTTP 代理", "127.0.0.1:7890，本机其他应用也能访问",
+                    preferences.systemHttpProxy, onSystemHttpProxyChanged,
+                ),
+                LinkEntry(
+                    Icons.Rounded.Wifi,
+                    "局域网代理共享",
+                    if (preferences.lanSharing) "已开启 · 需要用户名和密码" else "未开启",
+                ) { showLanProxy = true },
+            ),
+        ),
+        SettingsSection(
+            key = "routing",
+            title = "路由与规则",
+            icon = Icons.Rounded.Route,
+            expanded = routingExpanded,
+            onExpandedChange = { routingExpanded = it },
+            entries = listOf(
+                LinkEntry(Icons.Rounded.Tune, "高级路由", null) { showRoutingDetails = true },
+                ToggleEntry(
+                    Icons.Rounded.Language, "国内智能直连", "未指定应用的 CN 流量直连",
+                    preferences.domesticDirect, onDomesticDirectChanged,
+                ),
+                LinkEntry(Icons.Rounded.Tune, "本地域名 / IP 规则", null, onOpenLocalRouteRules),
+                LinkEntry(Icons.Rounded.CloudDownload, "远程规则集", null, onOpenRuleSets),
+                LinkEntry(Icons.Rounded.Route, "自定义策略组与链式代理", null, onOpenCustomGroups),
+                LinkEntry(Icons.Rounded.Policy, "离线策略包", null, onOpenPolicyPacks),
+            ),
+        ),
+        SettingsSection(
+            key = "diagnostics",
+            title = "诊断",
+            icon = Icons.Rounded.Info,
+            expanded = diagnosticsExpanded,
+            onExpandedChange = { diagnosticsExpanded = it },
+            entries = listOf(
+                LinkEntry(Icons.Rounded.SwapVert, "实时连接", null, onOpenConnections),
+                LinkEntry(Icons.Rounded.Info, "内核日志", "仅内存显示，复制默认脱敏", onOpenLogs),
+            ),
+        ),
+        SettingsSection(
+            key = "about",
+            title = "关于",
+            entries = listOf(
+                LinkEntry(Icons.Rounded.Policy, "Weave ${BuildConfig.VERSION_NAME}", "开源许可与第三方组件") {
+                    showOpenSourceDetails = true
+                },
+                LinkEntry(Icons.Rounded.Security, "VPN 数据路径说明", null, onShowVpnDisclosure),
+            ),
+        ),
+    )
+    val searching = query.isNotBlank()
+    // While searching, every group shows only its matching rows, and advanced groups open flat so
+    // a match is never hidden behind a fold.
+    val shown = if (searching) {
+        sections.mapNotNull { section ->
+            section.entries.filter { it.matches(query.trim(), language) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { section.copy(entries = it, icon = null) }
+        }
+    } else {
+        sections
+    }
+
     LazyColumn(
         state = rememberSmoothLazyListState(),
         modifier = Modifier
@@ -260,302 +442,59 @@ internal fun SettingsScreen(
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding()),
         contentPadding = PaddingValues(
-            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 20.dp,
+            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + WeaveUiTokens.screenTop,
             bottom = 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(WeaveUiTokens.sectionGap),
     ) {
-        item(key = "header") { ScreenHeader(eyebrow = "", title = "设置") }
-
-        // Everyday settings: always visible, grouped by what people come here to change.
-        item(key = "tier-common") { SettingsTierHeading("常用") }
-        item(key = "quick-start") {
-            SettingsGroup(title = "开始使用") {
-                LinkSetting(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = "新手引导",
-                    subtitle = "导入、选节点，再连接",
-                    onClick = onOpenQuickStart,
+        item(key = "header") {
+            Column(modifier = Modifier.padding(top = WeaveUiTokens.headerActionSize + 12.dp)) {
+                Text(
+                    "设置",
+                    style = MaterialTheme.typography.displaySmall,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .padding(start = 24.dp, end = WeaveUiTokens.screenHorizontal)
+                        .semantics { heading() },
                 )
-                WeaveDivider()
-                ToggleSetting(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = "减弱引导动画",
-                    subtitle = "引导页面使用即时转场",
-                    checked = quickStartReducedMotion,
-                    onCheckedChange = onQuickStartMotionChanged,
-                )
+                Spacer(Modifier.height(16.dp))
+                SettingsSearchField(query = query, onQueryChange = { query = it.take(60) })
             }
         }
-        item(key = "appearance") {
-            SettingsGroup(title = "外观与语言") {
-                LinkSetting(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = "外观",
-                    subtitle = listOf(preferences.weavePalette.group.label, preferences.weavePalette.label)
-                        .joinToString(" · ") { localizeWeaveText(it, language) },
-                    onClick = { showPalette = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Language,
-                    title = "语言",
-                    subtitle = if (languageFollowsSystem) {
-                        localizeWeaveText("跟随系统", language) + " · " + language.nativeLabel
-                    } else {
-                        language.nativeLabel
-                    },
-                    onClick = { showLanguage = true },
-                )
+        shown.forEach { section ->
+            item(key = section.key) {
+                if (section.icon != null) {
+                    ExpandableSettingsGroup(
+                        icon = section.icon,
+                        title = section.title,
+                        activeTitles = section.activeTitles,
+                        expanded = section.expanded,
+                        onExpandedChange = section.onExpandedChange,
+                    ) { SettingEntries(section.entries) }
+                } else {
+                    SettingsGroup(title = section.title) { SettingEntries(section.entries) }
+                }
+            }
+            if (section.key == "dns-connection" && !searching) {
+                item(key = "notifications") {
+                    Box(Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)) {
+                        NotificationStatusCard(notificationsEnabled, onRequestNotifications)
+                    }
+                }
             }
         }
-        item(key = "dns-connection") {
-            SettingsGroup(title = "DNS 与连接") {
-                LinkSetting(
-                    icon = Icons.Rounded.Dns,
-                    title = "DNS",
-                    subtitle = listOf(
-                        preferences.dnsProfile.label,
-                        preferences.dnsTransport.label,
-                        preferences.dnsRoutingMode.label,
-                    ).joinToString(" · ") { localizeWeaveText(it, language) },
-                    onClick = { showDnsSettings = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Language,
-                    title = "IPv4 / IPv6",
-                    subtitle = preferences.ipv6Mode.label,
-                    onClick = { showIpv6Mode = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Speed,
-                    title = "自动节点策略",
-                    subtitle = preferences.automaticStrategy.label,
-                    onClick = { showAutomaticStrategy = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Bolt,
-                    title = "Always-on 与断网保护",
-                    subtitle = "需同时开启 Always-on 与阻止无 VPN 连接",
-                    onClick = onOpenVpnSettings,
-                )
-            }
-        }
-        item(key = "notifications") {
-            Box(Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)) {
-                NotificationStatusCard(notificationsEnabled, onRequestNotifications)
-            }
-        }
-        item(key = "protection") {
-            SettingsGroup(title = "安全保护") {
-                LinkSetting(
-                    icon = Icons.Rounded.Security,
-                    title = "安全与隐私",
-                    subtitle = null,
-                    onClick = { showSecurityDetails = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Visibility,
-                    title = "网络与隐私检测",
-                    subtitle = null,
-                    onClick = onOpenPrivacyObservatory,
-                )
-                WeaveDivider()
-                ToggleSetting(
-                    icon = Icons.Rounded.Block,
-                    title = "阻止 UDP STUN",
-                    subtitle = "降低 WebRTC 暴露风险；可能影响音视频通话",
-                    checked = preferences.blockUdpStun,
-                    onCheckedChange = onBlockUdpStunChanged,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Lock,
-                    title = "恢复中心",
-                    subtitle = "查看失败记录、解除安全模式",
-                    onClick = onOpenRecoveryCenter,
-                )
-            }
-        }
-        item(key = "data") {
-            SettingsGroup(title = "数据管理") {
-                LinkSetting(
-                    icon = Icons.Rounded.Sync,
-                    title = "自动更新订阅",
-                    subtitle = when (preferences.subscriptionAutoUpdateHours) {
-                        0 -> "关闭 · 仅手动刷新"
-                        else -> listOf(
-                            "每 ${preferences.subscriptionAutoUpdateHours} 小时",
-                            if (preferences.subscriptionAutoUpdateUnmeteredOnly) "仅不计流量网络" else "任意网络",
-                        ).joinToString(" · ") { localizeWeaveText(it, language) }
-                    },
-                    onClick = { showAutoUpdate = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Lock,
-                    title = "备份与恢复",
-                    subtitle = null,
-                    onClick = onOpenBackup,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.SyncAlt,
-                    title = "局域网互传",
-                    subtitle = null,
-                    onClick = onOpenLanTransfer,
-                )
-            }
-        }
-
-        // Advanced settings: collapsed by default, but every entry stays one tap away and a
-        // collapsed group still reports switches that are currently on.
-        item(key = "tier-advanced") {
-            SettingsTierHeading("高级")
-        }
-        item(key = "connection-advanced") {
-            ExpandableSettingsGroup(
-                icon = Icons.Rounded.Tune,
-                title = "连接进阶",
-                activeTitles = listOfNotNull(
-                    "直连应用绕过 VPN".takeIf { preferences.bypassDirectApps },
-                    "系统 HTTP 代理".takeIf { preferences.systemHttpProxy },
-                    "局域网代理共享".takeIf { preferences.lanSharing },
-                ),
-                expanded = connectionAdvancedExpanded,
-                onExpandedChange = { connectionAdvancedExpanded = it },
-            ) {
-                LinkSetting(
-                    icon = Icons.Rounded.SwapVert,
-                    title = "策略组范围",
-                    subtitle = preferences.strategyScope.label,
-                    onClick = { showStrategyScope = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Dns,
-                    title = "引导 DNS",
-                    subtitle = localizeWeaveText(preferences.bootstrapDns.label, language),
-                    onClick = { showBootstrapDns = true },
-                )
-                WeaveDivider()
-                ToggleSetting(
-                    icon = Icons.Rounded.Apps,
-                    title = "直连应用绕过 VPN",
-                    subtitle = "选为直连的应用不进入隧道；Always-on 阻断时可能无法联网",
-                    checked = preferences.bypassDirectApps,
-                    onCheckedChange = onBypassDirectAppsChanged,
-                )
-                WeaveDivider()
-                ToggleSetting(
-                    icon = Icons.Rounded.Language,
-                    title = "系统 HTTP 代理",
-                    // Port text mirrors MihomoConfigAssembler.MIXED_PORT.
-                    subtitle = "127.0.0.1:7890，本机其他应用也能访问",
-                    checked = preferences.systemHttpProxy,
-                    onCheckedChange = onSystemHttpProxyChanged,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Wifi,
-                    title = "局域网代理共享",
-                    subtitle = if (preferences.lanSharing) "已开启 · 需要用户名和密码" else "未开启",
-                    onClick = { showLanProxy = true },
-                )
-            }
-        }
-        item(key = "routing") {
-            ExpandableSettingsGroup(
-                icon = Icons.Rounded.Route,
-                title = "路由与规则",
-                expanded = routingExpanded,
-                onExpandedChange = { routingExpanded = it },
-            ) {
-                LinkSetting(
-                    icon = Icons.Rounded.Tune,
-                    title = "高级路由",
-                    subtitle = null,
-                    onClick = { showRoutingDetails = true },
-                )
-                WeaveDivider()
-                ToggleSetting(
-                    icon = Icons.Rounded.Language,
-                    title = "国内智能直连",
-                    subtitle = "未指定应用的 CN 流量直连",
-                    checked = preferences.domesticDirect,
-                    onCheckedChange = onDomesticDirectChanged,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Tune,
-                    title = "本地域名 / IP 规则",
-                    subtitle = null,
-                    onClick = onOpenLocalRouteRules,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.CloudDownload,
-                    title = "远程规则集",
-                    subtitle = null,
-                    onClick = onOpenRuleSets,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Route,
-                    title = "自定义策略组与链式代理",
-                    subtitle = null,
-                    onClick = onOpenCustomGroups,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Policy,
-                    title = "离线策略包",
-                    subtitle = null,
-                    onClick = onOpenPolicyPacks,
-                )
-            }
-        }
-        item(key = "diagnostics") {
-            ExpandableSettingsGroup(
-                icon = Icons.Rounded.Info,
-                title = "诊断",
-                expanded = diagnosticsExpanded,
-                onExpandedChange = { diagnosticsExpanded = it },
-            ) {
-                LinkSetting(
-                    icon = Icons.Rounded.SwapVert,
-                    title = "实时连接",
-                    subtitle = null,
-                    onClick = onOpenConnections,
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Info,
-                    title = "内核日志",
-                    subtitle = "仅内存显示，复制默认脱敏",
-                    onClick = onOpenLogs,
-                )
-            }
-        }
-
-        item(key = "about") {
-            SettingsGroup(title = "关于") {
-                LinkSetting(
-                    icon = Icons.Rounded.Policy,
-                    title = "Weave ${BuildConfig.VERSION_NAME}",
-                    subtitle = "开源许可与第三方组件",
-                    onClick = { showOpenSourceDetails = true },
-                )
-                WeaveDivider()
-                LinkSetting(
-                    icon = Icons.Rounded.Security,
-                    title = "VPN 数据路径说明",
-                    subtitle = null,
-                    onClick = onShowVpnDisclosure,
+        if (shown.isEmpty()) {
+            item(key = "no-match") {
+                Text(
+                    "没有匹配的设置",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 48.dp)
+                        .testTag("settings-no-match")
+                        .semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
         }
@@ -721,31 +660,199 @@ internal fun SettingsScreen(
     }
 }
 
-/** Top-level tier (everyday vs advanced). Larger than a group label so the split is obvious. */
+private sealed interface SettingEntry {
+    val title: String
+    val subtitle: String?
+
+    /** Matches the localized words people read as well as the Chinese source, ignoring case. */
+    fun matches(query: String, language: WeaveLanguage): Boolean =
+        listOfNotNull(title, subtitle, localizeWeaveText(title, language), subtitle?.let { localizeWeaveText(it, language) })
+            .any { it.contains(query, ignoreCase = true) }
+}
+
+private data class LinkEntry(
+    val icon: ImageVector,
+    override val title: String,
+    override val subtitle: String?,
+    val onClick: () -> Unit,
+) : SettingEntry
+
+private data class ToggleEntry(
+    val icon: ImageVector,
+    override val title: String,
+    override val subtitle: String,
+    val checked: Boolean,
+    val onCheckedChange: (Boolean) -> Unit,
+) : SettingEntry
+
+private data class ThemeEntry(
+    override val title: String,
+    override val subtitle: String,
+    val selected: WeavePalette,
+    val onSelect: (WeavePalette) -> Unit,
+    val onOpen: () -> Unit,
+) : SettingEntry {
+    override fun matches(query: String, language: WeaveLanguage): Boolean =
+        super.matches(query, language) ||
+            WeavePalette.entries.any { localizeWeaveText(it.label, language).contains(query, ignoreCase = true) }
+}
+
+/** A group of rows; with an [icon] it is an advanced group that folds. */
+private data class SettingsSection(
+    val key: String,
+    val title: String,
+    val entries: List<SettingEntry>,
+    val icon: ImageVector? = null,
+    val activeTitles: List<String> = emptyList(),
+    val expanded: Boolean = true,
+    val onExpandedChange: (Boolean) -> Unit = {},
+)
+
 @Composable
-private fun SettingsTierHeading(text: String, supporting: String? = null) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = WeaveUiTokens.screenHorizontal)
-            .padding(top = 4.dp),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.semantics { heading() },
-        )
-        if (supporting != null) {
-            Text(
-                text = supporting,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+private fun ColumnScope.SettingEntries(entries: List<SettingEntry>) {
+    entries.forEachIndexed { index, entry ->
+        if (index > 0) WeaveDivider()
+        when (entry) {
+            is LinkEntry -> LinkSetting(entry.icon, entry.title, entry.subtitle, entry.onClick)
+            is ToggleEntry -> ToggleSetting(entry.icon, entry.title, entry.subtitle, entry.checked, entry.onCheckedChange)
+            is ThemeEntry -> ThemeSetting(entry)
         }
     }
+}
+
+/** A filled search field; matches narrow every group as you type. */
+@Composable
+private fun SettingsSearchField(query: String, onQueryChange: (String) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val language = LocalWeaveLanguage.current
+    val placeholder = localizeWeaveText("搜索设置", language)
+    var focused by remember { mutableStateOf(false) }
+    val container by androidx.compose.animation.animateColorAsState(
+        if (focused) scheme.surface else scheme.surfaceVariant,
+        WeaveMotion.quick(),
+        label = "settings-search",
+    )
+    val edge by androidx.compose.animation.animateColorAsState(
+        if (focused) scheme.primary.copy(alpha = 0.42f) else Color.Transparent,
+        WeaveMotion.quick(),
+        label = "settings-search-edge",
+    )
+    androidx.compose.foundation.text.BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface, fontSize = 16.sp),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(scheme.primary),
+        modifier = Modifier
+            .padding(horizontal = WeaveUiTokens.screenHorizontal)
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .semantics { contentDescription = placeholder }
+            .testTag("settings-search"),
+        decorationBox = { inner ->
+            Row(
+                modifier = Modifier
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(container)
+                    .border(1.dp, edge, RoundedCornerShape(14.dp))
+                    .padding(start = 14.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Search, null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
+                        Text(placeholder, color = scheme.onSurfaceVariant, fontSize = 16.sp, maxLines = 1, translate = false)
+                    }
+                    inner()
+                }
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = localizedContentDescription("清除搜索"),
+                            tint = scheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+/**
+ * Appearance as a row with every palette inline: a tap on a swatch applies it, a tap on the row
+ * opens the full list with descriptions.
+ */
+@Composable
+private fun ThemeSetting(entry: ThemeEntry) {
+    val scheme = MaterialTheme.colorScheme
+    val language = LocalWeaveLanguage.current
+    Column {
+        LinkSetting(Icons.Rounded.AutoAwesome, entry.title, entry.subtitle, entry.onOpen)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = WeaveUiTokens.rowHorizontal + 44.dp, end = WeaveUiTokens.rowHorizontal, bottom = 14.dp)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            WeavePalette.entries.forEach { palette ->
+                val selected = palette == entry.selected
+                val ring by androidx.compose.animation.core.animateFloatAsState(
+                    if (selected) 1f else 0f,
+                    WeaveMotion.quick(),
+                    label = "swatch-ring",
+                )
+                val (paper, ink) = swatchPair(palette)
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .selectable(selected = selected, role = Role.RadioButton) { entry.onSelect(palette) }
+                        .semantics { contentDescription = localizeWeaveText(palette.label, language) }
+                        .testTag("settings-swatch-${palette.name}"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    androidx.compose.foundation.Canvas(Modifier.size(42.dp)) {
+                        val r = 17.dp.toPx()
+                        if (ring > 0f) {
+                            drawCircle(
+                                scheme.primary.copy(alpha = ring),
+                                radius = r + 4.dp.toPx() - (1f - ring) * 2.dp.toPx(),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()),
+                            )
+                        }
+                        drawCircle(paper, radius = r)
+                        drawArc(
+                            ink,
+                            startAngle = -45f,
+                            sweepAngle = 180f,
+                            useCenter = true,
+                            topLeft = androidx.compose.ui.geometry.Offset(center.x - r, center.y - r),
+                            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+                        )
+                        drawCircle(scheme.onSurface.copy(alpha = 0.16f), radius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(0.5.dp.toPx()))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Paper and ink of each palette, the two colors its swatch splits between. */
+private fun swatchPair(palette: WeavePalette): Pair<Color, Color> = when (palette) {
+    WeavePalette.MINIMAL_LIGHT -> Color(0xFFF4F6F8) to Color(0xFF2F4858)
+    WeavePalette.MINIMAL_DARK -> Color(0xFF0B0E13) to Color(0xFFC5DCEB)
+    WeavePalette.MINIMAL_WHITE_GREEN -> Color.White to Color(0xFF2C6E16)
+    WeavePalette.MINIMAL_PAPER -> Color.White to Color(0xFF171717)
+    WeavePalette.IMPRESSION_SUNRISE -> Color(0xFFF2ECE2) to Color(0xFFDF9A7D)
+    WeavePalette.WATER_LILIES -> Color(0xFFEDF1EE) to Color(0xFF97BDB5)
+    WeavePalette.POPPY_FIELD -> Color(0xFFF3ECE3) to Color(0xFFD88970)
+    WeavePalette.TWILIGHT_GARDEN -> Color(0xFFF0EBF0) to Color(0xFF9CAFC0)
 }
 
 @Composable
@@ -759,7 +866,7 @@ private fun SettingsGroup(
             modifier = Modifier
                 .padding(horizontal = WeaveUiTokens.screenHorizontal)
                 .fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
         ) {
             Column(content = content)
         }
@@ -842,7 +949,15 @@ private fun ExpandableSettingsGroup(
 
 @Composable
 private fun SettingRowIcon(icon: ImageVector) {
-    WeaveIconTile(icon)
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+    }
 }
 
 @Composable
@@ -875,15 +990,16 @@ private fun LinkSetting(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingRowIcon(icon)
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             if (subtitle != null) {
                 Text(
                     subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
@@ -925,9 +1041,9 @@ private fun ToggleSetting(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingRowIcon(icon)
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
