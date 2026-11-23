@@ -423,16 +423,9 @@ private fun ConditionalTargetDialog(
         NodeHealthIndex(selectedHealth?.nodes.orEmpty())
     }
     val orderedNodes = remember(subscriptionNodes, selectedHealth?.nodes, favorites, favoritesOnly, nodeSearch) {
-        subscriptionNodes.filter {
-            (!favoritesOnly || "${it.subscriptionId}/${it.id}" in favorites) &&
-                (nodeSearch.isBlank() || it.name.contains(nodeSearch, ignoreCase = true))
-        }.sortedWith(
-            compareBy<ProxyNode> { "${it.subscriptionId}/${it.id}" !in favorites }.thenBy {
-                healthByName[it.name]?.qualityScoreMs == null
-            }.thenBy {
-                healthByName[it.name]?.qualityScoreMs ?: Int.MAX_VALUE
-            }.thenBy { it.name },
-        )
+        orderRoutePickerNodes(subscriptionNodes, favorites, favoritesOnly, nodeSearch) { rawName ->
+            healthByName[rawName]?.qualityScoreMs
+        }
     }
 
     AlertDialog(

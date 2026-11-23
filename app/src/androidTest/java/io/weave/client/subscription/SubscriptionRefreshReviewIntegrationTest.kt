@@ -207,18 +207,20 @@ class SubscriptionRefreshReviewIntegrationTest {
         pausedRequest({ repo.autoRefreshRemote(old.id, emptySet()) }, mutate)
 
     private suspend fun <T> Fixture.pausedRequest(operation: suspend () -> T, mutate: suspend () -> Unit): Result<T> = coroutineScope {
+        // Bound test coordination separately on the slow hosted Intel guest.
+        val watchdogSeconds = if (InstrumentationRegistry.getArguments().getString("weaveHostedSlowTiming") == "1") 45L else 10L
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         beforeResponse = {
             entered.countDown()
-            check(release.await(10, TimeUnit.SECONDS))
+            check(release.await(watchdogSeconds, TimeUnit.SECONDS))
         }
         val download = async(Dispatchers.Default) { runCatching { operation() } }
         try {
-            check(entered.await(10, TimeUnit.SECONDS))
+            check(entered.await(watchdogSeconds, TimeUnit.SECONDS))
             mutate()
             release.countDown()
-            withTimeout(10_000) { download.await() }
+            withTimeout(TimeUnit.SECONDS.toMillis(watchdogSeconds)) { download.await() }
         } finally {
             release.countDown()
             download.cancelAndJoin()

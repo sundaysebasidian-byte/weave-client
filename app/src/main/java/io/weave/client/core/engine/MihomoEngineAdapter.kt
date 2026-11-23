@@ -62,41 +62,43 @@ data class NodeHealthSnapshot(
 internal object NodeHealthAggregator {
     fun aggregate(rounds: List<List<NodeHealthSnapshot>>): List<NodeHealthSnapshot> {
         if (rounds.isEmpty()) return emptyList()
-        return rounds
-            .asSequence()
-            .flatten()
-            .groupBy { it.name }
-            .map { (name, snapshots) ->
-                // Be defensive even when snapshots came from a test or a future adapter path.
-                // Native delay sentinels must count as failed probes, never as slow nodes.
-                val delays = snapshots.mapNotNull {
-                    LatencySamplePolicy.sanitize(it.latencyMs)
-                }
-                val expected = rounds.size
-                val successful = delays.size
-                val ordered = delays.sorted()
-                val protocol = snapshots.lastOrNull()?.protocol ?: "Mihomo"
-                NodeHealthSnapshot(
-                    name = name,
-                    protocol = protocol,
-                    latencyMs = ordered.getOrNull(ordered.size / 2),
-                    samples = expected,
-                    successfulSamples = successful,
-                    jitterMs = averageJitter(delays),
-                    packetLossPercent = ((expected - successful) * 100 / expected)
-                        .coerceIn(0, 100),
-                    p95LatencyMs = percentile(ordered, 95),
-                )
+        val byName = HashMap<String, ProbeSamples>()
+        for (round in rounds) {
+            for (snapshot in round) {
+                val samples = byName.getOrPut(snapshot.name) { ProbeSamples(snapshot.protocol) }
+                // Keep the last protocol even if that row has no usable latency.
+                samples.protocol = snapshot.protocol
+                LatencySamplePolicy.sanitize(snapshot.latencyMs)?.let { delay -> samples.add(delay) }
             }
-            .sortedBy { it.name }
+        }
+        val expected = rounds.size
+        return byName.map { (name, samples) ->
+            val delays = samples.delays
+            val successful = delays.size
+            delays.sort()
+            NodeHealthSnapshot(
+                name = name,
+                protocol = samples.protocol,
+                latencyMs = delays.getOrNull(successful / 2),
+                samples = expected,
+                successfulSamples = successful,
+                jitterMs = if (successful < 2) null else (samples.jitterTotal.toDouble() / (successful - 1)).toInt(),
+                packetLossPercent = ((expected - successful) * 100 / expected).coerceIn(0, 100),
+                p95LatencyMs = percentile(delays, 95),
+            )
+        }.sortedBy { it.name }
     }
 
-    private fun averageJitter(delays: List<Int>): Int? {
-        if (delays.size < 2) return null
-        val total = delays.zipWithNext().sumOf { (previous, current) ->
-            abs(current - previous)
+    private class ProbeSamples(var protocol: String) {
+        val delays = ArrayList<Int>()
+        var jitterTotal = 0
+            private set
+
+        fun add(delay: Int) {
+            // Jitter uses the original successful-probe order, not the later sorted order.
+            delays.lastOrNull()?.let { previous -> jitterTotal += abs(delay - previous) }
+            delays.add(delay)
         }
-        return (total.toDouble() / (delays.size - 1)).toInt()
     }
 
     private fun percentile(sorted: List<Int>, percentile: Int): Int? {
