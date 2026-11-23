@@ -29,6 +29,22 @@ object VpnRuntimeState {
     /** Set only in the UI process. */
     @Volatile var reachabilityForwarder: ((Long) -> Unit)? = null
 
+    private val mutableExitName = MutableStateFlow<String?>(null)
+
+    /**
+     * `:vpn` only, never mirrored: the exit the core reports while connected, for the system
+     * surfaces (tile, widget) that live in that process. Cleared whenever the tunnel is not up.
+     */
+    val exitName = mutableExitName.asStateFlow()
+
+    /** Apply a sample only to the connected revision that started the engine query. */
+    @Synchronized fun exitChanged(revision: Long, name: String?): Boolean {
+        val current = mutableSnapshot.value
+        if (current.state != ConnectionState.CONNECTED || current.revision != revision) return false
+        mutableExitName.value = name?.takeIf(String::isNotBlank)
+        return true
+    }
+
     /** Replaces the UI-process mirror with the authoritative snapshot from `:vpn`. */
     @Synchronized fun mirror(value: VpnRuntimeSnapshot) {
         mutableSnapshot.value = value
@@ -44,6 +60,7 @@ object VpnRuntimeState {
                 ConnectionState.CONNECTING -> if (previous.state == ConnectionState.DISCONNECTED) NetworkPathStatus.STARTING else NetworkPathStatus.RECOVERING
                 else -> NetworkPathStatus.INACTIVE
             })
+        if (state != ConnectionState.CONNECTED) mutableExitName.value = null
     }
 
     @Synchronized fun pathChanged(status: NetworkPathStatus) {

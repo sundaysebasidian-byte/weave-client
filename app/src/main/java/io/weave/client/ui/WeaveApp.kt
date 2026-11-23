@@ -396,7 +396,7 @@ fun WeaveApp(
     var showNetworkPrivacyCenter by remember { mutableStateOf(false) }
     var browserPrivacyResult by remember { mutableStateOf<BrowserPrivacyResult?>(null) }
     var browserPrivacyError by remember { mutableStateOf<String?>(null) }
-    var browserProbeRunId by remember { mutableStateOf(0) }
+    var browserProbeRequest by remember { mutableStateOf<BrowserProbeRequest?>(null) }
     var showRecoveryCenter by remember { mutableStateOf(false) }
     var showPolicyPacks by remember { mutableStateOf(false) }
     var showLocalRouteRules by remember { mutableStateOf(false) }
@@ -445,7 +445,7 @@ fun WeaveApp(
             val loaded = viewModel.hasLoadedLocalSubscriptions()
             val shouldOffer = QuickStartPolicy.shouldOfferAutomatically(
                 seen = quickStartStore.wasSeen(), dataLoaded = loaded,
-                upgradedInstall = quickStartStore.isUpgradedInstall(),
+                upgradedInstall = quickStartStore::isUpgradedInstall,
                 hasSubscriptions = viewModel.subscriptions.value.isNotEmpty(),
                 hasRoutes = viewModel.routes.value.isNotEmpty(),
                 hasSavedTarget = viewModel.dashboard.value.defaultRouteTarget != null,
@@ -478,12 +478,14 @@ fun WeaveApp(
     val externalRequest by viewModel.externalRequest.collectAsStateWithLifecycle()
     LaunchedEffect(externalRequest) {
         val request = externalRequest ?: return@LaunchedEffect
-        quickStartExternalLaunch = true
-        if (quickStart.visible) closeQuickStart()
+        if (request != ExternalRequest.ChooseExit) {
+            quickStartExternalLaunch = true
+            if (quickStart.visible) closeQuickStart()
+            if (request == ExternalRequest.Connect) destination = Destination.HOME
+        }
+        if (!viewModel.claimExternalRequest(request)) return@LaunchedEffect
         when (request) {
             ExternalRequest.Connect -> {
-                destination = Destination.HOME
-                viewModel.awaitReady()
                 if (viewModel.dashboard.value.connectionState == ConnectionState.DISCONNECTED ||
                     viewModel.dashboard.value.connectionState == ConnectionState.ERROR
                 ) {
@@ -492,7 +494,14 @@ fun WeaveApp(
             }
             ExternalRequest.OpenImport -> {
                 destination = Destination.SUBSCRIPTIONS
+                importStartWith = null
                 showImportDialog = true
+            }
+            ExternalRequest.ChooseExit -> {
+                quickStartExternalLaunch = true
+                if (quickStart.visible) closeQuickStart()
+                destination = Destination.HOME
+                showDefaultRoutePicker = true
             }
             is ExternalRequest.Import -> {
                 destination = Destination.SUBSCRIPTIONS
@@ -500,7 +509,6 @@ fun WeaveApp(
                 externalImport = request.value
             }
         }
-        viewModel.consumeExternalRequest()
     }
 
     fun openNetworkPrivacyCenter(runFullCheck: Boolean) {
@@ -508,7 +516,7 @@ fun WeaveApp(
         if (runFullCheck && viewModel.ipQualityState.value.report == null) {
             browserPrivacyResult = null
             browserPrivacyError = null
-            browserProbeRunId++
+            browserProbeRequest = BrowserProbeRequest()
             viewModel.runIpQualityProbe()
         }
     }
@@ -524,7 +532,7 @@ fun WeaveApp(
         showPolicyPacks ||
         showLocalRouteRules ||
         showRecoveryCenter ||
-        browserProbeRunId > 0
+        browserProbeRequest != null
     LaunchedEffect(sensitiveSurfaceVisible) {
         // Sensitive URLs, credentials and one-time transfer keys should not enter screenshots or
         // the recent-apps preview. Normal navigation remains screenshot-friendly.
@@ -546,9 +554,13 @@ fun WeaveApp(
         showPolicyPacks || showLocalRouteRules || showConnections || showLogs || showRuleSets ||
         showCustomGroups || showBackup || externalImport != null || quickStart.visible
     val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val lifecycle = lifecycleOwner.lifecycle
+        val observer = lifecycle.addForegroundResumeObserver { resumeRevision++ }
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     DisposableEffect(lifecycleOwner, destination, dashboardObscured) {
         fun updateVisibility() {
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeRevision++
             viewModel.setDashboardVisible(
                 destination == Destination.HOME &&
                     !dashboardObscured &&
@@ -559,7 +571,7 @@ fun WeaveApp(
             if (event == Lifecycle.Event.ON_STOP) {
                 viewModel.cancelForegroundDiagnostics()
                 showNetworkPrivacyCenter = false
-                browserProbeRunId = 0
+                browserProbeRequest = null
             }
             updateVisibility()
         }
@@ -754,9 +766,10 @@ fun WeaveApp(
         val renderedGuideStep = quickStart.step
         val hasProxyTarget = QuickStartPolicy.hasProxyTarget(guideDashboard.defaultRouteTarget, usableNodes, guideGroups)
         LaunchedEffect(guideRuntime, resumeRevision) {
-            if (quickStart.action == QuickStartAction.CONNECT &&
-                (guideRuntime.revision != quickStartConnectRevision || resumeRevision > quickStartConnectResume)
-            ) quickStart = quickStart.cancelAction()
+            quickStart = quickStart.afterConnectionProgress(
+                runtimeChanged = guideRuntime.revision != quickStartConnectRevision,
+                resumed = resumeRevision > quickStartConnectResume,
+            )
         }
         val childVisible = showImportDialog || showDefaultRoutePicker || showVpnDisclosure
         if (!childVisible) {
@@ -785,6 +798,7 @@ fun WeaveApp(
                                 quickStart = quickStart.beginAction(QuickStartAction.IMPORT)
                                 viewModel.resetImportState()
                                 destination = Destination.SUBSCRIPTIONS
+                                importStartWith = null
                                 showImportDialog = true
                             }
                             QuickStartStep.NODE -> if (usableNodes.isNotEmpty()) {
@@ -848,13 +862,13 @@ fun WeaveApp(
     if (showNetworkPrivacyCenter) {
         val probeRuntime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
         val expectedRevision = probeRuntime.revision
-        val expectedBrowserRun = browserProbeRunId
+        val expectedBrowserRequest = browserProbeRequest
         var browserRevision by remember { mutableStateOf(expectedRevision) }
         LaunchedEffect(expectedRevision) {
             if (browserRevision != expectedRevision) {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRunId = 0
+                browserProbeRequest = null
                 browserRevision = expectedRevision
             }
         }
@@ -867,7 +881,7 @@ fun WeaveApp(
             diagnosticDashboard.routingMode, diagnosticDashboard.defaultRouteTarget,
             diagnosticRoutes, networkPreferences, resumeRevision) { viewModel.privacyReport() }
         NetworkPrivacyCenterDialog(
-            onCancel = { viewModel.clearIpQualityState(); browserProbeRunId = 0 },
+            onCancel = { viewModel.clearIpQualityState(); browserProbeRequest = null },
             downloadState = downloadState,
             onDownloadProbe = viewModel::runDownloadProbe,
             onOpenVpnSettings = onOpenVpnSettings,
@@ -875,36 +889,44 @@ fun WeaveApp(
             ipQualityState = ipQualityState,
             endpointState = commonEndpointState,
             browserResult = browserPrivacyResult,
-            browserProbeRunId = browserProbeRunId,
+            browserProbeRequest = browserProbeRequest,
             browserError = browserPrivacyError,
             onRunFullCheck = {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRunId++
+                browserProbeRequest = BrowserProbeRequest()
                 viewModel.runIpQualityProbe()
             },
             onRunBrowserCheck = {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRunId++
+                browserProbeRequest = BrowserProbeRequest()
             },
             onBrowserResult = {
-                if (io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision == expectedRevision &&
-                    browserProbeRunId == expectedBrowserRun) {
+                if (expectedBrowserRequest?.canPublish(
+                        browserProbeRequest,
+                        expectedRevision,
+                        io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision,
+                    ) == true
+                ) {
                     browserPrivacyError = null
                     browserPrivacyResult = it
                 }
             },
             onBrowserError = {
-                if (io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision == expectedRevision &&
-                    browserProbeRunId == expectedBrowserRun) {
+                if (expectedBrowserRequest?.canPublish(
+                        browserProbeRequest,
+                        expectedRevision,
+                        io.weave.client.core.vpn.VpnRuntimeState.snapshot.value.revision,
+                    ) == true
+                ) {
                     browserPrivacyResult = null
                     browserPrivacyError = it
                 }
             },
             onDismiss = {
                 showNetworkPrivacyCenter = false
-                browserProbeRunId = 0
+                browserProbeRequest = null
                 viewModel.clearIpQualityState()
             },
         )
@@ -995,6 +1017,14 @@ fun WeaveApp(
             onImportQrImage = viewModel::importSubscriptionQrImage,
             onScanQr = viewModel::importSubscriptionQr,
             startWith = importStartWith,
+            consumeStartWith = { source ->
+                if (importStartWith == source) {
+                    importStartWith = null
+                    true
+                } else {
+                    false
+                }
+            },
         )
     }
 
@@ -1065,10 +1095,11 @@ fun WeaveApp(
     if (showAppPicker) {
         val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
         val routes by viewModel.routes.collectAsStateWithLifecycle()
+        val unroutedApps = remember(installedApps, routes) {
+            AppPickerFilter.unrouted(installedApps, routes, { it.packageName }, { it.packageName })
+        }
         AppPickerDialog(
-            apps = installedApps.filterNot { app ->
-                routes.any { it.packageName == app.packageName }
-            },
+            apps = unroutedApps,
             onDismiss = { showAppPicker = false },
             onSelect = { packageName ->
                 viewModel.addAppRoute(packageName)
@@ -1265,9 +1296,9 @@ private fun DashboardEffects(
     val importState by viewModel.importState.collectAsStateWithLifecycle()
 
     LaunchedEffect(dashboard.statusMessage, language) {
-        dashboard.statusMessage?.let {
-            snackbar.showSnackbar(localizeWeaveText(it, language))
-            viewModel.dismissMessage()
+        dashboard.statusMessage?.let { displayed ->
+            snackbar.showSnackbar(localizeWeaveText(displayed, language))
+            viewModel.dismissDisplayedMessage(displayed)
         }
     }
 

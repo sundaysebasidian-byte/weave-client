@@ -34,11 +34,11 @@ fun localizeWeaveText(text: String, language: WeaveLanguage): String {
     if (language == WeaveLanguage.SIMPLIFIED_CHINESE || text.isBlank()) return text
     val depth = TRANSLATION_DEPTH.get() ?: 0
     if (depth >= MAX_TRANSLATION_DEPTH) return text
+    translationTable(language)[text]?.let { return it }
+
     TRANSLATION_DEPTH.set(depth + 1)
     return try {
-        translationTable(language)[text]?.let { it }
-            ?: translateCommonPatterns(text, language)
-            ?: text
+        translateCommonPatterns(text, language) ?: text
     } finally {
         TRANSLATION_DEPTH.set(depth)
     }

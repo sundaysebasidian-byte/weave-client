@@ -19,26 +19,29 @@ object SubscriptionDiffer {
         previous: List<StoredNode>,
         candidate: List<ParsedNode>,
     ): SubscriptionDiff {
-        val oldCounts = previous.groupingBy { key(it.name, it.protocol) }.eachCount()
-        val newCounts = candidate.groupingBy { key(it.name, it.protocol) }.eachCount()
-        val keys = oldCounts.keys + newCounts.keys
-        var added = 0
-        var removed = 0
+        val counts = HashMap<String, Count>()
+        for (node in previous) {
+            counts.getOrPut(key(node.name, node.protocol)) { Count() }.oldRemaining++
+        }
         var unchanged = 0
-        keys.forEach { key ->
-            val oldCount = oldCounts[key] ?: 0
-            val newCount = newCounts[key] ?: 0
-            unchanged += minOf(oldCount, newCount)
-            added += (newCount - oldCount).coerceAtLeast(0)
-            removed += (oldCount - newCount).coerceAtLeast(0)
+        var possibleDuplicates = 0
+        for (node in candidate) {
+            val count = counts.getOrPut(key(node.name, node.protocol)) { Count() }
+            if (count.seenCandidate) possibleDuplicates++ else count.seenCandidate = true
+            if (count.oldRemaining > 0) {
+                count.oldRemaining--
+                unchanged++
+            }
         }
         return SubscriptionDiff(
-            added = added,
-            removed = removed,
+            added = candidate.size - unchanged,
+            removed = previous.size - unchanged,
             unchanged = unchanged,
-            possibleDuplicates = newCounts.values.sumOf { (it - 1).coerceAtLeast(0) },
+            possibleDuplicates = possibleDuplicates,
         )
     }
+
+    private class Count(var oldRemaining: Int = 0, var seenCandidate: Boolean = false)
 
     private fun key(name: String, protocol: String) =
         "${protocol.trim().lowercase()}\u0000${name.trim()}"

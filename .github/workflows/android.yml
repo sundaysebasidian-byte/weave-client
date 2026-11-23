@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test-and-build:
+  linux-build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -30,10 +30,11 @@ jobs:
           packages: platform-tools
           cmdline-tools-version: '15859902'
       - name: Install locked Android toolchain
-        run: sdkmanager "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
+        run: sdkmanager "build-tools;36.0.0" "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
         run: |
+          python3 tools/test-android-core-hashes.py
           python3 tools/test-android-ready.py
           python3 tools/test-android-failure.py
           python3 tools/test-android-test-code.py
@@ -43,14 +44,48 @@ jobs:
         run: ./gradlew lintDebug --no-daemon --no-configuration-cache
       - name: Debug build
         run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
-      - name: Storage transactions on a disposable Android emulator
-        # Optional: hosted runners lack KVM, so a failure here is reported but does not fail the job.
-        continue-on-error: true
-        timeout-minutes: 25
+      - name: Release build (ABI splits)
+        run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
+      - name: Ensure no universal APK is published
+        run: test -z "$(find app/build/outputs/apk -iname '*universal*.apk' -print -quit)"
+      - name: Verify bundled core hashes
+        run: bash tools/verify-android-core-hashes.sh
+
+  storage-on-disposable-emulator:
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install the locked emulator tools and x86_64 Android 36 image
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager "emulator" "system-images;android-36;default;x86_64"
+          test "$(uname -m)" = x86_64
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$sdk"
+          # Use the stock Mac SDK tools; the pinned Linux installer has no matching Mac archive.
+          tools="$sdk/cmdline-tools/latest/bin"
+          test -x "$tools/sdkmanager"
+          test -x "$tools/avdmanager"
+          test -x "$sdk/emulator/emulator"
+          "$tools/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6" "system-images;android-36;default;x86_64"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "WEAVE_AVDMANAGER=$tools/avdmanager" >> "$GITHUB_ENV"
+      - name: Build the debug and test APKs from this checkout
+        run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
+      - name: Storage transactions on a disposable Android emulator
+        # Optional: emulator boots on hosted runners are unreliable, so a failure here is reported but does not fail the job.
+        continue-on-error: true
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -euo pipefail
           export ANDROID_USER_HOME="$RUNNER_TEMP/weave-android-user"
           export ANDROID_EMULATOR_HOME="$RUNNER_TEMP/weave-android-emulator"
           export ANDROID_AVD_HOME="$RUNNER_TEMP/weave-avds"
@@ -58,35 +93,47 @@ jobs:
           export ADB_MDNS_AUTO_CONNECT=''
           export WEAVE_TEST_ADB_PORT=5041
           export WEAVE_ISOLATED_EMULATOR=1
-          export WEAVE_TEST_BOOT_TIMEOUT=300
+          export WEAVE_HOSTED_SLOW_TIMING=1
+          export WEAVE_TEST_BOOT_TIMEOUT=840
           export WEAVE_TEST_RESULTS="$RUNNER_TEMP/weave-storage-results"
           mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" "$WEAVE_TEST_RESULTS"
-          printf 'no\n' | avdmanager create avd -n weave-storage -k 'system-images;android-36;default;x86_64'
-          adb -P 5041 --one-device weave-isolated-no-usb start-server
+          printf 'no\n' | "$WEAVE_AVDMANAGER" create avd -n weave-storage -k 'system-images;android-36;default;x86_64'
+          "$ANDROID_HOME/platform-tools/adb" -P 5041 --one-device weave-isolated-no-usb start-server
           emulator_pid=''
           cleanup() {
             result=$?
             if [[ $result != 0 ]]; then tail -80 "$WEAVE_TEST_RESULTS/emulator.log" || true; fi
-            adb -P 5041 -s emulator-5580 emu kill >/dev/null 2>&1 || true
+            "$ANDROID_HOME/platform-tools/adb" -P 5041 -s emulator-5580 emu kill >/dev/null 2>&1 || true
             if [[ -n "$emulator_pid" ]]; then
               kill "$emulator_pid" 2>/dev/null || true
               wait "$emulator_pid" 2>/dev/null || true
             fi
-            adb -P 5041 kill-server || true
+            "$ANDROID_HOME/platform-tools/adb" -P 5041 kill-server || true
           }
           trap cleanup EXIT
           # Device acceptance requires an already authorized hardware accelerator.
           if ! "$ANDROID_HOME/emulator/emulator" -accel-check 2>&1 | tee "$WEAVE_TEST_RESULTS/acceleration.txt"; then
-            echo 'Android device acceptance needs a runner with existing KVM access. No permission changes were attempted.' >&2
+            echo 'Android device acceptance needs a runner with an available host hypervisor. No permission changes were attempted.' >&2
             exit 1
           fi
-          "$ANDROID_HOME/emulator/emulator" -avd weave-storage -port 5580 -accel on \
+          "$ANDROID_HOME/emulator/emulator" @weave-storage -port 5580 -accel on \
             -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
-            -gpu swiftshader -cores 2 -memory 2048 -camera-back none -camera-front none \
+            -gpu swiftshader -memory 2048 -show-kernel -camera-back none -camera-front none \
             > "$WEAVE_TEST_RESULTS/emulator.log" 2>&1 &
           emulator_pid=$!
           export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
           bash tools/test-android-storage.sh emulator-5580
+          grep -Fx 'OK (87 tests)' "$WEAVE_TEST_RESULTS/instrumentation.txt"
+          # JUnit's summary alone can count an assumption failure as run. Require every pass.
+          awk '
+            /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
+            /^INSTRUMENTATION_STATUS_CODE: 0\r?$/ { passed++ }
+            /^INSTRUMENTATION_STATUS_CODE: -[0-9]+\r?$/ { unsuccessful++ }
+            END {
+              printf "Device tests: %d started, %d passed, %d unsuccessful\n", started, passed, unsuccessful
+              exit !(started == 87 && passed == 87 && unsuccessful == 0)
+            }
+          ' "$WEAVE_TEST_RESULTS/instrumentation.txt"
       - name: Preserve device test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -94,13 +141,21 @@ jobs:
           name: Weave-Android-storage-tests
           path: ${{ runner.temp }}/weave-storage-results/
           if-no-files-found: warn
-      - name: Release build (ABI splits)
-        run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
-      - name: Ensure no universal APK is published
-        run: test -z "$(find app/build/outputs/apk -iname '*universal*.apk' -print -quit)"
-      - name: Verify bundled core hashes
+          retention-days: 3
+
+  test-and-build:
+    name: test-and-build
+    if: always()
+    needs: [linux-build, storage-on-disposable-emulator]
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 2
+    steps:
+      - name: Require both Android checks
+        shell: bash
+        env:
+          LINUX_RESULT: ${{ needs.linux-build.result }}
+          STORAGE_RESULT: ${{ needs.storage-on-disposable-emulator.result }}
         run: |
-          test "$(sha256sum app/src/main/jniLibs/arm64-v8a/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.arm64-v8a.sha256=//p' core-lock.properties)"
-          test "$(sha256sum app/src/main/jniLibs/armeabi-v7a/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.armeabi-v7a.sha256=//p' core-lock.properties)"
-          test "$(sha256sum app/src/main/jniLibs/x86/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.x86.sha256=//p' core-lock.properties)"
-          test "$(sha256sum app/src/main/jniLibs/x86_64/libclash.so | cut -d' ' -f1)" = "$(sed -n 's/^libclash.x86_64.sha256=//p' core-lock.properties)"
+          printf 'Linux build: %s\nDevice storage: %s\n' "$LINUX_RESULT" "$STORAGE_RESULT"
+          test "$LINUX_RESULT" = success && test "$STORAGE_RESULT" = success

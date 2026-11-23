@@ -28,4 +28,6 @@
     <string name="notification_control_enabled">在通知列顯示連線狀態與中斷操作。</string>
     <string name="notification_control_disabled">通知已關閉。通道仍可執行，但通知列可能無法顯示狀態和中斷操作。</string>
     <string name="notification_control_action">管理通知</string>
+    <string name="action_choose_exit">切換出口</string>
+    <string name="widget_description">連線狀態與一鍵開關</string>
 </resources>
