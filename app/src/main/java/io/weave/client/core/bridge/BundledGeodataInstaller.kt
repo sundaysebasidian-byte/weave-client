@@ -33,15 +33,16 @@ object BundledGeodataInstaller {
                 return@forEach
             }
             val pending = File(coreHome, "${resource.fileName}.pending")
-            pending.delete()
-            context.assets.open(resource.assetPath).use { input ->
-                pending.outputStream().use(input::copyTo)
+            BundledGeodataStaging.run(pending) {
+                context.assets.open(resource.assetPath).use { input ->
+                    pending.outputStream().use(input::copyTo)
+                }
+                check(sha256(pending) == resource.sha256) {
+                    pending.delete()
+                    "随包 Geo 数据校验失败"
+                }
+                moveReplace(pending, destination)
             }
-            check(sha256(pending) == resource.sha256) {
-                pending.delete()
-                "随包 Geo 数据校验失败"
-            }
-            moveReplace(pending, destination)
         }
     }
 

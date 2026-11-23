@@ -1,5 +1,7 @@
 package io.weave.client.ui
 
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -105,6 +107,8 @@ class HomeHeroGeometryTest {
                 language = WeaveLanguage.ENGLISH,
             )
         }
+        // The capsule shows the selected mode; the dial it opens carries all three.
+        compose.onNodeWithTag("home-mode-chip").performClick()
         RoutingMode.entries.forEach { selected ->
             compose.runOnIdle { mode.value = selected }
             compose.waitForIdle()
@@ -128,7 +132,7 @@ class HomeHeroGeometryTest {
         }
         compose.onNodeWithText(label("已连接")).assertIsDisplayed()
         compose.onNodeWithText(label("连通性未检测")).assertIsDisplayed()
-        compose.onNodeWithText(label("断开")).assertIsDisplayed()
+        compose.onNodeWithContentDescription(label("断开")).assertIsDisplayed()
         // The old hero repeated the state as a pill and explained itself in a sentence.
         compose.onNodeWithTextAbsent(label("隧道已建立"))
         compose.onNodeWithTextAbsent(label("连接状态"))
@@ -161,7 +165,7 @@ class HomeHeroGeometryTest {
     }
 
     @Test
-    fun heroIsModestlyTallerThanBuild104AtDefaultScale() {
+    fun statusBlockKeepsItsFrameAtDefaultScale() {
         var density = 1f
         compose.setContent {
             density = androidx.compose.ui.platform.LocalDensity.current.density
@@ -171,9 +175,9 @@ class HomeHeroGeometryTest {
         }
         compose.waitForIdle()
         val heightDp = compose.onNodeWithTag("home-hero").fetchSemanticsNode().size.height / density
-        // Build 104 measured 162dp here. The refinement asks for roughly 8-12% more, not a rewrite
-        // of the page, so this band flags drift in either direction.
-        assertTrue("hero is ${heightDp}dp tall", heightDp in 172f..184f)
+        // Eyebrow, one serif display line and one exit line measured 133dp on API 36. The band flags
+        // a headline that starts wrapping or a slot that stops reserving its largest variant.
+        assertTrue("status block is ${heightDp}dp tall", heightDp in 126f..140f)
     }
 
     @Test
@@ -197,7 +201,7 @@ class HomeHeroGeometryTest {
         }
         // While connecting, the headline and the action share a label; only the action clicks.
         fun heroAction(source: String) =
-            compose.onNode(hasText(source) and hasClickAction() and hasAnyAncestor(hasTestTag("home-hero")))
+            compose.onNode(hasContentDescription(source) and hasClickAction() and hasAnyAncestor(hasTestTag("home-capsule")))
         fun show(name: String) {
             compose.runOnIdle { case.value = HomeFixtures.byName(name) }
             compose.waitForIdle()
@@ -234,9 +238,9 @@ class HomeHeroGeometryTest {
         val change = compose.onNodeWithText(label("更换出口")).fetchSemanticsNode().boundsInRoot
         assertTrue("the reason must not sit inside the hero frame", reason.top >= hero.bottom)
         assertTrue("the exit change belongs to the same surface as the reason", change.top >= hero.bottom)
-        // Retry stays in the hero, as the single primary action.
-        val retry = compose.onNodeWithText(label("重试连接")).fetchSemanticsNode().boundsInRoot
-        assertTrue(retry.bottom <= hero.bottom && retry.top >= hero.top)
+        // Retry stays in the connection capsule, as the single primary action.
+        compose.onNode(hasContentDescription(label("重试连接")) and hasAnyAncestor(hasTestTag("home-capsule")))
+            .assertIsDisplayed()
     }
 
     /** Screenshots of every fixture plus the hero's bounds, for the CG handoff. Not an assertion. */

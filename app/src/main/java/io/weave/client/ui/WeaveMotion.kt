@@ -38,7 +38,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -208,27 +207,23 @@ internal fun Sparkline(
 ) {
     Canvas(modifier = modifier) {
         if (samples.size < 2) return@Canvas
-        val max = samples.max().coerceAtLeast(1L).toFloat()
-        val step = size.width / (samples.size - 1)
-        val points = samples.mapIndexed { index, value ->
-            Offset(index * step, size.height - (value / max) * size.height * 0.9f - size.height * 0.05f)
-        }
-        val line = Path().apply {
-            moveTo(points.first().x, points.first().y)
-            for (i in 1 until points.size) {
-                val previous = points[i - 1]
-                val current = points[i]
-                val midX = (previous.x + current.x) / 2f
-                cubicTo(midX, previous.y, midX, current.y, current.x, current.y)
-            }
-        }
-        val fill = Path().apply {
-            addPath(line)
-            lineTo(points.last().x, size.height)
-            lineTo(points.first().x, size.height)
-            close()
-        }
-        drawPath(fill, Brush.verticalGradient(listOf(color.copy(alpha = 0.28f), Color.Transparent)))
-        drawPath(line, color, style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        val line = Path()
+        writeSparklineGeometry(
+            samples = samples,
+            width = size.width,
+            height = size.height,
+            moveTo = { x, y -> line.moveTo(x, y) },
+            cubicTo = { x1, y1, x2, y2, x3, y3 -> line.cubicTo(x1, y1, x2, y2, x3, y3) },
+            finish = { firstX, lastX ->
+                val fill = Path().apply {
+                    addPath(line)
+                    lineTo(lastX, size.height)
+                    lineTo(firstX, size.height)
+                    close()
+                }
+                drawPath(fill, Brush.verticalGradient(listOf(color.copy(alpha = 0.28f), Color.Transparent)))
+                drawPath(line, color, style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            },
+        )
     }
 }

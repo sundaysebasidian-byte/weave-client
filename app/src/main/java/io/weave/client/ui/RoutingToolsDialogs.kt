@@ -143,7 +143,6 @@ import io.weave.client.core.diagnostics.PrivacyObservation
 import io.weave.client.core.diagnostics.PrivacyObservationReport
 import io.weave.client.core.diagnostics.RouteLens
 import io.weave.client.core.diagnostics.RouteLensQuery
-import io.weave.client.core.diagnostics.RouteLensResult
 import io.weave.client.data.RecoveryState
 import io.weave.client.core.engine.QualityMatrixBuilder
 import io.weave.client.core.engine.QualityMatrixRow
@@ -194,7 +193,7 @@ internal fun LocalRouteRulesDialog(
 ) {
     var type by remember { mutableStateOf(LocalRuleType.DOMAIN_SUFFIX) }
     var action by remember { mutableStateOf(LocalRuleAction.DIRECT) }
-    var value by remember { mutableStateOf("") }
+    var draft by remember { mutableStateOf(LocalRuleValueDraft()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -249,8 +248,8 @@ internal fun LocalRouteRulesDialog(
                 }
                 item {
                     OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it.take(253) },
+                        value = draft.value,
+                        onValueChange = { draft = LocalRuleValueDraft(it) },
                         label = {
                             Text(
                                 when (type) {
@@ -263,16 +262,18 @@ internal fun LocalRouteRulesDialog(
                             )
                         },
                         singleLine = true,
-                        isError = state.error != null,
+                        isError = state.error != null || draft.exceedsLimit,
+                        supportingText = if (draft.exceedsLimit) ({ Text("规则值长度无效") }) else null,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 item {
                     Button(
                         onClick = {
-                            if (onAdd(type, value, action)) value = ""
+                            val submitted = draft
+                            if (submitted.canAdd && onAdd(type, submitted.value, action)) draft = LocalRuleValueDraft()
                         },
-                        enabled = value.isNotBlank(),
+                        enabled = draft.canAdd,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null)
@@ -351,8 +352,9 @@ internal fun RouteLensDialog(
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("443") }
     var protocol by remember { mutableStateOf("TCP") }
-    var result by remember { mutableStateOf<RouteLensResult?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var submission by remember { mutableStateOf<RouteLensSubmission?>(null) }
+    val error = (submission as? RouteLensSubmission.Invalid)?.message
+    val result = (submission as? RouteLensSubmission.Explained)?.result
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -374,7 +376,7 @@ internal fun RouteLensDialog(
                 item { ConnectionTracePanel(routes, mode, defaultTarget) { route ->
                     packageName = route.packageName
                     appName = route.appName
-                    result = null
+                    submission = null
                 } }
                 item {
                     OutlinedTextField(
@@ -434,28 +436,22 @@ internal fun RouteLensDialog(
                 item {
                     Button(
                         onClick = {
-                            val parsedPort = port.toIntOrNull()
-                            when {
-                                domain.isBlank() -> error = "请输入域名"
-                                parsedPort == null || parsedPort !in 1..65535 -> error = "端口必须为 1–65535"
-                                else -> {
-                                    error = null
-                                    result = RouteLens.evaluate(
-                                        query = RouteLensQuery(
-                                            packageName = packageName.trim(),
-                                            appName = appName.trim().ifBlank { "未指定应用" },
-                                            domain = domain.trim(),
-                                            ip = ip.trim().ifBlank { null },
-                                            port = requireNotNull(parsedPort),
-                                            protocol = protocol.trim().ifBlank { "TCP" },
-                                        ),
-                                        routes = routes,
-                                        mode = mode,
-                                        defaultTarget = defaultTarget,
-                                        preferences = preferences,
-                                        localRules = localRules,
-                                    )
-                                }
+                            submission = submitRouteLens(domain, port) { parsedPort ->
+                                RouteLens.evaluate(
+                                    query = RouteLensQuery(
+                                        packageName = packageName.trim(),
+                                        appName = appName.trim().ifBlank { "未指定应用" },
+                                        domain = domain.trim(),
+                                        ip = ip.trim().ifBlank { null },
+                                        port = parsedPort,
+                                        protocol = protocol.trim().ifBlank { "TCP" },
+                                    ),
+                                    routes = routes,
+                                    mode = mode,
+                                    defaultTarget = defaultTarget,
+                                    preferences = preferences,
+                                    localRules = localRules,
+                                )
                             }
                         },
                         modifier = Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget),

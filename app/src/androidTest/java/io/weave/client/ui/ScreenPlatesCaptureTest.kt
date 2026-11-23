@@ -45,7 +45,7 @@ class ScreenPlatesCaptureTest {
                     onCancelDnsProbe = {})
             }
         }
-        compose.onNodeWithText("常用").assertIsDisplayed()
+        compose.onNodeWithText("外观与语言").assertIsDisplayed()
         capture("settings")
     }
 

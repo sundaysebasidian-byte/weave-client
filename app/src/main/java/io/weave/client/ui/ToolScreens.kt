@@ -70,6 +70,10 @@ import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.domain.TrafficFormat
 import io.weave.client.subscription.ExternalImport
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.mutableLongStateOf
+import kotlinx.coroutines.channels.trySendBlocking
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -236,28 +240,31 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     // Until the first core answer arrives the list is unknown, not empty.
     var loaded by remember { mutableStateOf(false) }
     val labels = remember { mutableStateMapOf<Int, String>() }
+    val displayReads = remember { ConnectionDisplayReads() }
     LaunchedEffect(paused) {
         while (!paused) {
-            runCatching { api.connections() }
-                .onSuccess { snapshot ->
-                    connections = snapshot.connections.sortedByDescending { it.startedAt }
-                    totals = snapshot.uploadTotal to snapshot.downloadTotal
-                    error = false
-                    snapshot.connections.map { it.uid }.distinct().filter { it > 0 && it !in labels }.forEach { uid ->
-                        labels[uid] = appLabel(context, uid)
+            displayReads.read(
+                load = { api.connections(latestFirst = true) },
+                publishSnapshot = { result ->
+                    result.onSuccess { snapshot ->
+                        connections = snapshot.connections
+                        totals = snapshot.uploadTotal to snapshot.downloadTotal
+                        error = false
+                    }.onFailure { error = true }
+                },
+                resolveLabels = { snapshot ->
+                    resolveConnectionAppLabels(snapshot.connections, labels.keys) { uid ->
+                        appLabel(context, uid)
                     }
-                }
-                .onFailure { error = true }
-            loaded = true
+                },
+                publishLabels = { labels.putAll(it) },
+                markLoaded = { loaded = true },
+            )
             delay(2_000)
         }
     }
     val visible = remember(connections, query, labels.size) {
-        val needle = query.trim()
-        if (needle.isEmpty()) connections else connections.filter { connection ->
-            connection.destination.contains(needle, true) || connection.rule.contains(needle, true) ||
-                labels[connection.uid].orEmpty().contains(needle, true) || connection.process.contains(needle, true)
-        }
+        filterConnectionRows(connections, query, labels)
     }
     WeaveToolScreen(
         title = "实时连接",
@@ -268,7 +275,14 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             IconButton(onClick = { paused = !paused }) {
                 Icon(if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, localizedContentDescription(if (paused) "继续" else "暂停"))
             }
-            IconButton(onClick = { scope.launch { api.closeAll(); connections = emptyList() } }, enabled = connections.isNotEmpty()) {
+            IconButton(onClick = {
+                scope.launch {
+                    displayReads.disconnected(api.closeAll()) {
+                        connections = emptyList()
+                        loaded = true
+                    }
+                }
+            }, enabled = connections.isNotEmpty()) {
                 Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("断开全部"))
             }
         },
@@ -315,10 +329,13 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             items(visible, key = { it.id }, contentType = { "connection" }) { connection ->
                 ConnectionRow(
                     connection = connection,
-                    appName = labels[connection.uid] ?: connection.process.ifBlank { "UID ${connection.uid}" },
+                    appName = connectionAppLabel(connection, labels[connection.uid]),
                     onClose = {
                         scope.launch {
-                            if (api.close(connection.id)) connections = connections.filterNot { it.id == connection.id }
+                            displayReads.disconnected(api.close(connection.id)) {
+                                connections = connections.filterNot { it.id == connection.id }
+                                loaded = true
+                            }
                         }
                     },
                 )
@@ -348,7 +365,7 @@ private fun ConnectionRow(connection: CoreConnection, appName: String, onClose: 
                     translate = false,
                 )
                 Text(
-                    listOf(connection.rule, connection.chain.asReversed().joinToString(" → ")).filter(String::isNotBlank).joinToString(" · "),
+                    ConnectionRowLabel.format(connection.rule, connection.chain),
                     color = MaterialTheme.colorScheme.secondary,
                     fontSize = 11.sp,
                     maxLines = 2,
@@ -387,16 +404,32 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
     var running by remember { mutableStateOf(true) }
     var redacted by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
+    var collectionEpoch by remember { mutableLongStateOf(0L) }
     val listState = rememberLazyListState()
-    LaunchedEffect(level, running) {
-        if (!running) return@LaunchedEffect
+    val collectionLevel = level
+    val requestedEpoch = collectionEpoch
+    val shouldCollect = running
+    LaunchedEffect(collectionLevel, shouldCollect, requestedEpoch) {
+        val stillCurrent = { running && collectionEpoch == requestedEpoch }
+        if (!shouldCollect || !stillCurrent()) return@LaunchedEffect
         error = false
-        runCatching {
-            api.streamLogs(level) { line ->
-                lines.add(line)
-                if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
-            }
-        }.onFailure { if (it !is kotlinx.coroutines.CancellationException) error = true }
+        watchCoreLogCollection(
+            collect = {
+                // The socket callback runs on IO. Keep the buffer bounded and apply rows on Main.
+                channelFlow {
+                    api.streamLogs(collectionLevel) { line ->
+                        if (trySendBlocking(line).isClosed) {
+                            throw kotlinx.coroutines.CancellationException("Log collection ended")
+                        }
+                    }
+                }.buffer(16).collectCurrentLogLines(stillCurrent) { line ->
+                    lines.add(line)
+                    if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
+                }
+            },
+            stillCurrent = stillCurrent,
+            onStopped = { error = true; running = false },
+        )
     }
     LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
     WeaveToolScreen(
@@ -405,7 +438,7 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
         onDismiss = onDismiss,
         secure = true,
         actions = {
-            IconButton(onClick = { running = !running }) {
+            IconButton(onClick = { collectionEpoch++; running = !running }) {
                 Icon(if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, localizedContentDescription(if (running) "暂停" else "继续"))
             }
             IconButton(onClick = {
@@ -422,7 +455,17 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             CoreApi.LEVELS.forEach { option ->
-                FilterChip(selected = level == option, onClick = { level = option }, label = { Text(option, translate = false) })
+                FilterChip(
+                    selected = level == option,
+                    onClick = {
+                        if (level != option) {
+                            collectionEpoch++
+                            level = option
+                            if (error) running = true
+                        }
+                    },
+                    label = { Text(option, translate = false) },
+                )
             }
         }
         Row(

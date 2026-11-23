@@ -39,6 +39,8 @@ internal data class QuickStartState(
         return if (requested == expected) copy(action = requested) else this
     }
     fun cancelAction() = copy(action = QuickStartAction.NONE)
+    fun afterConnectionProgress(runtimeChanged: Boolean, resumed: Boolean): QuickStartState =
+        if (action == QuickStartAction.CONNECT && (runtimeChanged || resumed)) cancelAction() else this
     fun imported(hasNodes: Boolean): QuickStartState =
         if (visible && action == QuickStartAction.IMPORT) copy(
             step = if (hasNodes) QuickStartStep.NODE else QuickStartStep.IMPORT,
@@ -56,10 +58,10 @@ internal data class QuickStartState(
 
 internal object QuickStartPolicy {
     fun shouldOfferAutomatically(
-        seen: Boolean, dataLoaded: Boolean, upgradedInstall: Boolean, hasSubscriptions: Boolean,
+        seen: Boolean, dataLoaded: Boolean, upgradedInstall: () -> Boolean, hasSubscriptions: Boolean,
         hasRoutes: Boolean, hasSavedTarget: Boolean, disclosureAccepted: Boolean, externalLaunch: Boolean,
-    ) = !seen && dataLoaded && !upgradedInstall && !hasSubscriptions && !hasRoutes &&
-        !hasSavedTarget && !disclosureAccepted && !externalLaunch
+    ) = !seen && dataLoaded && !hasSubscriptions && !hasRoutes &&
+        !hasSavedTarget && !disclosureAccepted && !externalLaunch && !upgradedInstall()
 
     /** Direct and reject choices are valid routes, but cannot complete a proxy-node guide step. */
     fun hasProxyTarget(target: RouteTarget?, nodes: List<ProxyNode>, groups: List<CustomProxyGroup> = emptyList()): Boolean {
@@ -68,11 +70,7 @@ internal object QuickStartPolicy {
             RouteKind.AUTO -> target.subscriptionId == null || nodes.any { it.subscriptionId == target.subscriptionId }
             RouteKind.FIXED -> nodes.any { it.id == target.nodeId && it.subscriptionId == target.subscriptionId }
             RouteKind.GROUP -> groups.firstOrNull { it.id == target.groupId }?.let { group ->
-                fun present(subscriptionId: String, nodeId: String) = nodes.any {
-                    it.subscriptionId == subscriptionId && it.id == nodeId
-                }
-                group.members.any { present(it.subscriptionId, it.nodeId) } &&
-                    (group.entry == null || present(group.entry.subscriptionId, group.entry.nodeId))
+                QuickStartGroupReadiness.hasUsableTargets(nodes, group.members, group.entry)
             } ?: false
             RouteKind.DIRECT, RouteKind.BLOCK -> false
         }

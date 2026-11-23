@@ -457,18 +457,14 @@ class SubscriptionSecretStore(
             runCatching {
                 val parsed = parser.parse(readPayload(id))
                 check(parsed.nodes.isNotEmpty())
-                val remaining = previous.toMutableList()
+                val remaining = LegacyNodeIdIndex(YamlNodeName::legacyEquivalent)
+                previous.forEach { remaining.add(it.id, it.name, it.protocol) }
                 val occurrences = mutableMapOf<String, Int>()
                 val nodes = parsed.nodes.map { node ->
                     val fingerprint = nodeKey(node.name, node.protocol)
                     val occurrence = occurrences.getOrDefault(fingerprint, 0)
                     occurrences[fingerprint] = occurrence + 1
-                    val match = remaining.indexOfFirst {
-                        it.protocol == node.protocol && it.name == node.name
-                    }.takeIf { it >= 0 } ?: remaining.indexOfFirst {
-                        it.protocol == node.protocol && YamlNodeName.legacyEquivalent(it.name) == node.name
-                    }
-                    val oldId = if (match >= 0) remaining.removeAt(match).id else null
+                    val oldId = remaining.take(node.name, node.protocol)
                     StoredNode(oldId ?: nodeId(node.name, node.protocol, occurrence), node.name, node.protocol)
                 }
                 check(preferences.edit()
