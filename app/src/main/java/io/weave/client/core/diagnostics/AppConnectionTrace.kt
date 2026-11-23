@@ -16,7 +16,8 @@ object AppConnectionTrace {
         if (!enabled || uid <= 0) return
         val previous = entries.lastOrNull()
         if (previous != null && previous.uid == uid && previous.protocol == protocol &&
-            previous.port == port && now - previous.atMillis < 1_000) return
+            previous.port == port && now >= previous.atMillis &&
+            now - previous.atMillis in 0L until 1_000L) return
         if (entries.size >= 64) entries.removeFirst()
         entries.addLast(Entry(uid, protocol, port, now))
     }

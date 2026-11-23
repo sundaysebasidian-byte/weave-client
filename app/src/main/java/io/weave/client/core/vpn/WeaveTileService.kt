@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /** Quick Settings toggle. Lives in `:vpn`, next to the authoritative runtime state. */
@@ -34,7 +35,7 @@ class WeaveTileService : TileService() {
         observer = scope.launch {
             kotlinx.coroutines.flow.combine(VpnRuntimeState.snapshot, VpnRuntimeState.exitName) { snapshot, exit ->
                 snapshot.state to exit
-            }.collect { (state, exit) -> render(state, exit) }
+            }.distinctUntilChanged().collect { (state, exit) -> render(state, exit) }
         }
     }
 

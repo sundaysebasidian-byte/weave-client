@@ -80,12 +80,24 @@ class SubscriptionsScreenUiTest {
         capture("subscriptions")
 
         compose.runOnIdle {
-            refresh.value = SubscriptionRefreshState(results = listOf(SubscriptionRefreshResult("a", "示例订阅", succeeded = false)))
+            refresh.value = SubscriptionRefreshState(results = listOf(
+                SubscriptionRefreshResult("a", "示例订阅", succeeded = true),
+                SubscriptionRefreshResult("a", "示例订阅", succeeded = false),
+            ))
         }
         compose.onNodeWithText("更新失败").assertIsDisplayed()
         compose.onNodeWithTag("subscription-retry-a").performClick()
         assertEquals(listOf("a"), refreshed)
         capture("subscriptions-failed")
+
+        compose.runOnIdle {
+            refresh.value = SubscriptionRefreshState(results = listOf(
+                SubscriptionRefreshResult("a", "示例订阅", succeeded = false),
+                SubscriptionRefreshResult("a", "示例订阅", succeeded = false, reviewRequired = true),
+            ))
+        }
+        compose.onNodeWithText("需确认更新").assertIsDisplayed()
+        compose.onNodeWithTag("subscription-retry-a").assertDoesNotExist()
 
         SubscriptionSourceKind.entries.forEach { kind ->
             compose.onNodeWithTag("subscription-list").performScrollToNode(hasTestTag("subscription-add-${kind.name}"))

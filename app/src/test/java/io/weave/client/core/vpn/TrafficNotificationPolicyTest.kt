@@ -1,15 +1,75 @@
 package io.weave.client.core.vpn
 
+import io.weave.client.core.engine.EngineRuntimeSnapshot
+import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.TrafficFormat
+
 import org.junit.Assert.*
 import org.junit.Test
 
 class TrafficNotificationPolicyTest {
     @Test fun `a tunnel alone does not enable display polling`() {
         for (connected in listOf(false, true)) for (interactive in listOf(false, true))
-            for (visible in listOf(false, true)) {
-                assertEquals(connected && interactive && visible,
-                    TrafficNotificationPolicy.shouldPoll(connected, interactive, visible))
+            for (visible in listOf(false, true)) for (widget in listOf(false, true)) {
+                val expected = when {
+                    !connected || !interactive -> TrafficSurface.NONE
+                    visible -> TrafficSurface.NOTIFICATION
+                    widget -> TrafficSurface.WIDGET
+                    else -> TrafficSurface.NONE
+                }
+                assertEquals(expected, TrafficNotificationPolicy.surface(connected, interactive, visible) { widget })
             }
+    }
+
+    @Test fun `widget samples while notifications are hidden and stops with no consumers`() {
+        val policy = TrafficNotificationPolicy()
+        var widget = true
+        var queries = 0
+        var posts = 0
+        fun sample() = policy.sample(
+            surface = { TrafficNotificationPolicy.surface(true, true, false) { widget } },
+            query = {
+                queries++
+                EngineRuntimeSnapshot("Fixture $queries", "", null, 0, 0, 0)
+            },
+            publishNotification = { _, _ -> posts++ },
+        )
+        try {
+            VpnRuntimeState.update(ConnectionState.CONNECTING)
+            VpnRuntimeState.update(ConnectionState.CONNECTED)
+            assertNotNull(sample())
+            assertEquals("Fixture 1", VpnRuntimeState.exitName.value)
+            assertNotNull(sample())
+            assertEquals("Fixture 2", VpnRuntimeState.exitName.value)
+            widget = false
+            assertNull(sample())
+            assertEquals(2, queries)
+            assertEquals(0, posts)
+        } finally {
+            VpnRuntimeState.update(ConnectionState.DISCONNECTED)
+        }
+    }
+
+    @Test fun `old query returning after reconnect cannot replace B or post A`() {
+        val policy = TrafficNotificationPolicy()
+        val posts = mutableListOf<String?>()
+        val queryB = { EngineRuntimeSnapshot("B", "", null, 0, 0, 0) }
+        val notify: (EngineRuntimeSnapshot, String?) -> Unit = { _, node -> posts += node }
+        try {
+            VpnRuntimeState.update(ConnectionState.CONNECTING)
+            VpnRuntimeState.update(ConnectionState.CONNECTED)
+            policy.sample({ TrafficSurface.NOTIFICATION }, {
+                VpnRuntimeState.update(ConnectionState.DISCONNECTED)
+                VpnRuntimeState.update(ConnectionState.CONNECTING)
+                VpnRuntimeState.update(ConnectionState.CONNECTED)
+                policy.sample({ TrafficSurface.NOTIFICATION }, queryB, notify)
+                EngineRuntimeSnapshot("A", "", null, 0, 0, 0)
+            }, notify)
+            assertEquals("B", VpnRuntimeState.exitName.value)
+            assertEquals(listOf("B"), posts)
+        } finally {
+            VpnRuntimeState.update(ConnectionState.DISCONNECTED)
+        }
     }
 
     @Test fun `idle display backs off and live traffic restores cadence`() {
@@ -37,5 +97,41 @@ class TrafficNotificationPolicyTest {
         val resumed = TrafficNotificationPolicy()
         assertTrue(resumed.shouldPublish("same"))
         assertEquals(3_000L, resumed.nextDelayMillis(false))
+    }
+
+    @Test fun `flat samples and unchanged directions skip repeat formatting`() {
+        val formatted = mutableListOf<Long>()
+        val policy = TrafficNotificationPolicy { rate ->
+            formatted += rate
+            TrafficFormat.bytes(rate)
+        }
+        val first = policy.formatRates(0, 2048)
+        repeat(100) { assertSame(first, policy.formatRates(0, 2048)) }
+        assertEquals(listOf(0L, 2048L), formatted)
+        val uploadChanged = policy.formatRates(1234, 2048)
+        assertEquals(TrafficFormat.bytes(1234) to TrafficFormat.bytes(2048), uploadChanged)
+        val bothChanged = policy.formatRates(0, 0)
+        assertEquals("0 B" to "0 B", bothChanged)
+        assertEquals(listOf(0L, 2048L, 1234L, 0L, 0L), formatted)
+    }
+
+    @Test fun `a new polling session formats its own first sample`() {
+        var calls = 0
+        val format = { rate: Long -> calls++; TrafficFormat.bytes(rate) }
+        val old = TrafficNotificationPolicy(format)
+        assertEquals("0 B" to "0 B", old.formatRates(0, 0))
+        assertEquals("0 B" to "0 B", old.formatRates(0, 0))
+        assertEquals(2, calls)
+        assertEquals("0 B" to "0 B", TrafficNotificationPolicy(format).formatRates(0, 0))
+        assertEquals(4, calls)
+    }
+    @Test fun `equal rounded labels still suppress repost even if raw rates change`() {
+        val policy = TrafficNotificationPolicy()
+        val first = policy.formatRates(1024, 0)
+        assertTrue(policy.shouldPublish("connected|${first.first}|${first.second}"))
+        val next = policy.formatRates(1025, 0)
+        assertEquals(first, next)
+        assertFalse(policy.shouldPublish("connected|${next.first}|${next.second}"))
+        assertTrue(policy.shouldPublish("localized connected|${next.first}|${next.second}"))
     }
 }

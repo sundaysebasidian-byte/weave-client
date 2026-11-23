@@ -4,12 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.GlobalHistogramBinarizer
-import com.google.zxing.common.HybridBinarizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -78,22 +74,7 @@ class QrCodeImageReader(context: Context) {
         val height = bitmap.height
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        val source = RGBLuminanceSource(width, height, pixels)
-        val reader = MultiFormatReader()
-        val binarizers = listOf(
-            HybridBinarizer(source),
-            GlobalHistogramBinarizer(source),
-        )
-        var lastNotFound: NotFoundException? = null
-        for (binarizer in binarizers) {
-            try {
-                return reader.decode(BinaryBitmap(binarizer)).text
-            } catch (error: NotFoundException) {
-                lastNotFound = error
-                reader.reset()
-            }
-        }
-        throw lastNotFound ?: NotFoundException.getNotFoundInstance()
+        return QrImageTextDecoder.decode(RGBLuminanceSource(width, height, pixels))
     }
 
     private fun sampleSize(width: Int, height: Int): Int {

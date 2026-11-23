@@ -37,8 +37,12 @@ object VpnRuntimeState {
      */
     val exitName = mutableExitName.asStateFlow()
 
-    fun exitChanged(name: String?) {
-        mutableExitName.value = name?.takeIf { it.isNotBlank() && mutableSnapshot.value.state == ConnectionState.CONNECTED }
+    /** Apply a sample only to the connected revision that started the engine query. */
+    @Synchronized fun exitChanged(revision: Long, name: String?): Boolean {
+        val current = mutableSnapshot.value
+        if (current.state != ConnectionState.CONNECTED || current.revision != revision) return false
+        mutableExitName.value = name?.takeIf(String::isNotBlank)
+        return true
     }
 
     /** Replaces the UI-process mirror with the authoritative snapshot from `:vpn`. */

@@ -228,6 +228,9 @@ internal fun SubscriptionsScreen(
     val visible = remember(subscriptions, query, source) { filterSubscriptions(subscriptions, query, source) }
     val filtering = query.isNotBlank() || source != SubscriptionSourceFilter.ALL
     val now = rememberListClock(nowMillis)
+    val refreshResultsById = remember(refreshState.results) {
+        indexSubscriptionRefreshResults(refreshState.results)
+    }
     // The migration hint names a count only; detected package names stay on the device. Without
     // a detection the row title is self-explanatory, so there is no subtitle.
     val migrationSubtitle = if (migrationClients.isNotEmpty()) {
@@ -319,7 +322,9 @@ internal fun SubscriptionsScreen(
                 SubscriptionCard(
                     subscription = subscription,
                     nowMillis = now,
-                    refreshState = refreshState,
+                    refreshResult = refreshResultsById[subscription.id],
+                    refreshing = refreshState.running && refreshState.currentId == subscription.id,
+                    refreshEnabled = !refreshState.running,
                     onClick = { onSubscriptionClick(subscription.id) },
                     // Only a declared remote source can be fetched again; local files have no URL.
                     onRefresh = onRefreshSubscription?.takeIf { subscription.remote }
@@ -509,12 +514,26 @@ private fun RefreshStatus(
 ) {
     val language = LocalWeaveLanguage.current
     val modifier = Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)
-    val failedNames = refreshState.results.filter { !it.succeeded && !it.reviewRequired }.map { it.name }
-    val reviewNames = refreshState.results.filter { it.reviewRequired }.map { it.name }
+    val names = remember(refreshState.running, refreshState.results) {
+        SubscriptionRefreshNoticeNames.collect(
+            refreshState.running,
+            refreshState.results,
+            { it.succeeded },
+            { it.reviewRequired },
+            { it.name },
+        )
+    }
+    val failedNames = names.failed()
+    val reviewNames = names.review()
     when {
         refreshState.running -> {
+            val processed = if (refreshState.total > 0) {
+                refreshState.completed + refreshState.failed + refreshState.reviewCount
+            } else {
+                0
+            }
             val progress = if (refreshState.total > 0) {
-                (refreshState.completed + refreshState.failed + refreshState.reviewCount).toFloat() / refreshState.total
+                processed.toFloat() / refreshState.total
             } else {
                 null
             }
@@ -529,7 +548,7 @@ private fun RefreshStatus(
                             listOf(
                                 localizeWeaveText("正在刷新", language),
                                 refreshState.currentName ?: localizeWeaveText("远程订阅", language),
-                            ).joinToString(" ") + " · ${refreshState.completed + refreshState.failed + refreshState.reviewCount}/${refreshState.total}"
+                            ).joinToString(" ") + " · ${processed}/${refreshState.total}"
                         } else {
                             localizeWeaveText(refreshState.message ?: "正在刷新", language)
                         },
@@ -714,7 +733,9 @@ private fun ImportOptionRow(
 private fun SubscriptionCard(
     subscription: Subscription,
     nowMillis: Long,
-    refreshState: SubscriptionRefreshState,
+    refreshResult: SubscriptionRefreshResult?,
+    refreshing: Boolean,
+    refreshEnabled: Boolean,
     onClick: () -> Unit,
     onRefresh: (() -> Unit)?,
 ) {
@@ -731,8 +752,6 @@ private fun SubscriptionCard(
     val attention = expired || expiry == SubscriptionExpiryStatus.EXPIRING_SOON
     val showUsage = quota != null && (hasBar || quota.usedBytes > 0)
     val showExpiry = expiry != SubscriptionExpiryStatus.UNKNOWN && expireAt != null
-    val refreshing = refreshState.running && refreshState.currentId == subscription.id
-    val refreshResult = refreshState.results.lastOrNull { it.subscriptionId == subscription.id }
     val outcome = refreshResult?.succeeded
     val failed = outcome == false && refreshResult?.reviewRequired != true
 
@@ -823,7 +842,7 @@ private fun SubscriptionCard(
                     val busyLabel = localizeWeaveText("正在刷新", language)
                     IconButton(
                         onClick = onRefresh,
-                        enabled = !refreshState.running,
+                        enabled = refreshEnabled,
                         modifier = Modifier
                             .size(48.dp)
                             .testTag("subscription-refresh-${subscription.id}")
@@ -930,7 +949,7 @@ private fun SubscriptionCard(
                 Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = onRefresh,
-                    enabled = !refreshState.running,
+                    enabled = refreshEnabled,
                     shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 14.dp),
                     modifier = Modifier

@@ -212,17 +212,18 @@ class MainActivity : ComponentActivity() {
 
     /** Shortcuts, the Quick Settings tile, deep links and share-sheet content. */
     private fun handleIntent(intent: Intent?) {
-        if (intent?.action == ACTION_DISCONNECT) {
+        if (intent == null || isReplayedExitChoice(intent.action, intent.flags)) return
+        if (intent.action == ACTION_DISCONNECT) {
             pendingIntent = null
             WeaveVpnService.stop(this)
             return
         }
         val model = readyModel
         if (model == null) {
-            if (intent != null) pendingIntent = intent
+            pendingIntent = intent
             return
         }
-        val request = when (intent?.action) {
+        val request = when (intent.action) {
             ACTION_CONNECT -> ExternalRequest.Connect
             ACTION_IMPORT -> ExternalRequest.OpenImport
             ACTION_CHOOSE_EXIT -> ExternalRequest.ChooseExit
@@ -238,17 +239,19 @@ class MainActivity : ComponentActivity() {
         else -> ExternalImportParser.fromLink(uri.toString())
     }
 
-    private fun sharedImport(intent: Intent): ExternalImport? {
-        intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
-            return ExternalImportParser.fromSharedText(text)
-        }
+    private fun sharedImport(intent: Intent): ExternalImport? = SharedSubscriptionImport.select(
+        intent.type,
+        intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0,
+        intent.getStringExtra(Intent.EXTRA_TEXT),
+        ExternalImportParser::fromSharedText,
+    ) {
         val stream = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         } else {
             @Suppress("DEPRECATION")
-            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri
         }
-        return stream?.takeIf { it.scheme == "content" }?.let { ExternalImport.Document(it.toString(), null) }
+        stream?.takeIf { it.scheme == "content" }?.let { ExternalImport.Document(it.toString(), null) }
     }
 
     private fun requestVpnPermission() {
@@ -283,3 +286,7 @@ class MainActivity : ComponentActivity() {
         const val ACTION_CHOOSE_EXIT = "io.weave.client.action.CHOOSE_EXIT"
     }
 }
+
+// A task restored from Recents may carry its original notification intent.
+internal fun isReplayedExitChoice(action: String?, flags: Int): Boolean =
+    action == MainActivity.ACTION_CHOOSE_EXIT && flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0

@@ -1,5 +1,7 @@
 package io.weave.client.data
 
+import io.weave.client.core.vpn.RuntimeFailure
+
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -24,5 +26,13 @@ class SupportDiagnosticsTest {
         assertTrue(report.contains("app=unknown"))
         assertTrue(report.contains("consecutive_failures=0"))
         assertFalse(report.contains("secret"))
+    }
+
+    @Test fun `export includes the known failure category when validating a replacement configuration`() {
+        val category = RuntimeFailure.DNS_CONFIGURATION.code
+        val report = SupportDiagnostics.build("0.3.0-alpha79", 36,
+            RecoveryState(lastFailure = "candidate_validation_failed:$category"))
+
+        assertTrue(report.lineSequence().any { it == "failure_code=candidate_validation_failed:$category" })
     }
 }
