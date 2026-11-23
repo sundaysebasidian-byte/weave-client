@@ -73,10 +73,12 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
@@ -84,7 +86,19 @@ import kotlinx.coroutines.withContext
 sealed interface ExternalRequest {
     data object Connect : ExternalRequest
     data object OpenImport : ExternalRequest
+    data object ChooseExit : ExternalRequest
     data class Import(val value: io.weave.client.subscription.ExternalImport) : ExternalRequest
+}
+
+/** A readiness wait must not consume or dispatch a newer launcher/share request. */
+internal suspend fun claimExternalRequest(
+    pending: MutableStateFlow<ExternalRequest?>,
+    request: ExternalRequest,
+    awaitReady: suspend () -> Unit,
+): Boolean {
+    if (request == ExternalRequest.Connect || request == ExternalRequest.ChooseExit) awaitReady()
+    currentCoroutineContext().ensureActive()
+    return pending.compareAndSet(request, null)
 }
 
 @Immutable
@@ -140,6 +154,7 @@ data class LanTransferState(
     val confirmationCode: String = "",
     val pendingLink: String = "",
     val sharedNames: List<String> = emptyList(),
+    val pendingLinkRevision: Long = 0L,
 )
 
 @Immutable
@@ -251,9 +266,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableExternalRequest.value = request
     }
 
-    fun consumeExternalRequest() {
-        mutableExternalRequest.value = null
-    }
+    suspend fun claimExternalRequest(request: ExternalRequest): Boolean =
+        claimExternalRequest(mutableExternalRequest, request, ::awaitReady)
 
     /** Runs only after the user confirmed the source shown in the external-import dialog. */
     fun importExternal(value: io.weave.client.subscription.ExternalImport, name: String) {
@@ -320,6 +334,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val mutableLanTransferState = MutableStateFlow(LanTransferState())
+    private var lanScanRevision = 0L
     val lanTransferState = mutableLanTransferState.asStateFlow()
 
 
@@ -345,9 +360,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // disabled prevents a connected service from being polled during ViewModel construction.
     private val mutableDashboardVisible = MutableStateFlow(false)
     private val mutableDashboardScrolling = MutableStateFlow(false)
-    private var installedAppsLoaded = false
+    private val installedAppsRefresh = InstalledAppsRefresh(
+        scope = viewModelScope,
+        read = { withContext(Dispatchers.IO) { installedAppRepository.listLaunchableApps() } },
+        publish = { mutableInstalledApps.value = it },
+    )
     private var installedAppsReleaseJob: Job? = null
     private var privacyProbeJob: Job? = null
+    private val dnsProbePermits = Semaphore(3)
     private var dnsProbeJob: Job? = null
     private var dnsGeneration = 0L
     private var downloadProbeJob: Job? = null
@@ -494,7 +514,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (runtime != null) {
                         mutableDashboard.update { it.withRuntime(runtime) }
                         mutableTrafficHistory.update { history ->
-                            (history + runtime.downloadBytesPerSecond).takeLast(TRAFFIC_HISTORY_SAMPLES)
+                            appendTrafficHistorySample(history, runtime.downloadBytesPerSecond, TRAFFIC_HISTORY_SAMPLES)
                         }
                     }
                     delay(refreshPolicy.nextDelayMillis(runtime))
@@ -517,32 +537,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         settingsStore.setFavoriteNodeIds(mutableFavoriteNodes.value)
     }
 
-    private var installedAppsLoadJob: Job? = null
-
     fun ensureInstalledAppsLoaded(forceRefresh: Boolean = false) {
         installedAppsReleaseJob?.cancel()
-        if (installedAppsLoadJob?.isActive == true || (installedAppsLoaded && !forceRefresh)) return
-        installedAppsLoaded = true
-        installedAppsLoadJob = viewModelScope.launch {
-            try {
-                mutableInstalledApps.value = withContext(Dispatchers.IO) {
-                    installedAppRepository.listLaunchableApps()
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                installedAppsLoaded = false
-            }
-        }
+        installedAppsRefresh.ensure(forceRefresh)
     }
 
     fun releaseInstalledAppsWhenIdle() {
         installedAppsReleaseJob?.cancel()
         installedAppsReleaseJob = viewModelScope.launch {
             delay(INSTALLED_APP_CACHE_IDLE_MS)
-            installedAppsLoadJob?.cancel()
-            mutableInstalledApps.value = emptyList()
-            installedAppsLoaded = false
+            installedAppsRefresh.release()
         }
     }
 
@@ -571,6 +575,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissMessage() {
         mutableDashboard.update { it.copy(statusMessage = null) }
+    }
+
+    internal fun dismissDisplayedMessage(displayed: String) {
+        mutableDashboard.clearDisplayedStatus(displayed)
     }
 
     fun privacyReport(): PrivacyObservationReport {
@@ -678,19 +686,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         dnsProbeJob = viewModelScope.launch {
             val profiles = DnsProfile.entries.filter { it != DnsProfile.CUSTOM || preferences.customDnsEndpoint.isNotBlank() }
             var failures = 0
-            profiles.chunked(3).forEach { batch ->
-                val results = coroutineScope {
-                    batch.map { profile -> async(Dispatchers.IO) {
-                        profile to probeSafely { dnsProviderProbe.probe(profile, preferences) }
-                    } }.awaitAll()
-                }
-                if (generation != dnsGeneration) return@launch
-                results.forEach { (profile, result) ->
-                    result.onSuccess { probeResult -> mutableDnsProbeState.update { state ->
-                        state.copy(results = state.results + (profile to probeResult))
-                    } }.onFailure { failures++ }
-                }
-            }
+            publishDnsProbeResults(
+                profiles,
+                dnsProbePermits,
+                probe = { profile -> probeSafely { dnsProviderProbe.probe(profile, preferences) } },
+                publish = { profile, result ->
+                    if (generation == dnsGeneration) {
+                        result.onSuccess { probeResult ->
+                            mutableDnsProbeState.update { state ->
+                                state.copy(results = state.results + (profile to probeResult))
+                            }
+                        }.onFailure { failures++ }
+                    }
+                },
+            )
             if (generation == dnsGeneration) mutableDnsProbeState.update {
                 it.copy(running = false, error = if (failures == profiles.size) "所有 DNS 端点都无法完成检测" else null)
             }
@@ -904,16 +913,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun applyClientSourceSelection(token: String) {
         val state = mutableClientImportState.value
         if (state.running || state.batchPreview?.token != token) return
-        mutableClientImportState.value = state.copy(running = true, error = null)
-        viewModelScope.launch {
-            try {
-                val subscriptions = subscriptionRepository.applyClientSourceSelection(token)
-                mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
-                mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
-                mutableClientImportState.value = ClientImportState(completedSubscriptions = subscriptions)
-                reloadIfConnected("订阅已导入，正在安全更新运行配置")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { mutableClientImportState.value = state.copy(error = error.message ?: "订阅导入失败", batchPreview = null) }
+        applyReviewedClientImport(state, batch = true) {
+            subscriptionRepository.applyClientSourceSelection(token)
         }
     }
 
@@ -942,18 +943,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun applyClientImport(token: String) {
         val state = mutableClientImportState.value
         if (state.running || state.preview?.token != token) return
-        mutableClientImportState.value = state.copy(running = true, error = null)
+        applyReviewedClientImport(state, batch = false) {
+            listOf(subscriptionRepository.applyMigrationPreview(token))
+        }
+    }
+
+    private fun applyReviewedClientImport(
+        state: ClientImportState,
+        batch: Boolean,
+        save: suspend () -> List<Subscription>,
+    ) {
+        val active = state.copy(running = true, error = null)
+        mutableClientImportState.value = active
         viewModelScope.launch {
-            try {
-                val subscription = subscriptionRepository.applyMigrationPreview(token)
-                mutableSubscriptions.update { (it + subscription).distinctBy(Subscription::id) }
-                mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
-                mutableClientImportState.value = ClientImportState(completed = subscription)
-                reloadIfConnected("订阅已导入，正在安全更新运行配置")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败")
-            }
+            finishReviewedClientImport(
+                state = mutableClientImportState,
+                active = active,
+                batch = batch,
+                save = save,
+                onSaved = { subscriptions ->
+                    mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
+                },
+                readNodes = { withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() } },
+                onNodes = { mutableNodes.value = it },
+                requestReload = {
+                    if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+                        WeaveVpnService.reload(getApplication())
+                        mutableDashboard.update { it.copy(statusMessage = "订阅已导入，正在安全更新运行配置") }
+                    }
+                },
+            )
         }
     }
 
@@ -1229,8 +1248,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableLanTransferState.value = LanTransferState()
     }
 
-    fun importLanTransfer(rawLink: String, confirmationCode: String) {
-        if (mutableLanTransferState.value.running) return
+    fun importLanTransfer(rawLink: String, confirmationCode: String, observedScanRevision: Long = 0L) {
+        val current = mutableLanTransferState.value
+        if (current.running || !canSubmitLanImport(observedScanRevision, current.pendingLinkRevision)) return
         mutableLanTransferState.value = LanTransferState(running = true)
         viewModelScope.launch {
             runCatching {
@@ -1273,6 +1293,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }.onSuccess { rawLink ->
                 mutableLanTransferState.value = LanTransferState(
                     pendingLink = rawLink,
+                    pendingLinkRevision = ++lanScanRevision,
                     // Do not derive or prefill the code from the QR payload: the six digits are
                     // deliberately an out-of-band confirmation shown on the sending device.
                     message = "二维码已读取，请输入发送设备显示的 6 位短码后导入",
@@ -1286,9 +1307,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun importPendingLanTransfer(confirmationCode: String) {
-        val link = mutableLanTransferState.value.pendingLink
-        if (link.isBlank()) return
-        importLanTransfer(link, confirmationCode)
+        val pending = mutableLanTransferState.value
+        if (pending.pendingLink.isBlank()) return
+        importLanTransfer(pending.pendingLink, confirmationCode, pending.pendingLinkRevision)
     }
 
     fun resetLanTransferMessage() {
@@ -1346,7 +1367,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 mutableSubscriptionRefreshState.update {
                     it.copy(total = targets.size, message = null)
                 }
-                val results = SubscriptionRefreshBatch.run(
+                val finalProgress = SubscriptionRefreshBatch.run(
                     targets = targets,
                     refresh = { subscriptionRepository.refreshRemote(it) },
                     onUpdated = { refreshSubscriptionsAndReferences(it) },
@@ -1355,16 +1376,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             it.copy(
                                 currentId = current?.id,
                                 currentName = current?.name,
-                                completed = finished.count { result -> result.succeeded },
-                                failed = finished.count { result -> !result.succeeded && !result.reviewRequired },
-                                results = finished,
+                                completed = finished.completed,
+                                failed = finished.failed,
+                                results = finished.results,
                             )
                         }
                     },
                 )
-                val completed = results.count { it.succeeded }
-                val failed = results.count { !it.succeeded && !it.reviewRequired }
-                val needsReview = results.any { it.reviewRequired }
+                val completed = finalProgress.completed
+                val failed = finalProgress.failed
+                val needsReview = finalProgress.reviewCount > 0
                 mutableSubscriptionRefreshState.update {
                     it.copy(
                         running = false,
@@ -1677,19 +1698,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableCustomGroupError = MutableStateFlow<String?>(null)
     val customGroupError = mutableCustomGroupError.asStateFlow()
 
-    fun saveCustomGroup(group: io.weave.client.routing.CustomProxyGroup): Boolean {
-        val normalized = runCatching { io.weave.client.routing.CustomProxyGroupValidator.normalize(group) }
-            .getOrElse { error ->
-                mutableCustomGroupError.value = error.message
-                return false
-            }
-        val updated = mutableCustomGroups.value.filterNot { it.id == normalized.id } + normalized
-        persistCustomGroups(updated)
-        // A renamed group keeps its routes; refresh their labels.
-        relabelGroupTargets()
-        reloadIfConnected("正在应用自定义策略组")
-        return true
-    }
+    fun saveCustomGroup(group: io.weave.client.routing.CustomProxyGroup): Result<Unit> =
+        submitCustomGroupDraft(group) { normalized ->
+            val updated = mutableCustomGroups.value.filterNot { it.id == normalized.id } + normalized
+            persistCustomGroups(updated)
+            // A renamed group keeps its routes; refresh their labels.
+            relabelGroupTargets()
+            reloadIfConnected("正在应用自定义策略组")
+        }
 
     fun deleteCustomGroup(id: String) {
         persistCustomGroups(mutableCustomGroups.value.filterNot { it.id == id })
@@ -1773,15 +1789,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val result = try { withContext(Dispatchers.IO) {
                 probeSafely {
                     val bytes = getApplication<Application>().contentResolver.openInputStream(source)?.use { input ->
-                        val output = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            check(output.size() + read <= io.weave.client.transfer.BackupCodec.MAX_BACKUP_BYTES) { "备份文件过大" }
-                            output.write(buffer, 0, read)
-                        }
-                        output.toByteArray()
+                        io.weave.client.transfer.BackupFileReader.read(
+                            input, io.weave.client.transfer.BackupCodec.MAX_BACKUP_BYTES,
+                        )
                     } ?: error("无法读取所选文件")
                     val entries = io.weave.client.transfer.BackupCodec.decrypt(bytes, passphrase)
                     backup.prepareRestore(entries)
@@ -1807,12 +1817,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { probeSafely { backup.restore(entries) } }
             result.onSuccess {
-                reloadLocalState()
-                LocalDataEvents.restored()
-                if (generation == backupGeneration) {
-                    mutableBackupState.value = BackupState(message = "已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启")
+                finishCommittedBackupUi(
+                    refresh = ::reloadLocalState,
+                    stillCurrent = { generation == backupGeneration },
+                ) { completed ->
+                    LocalDataEvents.restored()
+                    mutableBackupState.value = completed
+                    if (completed.error == null) reloadIfConnected("正在应用恢复的配置")
                 }
-                reloadIfConnected("正在应用恢复的配置")
             }.onFailure {
                 if (generation == backupGeneration) mutableBackupState.value = BackupState(error = it.message ?: "恢复失败，请重新预览后重试")
             }

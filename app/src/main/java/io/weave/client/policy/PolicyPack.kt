@@ -335,15 +335,14 @@ class PolicyPackStore(
 }
 
 object PolicyPackCompiler {
-    fun compile(packs: List<PolicyPack>): List<String> = packs
+    fun compile(packs: List<PolicyPack>): List<String> = packs.asSequence()
         .filter { it.active }
         .sortedBy { it.id }
-        .flatMap { pack ->
-            pack.rules.map { rule ->
-                "${rule.type.mihomoName()},${escape(rule.value)},${rule.action.mihomoName()}"
-            }
-        }
+        .flatMap { it.rules.asSequence() }
+        // Type and action tokens are unique; escaping commas and backslashes is reversible.
         .distinct()
+        .map { rule -> "${rule.type.mihomoName()},${escape(rule.value)},${rule.action.mihomoName()}" }
+        .toList()
 
     private fun PolicyRuleType.mihomoName(): String = when (this) {
         PolicyRuleType.DOMAIN -> "DOMAIN"

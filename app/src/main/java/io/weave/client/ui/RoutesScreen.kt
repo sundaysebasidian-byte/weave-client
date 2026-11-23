@@ -20,6 +20,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,7 +52,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -106,6 +116,7 @@ import androidx.compose.material3.Text as MaterialText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +128,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -191,178 +208,555 @@ internal fun RoutesScreen(
     onAdd: () -> Unit,
     onRouteLens: () -> Unit,
     contentPadding: PaddingValues,
+    routingMode: RoutingMode = RoutingMode.RULE,
+    domesticDirect: Boolean = true,
+    onModeSelected: (RoutingMode) -> Unit = {},
 ) {
+    val proxied = remember(routes) { routes.filter { it.target.kind.isProxied() } }
+    val direct = remember(routes) { routes.filter { it.target.kind == RouteKind.DIRECT } }
+    val blocked = remember(routes) { routes.filter { it.target.kind == RouteKind.BLOCK } }
+    var directOpen by rememberSaveable { mutableStateOf(false) }
+    var blockedOpen by rememberSaveable { mutableStateOf(false) }
+    // App rules only apply in rule mode; elsewhere they stay visible but recede.
+    val rulesApply = routingMode == RoutingMode.RULE
+    val listAlpha by androidx.compose.animation.core.animateFloatAsState(
+        if (rulesApply) 1f else 0.45f, WeaveMotion.standard(), label = "routes-dim",
+    )
     LazyColumn(
         state = rememberSmoothLazyListState(),
         modifier = Modifier
             .fillMaxSize()
-            .padding(bottom = contentPadding.calculateBottomPadding()),
+            .padding(bottom = contentPadding.calculateBottomPadding())
+            .testTag("routes-list"),
         contentPadding = PaddingValues(
-            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 20.dp,
+            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + WeaveUiTokens.screenTop,
             bottom = 24.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
-            ScreenHeader(
-                eyebrow = "按应用选择出口",
-                title = "应用分流",
-                action = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HeaderActionButton(
-                            icon = Icons.Rounded.Visibility,
-                            contentDescription = localizedContentDescription("路由解释"),
-                            onClick = onRouteLens,
-                        )
-                        HeaderActionButton(
-                            icon = Icons.Rounded.Add,
-                            contentDescription = localizedContentDescription("添加规则"),
-                            onClick = onAdd,
-                        )
-                    }
-                },
+        item(key = "header") {
+            RoutesHeader(
+                routingMode = routingMode,
+                domesticDirect = domesticDirect,
+                onPreset = onPreset,
+                onRouteLens = onRouteLens,
+                onAdd = onAdd,
             )
         }
-        item {
-            Text(
-                text = "每个应用都能选择不同订阅中的固定节点、自动策略、直连或阻止。点按一项可预览切换。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
+        item(key = "counts") {
+            RouteCounts(proxied.size, direct.size, blocked.size)
         }
-        item {
-            PolicySummaryCard(routes)
-        }
-        item {
-            Row(modifier = Modifier.padding(horizontal = 20.dp)) {
-                TextButton(onClick = { onPreset(true) }) { Text("大陆直连 · 海外代理") }
-                TextButton(onClick = { onPreset(false) }) { Text("全部代理") }
+        if (!rulesApply) {
+            item(key = "mode-notice") {
+                ModeNotice(routingMode = routingMode, onBackToRules = { onModeSelected(RoutingMode.RULE) })
             }
         }
-        item {
-            Text(
-                text = "应用规则  ${routes.size}",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
-            )
+        if (routes.isEmpty()) {
+            item(key = "empty") {
+                RouteGroupPanel(modifier = Modifier.padding(top = 24.dp)) {
+                    RouteActionRow(icon = Icons.Rounded.Add, label = "添加规则", onClick = onAdd)
+                }
+            }
         }
-        items(
-            items = routes,
-            key = { it.packageName },
-            contentType = { "app-route" },
-        ) { route ->
-            AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
+        if (proxied.isNotEmpty()) {
+            item(key = "proxy-label") { RouteGroupLabel("代理", Modifier.graphicsLayer { alpha = listAlpha }) }
+            itemsIndexed(
+                items = proxied,
+                key = { _, route -> routeItemKey(route.packageName) },
+                contentType = { _, _ -> "app-route" },
+            ) { index, route ->
+                RoutePanelPiece(
+                    first = index == 0,
+                    last = index == proxied.lastIndex,
+                    panelAlpha = listAlpha,
+                ) {
+                    AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
+                }
+            }
         }
-        item {
-            Text(
-                text = "安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 远程规则集 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
+        if (direct.isNotEmpty()) {
+            item(key = "routes:direct") {
+                RoutePanelPiece(
+                    first = true,
+                    last = !directOpen && blocked.isEmpty(),
+                    panelAlpha = listAlpha,
+                    topSpacing = 12.dp,
+                ) {
+                    CollapsedGroup("直连", RouteDot.DIRECT, direct, directOpen) {
+                        directOpen = !directOpen
+                    }
+                }
+            }
+            if (directOpen) {
+                itemsIndexed(
+                    items = direct,
+                    key = { _, route -> routeItemKey(route.packageName) },
+                    contentType = { _, _ -> "app-route" },
+                ) { index, route ->
+                    RoutePanelPiece(first = false, last = index == direct.lastIndex && blocked.isEmpty(), panelAlpha = listAlpha) {
+                        AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
+                    }
+                }
+            }
+        }
+        if (blocked.isNotEmpty()) {
+            item(key = "routes:block") {
+                RoutePanelPiece(
+                    first = direct.isEmpty(),
+                    last = !blockedOpen,
+                    panelAlpha = listAlpha,
+                    topSpacing = if (direct.isEmpty()) 12.dp else 0.dp,
+                ) {
+                    CollapsedGroup("阻止", RouteDot.BLOCK, blocked, blockedOpen) {
+                        blockedOpen = !blockedOpen
+                    }
+                }
+            }
+            if (blockedOpen) {
+                itemsIndexed(
+                    items = blocked,
+                    key = { _, route -> routeItemKey(route.packageName) },
+                    contentType = { _, _ -> "app-route" },
+                ) { index, route ->
+                    RoutePanelPiece(first = false, last = index == blocked.lastIndex, panelAlpha = listAlpha) {
+                        AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
+                    }
+                }
+            }
         }
     }
 }
 
-@Composable
-private fun PolicySummaryCard(routes: List<AppRoute>) {
-    val proxied = routes.count {
-        it.target.kind == RouteKind.AUTO || it.target.kind == RouteKind.FIXED
-    }
-    val direct = routes.count { it.target.kind == RouteKind.DIRECT }
-    val blocked = routes.count { it.target.kind == RouteKind.BLOCK }
+private fun RouteKind.isProxied(): Boolean =
+    this == RouteKind.AUTO || this == RouteKind.FIXED || this == RouteKind.GROUP
 
-    LiquidGlassPanel(
-        modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-    ) {
+private enum class RouteDot { PROXY, DIRECT, BLOCK }
+
+/** Proxy is the primary color, direct a pale green and block the ochre, as on the token board. */
+@Composable
+private fun routeDotColor(dot: RouteDot): Color = when (dot) {
+    RouteDot.PROXY -> MaterialTheme.colorScheme.primary
+    RouteDot.DIRECT -> androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.surface, 0.42f)
+    RouteDot.BLOCK -> MaterialTheme.colorScheme.tertiary
+}
+
+private val RouteIcons: Map<RouteDot, ImageVector> by lazy {
+    mapOf(
+        RouteDot.PROXY to strokeIcon(
+            "route-proxy",
+            "M15.2 12a3.2 3.2 0 1 1-6.4 0a3.2 3.2 0 1 1 6.4 0",
+            "M3.5 12h5.3M15.2 12h5.3M17.5 9l3 3-3 3",
+        ),
+        RouteDot.DIRECT to strokeIcon("route-direct", "M4 12h15M14 7l5 5-5 5"),
+        RouteDot.BLOCK to strokeIcon("route-block", "M20.5 12a8.5 8.5 0 1 1-17 0a8.5 8.5 0 1 1 17 0", "M6 6l12 12"),
+    )
+}
+
+@Composable
+private fun RoutesHeader(
+    routingMode: RoutingMode,
+    domesticDirect: Boolean,
+    onPreset: (Boolean) -> Unit,
+    onRouteLens: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(start = 24.dp, end = WeaveUiTokens.screenHorizontal)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.weight(1f))
+            HeaderActionButton(
+                icon = Icons.Rounded.Visibility,
+                contentDescription = localizedContentDescription("路由解释"),
+                onClick = onRouteLens,
+            )
+            Spacer(Modifier.width(8.dp))
+            HeaderActionButton(
+                icon = Icons.Rounded.Add,
+                contentDescription = localizedContentDescription("添加规则"),
+                onClick = onAdd,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                "分流",
+                style = MaterialTheme.typography.displaySmall,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() },
+            )
+            PresetPill(routingMode = routingMode, domesticDirect = domesticDirect, onPreset = onPreset)
+        }
+    }
+}
+
+/**
+ * The routing preset as one pill with a menu. Mainland-direct is rule mode with domestic direct on;
+ * proxy-all is global mode. Any other combination (set from Settings or the Home dial) shows the
+ * mode's own name, so the pill never claims a preset that is not in effect.
+ */
+@Composable
+private fun PresetPill(routingMode: RoutingMode, domesticDirect: Boolean, onPreset: (Boolean) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    var open by remember { mutableStateOf(false) }
+    val mainland = routingMode == RoutingMode.RULE && domesticDirect
+    val label = when {
+        mainland -> "大陆直连 · 海外代理"
+        routingMode == RoutingMode.GLOBAL -> "全部代理"
+        else -> routingMode.label
+    }
+    Box {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(bottom = 4.dp)
+                .heightIn(min = WeaveUiTokens.minTouchTarget)
+                .clip(RoundedCornerShape(50))
+                .clickable(role = Role.Button) { open = true }
+                .testTag("routes-preset"),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            SummaryNumber("$proxied", "代理")
-            SummaryNumber("$direct", "直连")
-            SummaryNumber("$blocked", "阻止")
-            SummaryNumber("1", "默认")
+            Row(
+                modifier = Modifier
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(scheme.primaryContainer)
+                    .padding(start = 14.dp, end = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = scheme.onPrimaryContainer, maxLines = 1)
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.Rounded.KeyboardArrowDown, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
+            }
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = scheme.surface,
+        ) {
+            listOf(true to "大陆直连 · 海外代理", false to "全部代理").forEach { (value, text) ->
+                val selected = if (value) mainland else routingMode == RoutingMode.GLOBAL
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(text, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) },
+                    trailingIcon = if (selected) {
+                        { Icon(Icons.Rounded.CheckCircle, null, tint = scheme.primary, modifier = Modifier.size(18.dp)) }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        open = false
+                        if (!selected) onPreset(value)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** How many app rules go each way, in three columns. */
+@Composable
+private fun RouteCounts(proxied: Int, direct: Int, blocked: Int) {
+    val divider = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        modifier = Modifier
+            .padding(start = 24.dp, end = 24.dp, top = 20.dp)
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+    ) {
+        RouteCount(proxied, "代理", RouteDot.PROXY, Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 14.dp).width(0.5.dp).fillMaxHeight().background(divider))
+        RouteCount(direct, "直连", RouteDot.DIRECT, Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 14.dp).width(0.5.dp).fillMaxHeight().background(divider))
+        RouteCount(blocked, "阻止", RouteDot.BLOCK, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun RouteCount(value: Int, label: String, dot: RouteDot, modifier: Modifier) {
+    Column(modifier = modifier.semantics(mergeDescendants = true) {}) {
+        androidx.compose.animation.AnimatedContent(
+            targetState = value,
+            transitionSpec = { WeaveMotion.statusEnter togetherWith WeaveMotion.statusExit },
+            label = "route-count",
+        ) { count ->
+            Text("$count", style = MaterialTheme.typography.headlineLarge.merge(TabularNumbers), translate = false)
+        }
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(routeDotColor(dot)))
+            Spacer(Modifier.width(6.dp))
+            Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Rule mode is off: say so once and offer the way back. */
+@Composable
+private fun ModeNotice(routingMode: RoutingMode, onBackToRules: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    RouteGroupPanel(modifier = Modifier.padding(top = 20.dp)) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = WeaveUiTokens.rowMinHeight)
+                .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(WeaveUiTokens.iconTileRadius))
+                    .background(scheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(ModeIcons.getValue(routingMode), null, tint = scheme.onPrimary, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                if (routingMode == RoutingMode.GLOBAL) "全局模式下分流不生效" else "直连模式下分流不生效",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onBackToRules, modifier = Modifier.testTag("routes-back-to-rules")) {
+                Text("切回规则", fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
 
 @Composable
-private fun SummaryNumber(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun RouteGroupLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .padding(start = WeaveUiTokens.sectionLabelHorizontal, top = 24.dp, bottom = 8.dp)
+            .semantics { heading() },
+    )
+}
+
+@Composable
+private fun RouteGroupPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    LiquidGlassPanel(
+        modifier = modifier
+            .padding(horizontal = WeaveUiTokens.screenHorizontal)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
+    ) {
+        Column(modifier = Modifier.padding(vertical = 2.dp)) { content() }
     }
 }
+
+/** Each lazy item paints its part of the same panel; no full border between rows. */
+@Composable
+private fun RoutePanelPiece(
+    first: Boolean,
+    last: Boolean,
+    panelAlpha: Float,
+    topSpacing: Dp = 0.dp,
+    content: @Composable () -> Unit,
+) {
+    val top = if (first) WeaveUiTokens.panelRadius else 0.dp
+    val bottom = if (last) WeaveUiTokens.panelRadius else 0.dp
+    val shape = RoundedCornerShape(top, top, bottom, bottom)
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .padding(start = WeaveUiTokens.screenHorizontal, end = WeaveUiTokens.screenHorizontal, top = topSpacing)
+            .fillMaxWidth()
+            .graphicsLayer { alpha = panelAlpha }
+            .clip(shape)
+            .background(scheme.surface)
+            .drawWithCache {
+                val stroke = WeaveUiTokens.panelBorderWidth.toPx()
+                val half = stroke / 2
+                val left = half
+                val right = size.width - half
+                val low = size.height - half
+                val radius = (WeaveUiTokens.panelRadius.toPx() - half)
+                    .coerceAtMost(minOf(right - left, low - half) / 2)
+                    .coerceAtLeast(0f)
+                fun cap(y: Float, topEdge: Boolean): Path = Path().apply {
+                    val capTop = if (topEdge) y else y - radius * 2
+                    val capBottom = capTop + radius * 2
+                    val sweep = if (topEdge) 90f else -90f
+                    arcTo(Rect(left, capTop, left + radius * 2, capBottom), 180f, sweep, false)
+                    lineTo(right - radius, y)
+                    arcTo(Rect(right - radius * 2, capTop, right, capBottom), if (topEdge) 270f else 90f, sweep, false)
+                }
+                val topCap = if (first) cap(half, true) else null
+                val bottomCap = if (last) cap(low, false) else null
+                onDrawWithContent {
+                    drawContent()
+                    val start = if (first) half + radius else 0f
+                    val end = if (last) low - radius else size.height
+                    drawLine(scheme.outlineVariant, Offset(left, start), Offset(left, end), stroke)
+                    drawLine(scheme.outlineVariant, Offset(right, start), Offset(right, end), stroke)
+                    topCap?.let { drawPath(it, scheme.outlineVariant, style = Stroke(stroke)) }
+                    bottomCap?.let { drawPath(it, scheme.outlineVariant, style = Stroke(stroke)) }
+                }
+            }
+            .padding(top = if (first) 2.dp else 0.dp, bottom = if (last) 2.dp else 0.dp),
+    ) {
+        if (!first) WeaveInsetDivider()
+        content()
+    }
+}
+
+@Composable
+private fun RouteActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = WeaveUiTokens.rowMinHeight)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/**
+ * Direct and blocked apps fold into one row each with their badges stacked; a tap opens the list
+ * in place. Proxied apps stay listed, since their exits are what people change most.
+ */
+@Composable
+private fun CollapsedGroup(
+    label: String,
+    dot: RouteDot,
+    routes: List<AppRoute>,
+    open: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onToggle)
+            .heightIn(min = WeaveUiTokens.rowMinHeight)
+            .padding(horizontal = 14.dp)
+            .testTag("routes-group-${dot.name.lowercase()}")
+            .semantics {
+                if (open) collapse { onToggle(); true } else expand { onToggle(); true }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(routeDotColor(dot)))
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
+        if (!open) {
+            Row(
+                modifier = Modifier.clearAndSetSemantics {},
+                horizontalArrangement = Arrangement.spacedBy((-9).dp),
+            ) {
+                routes.take(4).forEach { route ->
+                    val badge = appBadgeColors(route.tint)
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .border(2.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(badge.background),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(route.monogram.take(1), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                    }
+                }
+            }
+            Text(
+                "${routes.size}",
+                style = MaterialTheme.typography.labelLarge.merge(TabularNumbers),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                translate = false,
+                modifier = Modifier.padding(start = 2.dp, end = 4.dp),
+            )
+        }
+        Icon(
+            Icons.Rounded.KeyboardArrowDown,
+            null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = if (open) 180f else 0f },
+        )
+    }
+}
+
+internal fun routeItemKey(packageName: String): String = "route:$packageName"
+
+/** Test-only observer; absent from ordinary row composition. */
+internal val LocalRouteRowCompositionObserver = staticCompositionLocalOf<((String, Boolean) -> Unit)?> { null }
 
 @Composable
 private fun AppRouteRow(
     route: AppRoute,
     onClick: () -> Unit,
 ) {
+    val observer = LocalRouteRowCompositionObserver.current
+    if (observer != null) {
+        DisposableEffect(observer, route.packageName) {
+            observer(route.packageName, true)
+            onDispose { observer(route.packageName, false) }
+        }
+    }
     val badge = appBadgeColors(route.tint)
-    LiquidGlassPanel(
+    val scheme = MaterialTheme.colorScheme
+    val dot = when (route.target.kind) {
+        RouteKind.DIRECT -> RouteDot.DIRECT
+        RouteKind.BLOCK -> RouteDot.BLOCK
+        else -> RouteDot.PROXY
+    }
+    Row(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        onClick = onClick,
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = WeaveUiTokens.rowMinHeight)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier
+                .size(WeaveUiTokens.iconTile)
+                .clip(RoundedCornerShape(WeaveUiTokens.iconTileRadius))
+                .background(badge.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(route.monogram, color = badge.content, fontWeight = FontWeight.Bold, fontSize = 13.sp, translate = false)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            route.appName,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            translate = false,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(10.dp))
+        // The target as a quiet chip: the way the app goes, then where.
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .widthIn(max = 160.dp)
+                .height(26.dp)
+                .clip(RoundedCornerShape(50))
+                .background(scheme.surfaceVariant.copy(alpha = 0.7f))
+                .padding(start = 7.dp, end = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(15.dp))
-                    .background(badge.background),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    route.monogram,
-                    color = badge.content,
-                    fontWeight = FontWeight.ExtraBold,
-                    translate = false,
-                )
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(route.appName, fontWeight = FontWeight.SemiBold, translate = false)
-                Text(
-                    text = route.target.label,
-                    color = when (route.target.kind) {
-                        RouteKind.DIRECT -> MaterialTheme.colorScheme.secondary
-                        RouteKind.BLOCK -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    // Node and group names are user data.
-                    translate = route.target.kind != RouteKind.FIXED && route.target.kind != RouteKind.GROUP,
-                )
-            }
             Icon(
-                when (route.target.kind) {
-                    RouteKind.AUTO -> Icons.Rounded.AutoAwesome
-                    RouteKind.FIXED -> Icons.Rounded.Language
-                    RouteKind.DIRECT -> Icons.AutoMirrored.Rounded.ArrowForwardIos
-                    RouteKind.BLOCK -> Icons.Rounded.Block
-                    RouteKind.GROUP -> Icons.Rounded.Route
-                },
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
+                RouteIcons.getValue(dot),
+                null,
+                tint = if (dot == RouteDot.BLOCK) scheme.tertiary else scheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = route.target.label,
+                color = scheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                // Node and group names are user data.
+                translate = route.target.kind != RouteKind.FIXED && route.target.kind != RouteKind.GROUP,
             )
         }
     }

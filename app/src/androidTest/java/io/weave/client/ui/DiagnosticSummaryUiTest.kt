@@ -40,7 +40,7 @@ class DiagnosticSummaryUiTest {
                     endpointState = CommonEndpointProbeState(running = running,
                         report = if (running) null else CommonEndpointReport(1, listOf(row), 10),
                         progress = if (running) listOf(row) + extraProgress else emptyList()),
-                    browserResult = null, browserProbeRunId = 0, browserError = null,
+                    browserResult = null, browserProbeRequest = null, browserError = null,
                     onRunFullCheck = {}, onRunBrowserCheck = {}, onBrowserResult = {}, onBrowserError = {},
                     onOpenVpnSettings = {}, downloadState = DownloadProbeState(), onDownloadProbe = {}, onDismiss = {},
                 )

@@ -58,6 +58,8 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.stateDescription
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
@@ -213,6 +215,7 @@ internal fun SubscriptionsScreen(
     onRefreshSubscription: ((String) -> Unit)? = null,
     onRetryFailed: () -> Unit = onRefresh,
     nowMillis: Long? = null,
+    onAddFrom: (io.weave.client.domain.SubscriptionSourceKind) -> Unit = { onAdd() },
 ) {
     val language = LocalWeaveLanguage.current
     val empty = subscriptions.isEmpty()
@@ -225,6 +228,9 @@ internal fun SubscriptionsScreen(
     val visible = remember(subscriptions, query, source) { filterSubscriptions(subscriptions, query, source) }
     val filtering = query.isNotBlank() || source != SubscriptionSourceFilter.ALL
     val now = rememberListClock(nowMillis)
+    val refreshResultsById = remember(refreshState.results) {
+        indexSubscriptionRefreshResults(refreshState.results)
+    }
     // The migration hint names a count only; detected package names stay on the device. Without
     // a detection the row title is self-explanatory, so there is no subtitle.
     val migrationSubtitle = if (migrationClients.isNotEmpty()) {
@@ -245,55 +251,11 @@ internal fun SubscriptionsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(key = "header") {
-            ScreenHeader(
-                eyebrow = "",
-                title = "订阅",
-                action = {
-                    // With no subscriptions the empty state carries every import action, so the
-                    // header stays quiet instead of repeating them.
-                    if (!empty) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = onRefresh,
-                                enabled = !refreshState.running,
-                                modifier = Modifier.testTag("subscription-refresh-all"),
-                            ) {
-                                if (refreshState.running) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                } else {
-                                    Icon(Icons.Rounded.Sync, contentDescription = localizedContentDescription("刷新远程订阅"))
-                                }
-                            }
-                            IconButton(onClick = onTransfer) {
-                                Icon(
-                                    Icons.Rounded.SyncAlt,
-                                    contentDescription = localizedContentDescription("局域网互传"),
-                                )
-                            }
-                            Surface(
-                                onClick = onAdd,
-                                modifier = Modifier.size(WeaveUiTokens.headerActionSize),
-                                color = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                shape = CircleShape,
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Rounded.Add,
-                                        contentDescription = localizedContentDescription("添加订阅"),
-                                        modifier = Modifier.size(WeaveUiTokens.iconSize),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
+            SubscriptionsHeader(
+                empty = empty,
+                refreshing = refreshState.running,
+                onRefresh = onRefresh,
+                onAdd = onAdd,
             )
         }
 
@@ -360,7 +322,9 @@ internal fun SubscriptionsScreen(
                 SubscriptionCard(
                     subscription = subscription,
                     nowMillis = now,
-                    refreshState = refreshState,
+                    refreshResult = refreshResultsById[subscription.id],
+                    refreshing = refreshState.running && refreshState.currentId == subscription.id,
+                    refreshEnabled = !refreshState.running,
                     onClick = { onSubscriptionClick(subscription.id) },
                     // Only a declared remote source can be fetched again; local files have no URL.
                     onRefresh = onRefreshSubscription?.takeIf { subscription.remote }
@@ -368,8 +332,9 @@ internal fun SubscriptionsScreen(
                 )
             }
             item(key = "more-import") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WeaveSectionHeading("其他导入方式")
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    WeaveSectionHeading("添加方式")
+                    AddMethodTiles(onAddFrom = onAddFrom)
                     LiquidGlassPanel(
                         modifier = Modifier
                             .padding(horizontal = WeaveUiTokens.screenHorizontal)
@@ -402,6 +367,142 @@ internal fun SubscriptionsScreen(
 }
 
 /**
+ * The serif title with one primary add button beside it; refreshing every remote source sits
+ * above as a quiet outlined button. With no subscriptions the empty state carries every import
+ * action, so the header stays quiet instead of repeating them.
+ */
+@Composable
+private fun SubscriptionsHeader(
+    empty: Boolean,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier = Modifier.padding(start = 24.dp, end = WeaveUiTokens.screenHorizontal)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = WeaveUiTokens.headerActionSize),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!empty) {
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = !refreshing,
+                    modifier = Modifier
+                        .size(WeaveUiTokens.headerActionSize)
+                        .border(1.dp, scheme.outlineVariant, CircleShape)
+                        .testTag("subscription-refresh-all"),
+                ) {
+                    if (refreshing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            Icons.Rounded.Sync,
+                            contentDescription = localizedContentDescription("刷新远程订阅"),
+                            tint = scheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                "订阅",
+                style = MaterialTheme.typography.displaySmall,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() },
+            )
+            if (!empty) {
+                Surface(
+                    onClick = onAdd,
+                    modifier = Modifier.size(WeaveUiTokens.headerActionSize),
+                    color = scheme.primary,
+                    contentColor = scheme.onPrimary,
+                    shape = CircleShape,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = localizedContentDescription("添加订阅"),
+                            modifier = Modifier.size(WeaveUiTokens.iconSize),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Link, QR code and file as three equal tiles; each opens the import flow at that source. */
+@Composable
+private fun AddMethodTiles(onAddFrom: (io.weave.client.domain.SubscriptionSourceKind) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .padding(horizontal = WeaveUiTokens.screenHorizontal)
+            .fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        listOf(
+            Triple(io.weave.client.domain.SubscriptionSourceKind.REMOTE, "链接", AddMethodIcons.link),
+            Triple(io.weave.client.domain.SubscriptionSourceKind.QR_CODE, "二维码", AddMethodIcons.qr),
+            Triple(io.weave.client.domain.SubscriptionSourceKind.LOCAL_FILE, "文件", AddMethodIcons.file),
+        ).forEach { (kind, label, icon) ->
+            val interaction = remember { MutableInteractionSource() }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 84.dp)
+                    .pressScale(interaction, pressedScale = 0.96f)
+                    .clip(RoundedCornerShape(19.dp))
+                    .background(scheme.surface)
+                    .border(0.5.dp, scheme.outlineVariant, RoundedCornerShape(19.dp))
+                    .clickable(
+                        interactionSource = interaction,
+                        indication = androidx.compose.foundation.LocalIndication.current,
+                        role = Role.Button,
+                    ) { onAddFrom(kind) }
+                    .padding(14.dp)
+                    .testTag("subscription-add-${kind.name}"),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Icon(icon, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.height(18.dp))
+                Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
+    }
+}
+
+private object AddMethodIcons {
+    val link by lazy {
+        strokeIcon(
+            "add-link",
+            "M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1",
+            "M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1",
+        )
+    }
+    val qr by lazy {
+        strokeIcon(
+            "add-qr",
+            "M5.5 4h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5z",
+            "M15.5 4h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5z",
+            "M5.5 14h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5z",
+            "M14 14h2v2M20 14v.01M14 20h.01M17 17v3h3",
+        )
+    }
+    val file by lazy { strokeIcon("add-file", "M7 3h7l5 5v13H7z", "M14 3v5h5") }
+    val cloud by lazy { strokeIcon("subscription-cloud", "M7 18a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.5 1.6A3.8 3.8 0 0 1 17.5 18z") }
+    val alert by lazy { strokeIcon("subscription-alert", "M12 7v6M12 17h.01") }
+}
+
+/**
  * One status line for the bulk refresh: progress while running, a retry action after failures
  * and a quiet confirmation otherwise. The view model owns the messages; this only presents them.
  */
@@ -413,12 +514,26 @@ private fun RefreshStatus(
 ) {
     val language = LocalWeaveLanguage.current
     val modifier = Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)
-    val failedNames = refreshState.results.filter { !it.succeeded && !it.reviewRequired }.map { it.name }
-    val reviewNames = refreshState.results.filter { it.reviewRequired }.map { it.name }
+    val names = remember(refreshState.running, refreshState.results) {
+        SubscriptionRefreshNoticeNames.collect(
+            refreshState.running,
+            refreshState.results,
+            { it.succeeded },
+            { it.reviewRequired },
+            { it.name },
+        )
+    }
+    val failedNames = names.failed()
+    val reviewNames = names.review()
     when {
         refreshState.running -> {
+            val processed = if (refreshState.total > 0) {
+                refreshState.completed + refreshState.failed + refreshState.reviewCount
+            } else {
+                0
+            }
             val progress = if (refreshState.total > 0) {
-                (refreshState.completed + refreshState.failed + refreshState.reviewCount).toFloat() / refreshState.total
+                processed.toFloat() / refreshState.total
             } else {
                 null
             }
@@ -433,7 +548,7 @@ private fun RefreshStatus(
                             listOf(
                                 localizeWeaveText("正在刷新", language),
                                 refreshState.currentName ?: localizeWeaveText("远程订阅", language),
-                            ).joinToString(" ") + " · ${refreshState.completed + refreshState.failed + refreshState.reviewCount}/${refreshState.total}"
+                            ).joinToString(" ") + " · ${processed}/${refreshState.total}"
                         } else {
                             localizeWeaveText(refreshState.message ?: "正在刷新", language)
                         },
@@ -618,10 +733,13 @@ private fun ImportOptionRow(
 private fun SubscriptionCard(
     subscription: Subscription,
     nowMillis: Long,
-    refreshState: SubscriptionRefreshState,
+    refreshResult: SubscriptionRefreshResult?,
+    refreshing: Boolean,
+    refreshEnabled: Boolean,
     onClick: () -> Unit,
     onRefresh: (() -> Unit)?,
 ) {
+    val scheme = MaterialTheme.colorScheme
     val quota = subscription.quota
     val hasBar = quota != null && quota.totalBytes > 0
     val fraction = if (hasBar) quota?.usedFraction ?: 0f else 0f
@@ -630,29 +748,43 @@ private fun SubscriptionCard(
     // Expiry is evaluated on its own so a provider that declares no traffic limit still shows it.
     val expireAt = quota?.expireAtMillis
     val expiry = subscriptionExpiryStatus(expireAt, now)
-    val attention = expiry == SubscriptionExpiryStatus.EXPIRED || expiry == SubscriptionExpiryStatus.EXPIRING_SOON
+    val expired = expiry == SubscriptionExpiryStatus.EXPIRED
+    val attention = expired || expiry == SubscriptionExpiryStatus.EXPIRING_SOON
     val showUsage = quota != null && (hasBar || quota.usedBytes > 0)
-    val refreshing = refreshState.running && refreshState.currentId == subscription.id
-    val refreshResult = refreshState.results.lastOrNull { it.subscriptionId == subscription.id }
+    val showExpiry = expiry != SubscriptionExpiryStatus.UNKNOWN && expireAt != null
     val outcome = refreshResult?.succeeded
+    val failed = outcome == false && refreshResult?.reviewRequired != true
 
     LiquidGlassPanel(
         modifier = Modifier
             .padding(horizontal = WeaveUiTokens.screenHorizontal)
             .fillMaxWidth()
             .testTag("subscription-card-${subscription.id}"),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
         onClick = onClick,
     ) {
-        Column(modifier = Modifier.padding(WeaveUiTokens.cardPadding)) {
+        Column(modifier = Modifier.padding(start = 18.dp, end = 10.dp, top = 16.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                WeaveIconTile(icon = Icons.Rounded.CloudDownload)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(if (subscription.enabled) scheme.primaryContainer else scheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        AddMethodIcons.cloud,
+                        contentDescription = null,
+                        tint = if (subscription.enabled) scheme.primary else scheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     // The user's own subscription name leads and is never translated.
                     Text(
                         subscription.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -663,50 +795,46 @@ private fun SubscriptionCard(
                             localizeWeaveText("${subscription.nodeCount} 个节点", language),
                             subscription.updatedAtMillis?.let { relativeTime(it, now, language) },
                         ).joinToString(" · "),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = scheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
-                        modifier = Modifier.padding(top = 2.dp),
+                        modifier = Modifier.padding(top = 1.dp),
                         translate = false,
                     )
-                    // Current progress or the latest outcome; quiet text, no success glyph.
+                    // Progress or a quiet success stays in the text column; problems become a chip.
                     val outcomeModifier = Modifier
                         .padding(top = 2.dp)
                         .testTag("subscription-outcome-${subscription.id}")
                     when {
                         refreshing -> Text(
                             "正在刷新",
-                            color = MaterialTheme.colorScheme.primary,
+                            color = scheme.primary,
                             fontSize = 12.sp,
                             modifier = outcomeModifier,
                         )
-                        refreshResult?.reviewRequired == true -> Text(
+                        refreshResult?.reviewRequired == true -> AttentionChip(
                             "需确认更新",
-                            color = MaterialTheme.colorScheme.tertiary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = outcomeModifier,
+                            Modifier.padding(top = 6.dp),
+                            textTag = "subscription-outcome-${subscription.id}",
                         )
-                        outcome == false -> Text(
+                        failed -> AttentionChip(
                             "更新失败",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = outcomeModifier,
+                            Modifier.padding(top = 6.dp),
+                            textTag = "subscription-outcome-${subscription.id}",
                         )
                         outcome == true -> Text(
                             "已更新",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = scheme.onSurfaceVariant,
                             fontSize = 12.sp,
                             modifier = outcomeModifier,
                         )
-                    }
-                    if (!subscription.enabled) {
-                        WeaveStatusPill(
+                        !subscription.enabled -> WeaveStatusPill(
                             text = "已停用",
                             tone = WeaveStatusTone.NEUTRAL,
                             modifier = Modifier.padding(top = 6.dp),
                         )
+                        expired -> AttentionChip("已到期", Modifier.padding(top = 6.dp))
                     }
                 }
                 if (onRefresh != null) {
@@ -714,7 +842,7 @@ private fun SubscriptionCard(
                     val busyLabel = localizeWeaveText("正在刷新", language)
                     IconButton(
                         onClick = onRefresh,
-                        enabled = !refreshState.running,
+                        enabled = refreshEnabled,
                         modifier = Modifier
                             .size(48.dp)
                             .testTag("subscription-refresh-${subscription.id}")
@@ -726,76 +854,136 @@ private fun SubscriptionCard(
                         if (refreshing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Rounded.Sync, contentDescription = null)
+                            Icon(Icons.Rounded.Sync, contentDescription = null, tint = scheme.onSurfaceVariant)
                         }
                     }
+                } else {
+                    Spacer(Modifier.width(8.dp))
                 }
-                Icon(
-                    Icons.Rounded.ChevronRight,
-                    contentDescription = localizedContentDescription("查看和编辑订阅"),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             // Usage is shown only when the provider reports it; an empty bar would be noise. A
             // missing total is never presented as unlimited or as "0 B" left: only the bar needs it.
-            if (quota != null && showUsage) {
+            // Provider-declared expiry informs only; it never blocks connecting.
+            if (showUsage || showExpiry) {
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    Modifier
+                        .padding(end = 8.dp)
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(scheme.outlineVariant),
+                )
                 Spacer(Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.padding(end = 8.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    if (quota != null && showUsage) {
+                        MaterialText(
+                            androidx.compose.ui.text.buildAnnotatedString {
+                                withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                                    append(io.weave.client.domain.TrafficFormat.bytes(quota.usedBytes))
+                                }
+                                if (hasBar) {
+                                    withStyle(androidx.compose.ui.text.SpanStyle(color = scheme.onSurfaceVariant)) {
+                                        append(" / " + io.weave.client.domain.TrafficFormat.bytes(quota.totalBytes))
+                                    }
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyMedium.merge(TabularNumbers),
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("subscription-usage-${subscription.id}")
+                                .semantics { contentDescription = localizeWeaveText("已用", language) + " " + io.weave.client.domain.TrafficFormat.bytes(quota.usedBytes) + if (hasBar) " / " + io.weave.client.domain.TrafficFormat.bytes(quota.totalBytes) else "" },
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    if (showExpiry && expireAt != null) {
+                        val label = when (expiry) {
+                            SubscriptionExpiryStatus.EXPIRED -> "已到期"
+                            SubscriptionExpiryStatus.EXPIRING_SOON -> "即将到期"
+                            else -> "到期"
+                        }
+                        Text(
+                            DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.forLanguageTag(language.localeTag)).format(Date(expireAt)) +
+                                " " + localizeWeaveText(label, language),
+                            color = if (attention) scheme.tertiary else scheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
+                            fontSize = 12.sp,
+                            fontWeight = if (attention) FontWeight.SemiBold else null,
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .testTag("subscription-expiry-${subscription.id}"),
+                            translate = false,
+                        )
+                    }
+                }
                 if (hasBar) {
-                    val barStart = MaterialTheme.colorScheme.primaryContainer
-                    val barEnd = if (fraction < 0.8f) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
                     val animatedFraction by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = fraction,
+                        targetValue = if (expired) 1f else fraction,
                         animationSpec = WeaveMotion.standard(),
                         label = "quota",
                     )
+                    Spacer(Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
+                            .padding(end = 8.dp)
                             .fillMaxWidth()
-                            .height(6.dp)
+                            .height(4.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(scheme.surfaceVariant),
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(animatedFraction.coerceIn(0f, 1f))
-                                .height(6.dp)
+                                .height(4.dp)
                                 .clip(CircleShape)
-                                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(barStart, barEnd))),
+                                .background(if (expired || fraction >= 0.8f) scheme.tertiary else scheme.primary),
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
                 }
-                Text(
-                    localizeWeaveText("已用", language) + " " +
-                        io.weave.client.domain.TrafficFormat.bytes(quota.usedBytes) +
-                        if (hasBar) " / " + io.weave.client.domain.TrafficFormat.bytes(quota.totalBytes) else "",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
-                    modifier = Modifier.testTag("subscription-usage-${subscription.id}"),
-                    translate = false,
-                )
             }
-            // Provider-declared expiry stands on its own line so a wide date never squeezes the
-            // usage text at large font scales. It informs only; it never blocks connecting.
-            if (expiry != SubscriptionExpiryStatus.UNKNOWN && expireAt != null) {
-                Spacer(Modifier.height(if (showUsage) 4.dp else 12.dp))
-                val label = when (expiry) {
-                    SubscriptionExpiryStatus.EXPIRED -> "已到期"
-                    SubscriptionExpiryStatus.EXPIRING_SOON -> "即将到期"
-                    else -> "到期"
+            if (failed && onRefresh != null) {
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = onRefresh,
+                    enabled = refreshEnabled,
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("subscription-retry-${subscription.id}"),
+                ) {
+                    Text("重试", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text(
-                    localizeWeaveText(label, language) + " · " +
-                        DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.forLanguageTag(language.localeTag)).format(Date(expireAt)),
-                    color = if (attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    fontWeight = if (attention) FontWeight.SemiBold else null,
-                    modifier = Modifier.testTag("subscription-expiry-${subscription.id}"),
-                    translate = false,
-                )
             }
         }
+    }
+}
+
+/** A small ochre chip for a subscription that needs the user: failed, awaiting review or expired. */
+@Composable
+private fun AttentionChip(text: String, modifier: Modifier = Modifier, textTag: String? = null) {
+    val ochre = MaterialTheme.colorScheme.tertiary
+    Row(
+        modifier = modifier
+            .heightIn(min = 22.dp)
+            .clip(RoundedCornerShape(11.dp))
+            .background(ochre.copy(alpha = 0.12f))
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(AddMethodIcons.alert, contentDescription = null, tint = ochre, modifier = Modifier.size(12.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text,
+            color = ochre,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = if (textTag != null) Modifier.testTag(textTag) else Modifier,
+        )
     }
 }
 

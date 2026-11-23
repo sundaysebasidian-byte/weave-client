@@ -11,9 +11,27 @@ import org.junit.Test
 class QuickStartStateTest {
     private fun offer(seen:Boolean=false,loaded:Boolean=true,upgraded:Boolean=false,subs:Boolean=false,
         routes:Boolean=false,target:Boolean=false,consent:Boolean=false,external:Boolean=false) =
-        QuickStartPolicy.shouldOfferAutomatically(seen,loaded,upgraded,subs,routes,target,consent,external)
+        QuickStartPolicy.shouldOfferAutomatically(seen,loaded,{ upgraded },subs,routes,target,consent,external)
     private val node = ProxyNode("n1", "Example", "", "s1", "ss", null)
     private val target = RouteTarget(RouteKind.FIXED, "Example", "s1", "n1")
+
+    @Test fun `startup decision queries package history only if it can affect the answer`() {
+        for (mask in 0 until 256) {
+            val flags = BooleanArray(8) { bit -> mask and (1 shl bit) != 0 }
+            var packageQueries = 0
+            val actual = QuickStartPolicy.shouldOfferAutomatically(
+                seen = flags[0], dataLoaded = flags[1], upgradedInstall = {
+                    packageQueries++
+                    flags[2]
+                },
+                hasSubscriptions = flags[3], hasRoutes = flags[4], hasSavedTarget = flags[5],
+                disclosureAccepted = flags[6], externalLaunch = flags[7],
+            )
+            // Only the data-loaded flag permits the guide; an upgrade additionally vetoes it.
+            assertEquals("offer for mask $mask", mask == 2, actual)
+            assertEquals("package query count for mask $mask", if (mask == 2 || mask == 6) 1 else 0, packageQueries)
+        }
+    }
 
     @Test fun `fresh empty installation receives the guide after data loads`() { assertTrue(offer()) }
     @Test fun `guide never interrupts existing users or an external import`() {

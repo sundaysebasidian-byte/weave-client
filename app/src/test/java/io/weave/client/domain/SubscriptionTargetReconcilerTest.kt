@@ -79,4 +79,20 @@ class SubscriptionTargetReconcilerTest {
         assertEquals(RouteKind.FIXED, next.kind)
         assertEquals("gone", next.nodeId)
     }
+
+    @Test fun `subscription reconciliation distinguishes invalid group and explicit blocks`() {
+        val retired = RouteTarget(RouteKind.BLOCK, "旧", groupId = "retired")
+        val fixed = RouteTarget(RouteKind.BLOCK, "旧", subscription.id, "missing")
+        val manual = RouteTarget(RouteKind.BLOCK, "旧")
+        val targets = listOf(retired, fixed, manual)
+        val labels = listOf("出口已失效，请重新选择", "出口已失效，请重新选择", "阻止联网")
+        for ((index, target) in targets.withIndex()) {
+            assertEquals(target.copy(label = labels[index]), SubscriptionTargetReconciler.refresh(
+                target, subscription, listOf(node), allowBlock = true,
+            ))
+            assertEquals(target, SubscriptionTargetReconciler.refresh(
+                target, subscription, listOf(node), allowBlock = false,
+            ))
+        }
+    }
 }

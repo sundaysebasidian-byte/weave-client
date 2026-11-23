@@ -28,4 +28,6 @@
     <string name="notification_control_enabled">Zeigt den Status und eine Trennaktion in den Benachrichtigungen.</string>
     <string name="notification_control_disabled">Benachrichtigungen sind aus. Der Tunnel kann laufen, aber Status und Trennaktion werden möglicherweise nicht angezeigt.</string>
     <string name="notification_control_action">Benachrichtigungen verwalten</string>
+    <string name="action_choose_exit">Ausgang wechseln</string>
+    <string name="widget_description">Verbindungsstatus mit Ein-Tipp-Schalter</string>
 </resources>

@@ -1,5 +1,6 @@
 package io.weave.client.apps
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,6 +27,23 @@ class ProxyClientDetectorTest {
     @Test
     fun `known exact label supports compatible forks`() {
         assertTrue(ProxyClientDetector.matches("example.open.source", "  Clash Meta  "))
+    }
+
+    @Test
+    fun `reusing the pattern retains platform whitespace and exact alias matches`() {
+        val otherPackage = "example.compatible"
+        val oldPattern = Regex("\\s+")
+        // Android and the host JDK classify Unicode whitespace differently; keep each platform's
+        // existing behavior rather than asserting new flags for either of them.
+        for (space in listOf(" ", "\t\r\n", "\u00A0", "\u2003", "\u2028", "\u200B")) {
+            val label = "\u00A0cLaSh${space}mEtA\u00A0"
+            val oldNormalized = label.trim().replace(oldPattern, " ").lowercase(java.util.Locale.ROOT)
+            assertEquals(oldNormalized == "clash meta", ProxyClientDetector.matches(otherPackage, label))
+        }
+        assertTrue(ProxyClientDetector.matches(otherPackage, "CLASH\t META"))
+        assertTrue(ProxyClientDetector.matches(otherPackage, "SING-BOX"))
+        assertFalse(ProxyClientDetector.matches(otherPackage, "SING BOX"))
+        assertFalse(ProxyClientDetector.matches(otherPackage, "CLASH\t META beta"))
     }
 
     @Test

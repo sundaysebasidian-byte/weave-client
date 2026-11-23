@@ -28,4 +28,6 @@
     <string name="notification_control_enabled">在通知栏显示连接状态与断开操作。</string>
     <string name="notification_control_disabled">通知已关闭。隧道仍可运行，但通知栏可能无法显示状态和断开操作。</string>
     <string name="notification_control_action">管理通知</string>
+    <string name="action_choose_exit">切换出口</string>
+    <string name="widget_description">连接状态与一键开关</string>
 </resources>

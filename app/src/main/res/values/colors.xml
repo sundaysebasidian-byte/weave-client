@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home screen widget; values-night carries the dark set. -->
+    <color name="widget_surface">#FBFCFD</color>
+    <color name="widget_ink">#1D252D</color>
+    <color name="widget_sub">#56616E</color>
+    <color name="widget_button">#DCE7EE</color>
+    <color name="widget_button_icon">#2F4858</color>
+    <color name="widget_strand">#592F4858</color>
+    <color name="widget_dot_on">#4C6A61</color>
+    <color name="widget_dot_off">#ADB6C2</color>
+    <color name="widget_dot_error">#8B5B4E</color>
+</resources>

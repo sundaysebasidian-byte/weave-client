@@ -38,6 +38,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -223,8 +225,8 @@ internal fun HomeScreen(
     onIpQuality: () -> Unit,
     contentPadding: PaddingValues,
 ) {
-    val scrollState = rememberSmoothLazyListState()
-    // Traffic counters should not invalidate unchanged overview/route glass surfaces.
+    val scrollState = rememberScrollState()
+    // Traffic counters should not invalidate the status block, the weave or the capsule.
     val overviewState = remember(
         state.connectionState, state.coreAvailable, state.networkPathStatus,
         state.defaultRouteTarget, state.routingMode, state.statusMessage,
@@ -238,7 +240,7 @@ internal fun HomeScreen(
             statusMessage = state.statusMessage,
         )
     }
-    val routeCardState = remember(
+    val exitState = remember(
         state.connectionState, state.activeNode, state.defaultRouteTarget, state.routingMode,
     ) {
         DashboardState(
@@ -253,306 +255,467 @@ internal fun HomeScreen(
             .collect { onScrolling(it) }
     }
     DisposableEffect(Unit) { onDispose { onScrolling(false) } }
+    ConnectionHaptics(state.connectionState)
     val connected = state.connectionState == ConnectionState.CONNECTED
-    LazyColumn(
-        state = scrollState,
+    val fontScale = LocalDensity.current.fontScale
+    val capsuleSpace = WeaveUiTokens.capsuleHeight * maxOf(1f, fontScale) + 28.dp
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding()),
-        contentPadding = PaddingValues(
-            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-                WeaveUiTokens.screenTop,
-            bottom = WeaveUiTokens.screenBottom,
-        ),
-        verticalArrangement = Arrangement.spacedBy(WeaveUiTokens.sectionGap),
     ) {
-        item(key = "header") {
-            ScreenHeader(
-                eyebrow = "",
-                title = "Weave",
-                action = {
-                    HeaderActionButton(
-                        icon = Icons.Rounded.MoreHoriz,
-                        contentDescription = localizedContentDescription("连接操作"),
-                        onClick = onMoreClick,
-                    )
-                },
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(
+                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + WeaveUiTokens.screenTop,
+                    bottom = capsuleSpace,
+                ),
+        ) {
+            HomeHeader(onMoreClick = onMoreClick)
+            Spacer(Modifier.height(28.dp))
+            StatusBlock(state = overviewState, exit = exitState)
+            WeaveStrands(
+                stage = weaveStage(state.connectionState),
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .fillMaxWidth()
+                    .height(WeaveUiTokens.weaveHeight),
             )
-        }
-
-        // 1 · Connection state and the single primary action. The hero is a fixed frame; it
-        // never grows to hold guidance.
-        item(key = "overview") {
-            ConnectionOverview(
-                state = overviewState,
-                onConnect = onConnect,
-                onChooseExit = onDefaultRouteClick,
+            Spacer(Modifier.height(18.dp))
+            LiveMetrics(
+                connected = connected,
+                download = state.downloadBytesPerSecond,
+                upload = state.uploadBytesPerSecond,
+                latencyMs = state.activeNode?.latencyMs?.takeIf { it in 1..10_000 },
+                history = if (connected) trafficHistory else emptyList(),
             )
-        }
-
-        // 1b · Essential failures and recovery live on their own bounded surface so the hero
-        // keeps the same outer geometry in every state. Absent while the connection is healthy.
-        heroIssue(overviewState)?.let { issue ->
-            item(key = "overview-issue") {
+            heroIssue(overviewState)?.let { issue ->
+                Spacer(Modifier.height(20.dp))
                 ConnectionIssueNotice(issue = issue, onChooseExit = onDefaultRouteClick)
             }
-        }
-
-        // 2 · The selected exit, which is the next decision before connecting.
-        item(key = "exit") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                WeaveSectionHeading("当前出口")
-                CurrentRouteCard(routeCardState, onClick = onDefaultRouteClick)
-            }
-        }
-
-        // 3 · Routing mode.
-        item(key = "mode") {
-            RoutingModeSection(selected = state.routingMode, onModeSelected = onModeSelected)
-        }
-
-        // 4 · Live data and on-demand checks.
-        item(key = "live") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                WeaveSectionHeading("实时数据")
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = WeaveUiTokens.screenHorizontal)
-                        .height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    val validLatency = state.activeNode?.latencyMs?.takeIf { it in 1..10_000 }
-                    // A dash already says "nothing yet"; spell out the wait only once connected.
-                    StatCard(
-                        icon = Icons.Rounded.SwapVert,
-                        label = "实时流量",
-                        value = if (connected) "↓ ${formatRate(state.downloadBytesPerSecond)}" else "—",
-                        supporting = if (connected) "↑ ${formatRate(state.uploadBytesPerSecond)}" else "",
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        history = if (connected) trafficHistory else emptyList(),
-                        reserveChart = true,
-                        translateSupporting = false,
-                    )
-                    StatCard(
-                        icon = Icons.Rounded.Speed,
-                        label = "网络延迟",
-                        value = validLatency?.let { "$it ms" } ?: "—",
-                        supporting = if (connected && validLatency == null) "等待测速" else "",
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
-            }
-        }
-
-        item(key = "privacy-check") {
+            Spacer(Modifier.height(20.dp))
             PrivacyCheckEntry(onClick = onIpQuality)
         }
+        // Content scrolls under a short fade so the capsule never sits on a hard edge.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(capsuleSpace + 24.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0f to MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                        0.45f to MaterialTheme.colorScheme.background,
+                    ),
+                ),
+        )
+        ConnectionCapsule(
+            state = overviewState,
+            exit = exitState,
+            onConnect = onConnect,
+            onChooseExit = onDefaultRouteClick,
+            onModeSelected = onModeSelected,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = WeaveUiTokens.capsuleHorizontal)
+                .padding(bottom = 12.dp),
+        )
     }
 }
 
 private fun formatRate(bytesPerSecond: Long): String =
     io.weave.client.domain.TrafficFormat.rate(bytesPerSecond)
 
-// Hero geometry. At the default font scale the frame is 20 + 60 + 20 + 58 + 20 = 178dp, about 10%
-// taller than the previous 162dp. The height goes to the status mark, the action and the spacing,
-// not to the type: the headline keeps the theme size so the longest translated headline still
-// fits one line at 360dp, where the text column is 280 - 60 - 14 = 206dp wide.
-private val HeroPadding = 20.dp
-private val HeroOrbSize = 60.dp
-private val HeroOrbSizeLargeType = 52.dp
-private val HeroActionHeight = 58.dp
-/** From this font scale the hero spends less on decoration so the text keeps its room. */
-private const val HeroLargeTypeScale = 1.3f
+/** A confirm tick when a connection comes up and a reject buzz when an attempt fails. */
+@Composable
+private fun ConnectionHaptics(connection: ConnectionState) {
+    val haptics = LocalHapticFeedback.current
+    var previous by remember { mutableStateOf(connection) }
+    LaunchedEffect(connection) {
+        if (previous == ConnectionState.CONNECTING) {
+            when (connection) {
+                ConnectionState.CONNECTED -> haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                ConnectionState.ERROR -> haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                else -> Unit
+            }
+        }
+        previous = connection
+    }
+}
 
-/** How strongly the state's tone pools behind the status mark. Neutral is almost absent. */
-private fun heroGlowAlpha(tone: WeaveStatusTone): Float = when (tone) {
-    WeaveStatusTone.NEUTRAL -> 0.05f
-    WeaveStatusTone.PROGRESS -> 0.14f
-    WeaveStatusTone.POSITIVE -> 0.17f
-    WeaveStatusTone.CAUTION -> 0.15f
-    WeaveStatusTone.CRITICAL -> 0.12f
+@Composable
+private fun HomeHeader(onMoreClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = WeaveUiTokens.screenHorizontal),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Weave",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.2).sp,
+            translate = false,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
+        )
+        HeaderActionButton(
+            icon = Icons.Rounded.MoreHoriz,
+            contentDescription = localizedContentDescription("连接操作"),
+            onClick = onMoreClick,
+        )
+    }
 }
 
 /**
- * The connection hero: a fixed frame of status mark, headline, one short line and one action.
+ * The status block: one eyebrow with the state's mark, the headline and the exit in use.
  *
- * Its outer size must not depend on the connection state. Two things guarantee that: the text
- * slots measure every possible string and take the largest (see [StableTextSlot]), and the
- * action has a fixed height that scales with the font. What remains is a function of language,
- * width and font scale only. Failure guidance and recovery live in [ConnectionIssueNotice].
+ * Its size must not depend on the connection state. The eyebrow and headline measure every
+ * possible string and take the largest (see [StableTextSlot]); the exit line is always exactly
+ * one line. What remains is a function of language, width and font scale only. Failure guidance
+ * and recovery live in [ConnectionIssueNotice], below the metrics.
  *
- * Reading order is mark, headline, supporting line, action. The mark is the only element that
- * can read as proof, so it is filled with a check solely for an exit the app has verified; see
- * [HeroGlyph].
+ * The mark beside the eyebrow is the only element that can read as proof, so it becomes a check
+ * solely for an exit the app has verified; see [HeroGlyph].
  */
 @Composable
-private fun ConnectionOverview(
-    state: DashboardState,
-    onConnect: () -> Unit,
-    onChooseExit: () -> Unit,
-) {
+private fun StatusBlock(state: DashboardState, exit: DashboardState) {
     val hero = heroModel(state)
-    val haptics = LocalHapticFeedback.current
-    val fontScale = LocalDensity.current.fontScale
-    // Large type is a function of the font scale alone, never of the state, so it cannot make the
-    // hero differ between states. It trades some decoration for room to wrap the text.
-    val largeType = fontScale >= HeroLargeTypeScale
-    val orbSize = if (largeType) HeroOrbSizeLargeType else HeroOrbSize
-    val textLines = if (largeType) 3 else 2
-    val glow by animateColorAsState(
-        weaveToneColor(hero.tone).copy(alpha = heroGlowAlpha(hero.tone)),
-        WeaveMotion.standard(),
-        label = "hero-glow",
-    )
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val critical = MaterialTheme.colorScheme.error
-    LiquidGlassPanel(
+    val fontScale = LocalDensity.current.fontScale
+    // Display type is already large; past 1.3x it grows more slowly so long translations still fit.
+    val headline = MaterialTheme.typography.displayMedium.let { style ->
+        if (fontScale <= 1.3f) style else style.copy(
+            fontSize = style.fontSize * (1.3f / fontScale + (1f - 1.3f / fontScale) * 0.45f),
+            lineHeight = style.lineHeight * (1.3f / fontScale + (1f - 1.3f / fontScale) * 0.45f),
+        )
+    }
+    Column(
         modifier = Modifier
-            .padding(horizontal = WeaveUiTokens.screenHorizontal)
+            .padding(horizontal = 24.dp)
             .fillMaxWidth()
-            .testTag("home-hero"),
-        shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
-        elevation = WeaveUiTokens.heroElevation,
+            .testTag("home-hero")
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Box {
-            // One soft pool of the state's tone behind the status mark. Colour only, no size.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StatusMark(glyph = hero.glyph, tone = hero.tone)
+            Spacer(Modifier.width(8.dp))
+            StableTextSlot(
+                active = hero.detail,
+                variants = HeroDetail.entries.map {
+                    Triple(it, it.source, if (it.tone == WeaveStatusTone.CRITICAL) critical else muted)
+                },
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        StableTextSlot(
+            active = hero.headline,
+            variants = HeroHeadline.entries.map { Triple(it, it.source, onSurface) },
+            style = headline,
+            maxLines = 2,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = exitSummary(exit, LocalWeaveLanguage.current),
+            color = muted,
+            style = MaterialTheme.typography.bodyLarge.merge(TabularNumbers),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            translate = false,
+        )
+    }
+}
+
+/** The exit and the routing mode in one quiet line. */
+private fun exitSummary(state: DashboardState, language: WeaveLanguage): String {
+    val mode = localizeWeaveText(state.routingMode.label, language)
+    val node = state.activeNode?.takeIf { state.connectionState == ConnectionState.CONNECTED }
+    val name = when (exitReadiness(state)) {
+        ExitReadiness.MISSING -> localizeWeaveText("尚未选择出口", language)
+        ExitReadiness.NOT_USED -> return mode
+        else -> node?.let { NodeDisplayName.core(it.name) }
+            ?: state.defaultRouteTarget?.label?.let { localizeWeaveText(it, language) }
+            ?: localizeWeaveText("自动选择", language)
+    }
+    return "$name · $mode"
+}
+
+/**
+ * The small mark before the eyebrow: a dot in the state's tone, a check for a verified exit and a
+ * warning for a failure. It swaps inside a fixed 14dp box, so it never resizes the block.
+ */
+@Composable
+private fun StatusMark(glyph: HeroGlyph, tone: WeaveStatusTone) {
+    val color by animateColorAsState(weaveToneColor(tone), WeaveMotion.standard(), label = "status-mark")
+    Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+        AnimatedContent(
+            targetState = glyph,
+            transitionSpec = { WeaveMotion.statusEnter togetherWith WeaveMotion.statusExit },
+            label = "status-mark-glyph",
+        ) { current ->
             Box(
                 modifier = Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        val centre = HeroPadding + orbSize / 2
-                        drawRect(
-                            Brush.radialGradient(
-                                colors = listOf(glow, glow.copy(alpha = 0f)),
-                                center = Offset(centre.toPx(), centre.toPx()),
-                                radius = size.width * 0.7f,
-                            ),
-                        )
-                    },
-            )
-            Column(modifier = Modifier.padding(HeroPadding)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    HeroStatusOrb(glyph = hero.glyph, tone = hero.tone, size = orbSize)
-                    Spacer(Modifier.width(if (largeType) 12.dp else 14.dp))
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    .size(14.dp)
+                    .testTag("home-hero-glyph-${current.name.lowercase()}"),
+                contentAlignment = Alignment.Center,
+            ) {
+                when (current) {
+                    HeroGlyph.CHECK -> Box(
+                        modifier = Modifier.size(14.dp).clip(CircleShape).background(color),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        StableTextSlot(
-                            active = hero.headline,
-                            variants = HeroHeadline.entries.map { Triple(it, it.source, onSurface) },
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = textLines,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        StableTextSlot(
-                            active = hero.detail,
-                            variants = HeroDetail.entries.map {
-                                Triple(it, it.source, if (it.tone == WeaveStatusTone.CRITICAL) critical else muted)
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = textLines,
-                        )
+                        Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onSecondary, modifier = Modifier.size(10.dp))
                     }
+                    HeroGlyph.WARNING -> Icon(Icons.Rounded.Warning, null, tint = color, modifier = Modifier.size(14.dp))
+                    else -> Box(Modifier.size(8.dp).clip(CircleShape).background(color))
                 }
-                Spacer(Modifier.height(20.dp))
-                OverviewPrimaryButton(
-                    label = hero.actionLabel,
-                    emphasized = hero.actionEmphasized,
-                    enabled = hero.actionEnabled,
-                    inProgress = hero.action == HeroAction.IN_PROGRESS,
-                    icon = when (hero.action) {
-                        HeroAction.CHOOSE_EXIT -> Icons.Rounded.Route
-                        HeroAction.RETRY -> Icons.Rounded.RestartAlt
-                        HeroAction.CONNECT, HeroAction.DISCONNECT, HeroAction.IN_PROGRESS -> Icons.Rounded.PowerSettingsNew
-                    },
-                    onClick = {
-                        when (hero.action) {
-                            HeroAction.CHOOSE_EXIT -> onChooseExit()
-                            HeroAction.IN_PROGRESS -> Unit
-                            HeroAction.CONNECT, HeroAction.DISCONNECT, HeroAction.RETRY -> {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onConnect()
-                            }
-                        }
-                    },
-                    // A fixed height that scales with the font keeps the action the same size
-                    // whichever label it carries; long translations may wrap to two lines.
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(HeroActionHeight * maxOf(1f, fontScale)),
-                )
+            }
+        }
+    }
+}
+
+/** Download, upload and latency in three columns separated by hairlines. */
+@Composable
+private fun LiveMetrics(
+    connected: Boolean,
+    download: Long,
+    upload: Long,
+    latencyMs: Int?,
+    history: List<Long>,
+) {
+    val divider = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+    ) {
+        Metric("下载", if (connected) formatRate(download) else "—", Modifier.weight(1f), history)
+        Box(Modifier.padding(horizontal = 14.dp).width(0.5.dp).fillMaxHeight().background(divider))
+        Metric("上传", if (connected) formatRate(upload) else "—", Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 14.dp).width(0.5.dp).fillMaxHeight().background(divider))
+        Metric("延迟", latencyMs?.let { "$it ms" } ?: "—", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun Metric(label: String, value: String, modifier: Modifier, history: List<Long> = emptyList()) {
+    Column(modifier = modifier.semantics(mergeDescendants = true) {}) {
+        Text(label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineLarge.merge(TabularNumbers),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            translate = false,
+        )
+        // The download column keeps a hairline of recent throughput; its footprint is reserved so
+        // connecting does not move the content below.
+        Box(modifier = Modifier.padding(top = 6.dp).fillMaxWidth().height(14.dp)) {
+            if (history.size >= 2) {
+                Sparkline(samples = history, modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.secondary)
             }
         }
     }
 }
 
 /**
- * The round status mark: a thin halo around an inner disc that carries the glyph. The glyph swaps
- * inside a fixed circle, so it can never resize the hero.
- *
- * The disc is solid only for [HeroGlyph.CHECK], which the model grants to a verified exit alone.
- * Every other state keeps a soft, unfilled disc, so a tunnel that is merely up cannot look like a
- * confirmed result. This is a drawing of the model's answer, not a second opinion about it.
+ * The connection capsule pinned above the navigation dock: the exit (tap to change it), the routing
+ * mode dial and the single primary action. The action keeps one circular footprint for every
+ * state; only its glyph and colour change.
  */
 @Composable
-private fun HeroStatusOrb(glyph: HeroGlyph, tone: WeaveStatusTone, size: Dp) {
-    val target = weaveToneColor(tone)
-    val accent by animateColorAsState(target, WeaveMotion.standard(), label = "hero-orb-accent")
-    val disc by animateColorAsState(
-        if (glyph == HeroGlyph.CHECK) target else weaveToneContainer(tone),
-        WeaveMotion.standard(),
-        label = "hero-orb-disc",
-    )
-    val onProof = MaterialTheme.colorScheme.onSecondary
-    val discSize = size - 14.dp
-    val glyphSize = discSize * 0.52f
-    Box(
-        modifier = Modifier
-            .size(size)
-            .border(1.dp, accent.copy(alpha = 0.22f), CircleShape),
-        contentAlignment = Alignment.Center,
+private fun ConnectionCapsule(
+    state: DashboardState,
+    exit: DashboardState,
+    onConnect: () -> Unit,
+    onChooseExit: () -> Unit,
+    onModeSelected: (RoutingMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val fontScale = LocalDensity.current.fontScale
+    val shape = RoundedCornerShape(50)
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = WeaveUiTokens.capsuleHeight * maxOf(1f, fontScale))
+            .testTag("home-capsule"),
+        shape = shape,
+        color = scheme.surface,
+        shadowElevation = 10.dp,
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, scheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ExitSummary(exit, onClick = onChooseExit, modifier = Modifier.weight(1f))
+            ModeChip(selected = state.routingMode, onModeSelected = onModeSelected)
+            Box(
+                Modifier
+                    .padding(start = 6.dp, end = 4.dp)
+                    .width(0.5.dp)
+                    .height(28.dp)
+                    .background(scheme.outlineVariant),
+            )
+            PrimaryAction(hero = heroModel(state), onConnect = onConnect, onChooseExit = onChooseExit)
+        }
+    }
+}
+
+@Composable
+private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val language = LocalWeaveLanguage.current
+    val scheme = MaterialTheme.colorScheme
+    val readiness = exitReadiness(state)
+    val connected = state.connectionState == ConnectionState.CONNECTED
+    val target = state.defaultRouteTarget
+    val node = state.activeNode?.takeIf { connected }
+    val needsChoice = readiness == ExitReadiness.MISSING || readiness == ExitReadiness.INVALID
+    val title = when {
+        readiness == ExitReadiness.MISSING -> localizeWeaveText("尚未选择出口", language)
+        readiness == ExitReadiness.NOT_USED -> localizeWeaveText(RoutingMode.DIRECT.label, language)
+        node != null -> NodeDisplayName.core(node.name)
+        else -> target?.label?.let { localizeWeaveText(it, language) } ?: localizeWeaveText("自动选择", language)
+    }
+    val latency = node?.latencyMs?.takeIf { it in 1..10_000 }
+    // Facts only: how the exit was chosen, the protocol and measured latency.
+    val meta = when (readiness) {
+        ExitReadiness.MISSING -> localizeWeaveText("未选择时自动使用第一个可用订阅", language)
+        ExitReadiness.INVALID -> localizeWeaveText(HeroDetail.EXIT_INVALID.source, language)
+        ExitReadiness.NOT_USED -> localizeWeaveText("直连模式下不使用出口", language)
+        ExitReadiness.READY -> listOfNotNull(
+            target?.let { selected ->
+                routeKindLabel(selected.kind).takeUnless { it == selected.label && node == null }
+            }?.let { localizeWeaveText(it, language) },
+            node?.protocol?.takeIf { it.isNotBlank() },
+            latency?.let { "$it ms" },
+        ).joinToString(" · ")
+    }
+    val monogram = remember(title) { io.weave.client.domain.ExitMonogram.of(title) }
+    val chooseLabel = localizedContentDescription("选择节点")
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(role = Role.Button, onClickLabel = chooseLabel, onClick = onClick)
+            .heightIn(min = WeaveUiTokens.capsuleButton),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(discSize)
+                .size(WeaveUiTokens.capsuleButton)
                 .clip(CircleShape)
-                .background(disc)
-                .border(1.dp, accent.copy(alpha = 0.34f), CircleShape),
+                .background(if (needsChoice) weaveToneContainer(WeaveStatusTone.CAUTION) else scheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            AnimatedContent(
-                targetState = glyph,
-                transitionSpec = { WeaveMotion.statusEnter togetherWith WeaveMotion.statusExit },
-                label = "hero-orb-glyph",
-            ) { current ->
-                Box(
-                    modifier = Modifier.testTag("home-hero-glyph-${current.name.lowercase()}"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (current == HeroGlyph.PROGRESS) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(glyphSize),
-                            strokeWidth = 2.5.dp,
-                            color = accent,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = when (current) {
-                                HeroGlyph.CHECK -> Icons.Rounded.Check
-                                HeroGlyph.LINK -> Icons.Rounded.Link
-                                HeroGlyph.WARNING -> Icons.Rounded.Warning
-                                HeroGlyph.POWER, HeroGlyph.PROGRESS -> Icons.Rounded.PowerSettingsNew
-                            },
-                            contentDescription = null,
-                            tint = if (current == HeroGlyph.CHECK) onProof else accent,
-                            modifier = Modifier.size(glyphSize),
-                        )
+            when {
+                needsChoice -> Icon(Icons.Rounded.Warning, null, tint = weaveToneColor(WeaveStatusTone.CAUTION), modifier = Modifier.size(20.dp))
+                monogram != null -> Text(
+                    monogram,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.6.sp,
+                    color = scheme.onPrimaryContainer,
+                    translate = false,
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
+                else -> Icon(Icons.Rounded.Route, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                translate = false,
+            )
+            if (meta.isNotBlank()) {
+                Text(
+                    meta,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = if (latency != null && meta.endsWith("$latency ms")) scheme.secondary else scheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    translate = false,
+                )
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+    }
+}
+
+@Composable
+private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val language = LocalWeaveLanguage.current
+    val interaction = remember { MutableInteractionSource() }
+    val container by animateColorAsState(
+        if (hero.actionEmphasized) scheme.primary else scheme.primaryContainer,
+        WeaveMotion.standard(), label = "primary-action-container",
+    )
+    val content by animateColorAsState(
+        if (hero.actionEmphasized) scheme.onPrimary else scheme.onPrimaryContainer,
+        WeaveMotion.standard(), label = "primary-action-content",
+    )
+    Box(
+        modifier = Modifier
+            .testTag("home-primary-action")
+            .size(WeaveUiTokens.capsuleButton)
+            .pressScale(interaction, pressedScale = 0.94f)
+            .clip(CircleShape)
+            .background(if (hero.actionEnabled) container else container.copy(alpha = 0.55f))
+            .clickable(
+                interactionSource = interaction,
+                indication = androidx.compose.foundation.LocalIndication.current,
+                enabled = hero.actionEnabled,
+                role = Role.Button,
+                onClick = {
+                    when (hero.action) {
+                        HeroAction.CHOOSE_EXIT -> onChooseExit()
+                        HeroAction.IN_PROGRESS -> Unit
+                        HeroAction.CONNECT, HeroAction.DISCONNECT, HeroAction.RETRY -> {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onConnect()
+                        }
                     }
-                }
+                },
+            )
+            .semantics { contentDescription = localizeWeaveText(hero.actionLabel, language) },
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = hero.action,
+            transitionSpec = { WeaveMotion.statusEnter togetherWith WeaveMotion.statusExit },
+            label = "primary-action-glyph",
+        ) { action ->
+            if (action == HeroAction.IN_PROGRESS) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = content)
+            } else {
+                Icon(
+                    imageVector = when (action) {
+                        HeroAction.CHOOSE_EXIT -> Icons.Rounded.Route
+                        HeroAction.RETRY -> Icons.Rounded.RestartAlt
+                        else -> Icons.Rounded.PowerSettingsNew
+                    },
+                    contentDescription = null,
+                    tint = content,
+                    modifier = Modifier.size(WeaveUiTokens.iconSize),
+                )
             }
         }
     }
@@ -614,272 +777,12 @@ private fun ConnectionIssueNotice(
     )
 }
 
-@Composable
-private fun OverviewPrimaryButton(
-    label: String,
-    emphasized: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: ImageVector = Icons.Rounded.PowerSettingsNew,
-    enabled: Boolean = true,
-    inProgress: Boolean = false,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val interaction = remember { MutableInteractionSource() }
-    // The lead action is solid. A secondary one such as disconnecting is a light tint of the same
-    // hue with a defined edge, so it reads as an available control instead of a muted slab.
-    val container by animateColorAsState(
-        if (emphasized) scheme.primary else androidx.compose.ui.graphics.lerp(scheme.surface, scheme.primary, 0.12f),
-        animationSpec = WeaveMotion.standard(),
-        label = "overview-action-container",
-    )
-    val content by animateColorAsState(
-        if (emphasized) scheme.onPrimary else scheme.onPrimaryContainer,
-        animationSpec = WeaveMotion.standard(),
-        label = "overview-action-content",
-    )
-    val edge by animateFloatAsState(
-        targetValue = if (emphasized) 0f else 0.30f,
-        animationSpec = WeaveMotion.standard(),
-        label = "overview-action-edge",
-    )
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        interactionSource = interaction,
-        modifier = modifier
-            .pressScale(interaction, pressedScale = 0.98f)
-            .heightIn(min = WeaveUiTokens.actionHeight),
-        shape = RoundedCornerShape(WeaveUiTokens.actionRadius),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = container,
-            contentColor = content,
-            disabledContainerColor = container.copy(alpha = 0.55f),
-            disabledContentColor = content.copy(alpha = 0.85f),
-        ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, scheme.primary.copy(alpha = edge)),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp),
-    ) {
-        if (inProgress) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-                color = content,
-            )
-        } else {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(WeaveUiTokens.iconSize))
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(
-            label,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 16.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun OverviewSecondaryButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = WeaveUiTokens.actionHeight),
-        shape = RoundedCornerShape(WeaveUiTokens.actionRadius),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-    ) {
-        Text(label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, textAlign = TextAlign.Center)
-    }
-}
-
 private fun routeKindLabel(kind: RouteKind): String = when (kind) {
     RouteKind.AUTO -> "自动选择"
     RouteKind.FIXED -> "固定节点"
     RouteKind.DIRECT -> "直连"
     RouteKind.BLOCK -> "阻止"
     RouteKind.GROUP -> "自定义策略组"
-}
-
-@Composable
-private fun CurrentRouteCard(
-    state: DashboardState,
-    onClick: () -> Unit,
-) {
-    val language = LocalWeaveLanguage.current
-    val readiness = exitReadiness(state)
-    val connected = state.connectionState == ConnectionState.CONNECTED
-    val target = state.defaultRouteTarget
-    val activeNode = state.activeNode?.takeIf { connected }
-    val tone = when (readiness) {
-        ExitReadiness.MISSING -> WeaveStatusTone.CAUTION
-        ExitReadiness.INVALID -> WeaveStatusTone.CRITICAL
-        else -> WeaveStatusTone.NEUTRAL
-    }
-    val needsChoice = readiness == ExitReadiness.MISSING || readiness == ExitReadiness.INVALID
-    LiquidGlassPanel(
-        modifier = Modifier
-            .padding(horizontal = WeaveUiTokens.screenHorizontal)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        onClick = onClick,
-    ) {
-        Column(modifier = Modifier.padding(WeaveUiTokens.cardPadding)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (needsChoice) {
-                    WeaveIconTile(
-                        icon = Icons.Rounded.Warning,
-                        container = weaveToneContainer(tone),
-                        tint = weaveToneColor(tone),
-                    )
-                } else {
-                    WeaveIconTile(
-                        icon = if (readiness == ExitReadiness.NOT_USED) Icons.Rounded.Route else Icons.Rounded.Bolt,
-                        container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    when {
-                        readiness == ExitReadiness.MISSING -> Text("尚未选择出口", fontWeight = FontWeight.SemiBold)
-                        readiness == ExitReadiness.NOT_USED -> Text(RoutingMode.DIRECT.label, fontWeight = FontWeight.SemiBold)
-                        activeNode != null -> Text(
-                            NodeDisplayName.core(activeNode.name),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            translate = false,
-                        )
-                        else -> Text(
-                            target?.label ?: "自动选择",
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    // Facts only: how the exit was chosen, the protocol and measured latency. The
-                    // invalid-exit title already says what to do, and traffic attribution is not
-                    // a property of the exit, so neither adds a second line of prose.
-                    val meta = when (readiness) {
-                        ExitReadiness.MISSING -> localizeWeaveText("未选择时自动使用第一个可用订阅", language)
-                        ExitReadiness.INVALID -> ""
-                        ExitReadiness.NOT_USED -> localizeWeaveText("直连模式下不使用出口", language)
-                        ExitReadiness.READY -> listOfNotNull(
-                            // The kind is redundant when the title already is the automatic label.
-                            target?.let { selectedTarget ->
-                                routeKindLabel(selectedTarget.kind)
-                                    .takeUnless { it == selectedTarget.label && activeNode == null }
-                            }?.let { localizeWeaveText(it, language) },
-                            activeNode?.protocol?.takeIf { it.isNotBlank() },
-                            activeNode?.latencyMs?.takeIf { it in 1..10_000 }?.let { "$it ms" },
-                        ).joinToString(" · ")
-                    }
-                    if (meta.isNotBlank()) {
-                        Text(
-                            text = meta,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
-                            modifier = Modifier.padding(top = 2.dp),
-                            translate = false,
-                        )
-                    }
-                }
-                if (!needsChoice) {
-                    Icon(
-                        Icons.Rounded.ChevronRight,
-                        contentDescription = localizedContentDescription("选择节点"),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (readiness == ExitReadiness.MISSING) {
-                Spacer(Modifier.height(12.dp))
-                OverviewSecondaryButton(
-                    label = "选择出口",
-                    onClick = onClick,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoutingModeSection(
-    selected: RoutingMode,
-    onModeSelected: (RoutingMode) -> Unit,
-) {
-    val haptics = LocalHapticFeedback.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        WeaveSectionHeading("运行模式")
-        LiquidGlassPanel(
-            modifier = Modifier
-                .padding(horizontal = WeaveUiTokens.screenHorizontal)
-                .fillMaxWidth(),
-            shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
-        ) {
-            // The three labels are the whole control; there is no caption underneath.
-            Column(modifier = Modifier.padding(4.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectableGroup()
-                        .testTag("home-mode-selector"),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    RoutingMode.entries.forEach { mode ->
-                        val isSelected = mode == selected
-                        val container by animateColorAsState(
-                            if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            animationSpec = WeaveMotion.standard(),
-                            label = "mode-container",
-                        )
-                        val content by animateColorAsState(
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            animationSpec = WeaveMotion.standard(),
-                            label = "mode-content",
-                        )
-                        Surface(
-                            selected = isSelected,
-                            onClick = {
-                                if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onModeSelected(mode)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = WeaveUiTokens.minTouchTarget),
-                            color = container,
-                            contentColor = content,
-                            shape = RoundedCornerShape(WeaveUiTokens.panelRadius - 4.dp),
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = mode.label,
-                                    textAlign = TextAlign.Center,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                                    color = content,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -915,66 +818,3 @@ private fun PrivacyCheckEntry(onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun StatCard(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    supporting: String,
-    modifier: Modifier = Modifier,
-    history: List<Long> = emptyList(),
-    /** Keep the chart's footprint while it is empty so connecting does not move what is below. */
-    reserveChart: Boolean = false,
-    translateSupporting: Boolean = true,
-) {
-    LiquidGlassPanel(
-        modifier = modifier,
-        shape = RoundedCornerShape(WeaveUiTokens.compactPanelRadius),
-    ) {
-        Column(modifier = Modifier.padding(15.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                value,
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
-                style = MaterialTheme.typography.bodyLarge.merge(TabularNumbers),
-                translate = false,
-            )
-            if (supporting.isNotEmpty()) {
-                Text(
-                    supporting,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
-                    translate = translateSupporting,
-                )
-            }
-            if (reserveChart || history.size >= 2) {
-                Spacer(Modifier.height(8.dp))
-                Box(modifier = Modifier.fillMaxWidth().height(26.dp)) {
-                    if (history.size >= 2) {
-                        Sparkline(
-                            samples = history,
-                            modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}

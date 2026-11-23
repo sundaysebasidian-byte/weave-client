@@ -44,6 +44,15 @@ class SubscriptionLibraryModelTest {
     }
 
     @Test
+    fun `node search remains clearable when a live list shrinks`() {
+        assertEquals(true, shouldShowSubscriptionNodeSearch(9, ""))
+        assertEquals(true, shouldShowSubscriptionNodeSearch(8, " Tokyo "))
+        assertEquals(true, shouldShowSubscriptionNodeSearch(0, "Tokyo"))
+        assertEquals(false, shouldShowSubscriptionNodeSearch(8, ""))
+        assertEquals(false, shouldShowSubscriptionNodeSearch(8, " \t\n"))
+    }
+
+    @Test
     fun `query and source combine`() {
         assertEquals(listOf("c"), ids(filterSubscriptions(all, "work", SubscriptionSourceFilter.LOCAL)))
         assertEquals(listOf("a"), ids(filterSubscriptions(all, "work", SubscriptionSourceFilter.REMOTE)))
@@ -106,5 +115,40 @@ class SubscriptionLibraryModelTest {
         assertEquals(SubscriptionExpiryStatus.EXPIRING_SOON, status(now + week))
         assertEquals(SubscriptionExpiryStatus.ACTIVE, status(now + week + 1))
         assertEquals(SubscriptionExpiryStatus.UNKNOWN, status(null))
+    }
+
+    @Test
+    fun `refresh index selects the last exact id without changing outcome flags`() {
+        val oldA = SubscriptionRefreshResult("a", "Before", succeeded = true)
+        val resultB = SubscriptionRefreshResult("b", "Other", succeeded = false)
+        val latestA = SubscriptionRefreshResult("a", "After", succeeded = false, reviewRequired = true)
+        val resultUpperA = SubscriptionRefreshResult("A", "Case-sensitive", succeeded = true)
+        val results = listOf(oldA, resultB, latestA, resultUpperA)
+        val index = indexSubscriptionRefreshResults(results)
+
+        for (id in listOf("a", "b", "A", "missing")) {
+            assertSame(results.lastOrNull { it.subscriptionId == id }, index[id])
+        }
+        assertSame(latestA, index["a"])
+        assertEquals(emptyMap<String, SubscriptionRefreshResult>(), indexSubscriptionRefreshResults(emptyList()))
+    }
+
+    @Test
+    fun `refresh index consumes one snapshot pass for repeated row lookups`() {
+        val snapshot = List(256) { i -> SubscriptionRefreshResult("id-$i", "Provider $i", succeeded = true) }
+        var reads = 0
+        val countingSnapshot = object : AbstractList<SubscriptionRefreshResult>() {
+            override val size: Int get() = snapshot.size
+            override fun get(index: Int): SubscriptionRefreshResult {
+                reads++
+                return snapshot[index]
+            }
+        }
+        val index = indexSubscriptionRefreshResults(countingSnapshot)
+        repeat(3) {
+            for (result in snapshot) assertSame(result, index[result.subscriptionId])
+            assertEquals(null, index["missing"])
+        }
+        assertEquals(snapshot.size, reads)
     }
 }
