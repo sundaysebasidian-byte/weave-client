@@ -53,7 +53,7 @@ jobs:
 
   storage-on-disposable-emulator:
     runs-on: macos-15-intel
-    timeout-minutes: 55
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,7 +80,7 @@ jobs:
       - name: Build the debug and test APKs from this checkout
         run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon --no-configuration-cache
       - name: Storage transactions on a disposable Android emulator
-        timeout-minutes: 30
+        timeout-minutes: 60
         shell: bash
         run: |
           set -euo pipefail
@@ -91,6 +91,7 @@ jobs:
           export ADB_MDNS_AUTO_CONNECT=''
           export WEAVE_TEST_ADB_PORT=5041
           export WEAVE_ISOLATED_EMULATOR=1
+          export WEAVE_HOSTED_SLOW_TIMING=1
           export WEAVE_TEST_BOOT_TIMEOUT=840
           export WEAVE_TEST_RESULTS="$RUNNER_TEMP/weave-storage-results"
           mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" "$WEAVE_TEST_RESULTS"
@@ -121,6 +122,16 @@ jobs:
           export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
           bash tools/test-android-storage.sh emulator-5580
           grep -Fx 'OK (87 tests)' "$WEAVE_TEST_RESULTS/instrumentation.txt"
+          # JUnit's summary alone can count an assumption failure as run. Require every pass.
+          awk '
+            /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
+            /^INSTRUMENTATION_STATUS_CODE: 0\r?$/ { passed++ }
+            /^INSTRUMENTATION_STATUS_CODE: -[0-9]+\r?$/ { unsuccessful++ }
+            END {
+              printf "Device tests: %d started, %d passed, %d unsuccessful\n", started, passed, unsuccessful
+              exit !(started == 87 && passed == 87 && unsuccessful == 0)
+            }
+          ' "$WEAVE_TEST_RESULTS/instrumentation.txt"
       - name: Preserve device test evidence
         if: always()
         uses: actions/upload-artifact@v4

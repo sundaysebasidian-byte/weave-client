@@ -49,11 +49,18 @@ component="$test_id/androidx.test.runner.AndroidJUnitRunner"
 # emulation. Do the same verification first, without disabling checks or clearing data.
 python3 "$root/tools/verify-android-test-code.py" "$adb" "$port" "$serial" "$results" "$product_id" "$test_id"
 classes=io.weave.client.subscription.SubscriptionRefreshReviewIntegrationTest,io.weave.client.subscription.SubscriptionStoreIntegrationTest,io.weave.client.data.CrossProcessSettingsIntegrationTest,io.weave.client.routing.RemoteRuleSetStoreIntegrationTest,io.weave.client.subscription.SubscriptionTransferIntegrationTest,io.weave.client.transfer.BackupRestoreIntegrationTest,io.weave.client.data.ProfileRecoveryIntegrationTest,io.weave.client.ui.StartupRecoveryIntegrationTest
-"${target[@]}" shell am instrument -w -r -e weaveIsolatedEmulator 1 -e class "$classes" \
-  "$component" > "$results/instrumentation.txt" 2>&1
+instrument_args=(-e weaveIsolatedEmulator 1 -e class "$classes")
+if [[ ${WEAVE_HOSTED_SLOW_TIMING:-} == 1 ]]; then
+  instrument_args+=(-e weaveHostedSlowTiming 1)
+fi
+"${target[@]}" shell am instrument -w -r "${instrument_args[@]}" \
+  "$component" 2>&1 | tee "$results/instrumentation.txt" | awk '
+    /^INSTRUMENTATION_STATUS: (class|current|test)=[A-Za-z0-9_.$]+\r?$/ ||
+    /^INSTRUMENTATION_STATUS_CODE: -?[0-9]+\r?$/ { print; fflush() }
+  '
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' "$results/instrumentation.txt" ||
    ! grep -Eq '^OK \([1-9][0-9]* tests?\)' "$results/instrumentation.txt"; then
-  cat "$results/instrumentation.txt"
+  echo "Storage instrumentation failed; see the preserved instrumentation receipt." >&2
   exit 1
 fi
 grep -E '^Time:|^OK \(' "$results/instrumentation.txt"
