@@ -74,7 +74,7 @@ jobs:
           test -x "$tools/sdkmanager"
           test -x "$tools/avdmanager"
           test -x "$sdk/emulator/emulator"
-          "$tools/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6" "system-images;android-36;google_apis;x86_64"
+          "$tools/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6" "system-images;android-36;default;x86_64"
           echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
           echo "WEAVE_AVDMANAGER=$tools/avdmanager" >> "$GITHUB_ENV"
       - name: Build the debug and test APKs from this checkout
@@ -95,7 +95,7 @@ jobs:
           export WEAVE_TEST_BOOT_TIMEOUT=840
           export WEAVE_TEST_RESULTS="$RUNNER_TEMP/weave-storage-results"
           mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" "$WEAVE_TEST_RESULTS"
-          printf 'no\n' | "$WEAVE_AVDMANAGER" create avd -n weave-storage -k 'system-images;android-36;google_apis;x86_64'
+          printf 'no\n' | "$WEAVE_AVDMANAGER" create avd -n weave-storage -k 'system-images;android-36;default;x86_64'
           "$ANDROID_HOME/platform-tools/adb" -P 5041 --one-device weave-isolated-no-usb start-server
           emulator_pid=''
           cleanup() {
