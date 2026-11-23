@@ -83,7 +83,9 @@ class CrossProcessSettingsIntegrationTest {
             prefs.edit().putString("qa_large", large).putString("qa_unicode", "<>& 日本語")
                 .putStringSet("qa_set", mutableSetOf("one", "two"))
                 .putLong("qa_long", Long.MAX_VALUE).putFloat("qa_float", 1.25f).putBoolean("qa_bool", true).commit()
-            val response = request(remote, replies, "read", name, length = true)
+            // Only this ciphertext-sized reply has a larger hosted test watchdog.
+            val replySeconds = if (InstrumentationRegistry.getArguments().getString("weaveHostedSlowTiming") == "1") 90L else 20L
+            val response = request(remote, replies, "read", name, length = true, replySeconds = replySeconds)
             assertEquals(large.length, response.getInt("length"))
             val fresh = context.crossProcessPreferences(name)
             assertEquals("<>& 日本語", fresh.getString("qa_unicode", null))
@@ -108,12 +110,12 @@ class CrossProcessSettingsIntegrationTest {
     private fun replyMessenger(replies: BlockingQueue<Bundle>) = Messenger(Handler(Looper.getMainLooper()) {
         replies.offer(it.data); true
     })
-    private fun request(remote: Messenger, replies: BlockingQueue<Bundle>, op: String, store: String, key: String = "qa_remote", value: Int = 0, length: Boolean = false): Bundle {
+    private fun request(remote: Messenger, replies: BlockingQueue<Bundle>, op: String, store: String, key: String = "qa_remote", value: Int = 0, length: Boolean = false, replySeconds: Long = 20): Bundle {
         remote.send(Message.obtain().apply {
             data = Bundle().apply { putString("operation", op); putString("store", store); putString("key", key); putInt("value", value); putBoolean("length", length) }
             replyTo = replyMessenger(replies)
         })
-        return checkNotNull(replies.poll(20, TimeUnit.SECONDS)) { "Settings process did not reply" }
+        return checkNotNull(replies.poll(replySeconds, TimeUnit.SECONDS)) { "Settings process did not reply" }
     }
     private fun withRemote(block: (Messenger, BlockingQueue<Bundle>) -> Unit) {
         val connected = ArrayBlockingQueue<Messenger>(1)

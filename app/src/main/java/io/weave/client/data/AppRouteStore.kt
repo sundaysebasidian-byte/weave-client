@@ -1,6 +1,7 @@
 package io.weave.client.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.weave.client.domain.AppRoute
 import io.weave.client.domain.RouteKind
@@ -25,26 +26,7 @@ class AppRouteStore(context: Context) {
     }
 
     fun save(routes: List<AppRoute>) = ProfileStorage.access(appContext) {
-        val packages = routes.mapTo(linkedSetOf()) { it.packageName }
-        val removedPackages = preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty() - packages
-        preferences.edit(commit = true) {
-            putStringSet(KEY_PACKAGES, packages)
-            removedPackages.forEach { packageName ->
-                ROUTE_FIELDS.forEach { field ->
-                    remove(key(packageName, field))
-                }
-            }
-            routes.forEach { route ->
-                putString(key(route.packageName, "name"), route.appName)
-                putString(key(route.packageName, "monogram"), route.monogram)
-                putLong(key(route.packageName, "tint"), route.tint)
-                putString(key(route.packageName, "kind"), route.target.kind.name)
-                putString(key(route.packageName, "label"), route.target.label)
-                putString(key(route.packageName, "subscription"), route.target.subscriptionId)
-                putString(key(route.packageName, "node"), route.target.nodeId)
-                putString(key(route.packageName, "group"), route.target.groupId)
-            }
-        }
+        writeAll({ preferences }, routes)
     }
 
     private fun read(packageName: String): AppRoute? {
@@ -74,10 +56,36 @@ class AppRouteStore(context: Context) {
         )
     }
 
-    private fun key(packageName: String, field: String) = "route.$packageName.$field"
 
-    private companion object {
-        const val PREFERENCES_NAME = "app_routes_v1"
+    internal companion object {
+        // Use one fresh snapshot under the existing profile lock. The editor still merges on commit.
+        internal fun writeAll(acquire: () -> SharedPreferences, routes: List<AppRoute>) {
+            val packages = routes.mapTo(linkedSetOf()) { it.packageName }
+            val preferences = acquire()
+            val removedPackages = preferences.getStringSet(KEY_PACKAGES, emptySet()).orEmpty() - packages
+            preferences.edit(commit = true) {
+                putStringSet(KEY_PACKAGES, packages)
+                removedPackages.forEach { packageName ->
+                    ROUTE_FIELDS.forEach { field ->
+                        remove(key(packageName, field))
+                    }
+                }
+                routes.forEach { route ->
+                    putString(key(route.packageName, "name"), route.appName)
+                    putString(key(route.packageName, "monogram"), route.monogram)
+                    putLong(key(route.packageName, "tint"), route.tint)
+                    putString(key(route.packageName, "kind"), route.target.kind.name)
+                    putString(key(route.packageName, "label"), route.target.label)
+                    putString(key(route.packageName, "subscription"), route.target.subscriptionId)
+                    putString(key(route.packageName, "node"), route.target.nodeId)
+                    putString(key(route.packageName, "group"), route.target.groupId)
+                }
+            }
+        }
+
+        private fun key(packageName: String, field: String) = "route.$packageName.$field"
+
+        private const val PREFERENCES_NAME = "app_routes_v1"
         const val KEY_PACKAGES = "route.packages"
         val ROUTE_FIELDS = listOf(
             "name",
