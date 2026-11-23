@@ -7,12 +7,14 @@ import subprocess
 import sys
 
 
-def verify(adb, port, serial, results):
+def verify(adb, port, serial, results, product_id, test_id):
     if os.environ.get("WEAVE_ISOLATED_EMULATOR") != "1" or not serial.startswith("emulator-"):
         raise ValueError("Code verification requires an explicitly disposable emulator")
+    if product_id not in ("io.weave.client", "io.weave.client.next") or test_id != product_id + ".test":
+        raise ValueError("Unexpected debug/test APK identities")
     results.mkdir(parents=True, exist_ok=True)
     status = {}
-    for package in ("io.weave.client", "io.weave.client.test"):
+    for package in (product_id, test_id):
         path = results / (package + "-verification.txt")
         args = [adb, "-P", str(port), "-s", serial, "shell", "cmd", "package", "compile", "-m", "verify", "-f", package]
         with path.open("w") as log:
@@ -30,6 +32,6 @@ def verify(adb, port, serial, results):
 
 
 if __name__ == "__main__":
-    adb, port, serial, results = sys.argv[1:]
-    if not verify(adb, int(port), serial, Path(results)):
+    adb, port, serial, results, product_id, test_id = sys.argv[1:]
+    if not verify(adb, int(port), serial, Path(results), product_id, test_id):
         sys.exit("APK code verification failed; instrumentation was not started")

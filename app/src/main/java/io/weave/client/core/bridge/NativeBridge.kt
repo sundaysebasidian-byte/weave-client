@@ -71,17 +71,7 @@ object NativeBridge {
             add(context.applicationInfo.sourceDir)
             context.applicationInfo.splitSourceDirs?.let(::addAll)
         }
-        return Build.SUPPORTED_ABIS.any { abi ->
-            val bridgeEntry = "lib/$abi/libbridge.so"
-            val coreEntry = "lib/$abi/libclash.so"
-            apkPaths.any { apkPath ->
-                runCatching {
-                    ZipFile(apkPath).use { zip ->
-                        zip.getEntry(bridgeEntry) != null && zip.getEntry(coreEntry) != null
-                    }
-                }.getOrDefault(false)
-            }
-        }
+        return NativeApkPayloadProbe.containsPair(apkPaths, Build.SUPPORTED_ABIS)
     }
 
     fun initialize(context: Context): Result<Unit> = synchronized(this) {

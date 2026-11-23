@@ -143,14 +143,18 @@ class SubscriptionRepository(
         val id = previous.id
         val prepared = prepareRuntimePayload(payload, resolutionSource)
         require(prepared.second.nodeCount > 0) { "订阅中没有可用节点" }
-        val oldKeys = previous.nodes.map { it.name to it.protocol }
-        val newKeys = prepared.second.nodes.map { it.name to it.protocol }
-        val removed = unmatchedOccurrences(previous.nodes, newKeys) { it.name to it.protocol }
+        val removed = unmatchedOccurrences(
+            previous.nodes, prepared.second.nodes,
+            { it.name to it.protocol }, { it.name to it.protocol },
+        )
         val audit = SubscriptionGuard.audit(previous, prepared.second, snapshot.source, source)
         check(store.readForUpdate(id).revision == snapshot.revision) { "订阅已变化，请重新预览" }
         val preview = SubscriptionUpdatePreview(java.util.UUID.randomUUID().toString(), id,
             previous.nodeCount, prepared.second.nodeCount,
-            unmatchedOccurrences(prepared.second.nodes, oldKeys) { it.name to it.protocol }.map { it.name },
+            unmatchedOccurrences(
+                prepared.second.nodes, previous.nodes,
+                { it.name to it.protocol }, { it.name to it.protocol },
+            ).map { it.name },
             removed.map { it.name }, removed.mapTo(linkedSetOf()) { it.id }, audit)
         val pending = PendingUpdate(preview, snapshot.revision, name, source, prepared,
             SubscriptionDiffer.compare(previous.nodes, prepared.second.nodes), System.nanoTime() + 300_000_000_000L, fetched)
@@ -189,25 +193,10 @@ class SubscriptionRepository(
     /** One encrypted-index read for both UI lists; caller owns the IO dispatcher. */
     fun loadSnapshot(): Pair<List<Subscription>, List<ProxyNode>> {
         val records = store.list()
-        return records.map(::toDomain) to records.flatMap { subscription ->
-            subscription.nodes.map { node ->
-                ProxyNode(node.id, node.name, "", subscription.id, node.protocol, null)
-            }
-        }
+        return records.map(::toDomain) to projectStoredSubscriptionNodes(records)
     }
 
-    fun loadNodes(): List<ProxyNode> = store.list().flatMap { subscription ->
-        subscription.nodes.map { node ->
-            ProxyNode(
-                id = node.id,
-                name = node.name,
-                region = "",
-                subscriptionId = subscription.id,
-                protocol = node.protocol,
-                latencyMs = null,
-            )
-        }
-    }
+    fun loadNodes(): List<ProxyNode> = projectStoredSubscriptionNodes(store.list())
 
     fun loadNodes(subscriptionId: String): List<ProxyNode> =
         loadNodes().filter { it.subscriptionId == subscriptionId }
@@ -315,8 +304,10 @@ class SubscriptionRepository(
         val (runtimePayload, parsed) = prepared
         if (parsed.nodeCount == 0) throw SubscriptionImportException("订阅中没有可用节点")
         val audit = SubscriptionGuard.audit(record, parsed, source, source)
-        val newKeys = parsed.nodes.map { it.name to it.protocol }
-        val removed = unmatchedOccurrences(record.nodes, newKeys) { it.name to it.protocol }
+        val removed = unmatchedOccurrences(
+            record.nodes, parsed.nodes,
+            { it.name to it.protocol }, { it.name to it.protocol },
+        )
         if (audit.blocked || removed.any { it.id in pinnedNodeIds }) {
             store.recordRemoteMetadata(subscriptionId, fetched.usage, fetched.updateIntervalHours, snapshot.revision)
             return@withContext AutoRefreshOutcome.NeedsReview(record.name)

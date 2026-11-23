@@ -40,6 +40,23 @@ class BackupCodecTest {
         assertFails("这不是有效的 Weave 备份") { BackupCodec.decrypt(ByteArray(64), passphrase.copyOf()) }
     }
 
+    @Test fun `multi-entry archive keeps unicode and entry boundaries`() {
+        // The first byte of a non-BMP character lands at the old chunk boundary.
+        val contents = linkedMapOf(
+            "a-long.json" to ("x".repeat(8191) + "🚇" + "汉字".repeat(4097)),
+            "b-short.json" to "短",
+            "c-long.json" to ("z".repeat(16387) + "👋"),
+        )
+        val encrypted = BackupCodec.encrypt(contents, passphrase.copyOf(), iterations = 100_000)
+        assertEquals(contents, BackupCodec.decrypt(encrypted, passphrase.copyOf()))
+    }
+
+    @Test fun `empty and short entries decode only their written prefix`() {
+        val contents = linkedMapOf("a-empty.json" to "", "b-small.json" to "x", "c-empty.json" to "")
+        val encrypted = BackupCodec.encrypt(contents, passphrase.copyOf(), iterations = 100_000)
+        assertEquals(contents, BackupCodec.decrypt(encrypted, passphrase.copyOf()))
+    }
+
     private fun assertFails(message: String, block: () -> Unit) {
         val error = runCatching(block).exceptionOrNull()
         assertTrue("expected BackupException, got $error", error is BackupException)

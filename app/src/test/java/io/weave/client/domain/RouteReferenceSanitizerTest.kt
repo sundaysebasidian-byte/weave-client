@@ -56,6 +56,27 @@ class RouteReferenceSanitizerTest {
         )
     }
 
+    @Test
+    fun `lost group keeps its reselect label across consecutive sanitizations`() {
+        val source = listOf(
+            route("group.app", RouteTarget(RouteKind.GROUP, "旧组", groupId = "retired")),
+            route("node.app", RouteTarget(RouteKind.FIXED, "旧节点", subscription.id, "missing")),
+            route("manual.app", RouteTarget(RouteKind.BLOCK, "阻止联网")),
+        )
+        val stillAvailable = RouteReferenceSanitizer.routes(
+            source, listOf(subscription), listOf(node), mapOf("retired" to "活动组"),
+        )
+        assertEquals(RouteKind.GROUP, stillAvailable[0].target.kind)
+        assertEquals("活动组", stillAvailable[0].target.label)
+
+        val blocked = RouteReferenceSanitizer.routes(source, listOf(subscription), listOf(node))
+        assertEquals(List(3) { RouteKind.BLOCK }, blocked.map { it.target.kind })
+        assertEquals("retired", blocked[0].target.groupId)
+        assertEquals("missing", blocked[1].target.nodeId)
+        assertEquals(listOf("出口已失效，请重新选择", "出口已失效，请重新选择", "阻止联网"), blocked.map { it.target.label })
+        assertEquals(blocked, RouteReferenceSanitizer.routes(blocked, listOf(subscription), listOf(node)))
+    }
+
     private fun route(packageName: String, target: RouteTarget) = AppRoute(
         packageName = packageName,
         appName = packageName,
