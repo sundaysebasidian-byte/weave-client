@@ -62,10 +62,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-          cmdline-tools-version: '15859902'
       - name: Install the locked emulator tools and x86_64 Android 36 image
         shell: bash
         run: |
@@ -73,9 +69,12 @@ jobs:
           test "$(uname -m)" = x86_64
           sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           test -n "$sdk"
-          tools="$(dirname "$(command -v sdkmanager)")"
+          # Use the stock Mac SDK tools; the pinned Linux installer has no matching Mac archive.
+          tools="$sdk/cmdline-tools/latest/bin"
+          test -x "$tools/sdkmanager"
           test -x "$tools/avdmanager"
-          "$tools/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6" "emulator" "system-images;android-36;google_apis;x86_64"
+          test -x "$sdk/emulator/emulator"
+          "$tools/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-37.0" "ndk;29.0.14206865" "cmake;3.31.6" "system-images;android-36;google_apis;x86_64"
           echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
           echo "WEAVE_AVDMANAGER=$tools/avdmanager" >> "$GITHUB_ENV"
       - name: Build the debug and test APKs from this checkout
