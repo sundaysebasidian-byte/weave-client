@@ -225,9 +225,13 @@ internal fun HeaderActionButton(
     contentDescription: String,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(WeaveUiTokens.headerActionSize),
+        modifier = Modifier
+            .size(WeaveUiTokens.headerActionSize)
+            .pressScale(interactionSource, pressedScale = 0.9f),
+        interactionSource = interactionSource,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = CircleShape,

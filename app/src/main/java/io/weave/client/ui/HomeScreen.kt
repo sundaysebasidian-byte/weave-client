@@ -130,7 +130,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.text.withStyle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -251,11 +253,13 @@ internal fun HomeScreen(
             routingMode = state.routingMode,
         )
     }
+    // The callback can change between compositions; the long-lived effects must call the latest.
+    val reportScrolling by androidx.compose.runtime.rememberUpdatedState(onScrolling)
     LaunchedEffect(scrollState) {
         androidx.compose.runtime.snapshotFlow { scrollState.isScrollInProgress }
-            .collect { onScrolling(it) }
+            .collect { reportScrolling(it) }
     }
-    DisposableEffect(Unit) { onDispose { onScrolling(false) } }
+    DisposableEffect(Unit) { onDispose { reportScrolling(false) } }
     ConnectionHaptics(state.connectionState)
     val connected = state.connectionState == ConnectionState.CONNECTED
     val fontScale = LocalDensity.current.fontScale
@@ -301,17 +305,16 @@ internal fun HomeScreen(
             PrivacyCheckEntry(onClick = onIpQuality)
         }
         // Content scrolls under a short fade so the capsule never sits on a hard edge.
+        val fadeGround = MaterialTheme.colorScheme.background
+        val capsuleFade = remember(fadeGround) {
+            Brush.verticalGradient(0f to fadeGround.copy(alpha = 0f), 0.45f to fadeGround)
+        }
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(capsuleSpace + 24.dp)
-                .background(
-                    Brush.verticalGradient(
-                        0f to MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                        0.45f to MaterialTheme.colorScheme.background,
-                    ),
-                ),
+                .background(capsuleFade),
         )
         ConnectionCapsule(
             state = overviewState,
@@ -686,15 +689,27 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
                 translate = false,
             )
             if (meta.isNotBlank()) {
-                Text(
-                    meta,
+                // Only the measured latency takes the accent; the protocol and exit kind stay quiet.
+                val latencyText = latency?.let { "$it ms" }
+                val accent = scheme.secondary
+                val annotated = remember(meta, latencyText, accent) {
+                    androidx.compose.ui.text.buildAnnotatedString {
+                        if (latencyText != null && meta.endsWith(latencyText)) {
+                            append(meta.removeSuffix(latencyText))
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = accent)) { append(latencyText) }
+                        } else {
+                            append(meta)
+                        }
+                    }
+                }
+                androidx.compose.material3.Text(
+                    annotated,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
-                    color = if (latency != null && meta.endsWith("$latency ms")) scheme.secondary else scheme.onSurfaceVariant,
+                    color = scheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    translate = false,
                 )
             }
         }
@@ -702,12 +717,16 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
     }
 }
 
+private const val PRIMARY_ACTION_DEBOUNCE_MS = 600L
+
 @Composable
 private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val language = LocalWeaveLanguage.current
     val interaction = remember { MutableInteractionSource() }
+    // A quick double tap must not connect and immediately disconnect again.
+    var lastToggleAt by remember { mutableLongStateOf(0L) }
     val container by animateColorAsState(
         if (hero.actionEmphasized) scheme.primary else scheme.primaryContainer,
         WeaveMotion.standard(), label = "primary-action-container",
@@ -733,8 +752,14 @@ private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: 
                         HeroAction.CHOOSE_EXIT -> onChooseExit()
                         HeroAction.IN_PROGRESS -> Unit
                         HeroAction.CONNECT, HeroAction.DISCONNECT, HeroAction.RETRY -> {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onConnect()
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastToggleAt >= PRIMARY_ACTION_DEBOUNCE_MS) {
+                                lastToggleAt = now
+                                haptics.performHapticFeedback(
+                                    if (hero.action == HeroAction.DISCONNECT) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                                )
+                                onConnect()
+                            }
                         }
                     }
                 },

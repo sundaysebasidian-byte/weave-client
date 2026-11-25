@@ -1,6 +1,19 @@
 package io.weave.client.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.CubicBezierEasing
@@ -108,8 +121,11 @@ internal fun WeaveStrands(stage: WeaveStage, mode: RoutingMode, modifier: Modifi
         animationSpec = if (stage == WeaveStage.IDLE) tween(420) else tween(WEAVE_MS, easing = WeaveEasing),
         label = "weave-progress",
     )
+    // Read the weave progress through derivedStateOf so the 1.7s weave does not recompose this
+    // composable on every frame; only the moment the knot may appear does.
+    val knotReady by remember(stage) { derivedStateOf { stage == WeaveStage.WOVEN && progress > 0.98f } }
     val knot by animateFloatAsState(
-        targetValue = if (stage == WeaveStage.WOVEN && progress > 0.98f) 1f else 0f,
+        targetValue = if (knotReady) 1f else 0f,
         animationSpec = WeaveMotion.quick(),
         label = "weave-knot",
     )
@@ -158,16 +174,32 @@ internal fun WeaveStrands(stage: WeaveStage, mode: RoutingMode, modifier: Modifi
                 val step = 13.dp.toPx()
                 val inset = 18.dp.toPx()
                 val dash = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 5.dp.toPx()))
-                onDrawBehind {
+                // Everything that does not depend on the animated values is built once per size.
+                val warpPath = Path().apply {
                     var x = step / 2f
                     while (x < w) {
-                        drawLine(warp, Offset(x, inset), Offset(x, h - inset), strokeWidth = 1f)
+                        moveTo(x, inset)
+                        lineTo(x, h - inset)
                         x += step
                     }
+                }
+                val warpStroke = Stroke(1f)
+                val strokeA = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val strokeB = Stroke(1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val partA = Path()
+                val partB = Path()
+                val brushes = HashMap<Color, Brush>(4)
+                fun fadeOf(color: Color): Brush = brushes.getOrPut(color) {
+                    if (brushes.size > 24) brushes.clear()
+                    fade(color)
+                }
+                onDrawBehind {
+                    drawPath(warpPath, warp, style = warpStroke)
                     val baseAlpha = (1f - progress * 2.2f).coerceIn(0f, 1f) * 0.5f
                     if (baseAlpha > 0f) {
                         drawLine(
-                            brush = fade(base.copy(alpha = baseAlpha)),
+                            brush = fadeOf(base),
+                            alpha = baseAlpha,
                             start = Offset(10.dp.toPx(), cy),
                             end = Offset(w - 10.dp.toPx(), cy),
                             strokeWidth = 1.6.dp.toPx(),
@@ -176,10 +208,12 @@ internal fun WeaveStrands(stage: WeaveStage, mode: RoutingMode, modifier: Modifi
                         )
                     }
                     if (progress > 0.001f) {
-                        val partA = Path().also { measureA.getSegment(0f, measureA.length * progress, it, true) }
-                        val partB = Path().also { measureB.getSegment(0f, measureB.length * progress, it, true) }
-                        drawPath(partB, fade(strandB), style = Stroke(1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        drawPath(partA, fade(strandA), style = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        partA.rewind()
+                        partB.rewind()
+                        measureA.getSegment(0f, measureA.length * progress, partA, true)
+                        measureB.getSegment(0f, measureB.length * progress, partB, true)
+                        drawPath(partB, fadeOf(strandB), style = strokeB)
+                        drawPath(partA, fadeOf(strandA), style = strokeA)
                         if (stage == WeaveStage.WEAVING && progress < 0.995f) {
                             val tip = measureA.getPosition(measureA.length * progress)
                             drawCircle(knotColor, radius = 4.5.dp.toPx(), center = tip)
@@ -276,6 +310,14 @@ internal fun ModeChip(
     val choose by rememberUpdatedState(onModeSelected)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     var preview by remember { mutableStateOf<RoutingMode?>(null) }
+    // Live swipe on the chip: the label follows the finger one detent at a time and the pill
+    // leans a few dp toward the drag; lifting commits, anything else springs back.
+    var swipeStart by remember { mutableIntStateOf(-1) }
+    val lean = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val thresholdPx = with(density) { 32.dp.toPx() }
+    val detentPx = with(density) { 56.dp.toPx() }
+    val maxLeanPx = with(density) { 8.dp.toPx() }
     fun pick(mode: RoutingMode) {
         open = false
         if (mode != current) {
@@ -289,8 +331,25 @@ internal fun ModeChip(
             modifier = Modifier
                 .testTag("home-mode-chip")
                 .heightIn(min = WeaveUiTokens.minTouchTarget)
-                .weaveSwipe(threshold = 32.dp) { step ->
-                    DialModes.getOrNull(DialModes.indexOf(current) + step)?.let(::pick)
+                .weaveSwipe(
+                    threshold = 32.dp,
+                    onMove = { dx ->
+                        if (swipeStart < 0) swipeStart = DialModes.indexOf(current)
+                        scope.launch { lean.snapTo((dx / 6f).coerceIn(-maxLeanPx, maxLeanPx)) }
+                        val offset = swipePreviewOffset(dx, thresholdPx, detentPx)
+                        val next = DialModes[(swipeStart + offset).coerceIn(DialModes.indices)]
+                        if (next != (preview ?: current)) {
+                            preview = next
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                    },
+                    onFinish = {
+                        swipeStart = -1
+                        preview = null
+                        scope.launch { lean.animateTo(0f, WeaveMotion.settle()) }
+                    },
+                ) { step ->
+                    (preview ?: DialModes.getOrNull(DialModes.indexOf(current) + step))?.let(::pick)
                 }
                 .clickable(role = Role.Button) { open = !open }
                 .pointerInput(rtl) {
@@ -324,17 +383,40 @@ internal fun ModeChip(
                 },
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val previewing = preview != null && preview != selected
+            val chipColor by animateColorAsState(
+                if (previewing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                WeaveMotion.quick(), label = "mode-chip-container",
+            )
             Row(
                 modifier = Modifier
+                    .graphicsLayer { translationX = if (rtl) -lean.value else lean.value }
                     .heightIn(min = 36.dp)
                     .clip(shape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(chipColor)
                     .padding(start = 9.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Icon(ModeIcons.getValue(selected), contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(selected.label, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                AnimatedContent(
+                    targetState = preview ?: selected,
+                    transitionSpec = {
+                        val forward = DialModes.indexOf(targetState) > DialModes.indexOf(initialState)
+                        val sign = if (forward != rtl) 1 else -1
+                        (slideInHorizontally(WeaveMotion.standard()) { w -> sign * w / 4 } + fadeIn(WeaveMotion.standard()))
+                            .togetherWith(slideOutHorizontally(WeaveMotion.quick()) { w -> -sign * w / 4 } + fadeOut(WeaveMotion.quick()))
+                            .using(SizeTransform(clip = false))
+                    },
+                    contentAlignment = Alignment.CenterStart,
+                    label = "mode-chip",
+                ) { mode ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(ModeIcons.getValue(mode), contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(mode.label, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    }
+                }
             }
         }
         if (open) {

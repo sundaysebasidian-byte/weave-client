@@ -71,6 +71,8 @@ internal object WeaveMotion {
 
     fun <T> quick(): FiniteAnimationSpec<T> = tween(QUICK_MS, easing = FastOutSlowInEasing)
     fun <T> standard(): FiniteAnimationSpec<T> = tween(STANDARD_MS, easing = FastOutSlowInEasing)
+    /** Spring back after a gesture lets go: settles fast with a hint of follow-through. */
+    fun <T> settle(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
 
     /** Content swap for a status headline: the new state fades in while the old one leaves fast. */
     val statusEnter: EnterTransition = fadeIn(tween(STANDARD_MS, easing = LinearOutSlowInEasing))

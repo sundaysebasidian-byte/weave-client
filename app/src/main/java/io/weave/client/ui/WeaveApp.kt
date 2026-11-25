@@ -19,8 +19,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.layout.systemGestures
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
@@ -123,10 +121,10 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -190,6 +188,8 @@ import io.weave.client.routing.LocalRuleAction
 import io.weave.client.routing.LocalRuleType
 import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.util.Date
 
 private enum class Destination(
@@ -213,8 +213,13 @@ private enum class Destination(
 private fun WeaveNavigationDock(
     destinations: List<Destination>,
     selected: Destination,
+    highlighted: Int,
+    indicatorPosition: () -> Float,
     onSelect: (Destination) -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val indicatorFill = scheme.primaryContainer.copy(alpha = 0.88f)
+    val indicatorRim = scheme.primary.copy(alpha = 0.16f)
     LiquidGlassPanel(
         modifier = Modifier
             .padding(horizontal = 18.dp)
@@ -235,35 +240,64 @@ private fun WeaveNavigationDock(
                 .weaveSwipe(threshold = 48.dp) { step ->
                     destinations.getOrNull(destinations.indexOf(selected) - step)?.let(onSelect)
                 }
-                .padding(5.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                // One pill slides under the tabs and follows the page while it is being dragged,
+                // stretching slightly between stops. It is read in the draw phase only.
+                .drawBehind {
+                    val count = destinations.size
+                    if (count == 0) return@drawBehind
+                    val pad = DockPadding.toPx()
+                    val gap = DockGap.toPx()
+                    val itemWidth = (size.width - pad * 2 - gap * (count - 1)) / count
+                    val position = indicatorPosition().coerceIn(0f, (count - 1).toFloat())
+                    val between = position - kotlin.math.floor(position)
+                    val stretch = kotlin.math.sin(between * kotlin.math.PI.toFloat()) * gap * 4f
+                    val width = itemWidth + stretch
+                    var left = pad + position * (itemWidth + gap) - stretch / 2f
+                    if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) {
+                        left = size.width - left - width
+                    }
+                    val radius = androidx.compose.ui.geometry.CornerRadius(WeaveUiTokens.compactPanelRadius.toPx())
+                    val topLeft = androidx.compose.ui.geometry.Offset(left, pad)
+                    val pill = androidx.compose.ui.geometry.Size(width, size.height - pad * 2)
+                    drawRoundRect(indicatorFill, topLeft, pill, radius)
+                    drawRoundRect(
+                        indicatorRim,
+                        topLeft,
+                        pill,
+                        radius,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                }
+                .padding(DockPadding),
+            horizontalArrangement = Arrangement.spacedBy(DockGap),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-            destinations.forEach { item ->
+            destinations.forEachIndexed { index, item ->
                 val active = selected == item
+                val lit = highlighted == index
                 val interactionSource = remember(item) { MutableInteractionSource() }
-                val container by androidx.compose.animation.animateColorAsState(
-                    if (active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.88f) else Color.Transparent,
-                    animationSpec = androidx.compose.animation.core.tween(220),
-                    label = "dock-container",
-                )
                 val content by androidx.compose.animation.animateColorAsState(
-                    if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = androidx.compose.animation.core.tween(220),
+                    if (lit) scheme.onPrimaryContainer else scheme.onSurfaceVariant,
+                    animationSpec = androidx.compose.animation.core.tween(WeaveMotion.STANDARD_MS),
                     label = "dock-content",
                 )
                 val iconScale by androidx.compose.animation.core.animateFloatAsState(
-                    if (active) 1.08f else 1f,
-                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 500f),
+                    if (lit) 1.1f else 1f,
+                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 520f),
                     label = "dock-icon",
                 )
-                Surface(
+                val iconLift by androidx.compose.animation.core.animateFloatAsState(
+                    if (lit) -1.5f else 0f,
+                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 520f),
+                    label = "dock-lift",
+                )
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("navigation-tab-${item.name}")
                         .heightIn(min = WeaveUiTokens.navigationItemHeight)
-                        .pressScale(interactionSource, pressedScale = 0.94f)
+                        .pressScale(interactionSource, pressedScale = 0.92f)
                         .selectable(
                             selected = active,
                             role = Role.Tab,
@@ -276,45 +310,36 @@ private fun WeaveNavigationDock(
                                 onSelect(item)
                             },
                         ),
-                    shape = RoundedCornerShape(WeaveUiTokens.compactPanelRadius),
-                    color = container,
-                    contentColor = content,
-                    border = if (active) {
-                        androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        )
-                    } else {
-                        null
-                    },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            item.icon,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(21.dp)
-                                .graphicsLayer {
-                                    scaleX = iconScale
-                                    scaleY = iconScale
-                                },
-                        )
-                        Spacer(Modifier.height(1.dp))
-                        Text(
-                            item.label,
-                            color = content,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
+                    Icon(
+                        item.icon,
+                        contentDescription = null,
+                        tint = content,
+                        modifier = Modifier
+                            .size(21.dp)
+                            .graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                                translationY = iconLift * density
+                            },
+                    )
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        item.label,
+                        color = content,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }
     }
 }
+
+private val DockPadding = 5.dp
+private val DockGap = 3.dp
 
 /**
  * Localized text shim for the existing Compose surface. Stable UI labels are translated here;
@@ -552,6 +577,47 @@ fun WeaveApp(
     }
 
     val visibleDestinations = Destination.entries.toList()
+    // The four pages sit side by side and follow the finger. The dock and the saved destination
+    // stay the single source of truth: a settled swipe updates the destination, and a tap or a dock
+    // swipe moves the pager. Jumps of more than one page snap next to the target first so the
+    // pages in between are never composed.
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = visibleDestinations.indexOf(destination).coerceAtLeast(0),
+    ) { visibleDestinations.size }
+    val pagerGate = remember { PagerNavigationGate() }
+    val dashboardScroll = remember(viewModel) { DashboardScrollGate(viewModel::setDashboardScrolling) }
+    val pageHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    LaunchedEffect(pagerState) {
+        androidx.compose.runtime.snapshotFlow { pagerState.settledPage }.collect { page ->
+            if (pagerGate.busy) return@collect
+            val settled = visibleDestinations.getOrNull(page) ?: return@collect
+            if (settled != destination) {
+                destination = settled
+                pageHaptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+            }
+        }
+    }
+    LaunchedEffect(pagerState, dashboardScroll) {
+        // Native dashboard polling also pauses while a page is in motion.
+        androidx.compose.runtime.snapshotFlow { pagerState.isScrollInProgress }.collect { moving ->
+            dashboardScroll.pager = moving
+        }
+    }
+    LaunchedEffect(destination) {
+        val target = visibleDestinations.indexOf(destination)
+        if (target < 0) return@LaunchedEffect
+        if (pagerState.currentPage == target && pagerState.currentPageOffsetFraction == 0f) return@LaunchedEffect
+        pagerGate.busy = true
+        try {
+            val from = pagerState.currentPage
+            if (kotlin.math.abs(target - from) > 1) {
+                pagerState.scrollToPage(if (target > from) target - 1 else target + 1)
+            }
+            pagerState.animateScrollToPage(target, animationSpec = WeaveMotion.settle())
+        } finally {
+            pagerGate.busy = false
+        }
+    }
 
     val sensitiveSurfaceVisible = showImportDialog ||
         externalImport != null ||
@@ -583,6 +649,11 @@ fun WeaveApp(
         disclosureMode != null || showRouteLens || showNetworkPrivacyCenter || showRecoveryCenter ||
         showPolicyPacks || showLocalRouteRules || showConnections || showLogs || showRuleSets ||
         showCustomGroups || showBackup || externalImport != null || quickStart.visible || showAppUpdates
+    // Back from another tab returns to Home before it leaves the app. Overlays register their own
+    // handlers later and keep priority while they are open.
+    androidx.activity.compose.BackHandler(enabled = destination != Destination.HOME && !dashboardObscured) {
+        destination = Destination.HOME
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, appUpdates) {
         val lifecycle = lifecycleOwner.lifecycle
@@ -651,35 +722,41 @@ fun WeaveApp(
                 WeaveNavigationDock(
                     destinations = visibleDestinations,
                     selected = destination,
+                    highlighted = pagerState.targetPage,
+                    indicatorPosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
                     onSelect = { destination = it },
                 )
             },
             contentWindowInsets = WindowInsets(0),
         ) { innerPadding ->
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            val direction = LocalLayoutDirection.current
-            val gestures = WindowInsets.systemGestures
-            val edgeInset = with(density) {
-                maxOf(24.dp, gestures.getLeft(this, direction).toDp(), gestures.getRight(this, direction).toDp())
-            }
-            androidx.compose.animation.AnimatedContent(
-                modifier = Modifier.fillMaxSize().testTag("navigation-content").weaveSwipe(threshold = 56.dp, edgeInset = edgeInset) { step ->
-                    visibleDestinations.getOrNull(visibleDestinations.indexOf(destination) - step)?.let { destination = it }
-                },
-                targetState = destination,
-                transitionSpec = {
-                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, delayMillis = 40))
-                        .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)))
-                },
-                label = "destination",
-            ) { shown ->
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize().testTag("navigation-content"),
+                beyondViewportPageCount = 0,
+                key = { page -> visibleDestinations[page].name },
+            ) { page ->
+            val shown = visibleDestinations[page]
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        // Pages recede a little as they slide away, like the reference clients.
+                        val distance = kotlin.math.abs(
+                            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction,
+                        ).coerceIn(0f, 1f)
+                        alpha = 1f - 0.35f * distance
+                        val scale = 1f - 0.035f * distance
+                        scaleX = scale
+                        scaleY = scale
+                    },
+            ) {
             destinationState.SaveableStateProvider(shown.name) {
             when (shown) {
             Destination.HOME -> {
                 val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
                 val trafficHistory by viewModel.trafficHistory.collectAsStateWithLifecycle()
                 HomeScreen(
-                    onScrolling = viewModel::setDashboardScrolling,
+                    onScrolling = { scrolling -> dashboardScroll.list = scrolling },
                     state = dashboard,
                     trafficHistory = trafficHistory,
                     onConnect = ::requestConnect,
@@ -692,7 +769,11 @@ fun WeaveApp(
             }
             Destination.ROUTES -> {
                 val routes by viewModel.routes.collectAsStateWithLifecycle()
-                val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+                // Routes only needs the routing mode; live traffic updates must not recompose it.
+                val routingModeFlow = remember(viewModel) {
+                    viewModel.dashboard.map { it.routingMode }.distinctUntilChanged()
+                }
+                val routingMode by routingModeFlow.collectAsStateWithLifecycle(viewModel.dashboard.value.routingMode)
                 RoutesScreen(
                     onPreset = viewModel::applyRoutingPreset,
                     routes = routes,
@@ -704,7 +785,7 @@ fun WeaveApp(
                     onAdd = { appPickerEpoch = viewModel.groupProfileEpoch.value },
                     onRouteLens = { showRouteLens = true },
                     contentPadding = innerPadding,
-                    routingMode = dashboard.routingMode,
+                    routingMode = routingMode,
                     domesticDirect = networkPreferences.domesticDirect,
                     onModeSelected = viewModel::selectMode,
                 )
@@ -713,9 +794,10 @@ fun WeaveApp(
                 val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
                 val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
                 val subscriptionRefreshState by viewModel.subscriptionRefreshState.collectAsStateWithLifecycle()
+                val migrationClients = remember(installedApps) { installedApps.filter(InstalledApp::migrationCandidate) }
                 SubscriptionsScreen(
                     subscriptions = subscriptions,
-                    migrationClients = installedApps.filter(InstalledApp::migrationCandidate),
+                    migrationClients = migrationClients,
                     onAdd = { importStartWith = null; showImportDialog = true },
                     onAddFrom = { kind -> importStartWith = kind; showImportDialog = true },
                     onMigrate = { showProxyMigration = true },
@@ -795,6 +877,7 @@ fun WeaveApp(
             }
             }
             }
+            }
         }
     }
 
@@ -814,8 +897,10 @@ fun WeaveApp(
         val guideRuntime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
         val guideNodes by viewModel.nodes.collectAsStateWithLifecycle()
         val guideSubscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
-        val enabledGuideIds = guideSubscriptions.filter { it.enabled }.map { it.id }.toSet()
-        val usableNodes = guideNodes.filter { it.subscriptionId in enabledGuideIds }
+        val usableNodes = remember(guideNodes, guideSubscriptions) {
+            val enabledGuideIds = guideSubscriptions.filter { it.enabled }.map { it.id }.toSet()
+            guideNodes.filter { it.subscriptionId in enabledGuideIds }
+        }
         val guideGroups by viewModel.customGroups.collectAsStateWithLifecycle()
         val renderedGuideStep = quickStart.step
         val hasProxyTarget = QuickStartPolicy.hasProxyTarget(guideDashboard.defaultRouteTarget, usableNodes, guideGroups)
@@ -1374,10 +1459,12 @@ fun WeaveApp(
         val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
         val routes by viewModel.routes.collectAsStateWithLifecycle()
         val subscription = subscriptions.firstOrNull { it.id == subscriptionId }
+        val subscriptionNodes = remember(nodes, subscriptionId) { nodes.filter { it.subscriptionId == subscriptionId } }
+        val affectedRoutes = remember(routes, subscriptionId) { routes.count { it.target.subscriptionId == subscriptionId } }
         if (subscription != null) {
             SubscriptionManagerDialog(
                 subscription = subscription,
-                nodes = nodes.filter { it.subscriptionId == subscriptionId },
+                nodes = subscriptionNodes,
                 state = editorState,
                 health = subscriptionHealth.takeIf {
                     it.subscriptionId == subscriptionId
@@ -1399,9 +1486,7 @@ fun WeaveApp(
                 onReplaceFile = { name, uri ->
                     viewModel.replaceSubscriptionFile(subscriptionId, name, uri)
                 },
-                affectedRouteCount = routes.count {
-                    it.target.subscriptionId == subscriptionId
-                },
+                affectedRouteCount = affectedRoutes,
                 isDefaultRoute = dashboard.defaultRouteTarget
                     ?.subscriptionId == subscriptionId,
                 onDelete = {
@@ -1428,12 +1513,14 @@ private fun DashboardEffects(
     snackbar: SnackbarHostState,
     onImportCompleted: (String?) -> Unit,
 ) {
-    val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
+    // Only the status message matters here; traffic ticks must not recompose this effect host.
+    val statusMessageFlow = remember(viewModel) { viewModel.dashboard.map { it.statusMessage }.distinctUntilChanged() }
+    val statusMessage by statusMessageFlow.collectAsStateWithLifecycle(viewModel.dashboard.value.statusMessage)
     val language by viewModel.language.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(dashboard.statusMessage, language) {
-        dashboard.statusMessage?.let { displayed ->
+    LaunchedEffect(statusMessage, language) {
+        statusMessage?.let { displayed ->
             snackbar.showSnackbar(localizeWeaveText(displayed, language))
             viewModel.dismissDisplayedMessage(displayed)
         }
@@ -1453,4 +1540,23 @@ private fun DashboardEffects(
             viewModel.resetImportState(completion)
         }
     }
+}
+
+/** True while the pager is being moved by the app, so its intermediate stops are not taken as the user's choice. */
+private class PagerNavigationGate {
+    var busy: Boolean = false
+}
+
+/** Dashboard polling pauses while either the Home list or the page pager is moving. */
+private class DashboardScrollGate(private val sink: (Boolean) -> Unit) {
+    var list: Boolean = false
+        set(value) {
+            field = value
+            sink(field || pager)
+        }
+    var pager: Boolean = false
+        set(value) {
+            field = value
+            sink(list || field)
+        }
 }

@@ -1173,8 +1173,8 @@ private fun AppearanceChoiceDialog(
     onDismiss: () -> Unit,
     onSelect: (WeavePalette) -> Unit,
 ) {
-    val minimal = WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.MINIMAL }
-    val art = WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.ART }
+    val minimal = MinimalPalettes
+    val art = ArtPalettes
     WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text("外观", fontWeight = FontWeight.Bold) },
@@ -1313,3 +1313,6 @@ private fun PaletteSwatch(palette: WeavePalette) {
         }
     }
 }
+
+private val MinimalPalettes: List<WeavePalette> by lazy { WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.MINIMAL } }
+private val ArtPalettes: List<WeavePalette> by lazy { WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.ART } }
