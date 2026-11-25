@@ -8,12 +8,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
@@ -33,6 +35,7 @@ class SettingsScreenUiTest {
 
     @Test fun searchNarrowsEveryGroupAndSwatchesApplyAPalette() {
         val palettes = mutableListOf<WeavePalette>()
+        var openedAppUpdates = 0
         val root = InstrumentationRegistry.getInstrumentation().targetContext
         val output = File(root.getExternalFilesDir(null), "qa/settings").apply { mkdirs() }
         compose.setContent {
@@ -45,7 +48,8 @@ class SettingsScreenUiTest {
                             onCustomDnsEndpointSaved = { true }, onProbeDnsProviders = {}, onIpv6ModeSelected = {},
                             onBlockUdpStunChanged = {}, onDomesticDirectChanged = {}, onPaletteSelected = { palettes += it },
                             onLanguageSelected = {}, onShowVpnDisclosure = {}, onOpenPrivacyObservatory = {},
-                            onOpenRecoveryCenter = {}, onOpenPolicyPacks = {}, onOpenLocalRouteRules = {})
+                            onOpenRecoveryCenter = {}, onOpenPolicyPacks = {}, onOpenLocalRouteRules = {},
+                            onOpenAppUpdates = { openedAppUpdates++ })
                     }
                 }
             }
@@ -66,6 +70,14 @@ class SettingsScreenUiTest {
         compose.onNodeWithText("语言").assertDoesNotExist()
         capture("settings-search")
 
+        compose.onNodeWithTag("settings-search").performTextClearance()
+        // Use a prefix so the editable search node cannot also match the exact result title.
+        compose.onNodeWithTag("settings-search").performTextInput("应用更")
+        compose.onNodeWithText("自动更新订阅").assertDoesNotExist()
+        // Verify the row action independently of touch injection while the keyboard is open.
+        compose.onNodeWithText("应用更新").assertExists()
+            .performSemanticsAction(SemanticsActions.OnClick) { action -> check(action()) }
+        compose.runOnIdle { assertEquals(1, openedAppUpdates) }
         compose.onNodeWithTag("settings-search").performTextClearance()
         compose.onNodeWithTag("settings-search").performTextInput("zzz")
         compose.onNodeWithTag("settings-no-match").assertIsDisplayed()

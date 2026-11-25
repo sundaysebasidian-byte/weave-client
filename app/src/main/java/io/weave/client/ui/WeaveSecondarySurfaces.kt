@@ -44,8 +44,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -56,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -177,6 +180,7 @@ internal fun WeaveActionRow(
     supporting: String? = null,
     enabled: Boolean = true,
 ) {
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val disabled = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Row(
         modifier = modifier
@@ -208,7 +212,8 @@ internal fun WeaveActionRow(
             Icons.Rounded.ChevronRight,
             contentDescription = null,
             tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else disabled,
-            modifier = Modifier.size(WeaveUiTokens.iconSize),
+            modifier = Modifier.size(WeaveUiTokens.iconSize)
+                .graphicsLayer { scaleX = if (isRtl) -1f else 1f },
         )
     }
 }

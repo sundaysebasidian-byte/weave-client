@@ -6,8 +6,8 @@
 ## 威胁模型
 
 公开版按 `local-open-source` 配置发布：Weave 不运营账号、云端控制面、代理中继、节点市场、
-遥测、崩溃上报或应用远程更新。用户主动选择的订阅、代理、DNS、IP 质量和局域网端点不属于
-Weave 的信任边界，固定端点与触发条件见 [`NETWORK_ENDPOINT_INVENTORY.md`](NETWORK_ENDPOINT_INVENTORY.md)。
+遥测或崩溃上报。Weave Next 的 Android 官方 ARM64 构建可查询 GitHub 公开发布，不静默下载或安装。
+GitHub 和用户主动选择的订阅、代理、DNS、IP 质量及局域网端点不属于 Weave 的服务边界，固定端点与触发条件见 [`NETWORK_ENDPOINT_INVENTORY.md`](NETWORK_ENDPOINT_INVENTORY.md)。
 这是工程边界，不是法律豁免、匿名或“零日志”证明。
 
 需要防范：
@@ -28,6 +28,7 @@ Weave 的信任边界，固定端点与触发条件见 [`NETWORK_ENDPOINT_INVENT
   Android 系统 CA（不把用户安装 CA 静默带入订阅和诊断请求）。这会牺牲部分企业代理兼容性，换取
   更小的中间人信任面；若必须使用企业 CA，应明确评估后再做专门构建。
 - 不允许任意 CA 绕过、跳过证书校验或“兼容模式”静默降级。
+- 应用更新仅接受 Weave Next 官方 Android 发布渠道。下载后核对安装包大小和摘要、目标包名、ARM64、实际版本和官方签名；未核对成功的 APK 不提供保存。安装由 Android 在用户从「文件」打开时确认。
 - 订阅默认只接受 HTTPS 和用户主动选择的本地文件；每次请求与重定向前检查 DNS 解析结果，
   拒绝回环、私网、链路本地、CGNAT 和组播目标，降低 SSRF 与常见 DNS rebinding 风险。
 - 自定义 DNS 只接受 HTTPS DoH 或 TLS DoT；拒绝明文 `udp://`/`tcp://`、凭据、查询参数和片段，

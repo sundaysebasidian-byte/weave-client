@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,6 +21,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -86,7 +88,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -200,9 +201,18 @@ internal fun DnsSettingsDialog(
     var showingProbe by remember { mutableStateOf(false) }
     var endpoint by remember { mutableStateOf(preferences.customDnsEndpoint) }
     var error by remember { mutableStateOf<String?>(null) }
+    val showingChildPanel = editingCustom || choosingTransport || choosingRouting || showingProbe
+    val returnToOverview = {
+        editingCustom = false
+        choosingTransport = false
+        choosingRouting = false
+        showingProbe = false
+        error = null
+    }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = !showingChildPanel),
         title = {
             Text(
                 when {
@@ -216,6 +226,9 @@ internal fun DnsSettingsDialog(
             )
         },
         text = {
+            // Register inside the dialog window. Android can handle the IME before this
+            // callback, and outside taps still use the dialog's own onDismissRequest.
+            BackHandler(enabled = showingChildPanel, onBack = returnToOverview)
             when {
                 showingProbe -> DnsProbePanel(
                     state = probeState,
@@ -307,7 +320,7 @@ internal fun DnsSettingsDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("解析协议", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "当前：${preferences.dnsTransport.label}",
+                                "当前：${preferences.effectiveDnsTransport.label}",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                             )
@@ -363,24 +376,9 @@ internal fun DnsSettingsDialog(
         },
         dismissButton = {
             TextButton(onClick = {
-                when {
-                    editingCustom || choosingTransport || choosingRouting || showingProbe -> {
-                        editingCustom = false
-                        choosingTransport = false
-                        choosingRouting = false
-                        showingProbe = false
-                        error = null
-                    }
-                    else -> onDismiss()
-                }
+                if (showingChildPanel) returnToOverview() else onDismiss()
             }) {
-                Text(
-                    if (editingCustom || choosingTransport || choosingRouting || showingProbe) {
-                        "返回"
-                    } else {
-                        "取消"
-                    },
-                )
+                Text(if (showingChildPanel) "返回" else "取消")
             }
         },
     )

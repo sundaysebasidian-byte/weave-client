@@ -13,6 +13,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -127,31 +130,62 @@ internal fun LiveQrScanner(onDismiss: () -> Unit, onResult: (String) -> Unit) {
         }
     }
 
+    LiveQrScannerWindow(
+        onDismiss = onDismiss,
+        help = error,
+        torch = torch,
+        onToggleTorch = if (hasFlash) {
+            {
+                val next = !torch
+                cameraRef.get()?.cameraControl?.enableTorch(next)
+                torch = next
+            }
+        } else null,
+    ) {
+        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+    }
+}
+
+/** A finite preview height keeps instructions and torch reachable in landscape or with large type. */
+@Composable
+internal fun LiveQrScannerWindow(
+    onDismiss: () -> Unit,
+    help: String?,
+    torch: Boolean,
+    onToggleTorch: (() -> Unit)?,
+    preview: @Composable BoxScope.() -> Unit,
+) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(
         usePlatformDefaultWidth = false,
         securePolicy = SecureFlagPolicy.SecureOn,
     )) {
         Surface(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = RoundedCornerShape(28.dp)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("扫描二维码", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, localizedContentDescription("关闭")) }
-                }
-                Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.85f).clip(RoundedCornerShape(22.dp)).background(Color.Black)) {
-                    AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-                    Box(modifier = Modifier.align(Alignment.Center).fillMaxWidth(0.78f).aspectRatio(1f)
-                        .border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(22.dp)))
-                }
-                Text(error ?: "对准二维码即可识别；轻点画面可对焦，不会拍照或保存图片",
-                    color = if (error == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
-                if (hasFlash) TextButton(onClick = {
-                    val next = !torch
-                    cameraRef.get()?.cameraControl?.enableTorch(next)
-                    torch = next
-                }) {
-                    Icon(Icons.Rounded.FlashOn, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (torch) "关闭补光" else "开启补光")
+            BoxWithConstraints {
+                val availableWidth = (maxWidth - 32.dp).coerceAtLeast(0.dp)
+                val previewHeight = minOf(availableWidth / 0.85f, maxHeight * 0.55f)
+                val aperture = minOf(availableWidth, previewHeight) * 0.78f
+                Column(
+                    modifier = Modifier.testTag("live-qr-window")
+                        .verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("扫描二维码", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, localizedContentDescription("关闭")) }
+                    }
+                    Box(modifier = Modifier.fillMaxWidth().height(previewHeight)
+                        .clip(RoundedCornerShape(22.dp)).background(Color.Black)) {
+                        preview()
+                        Box(modifier = Modifier.align(Alignment.Center).size(aperture)
+                            .border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(22.dp)))
+                    }
+                    Text(help ?: "对准二维码即可识别；轻点画面可对焦，不会拍照或保存图片",
+                        color = if (help == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
+                    if (onToggleTorch != null) TextButton(onClick = onToggleTorch) {
+                        Icon(Icons.Rounded.FlashOn, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (torch) "关闭补光" else "开启补光")
+                    }
                 }
             }
         }

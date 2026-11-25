@@ -80,7 +80,7 @@ object PrivacyObservatory {
                     ) {
                         "自定义配置为空"
                     } else {
-                        "${preferences.dnsTransport.label} · ${preferences.dnsProfile.label}；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验"
+                        "${preferences.effectiveDnsTransport.label} · ${preferences.dnsProfile.label}；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验"
                     },
                 ),
             )

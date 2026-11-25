@@ -2,7 +2,6 @@ package io.weave.client.core.diagnostics
 
 import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -124,7 +123,7 @@ class CommonEndpointProbe(
         CommonEndpointResult(
             endpoint = endpoint,
             state = state,
-            latencyMs = response.elapsedMillis.coerceIn(1L, MAX_LATENCY_MILLIS.toLong()).toInt(),
+            latencyMs = response.elapsedMillis.takeIf { it in 0L..Int.MAX_VALUE.toLong() }?.toInt(),
             statusCode = status,
             detail = when {
                 status in 200..299 -> "HTTP $status · 可达"
@@ -167,7 +166,6 @@ class CommonEndpointProbe(
         // Keep a blocked region from holding the complete diagnostics surface for several
         // seconds. At most three requests run together, with results published individually.
         const val DEFAULT_TIMEOUT_MILLIS = 2_500
-        const val MAX_LATENCY_MILLIS = 10_000
 
         /** Keep this list stable and auditable; additions must be reflected in the endpoint inventory. */
         val COMMON_ENDPOINTS: List<CommonEndpoint> = listOf(
@@ -207,7 +205,7 @@ private class UrlConnectionCommonEndpointTransport : CommonEndpointHttpTransport
         val uri = URI(url)
         require(uri.scheme.equals("https", ignoreCase = true)) { "探测端点必须使用 HTTPS" }
         val startedAtNanos = System.nanoTime()
-        val connection = (URL(url).openConnection() as? HttpURLConnection)
+        val connection = (uri.toURL().openConnection() as? HttpURLConnection)
             ?: error("无法创建 HTTPS 连接")
         return try {
             // Do not follow redirects (especially HTTPS → HTTP). A 3xx response already proves

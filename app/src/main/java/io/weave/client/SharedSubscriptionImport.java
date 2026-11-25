@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /** Selects an ACTION_SEND payload without treating a shared file name as inline content. */
 final class SharedSubscriptionImport {
-    private static final String BASE_NAME = "[\\p{L}\\p{M}\\p{N}_.() -]+";
+    private static final String BASE_NAME = "[\\p{L}\\p{M}\\p{N}_.()\\[\\] -]+";
     private static final Pattern YAML_NAME = Pattern.compile(BASE_NAME + "\\.ya?ml", Pattern.CASE_INSENSITIVE);
     private static final Pattern JSON_NAME = Pattern.compile(BASE_NAME + "\\.json", Pattern.CASE_INSENSITIVE);
 

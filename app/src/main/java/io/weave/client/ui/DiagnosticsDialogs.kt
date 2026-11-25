@@ -86,7 +86,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -183,18 +182,25 @@ import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
 
+internal enum class VpnDisclosureMode { INFORMATION, CONNECT }
+
 @Composable
 internal fun VpnDisclosureDialog(
     accepted: Boolean,
+    mode: VpnDisclosureMode,
     onDismiss: () -> Unit,
     onAcceptAndContinue: () -> Unit,
 ) {
-    AlertDialog(
+    val connecting = mode == VpnDisclosureMode.CONNECT && !accepted
+    WeaveDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Security, contentDescription = null) },
         title = { Text("VPN 数据路径说明") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.testTag("vpn-disclosure-body").verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(
                     "Weave 会建立本地 VPN 接口，以便把设备流量交给你选择的规则和代理节点。",
                     lineHeight = 20.sp,
@@ -206,20 +212,22 @@ internal fun VpnDisclosureDialog(
                 DisclosurePoint("本机访问", "为执行按应用分流，Weave 会在设备内读取连接所属应用、DNS 请求和路由元数据。")
                 DisclosurePoint("不会上传", "当前版本不把访问域名、应用规则、节点凭据或流量记录发送到 Weave 服务器。")
                 DisclosurePoint("第三方可见性", "你选择的订阅提供方、代理节点和目标网站仍可能看到连接所必需的元数据。")
-                Text(
-                    if (accepted) "你已经确认当前版本的说明。" else "继续表示你理解上述数据路径；这不会替代 Android 随后显示的系统 VPN 授权。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
-                )
+                if (accepted || connecting) {
+                    Text(
+                        if (accepted) "你已经确认当前版本的说明。" else "继续表示你理解上述数据路径；这不会替代 Android 随后显示的系统 VPN 授权。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = if (accepted) onDismiss else onAcceptAndContinue) {
-                Text(if (accepted) "关闭" else "理解并继续")
+            TextButton(onClick = if (connecting) onAcceptAndContinue else onDismiss) {
+                Text(if (connecting) "理解并继续" else "关闭")
             }
         },
-        dismissButton = if (accepted) null else {
+        dismissButton = if (!connecting) null else {
             { TextButton(onClick = onDismiss) { Text("暂不连接") } }
         },
     )
@@ -255,7 +263,7 @@ private fun IpQualityDialog(
     onDismiss: () -> Unit,
 ) {
     val report = state.report
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = { if (!state.running) onDismiss() },
         title = {
             Column {

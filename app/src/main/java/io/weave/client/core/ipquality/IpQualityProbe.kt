@@ -3,6 +3,7 @@ package io.weave.client.core.ipquality
 import io.weave.client.domain.Ipv6Mode
 import java.net.HttpURLConnection
 import java.net.URI
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -31,6 +32,8 @@ data class IpQualityLatency(
     val detail: String,
     val attemptedSamples: Int = 1,
     val successfulSamples: Int = if (latencyMs != null) 1 else 0,
+    val p95Ms: Int? = null,
+    val jitterMs: Int? = null,
 )
 
 data class IpQualityMetadata(
@@ -60,18 +63,10 @@ data class IpQualityReport(
     val totalProbes: Int,
     val elapsedMillis: Long,
 ) {
-    val successfulLatencyCount: Int
-        get() = latency.count { it.latencyMs != null }
-
     val latencyAttempts: Int get() = latency.sumOf { it.attemptedSamples }
     val latencySuccesses: Int get() = latency.sumOf { it.successfulSamples }
     val probeFailurePercent: Int?
         get() = latencyAttempts.takeIf { it > 0 }?.let { (it - latencySuccesses) * 100 / it }
-
-    val medianLatencyMs: Int?
-        get() = latency.mapNotNull { it.latencyMs }.sorted().let { values ->
-            values.getOrNull(values.size / 2)
-        }
 }
 
 data class IpQualityHttpResponse(
@@ -102,12 +97,12 @@ class IpQualityProbe(
         // path the old serial implementation looked frozen for up to 24 seconds.
         val resultJobs = listOf(
             async(Dispatchers.IO) {
-                probe("IPv4", IPV4_ENDPOINT) { body -> IpQualityParsers.ipFromJson(body) }
+                probe("IPv4", IPV4_ENDPOINT) { body -> IpQualityParsers.ipFromJson(body, IpFamily.IPV4) }
             },
-            // Keep this even in IPv4-only mode: a successful answer is evidence of a real IPv6
-            // path or leak, whereas a timeout alone never proves IPv6 is unavailable.
+            // Keep this in IPv4-only mode: the endpoint may still observe an IPv6 exit.
+            // A proxy can use IPv6 upstream of an IPv4-only client; neither result proves a leak.
             async(Dispatchers.IO) {
-                probe("IPv6", IPV6_ENDPOINT) { body -> IpQualityParsers.ipFromJson(body) }
+                probe("IPv6", IPV6_ENDPOINT) { body -> IpQualityParsers.ipFromJson(body, IpFamily.IPV6) }
             },
             async(Dispatchers.IO) {
                 probe("出口信息", IPWHO_ENDPOINT) { body ->
@@ -141,6 +136,7 @@ class IpQualityProbe(
             ipv4 = ipv4,
             ipv6 = ipv6,
             metadata = metadata,
+            addresses = listOfNotNull(ipv4, ipv6, ipWhoMetadata?.ip, traceMetadata?.ip),
             ipv6Mode = ipv6Mode,
         )
         val completed = results.count { it.completed } + latency.sumOf { it.successfulSamples }
@@ -162,13 +158,15 @@ class IpQualityProbe(
         label: String,
         endpoint: String,
         parser: (String) -> Any?,
-    ): ProbeResult = runCatching {
+    ): ProbeResult = try {
         val response = transport.get(endpoint, timeoutMillis)
         require(response.statusCode in 200..299) { "HTTP ${response.statusCode}" }
         val value = parser(response.body)
             ?: throw IllegalArgumentException("响应内容不完整")
         ProbeResult(label, value, completed = true, error = null)
-    }.getOrElse { error ->
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
         ProbeResult(label, value = null, completed = false, error = error.safeMessage())
     }
 
@@ -180,8 +178,15 @@ class IpQualityProbe(
             }
         }
         val delays = samples.mapNotNull { it.latencyMs }.sorted()
+        // Jitter here means the mean absolute difference of consecutive successful requests.
+        // Never bridge a failed attempt. With three samples the nearest-rank P95 is the maximum.
+        val steps = samples.zipWithNext { a, b ->
+            if (a.latencyMs != null && b.latencyMs != null) kotlin.math.abs(a.latencyMs - b.latencyMs) else null
+        }.filterNotNull()
         return samples.last().copy(
-            latencyMs = delays.getOrNull(delays.size / 2),
+            latencyMs = delays.midpoint(),
+            p95Ms = delays.lastOrNull()?.takeIf { delays.size >= 2 },
+            jitterMs = steps.roundedMean(),
             state = if (delays.size == samples.size) IpQualityState.VERIFIED else IpQualityState.ATTENTION,
             detail = if (delays.isNotEmpty()) "HTTPS 端点可达" else samples.last().detail,
             attemptedSamples = samples.size,
@@ -189,13 +194,16 @@ class IpQualityProbe(
         )
     }
 
-    private fun probeLatency(provider: String, endpoint: String): IpQualityLatency = runCatching {
+    private fun probeLatency(provider: String, endpoint: String): IpQualityLatency = try {
         // Two concurrent series, each bounded to three short probes; no background polling.
         val response = transport.get(endpoint, minOf(timeoutMillis, 1500))
-        require(response.statusCode in 200..299) { "HTTP ${response.statusCode}" }
-        val latency = response.elapsedMillis.coerceIn(1L, MAX_LATENCY_MILLIS.toLong()).toInt()
+        require(response.statusCode == 204 && response.body.isEmpty()) { "HTTP 204 expected" }
+        require(response.elapsedMillis in 0L..Int.MAX_VALUE.toLong())
+        val latency = response.elapsedMillis.toInt()
         IpQualityLatency(provider, latency, IpQualityState.VERIFIED, "HTTPS 端点可达")
-    }.getOrElse { error ->
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
         IpQualityLatency(provider, null, IpQualityState.ATTENTION, "端点不可达：${error.safeMessage()}")
     }
 
@@ -205,6 +213,7 @@ class IpQualityProbe(
         ipv4: String?,
         ipv6: String?,
         metadata: IpQualityMetadata?,
+        addresses: List<String>,
         ipv6Mode: Ipv6Mode,
     ): List<IpQualityCheck> = buildList {
         val ipv4Probe = results.firstOrNull { it.label == "IPv4" }
@@ -228,27 +237,28 @@ class IpQualityProbe(
                     else -> IpQualityState.NOT_TESTED
                 },
                 detail = when {
-                    ipv6 != null && ipv6Mode == Ipv6Mode.IPV4_ONLY ->
-                        "检测到 $ipv6；与“仅 IPv4”设置不一致"
                     ipv6 != null -> ipv6
                     else -> "未取得 IPv6 公网地址；这不能单独证明没有 IPv6 泄漏"
                 },
             ),
         )
-        val observedIps = listOfNotNull(ipv4, ipv6, metadata?.ip).toSet()
+        // Keep the independent trace even if richer metadata from ipwho.is was available.
+        val families = addresses.groupBy { IpAddressValidator.family(it) }.values
+        val mismatch = families.any { it.distinct().size > 1 }
+        val comparable = families.any { it.size > 1 }
         add(
             IpQualityCheck(
                 id = "consistency",
                 title = "出口一致性",
                 state = when {
-                    metadata?.ip == null -> IpQualityState.UNKNOWN
-                    observedIps.size <= 2 -> IpQualityState.VERIFIED
-                    else -> IpQualityState.ATTENTION
+                    mismatch -> IpQualityState.ATTENTION
+                    comparable -> IpQualityState.VERIFIED
+                    else -> IpQualityState.UNKNOWN
                 },
                 detail = when {
-                    metadata?.ip == null -> "出口信息服务没有返回可比对的地址"
-                    observedIps.size <= 2 -> "公开探测端点返回的出口地址没有明显冲突"
-                    else -> "不同探测端点返回了多个出口地址；可能存在代理链或网络切换"
+                    mismatch -> "不同探测端点返回了多个出口地址；可能存在代理链或网络切换"
+                    comparable -> "公开探测端点返回的出口地址没有明显冲突"
+                    else -> "出口信息服务没有返回可比对的地址"
                 },
             ),
         )
@@ -260,12 +270,12 @@ class IpQualityProbe(
                 title = "代理 / 数据中心标签",
                 state = when {
                     suspicious -> IpQualityState.ATTENTION
-                    metadata == null || listOf(metadata.proxy, metadata.vpn, metadata.tor, metadata.hosting).all { it == null } -> IpQualityState.UNKNOWN
+                    metadata == null || listOf(metadata.proxy, metadata.vpn, metadata.tor, metadata.hosting).any { it == null } -> IpQualityState.UNKNOWN
                     else -> IpQualityState.VERIFIED
                 },
                 detail = when {
                     suspicious -> "第三方信息服务标记为 ${metadata?.securityLabels().orEmpty()}；这不是恶意判定"
-                    metadata == null -> "未取得第三方安全标签"
+                    metadata == null || listOf(metadata.proxy, metadata.vpn, metadata.tor, metadata.hosting).any { it == null } -> "未取得完整的第三方安全标签"
                     else -> "未发现该服务标记的代理、VPN、Tor 或托管出口"
                 },
             ),
@@ -276,11 +286,11 @@ class IpQualityProbe(
                 title = "HTTPS 可达性",
                 state = when {
                     latency.isEmpty() -> IpQualityState.UNKNOWN
-                    latency.all { it.latencyMs != null } -> IpQualityState.VERIFIED
+                    latency.all { it.state == IpQualityState.VERIFIED } -> IpQualityState.VERIFIED
                     latency.any { it.latencyMs != null } -> IpQualityState.ATTENTION
                     else -> IpQualityState.ATTENTION
                 },
-                detail = "${latency.count { it.latencyMs != null }}/${latency.size} 个端点可达 · 中位 ${latency.mapNotNull { it.latencyMs }.sorted().medianOrDash()} ms",
+                detail = "${latency.sumOf { it.successfulSamples }}/${latency.sumOf { it.attemptedSamples }} HTTPS 204",
             ),
         )
         add(
@@ -306,7 +316,7 @@ class IpQualityProbe(
         trace: IpQualityMetadata?,
     ): IpQualityMetadata? {
         if (primary == null) return trace
-        if (trace == null) return primary
+        if (trace == null || primary.ip != trace.ip) return primary
         return primary.copy(
             ip = primary.ip ?: trace.ip,
             country = primary.country ?: trace.country,
@@ -325,7 +335,6 @@ class IpQualityProbe(
 
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 4_000
-        const val MAX_LATENCY_MILLIS = 10_000
         const val IPV4_ENDPOINT = "https://api4.ipify.org?format=json"
         const val IPV6_ENDPOINT = "https://api6.ipify.org?format=json"
         const val IPWHO_ENDPOINT = "https://ipwho.is/"
@@ -339,7 +348,7 @@ private class UrlConnectionIpQualityTransport : IpQualityHttpTransport {
     override fun get(url: String, timeoutMillis: Int): IpQualityHttpResponse {
         val uri = URI(url)
         require(uri.scheme.equals("https", ignoreCase = true)) { "探测端点必须使用 HTTPS" }
-        val started = System.currentTimeMillis()
+        val started = System.nanoTime()
         val connection = (uri.toURL().openConnection() as? HttpURLConnection)
             ?: error("无法创建 HTTPS 连接")
         return try {
@@ -347,16 +356,19 @@ private class UrlConnectionIpQualityTransport : IpQualityHttpTransport {
             connection.connectTimeout = timeoutMillis
             connection.readTimeout = timeoutMillis
             connection.requestMethod = "GET"
+            connection.useCaches = false
+            connection.setRequestProperty("Cookie", "")
             connection.setRequestProperty("Accept", "application/json, text/plain, */*")
             connection.setRequestProperty("Cache-Control", "no-cache")
             connection.setRequestProperty("User-Agent", "Weave-IP-Quality/0.3")
             val status = connection.responseCode
-            val body = connection.inputStream.use(::readBounded)
-                .toString(Charsets.UTF_8)
+            val body = if (status in 200..299 && status != 204) {
+                connection.inputStream.use(::readBounded).toString(Charsets.UTF_8)
+            } else ""
             IpQualityHttpResponse(
                 statusCode = status,
                 body = body,
-                elapsedMillis = System.currentTimeMillis() - started,
+                elapsedMillis = (System.nanoTime() - started) / 1_000_000L,
             )
         } finally {
             connection.disconnect()
@@ -383,8 +395,9 @@ private class UrlConnectionIpQualityTransport : IpQualityHttpTransport {
 }
 
 object IpQualityParsers {
-    fun ipFromJson(raw: String): String? = extractString(raw, "ip")
+    fun ipFromJson(raw: String, expectedFamily: IpFamily? = null): String? = extractString(raw, "ip")
         ?.let(IpAddressValidator::publicIpOrNull)
+        ?.takeIf { expectedFamily == null || (':' in it) == (expectedFamily == IpFamily.IPV6) }
 
     fun metadataFromIpWho(raw: String): IpQualityMetadata? {
         val ip = ipFromJson(raw)
@@ -418,7 +431,8 @@ object IpQualityParsers {
             organization = null,
             isp = null,
             proxy = null,
-            vpn = raw.lineValue("warp")?.equals("on", ignoreCase = true),
+            // Cloudflare can positively identify its WARP product, not rule out another VPN.
+            vpn = true.takeIf { raw.lineValue("warp") in setOf("on", "plus") },
             tor = null,
             hosting = null,
             anonymous = null,
@@ -455,11 +469,20 @@ object IpQualityParsers {
 
 object IpAddressValidator {
     fun publicIpOrNull(raw: String): String? {
-        val value = raw.trim().removePrefix("[").removeSuffix("]").removeSuffix(".")
+        val value = raw.trim().removeSurrounding("[", "]")
         if (value.isBlank() || value.any { it.isWhitespace() || it == '/' || it == '%' }) return null
         val address = runCatching {
-            require(value.matches(IPV4) || value.matches(IPV6_LITERAL))
-            java.net.InetAddress.getByName(value)
+            when {
+                value.matches(IPV4) -> {
+                    val octets = value.split('.').map {
+                        require(it == "0" || !it.startsWith('0'))
+                        it.toInt().also { octet -> require(octet in 0..255) }.toByte()
+                    }
+                    java.net.InetAddress.getByAddress(octets.toByteArray())
+                }
+                ':' in value && value.matches(IPV6_LITERAL) -> java.net.InetAddress.getByName(value)
+                else -> return null
+            }
         }.getOrNull() ?: return null
         val bytes = address.address
         if (bytes.size != 4 && bytes.size != 16) return null
@@ -479,8 +502,8 @@ object IpAddressValidator {
         if (bytes.size == 4) {
             val a = bytes[0].toInt() and 0xff
             val b = bytes[1].toInt() and 0xff
-            return (a == 100 && b in 64..127) || // CGNAT
-                (a == 192 && b == 0) ||
+            return a == 0 || (a == 100 && b in 64..127) || // this network / CGNAT
+                (a == 192 && b == 0 && (bytes[2].toInt() and 0xff) == 0) ||
                 (a == 192 && b == 0 && (bytes[2].toInt() and 0xff) == 2) ||
                 (a == 198 && b in 18..19) ||
                 (a == 198 && b == 51 && (bytes[2].toInt() and 0xff) == 100) ||
@@ -509,9 +532,16 @@ private fun IpQualityMetadata.securityLabels(): String = buildList {
     if (hosting == true) add("托管")
 }.joinToString("、")
 
-private fun List<Int>.medianOrDash(): String = if (isEmpty()) "—" else this[size / 2].toString()
+private fun List<Int>.midpoint(): Int? =
+    if (isEmpty()) null else ((this[(size - 1) / 2].toLong() + this[size / 2] + 1) / 2).toInt()
 
+private fun List<Int>.roundedMean(): Int? =
+    if (isEmpty()) null else ((sumOf { it.toLong() } + size / 2) / size).toInt()
+
+// Never render a transport exception message: it can contain a URL, credentials or a hostname.
 private fun Throwable.safeMessage(): String = when (this) {
     is java.net.SocketTimeoutException -> "超时"
-    else -> message?.take(48)?.ifBlank { "请求失败" } ?: "请求失败"
+    is java.net.UnknownHostException -> "域名解析失败"
+    is javax.net.ssl.SSLException -> "TLS 握手失败"
+    else -> "请求失败"
 }

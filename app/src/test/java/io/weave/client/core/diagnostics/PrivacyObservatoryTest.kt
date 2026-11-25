@@ -19,6 +19,19 @@ class PrivacyObservatoryTest {
         PrivacyObservatory.inspect(ConnectionState.CONNECTED, mode, NetworkPreferences(domesticDirect = domestic),
             routes = apps, defaultTarget = target).observations.first { it.id == "direct" }
 
+    @Test fun customDnsReportShowsActualEndpointProtocolInsteadOfSavedPreset() {
+        for ((endpoint, preset, expected) in listOf(
+            Triple("tls://example.invalid", io.weave.client.domain.DnsTransport.DOH, "DoT"),
+            Triple("https://example.invalid/dns-query", io.weave.client.domain.DnsTransport.DOT, "DoH"),
+        )) {
+            val preferences = NetworkPreferences(dnsProfile = DnsProfile.CUSTOM, dnsTransport = preset, customDnsEndpoint = endpoint)
+            val dns = PrivacyObservatory.inspect(ConnectionState.DISCONNECTED, RoutingMode.RULE, preferences)
+                .observations.first { it.id == "dns" }
+            assertEquals(ObservatoryState.CONFIGURED, dns.state)
+            assertTrue(dns.detail, dns.detail.startsWith("$expected · "))
+        }
+    }
+
     @Test
     fun `rule mode reports the enabled domestic direct default`() {
         val observation = directObservation(RoutingMode.RULE, domestic = true)

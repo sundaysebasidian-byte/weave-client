@@ -13,6 +13,7 @@ data class InstalledApp(
     val monogram: String,
     val tint: Long,
     val migrationCandidate: Boolean = false,
+    val launcherActivity: String? = null,
 )
 
 /**
@@ -49,11 +50,12 @@ class InstalledAppRepository(
                 monogram = label.monogram(),
                 tint = APP_TINTS[(packageName.hashCode() and Int.MAX_VALUE) % APP_TINTS.size],
                 migrationCandidate = ProxyClientDetector.matches(packageName, label),
+                launcherActivity = info.activityInfo.name,
             )
         }
         // Exact package queries also find known clients whose launcher entry is hidden/disabled.
         // Never enumerate all packages or open another app's private configuration.
-        val known = ProxyClientDetector.knownPackages.mapNotNull { packageName ->
+        return sortDistinctLauncherAndKnownApps(launchable, ProxyClientDetector.knownPackages) { packageName ->
             try {
                 @Suppress("DEPRECATION")
                 val info = context.packageManager.getApplicationInfo(packageName, 0)
@@ -65,7 +67,6 @@ class InstalledAppRepository(
                 null
             }
         }
-        return sortDistinctLauncherAndKnownApps(launchable, known)
     }
 
     private fun String.monogram(): String = LauncherLabelMonogram.of(this)
@@ -85,12 +86,13 @@ class InstalledAppRepository(
 /** Sort once into an exact-size result, preserving launcher precedence and stable ties. */
 internal fun sortDistinctLauncherAndKnownApps(
     launchable: List<InstalledApp>,
-    known: List<InstalledApp>,
+    knownPackages: Set<String>,
+    lookup: (String) -> InstalledApp?,
 ): List<InstalledApp> {
-    // The public picker still looks up every known client. A visible launcher row wins
-    // if the same package also appears among the independently queried known clients.
-    val launcherNames = launchable.mapTo(HashSet(launchable.size)) { it.packageName }
-    val additional = known.filterNot { it.packageName in launcherNames }
+    // Limit fallback work to the small allowlist, not the number of launcher rows.
+    val missing = knownPackages.toMutableSet()
+    launchable.forEach { missing.remove(it.packageName) }
+    val additional = missing.mapNotNull(lookup)
     val launcherCount = launchable.size
     val size = launcherCount + additional.size
     if (size == 0) return emptyList()

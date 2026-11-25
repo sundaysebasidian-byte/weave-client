@@ -351,7 +351,7 @@ internal fun SubscriptionsScreen(
                             WeaveDivider()
                             ImportOptionRow(
                                 icon = Icons.Rounded.Wifi,
-                                title = "局域网互传",
+                                title = "订阅互传",
                                 subtitle = null,
                                 onClick = onTransfer,
                             )
@@ -672,7 +672,7 @@ private fun EmptySubscriptions(
             WeaveDivider()
             ImportOptionRow(
                 icon = Icons.Rounded.Wifi,
-                title = "局域网互传",
+                title = "订阅互传",
                 subtitle = null,
                 onClick = onTransfer,
             )

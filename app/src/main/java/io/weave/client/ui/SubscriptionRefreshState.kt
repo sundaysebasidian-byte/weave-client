@@ -25,3 +25,17 @@ data class SubscriptionRefreshState(
     val failedIds: Set<String> get() = results.filter { !it.succeeded && !it.reviewRequired }.mapTo(linkedSetOf()) { it.subscriptionId }
     val reviewCount: Int get() = results.count { it.reviewRequired }
 }
+
+/** The review receipt comes from the saved write, not a later read-back of subscription details. */
+internal fun SubscriptionRefreshState.withCommittedUpdate(id: String, message: String): SubscriptionRefreshState {
+    if (results.none { it.subscriptionId == id }) return this
+    val updated = results.map { item ->
+        if (item.subscriptionId == id) item.copy(succeeded = true, reviewRequired = false) else item
+    }
+    return copy(
+        results = updated,
+        completed = updated.count { it.succeeded },
+        failed = updated.count { !it.succeeded && !it.reviewRequired },
+        message = message,
+    )
+}

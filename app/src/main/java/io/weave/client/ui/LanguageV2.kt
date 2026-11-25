@@ -8,7 +8,267 @@ import io.weave.client.domain.WeaveLanguage
  * the rest of the table; merged after the older supplemental entries.
  */
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
+    "确认导入" to SupplementalTranslation("Confirm import", "確認匯入", "インポートを確定", "Confirmer l’importation", "Import bestätigen"),
+    "订阅互传" to SupplementalTranslation("Transfer subscriptions", "訂閱互傳", "購読を転送", "Transfert d’abonnements", "Abos übertragen"),
+    "保存为加密订阅文件" to SupplementalTranslation(
+        "Save encrypted subscription file",
+        "儲存加密訂閱檔案",
+        "暗号化した購読ファイルを保存",
+        "Enregistrer un fichier d’abonnements chiffré",
+        "Verschlüsselte Abo-Datei speichern",
+    ),
+    "从加密订阅文件导入" to SupplementalTranslation(
+        "Open encrypted subscription file",
+        "開啟加密訂閱檔案",
+        "暗号化された購読ファイルを開く",
+        "Ouvrir un fichier d’abonnements chiffré",
+        "Verschlüsselte Abo-Datei öffnen",
+    ),
+    "只传订阅和节点，不会覆盖已有订阅、分流或设置。" to SupplementalTranslation(
+        "Only subscriptions and nodes are transferred. Existing subscriptions, routes and settings stay unchanged.",
+        "只傳輸訂閱和節點，不會覆寫現有訂閱、分流或設定。",
+        "購読とノードのみを転送します。既存の購読、ルート、設定は変更しません。",
+        "Seuls les abonnements et les nœuds sont transférés. Les abonnements existants, les routes et les réglages restent inchangés.",
+        "Nur Abos und Knoten werden übertragen. Bestehende Abos, Routen und Einstellungen bleiben unverändert.",
+    ),
+    "文件包含已有订阅，未导入任何内容。" to SupplementalTranslation(
+        "This file contains an existing subscription. Nothing was added.",
+        "檔案包含已有訂閱，未匯入任何內容。",
+        "既存の購読が含まれるため、何も追加されませんでした。",
+        "Ce fichier contient déjà un abonnement présent sur cet appareil. Aucun ajout.",
+        "Die Datei enthält ein vorhandenes Abo. Es wurde nichts hinzugefügt.",
+    ),
+    "未能导出，请检查所选位置和可用空间。" to SupplementalTranslation(
+        "Export failed. Check the destination and available space.",
+        "匯出失敗，請檢查所選位置和可用空間。",
+        "保存先と空き容量を確認してください。",
+        "Échec de l’exportation. Vérifiez la destination et l’espace disponible.",
+        "Export fehlgeschlagen. Prüfe Speicherort und freien Speicherplatz.",
+    ),
+    "无法打开订阅文件，请核对密码和文件。" to SupplementalTranslation(
+        "Cannot open the subscription file. Check the password and the file.",
+        "無法開啟訂閱檔案，請核對密碼和檔案。",
+        "購読ファイルを開けません。パスワードとファイルを確認してください。",
+        "Impossible d’ouvrir le fichier. Vérifiez le mot de passe et le fichier.",
+        "Die Abo-Datei lässt sich nicht öffnen. Prüfe Passwort und Datei.",
+    ),
+    "加密订阅文件已保存。请单独传递密码。" to SupplementalTranslation(
+        "Encrypted file saved. Share the password separately.",
+        "加密訂閱檔案已儲存。請另外傳遞密碼。",
+        "暗号化ファイルを保存しました。パスワードは別に渡してください。",
+        "Fichier chiffré enregistré. Transmettez le mot de passe séparément.",
+        "Verschlüsselte Datei gespeichert. Teile das Passwort separat.",
+    ),
+    "未能添加，请重新打开文件预览。" to SupplementalTranslation(
+        "Nothing was added. Open the file again to review it.",
+        "未能新增，請重新開啟檔案預覽。",
+        "追加できませんでした。ファイルを開き直してください。",
+        "Aucun ajout. Rouvrez le fichier pour le vérifier.",
+        "Nichts hinzugefügt. Öffne die Datei erneut zur Prüfung.",
+    ),
+    "离线订阅文件不能下载节点集合" to SupplementalTranslation(
+        "An offline subscription file cannot download nodes.",
+        "離線訂閱檔案不能下載節點集合",
+        "オフラインの購読ファイルはノードをダウンロードできません。",
+        "Un fichier d’abonnements hors ligne ne peut pas télécharger de nœuds.",
+        "Eine Offline-Abo-Datei kann keine Knoten herunterladen.",
+    ),
+    "本机配置已变化，请关闭后重新编辑" to SupplementalTranslation(
+        "The local configuration changed. Close this editor and open it again.",
+        "本機設定已變更。請關閉編輯視窗後重新開啟。",
+        "ローカル設定が変更されました。編集画面を開き直してください。",
+        "La configuration locale a changé. Fermez cet écran, puis rouvrez-le.",
+        "Die lokale Konfiguration hat sich geändert. Schließe den Editor und öffne ihn erneut.",
+    ),
+    "策略组引用的节点已不存在" to SupplementalTranslation(
+        "A node in this group is no longer available.",
+        "這個策略組的節點已不存在。",
+        "このグループのノードは利用できなくなりました。",
+        "Un nœud de ce groupe n’est plus disponible.",
+        "Ein Knoten in dieser Gruppe ist nicht mehr verfügbar.",
+    ),
+    "已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。" to SupplementalTranslation(
+        "Saved, but the VPN could not reload. Reconnect to apply the changes.",
+        "已儲存，但無法重新載入 VPN。請重新連線來套用變更。",
+        "保存しましたが、VPN を再読み込みできませんでした。変更を適用するには再接続してください。",
+        "Enregistré, mais le VPN n’a pas pu être rechargé. Reconnectez-vous pour appliquer les changements.",
+        "Gespeichert, aber das VPN konnte nicht neu geladen werden. Verbinde dich erneut, um die Änderungen zu übernehmen.",
+    ),
+    "未保存所选出口" to SupplementalTranslation(
+        "Selection not saved", "未儲存所選出口", "選択内容を保存できませんでした",
+        "Sélection non enregistrée", "Auswahl nicht gespeichert",
+    ),
+    "正在保存" to SupplementalTranslation(
+        "Saving", "正在儲存", "保存中", "Enregistrement", "Wird gespeichert",
+    ),
+    "未取得完整的第三方安全标签" to SupplementalTranslation(
+        "The provider did not return a full set of labels.", "未取得完整的第三方安全標記。",
+        "第三者サービスの判定項目が揃っていません。", "Les indicateurs du fournisseur sont incomplets.",
+        "Die Kennzeichnungen des Anbieters sind unvollständig.",
+    ),
     // Official release settings and local save feedback.
+    SavedDetailsRefreshWarning to SupplementalTranslation(
+        "Changes saved. Reopen the app to refresh the details; you don’t need to save again.",
+        "訂閱修改已儲存。請重新開啟應用程式以重新整理詳情，無需再次儲存。",
+        "変更は保存されました。アプリを開き直して詳細を更新してください。もう一度保存する必要はありません。",
+        "Modifications enregistrées. Rouvrez l’application pour actualiser les détails, sans enregistrer à nouveau.",
+        "Änderungen gespeichert. Öffne die App erneut, um die Details zu aktualisieren. Erneutes Speichern ist nicht nötig.",
+    ),
+    "Weave 不运营账号、云端控制、节点中继或遥测。Weave Next 可查询 GitHub 公开发布，不自行下载安装。第三方端点可能收到完成请求所需的数据。" to SupplementalTranslation(
+        "Weave has no account service, cloud control, relay or telemetry. Weave Next can check public GitHub releases but does not download or install them on its own. Third-party endpoints may receive data needed to complete requests.",
+        "Weave 不營運帳號、雲端控制、節點中繼或遙測。Weave Next 可查詢 GitHub 公開發行版本，不會自行下載或安裝。第三方端點可能收到完成請求所需的資料。",
+        "Weave はアカウント、クラウド制御、中継、テレメトリを運用しません。Weave Next は GitHub の公開リリースを確認できますが、自動でダウンロードやインストールは行いません。第三者の接続先には、リクエストに必要なデータが送られる場合があります。",
+        "Weave ne fournit ni compte, ni pilotage dans le cloud, ni relais, ni télémétrie. Weave Next peut consulter les versions publiques sur GitHub, mais ne les télécharge ni ne les installe de lui-même. Les services tiers peuvent recevoir les données nécessaires aux requêtes.",
+        "Weave betreibt keine Konten, Cloud-Steuerung, Relays oder Telemetrie. Weave Next kann öffentliche Releases auf GitHub prüfen, lädt oder installiert sie aber nicht von selbst. Drittanbieter können die für Anfragen nötigen Daten erhalten.",
+    ),
+    "本仓库采用 local-open-source 配置。官方 Android ARM64 版可查询 GitHub；可在应用更新中关闭自动检查。安装包仅在你点击后下载，安装须由你在 Android 中确认。" to SupplementalTranslation(
+        "This repository uses the local-open-source profile. Official Android ARM64 builds can check GitHub; you can disable automatic checks under App updates. APK downloads require a tap, and Android asks you to confirm installation.",
+        "本儲存庫採用 local-open-source 設定。官方 Android ARM64 版可查詢 GitHub；可在應用程式更新中關閉自動檢查。安裝套件只會在你點選後下載，並由你在 Android 中確認安裝。",
+        "このリポジトリは local-open-source プロファイルを採用しています。公式の Android ARM64 版は GitHub を確認でき、自動確認は「アプリの更新」で無効にできます。APK のダウンロードには操作が必要で、インストールは Android で確認してください。",
+        "Ce dépôt utilise le profil local-open-source. Les versions officielles Android ARM64 peuvent consulter GitHub ; la vérification automatique est désactivable dans Mises à jour de l’application. Le téléchargement de l’APK nécessite une action, et Android vous demande de confirmer l’installation.",
+        "Dieses Repository nutzt das local-open-source-Profil. Offizielle Android-ARM64-Versionen können GitHub prüfen; die automatische Prüfung lässt sich unter App-Updates ausschalten. Für den APK-Download musst du tippen, und Android fragt vor der Installation nach.",
+    ),
+    "查看更新" to SupplementalTranslation("View update", "查看更新", "更新を表示", "Voir la mise à jour", "Update ansehen"),
+    "应用更新" to SupplementalTranslation(
+        "App updates",
+        "應用程式更新",
+        "アプリの更新",
+        "Mises à jour de l’application",
+        "App-Updates",
+    ),
+    "发现可用的应用更新" to SupplementalTranslation(
+        "App update available",
+        "有可用的應用程式更新",
+        "アプリの更新があります",
+        "Mise à jour disponible",
+        "App-Update verfügbar",
+    ),
+    "自动检查更新" to SupplementalTranslation(
+        "Check automatically",
+        "自動檢查更新",
+        "更新を自動確認",
+        "Vérifier automatiquement",
+        "Automatisch prüfen",
+    ),
+    "只在打开应用时检查，每 24 小时最多一次。" to SupplementalTranslation(
+        "Checks only when you open the app, at most once every 24 hours.",
+        "只在開啟應用程式時檢查，每 24 小時最多一次。",
+        "アプリを開いたときに、24 時間に 1 回まで確認します。",
+        "La vérification se fait à l’ouverture, au plus une fois toutes les 24 heures.",
+        "Prüft beim Öffnen der App, höchstens einmal alle 24 Stunden.",
+    ),
+    "可用版本" to SupplementalTranslation(
+        "Available version",
+        "可用版本",
+        "利用できるバージョン",
+        "Version disponible",
+        "Verfügbare Version",
+    ),
+    "下载并验证" to SupplementalTranslation(
+        "Download and verify",
+        "下載並驗證",
+        "ダウンロードして検証",
+        "Télécharger et vérifier",
+        "Herunterladen und prüfen",
+    ),
+    "保存安装包" to SupplementalTranslation(
+        "Save APK",
+        "儲存安裝套件",
+        "APK を保存",
+        "Enregistrer l’APK",
+        "APK speichern",
+    ),
+    "检查更新" to SupplementalTranslation(
+        "Check for updates",
+        "檢查更新",
+        "更新を確認",
+        "Rechercher des mises à jour",
+        "Nach Updates suchen",
+    ),
+    "无法打开系统文件选择器。请安装或启用文件管理应用后重试。" to SupplementalTranslation(
+        "Could not open the file picker. Enable a file manager and try again.",
+        "無法開啟系統檔案選擇器。請啟用檔案管理程式後再試。",
+        "ファイルを選べませんでした。ファイル管理アプリを有効にして再試行してください。",
+        "Impossible d’ouvrir le sélecteur. Activez un gestionnaire de fichiers et réessayez.",
+        "Die Dateiauswahl konnte nicht geöffnet werden. Aktiviere eine Dateiverwaltung und versuche es erneut.",
+    ),
+    "当前版本或设备不支持从 GitHub 更新。" to SupplementalTranslation(
+        "This version or device does not support updates from GitHub.",
+        "此版本或裝置不支援從 GitHub 更新。",
+        "このバージョンまたは端末は GitHub からの更新に対応していません。",
+        "Cette version ou cet appareil ne permet pas les mises à jour depuis GitHub.",
+        "Diese Version oder dieses Gerät unterstützt keine Updates über GitHub.",
+    ),
+    "正在查询 GitHub。" to SupplementalTranslation(
+        "Checking GitHub…",
+        "正在查詢 GitHub。",
+        "GitHub を確認中…",
+        "Vérification sur GitHub…",
+        "Suche auf GitHub …",
+    ),
+    "当前已是最新版本。" to SupplementalTranslation(
+        "You’re up to date.",
+        "目前已是最新版本。",
+        "最新版を使用しています。",
+        "Vous disposez de la dernière version.",
+        "Deine Version ist aktuell.",
+    ),
+    "GitHub 暂无适用的安装包。" to SupplementalTranslation(
+        "No compatible APK is available on GitHub.",
+        "GitHub 目前沒有相容的安裝套件。",
+        "GitHub に対応する APK がありません。",
+        "Aucun APK compatible n’est disponible sur GitHub.",
+        "Auf GitHub ist keine kompatible APK verfügbar.",
+    ),
+    "正在下载并验证安装包。" to SupplementalTranslation(
+        "Downloading and verifying the APK…",
+        "正在下載並驗證安裝套件。",
+        "APK をダウンロードして検証中…",
+        "Téléchargement et vérification de l’APK…",
+        "APK wird heruntergeladen und geprüft …",
+    ),
+    "安装包已验证。建议保存到下载目录，再用「文件」打开并按 Android 提示确认更新。" to SupplementalTranslation(
+        "APK verified. Save it to Downloads, then open it in Files and confirm the Android update prompt.",
+        "安裝套件已驗證。建議儲存到下載資料夾，再用「檔案」開啟並依 Android 提示確認更新。",
+        "APK を検証しました。「ダウンロード」に保存し、「ファイル」で開いて Android の更新確認に従ってください。",
+        "APK vérifié. Enregistrez-le dans Téléchargements, puis ouvrez-le dans Fichiers et confirmez la mise à jour sur Android.",
+        "APK geprüft. Speichere sie in Downloads, öffne sie dann in „Dateien“ und bestätige das Update in Android.",
+    ),
+    "下载或验证失败，未保留安装包。请检查网络后重试。" to SupplementalTranslation(
+        "Download or verification failed. No APK was kept. Check your connection and retry.",
+        "下載或驗證失敗，未保留安裝套件。請檢查網路後再試。",
+        "ダウンロードまたは検証に失敗し、APK は保存されませんでした。接続を確認して再試行してください。",
+        "Échec du téléchargement ou de la vérification. Aucun APK conservé. Vérifiez votre connexion et réessayez.",
+        "Download oder Prüfung fehlgeschlagen. Es wurde keine APK behalten. Prüfe deine Verbindung und versuche es erneut.",
+    ),
+    "正在保存并核对安装包。" to SupplementalTranslation(
+        "Saving and checking the APK…",
+        "正在儲存並核對安裝套件。",
+        "APK を保存して確認中…",
+        "Enregistrement et vérification de l’APK…",
+        "APK wird gespeichert und geprüft …",
+    ),
+    "已保存并核对。请在「文件」中打开刚保存的安装包，按 Android 提示确认更新。" to SupplementalTranslation(
+        "APK saved and checked. Open it in Files and confirm the Android update prompt.",
+        "已儲存並核對。請在「檔案」中開啟剛儲存的安裝套件，依 Android 提示確認更新。",
+        "APK を保存して確認しました。「ファイル」で開き、Android の更新確認に従ってください。",
+        "APK enregistré et vérifié. Ouvrez-le dans Fichiers et confirmez la mise à jour sur Android.",
+        "APK gespeichert und geprüft. Öffne sie in „Dateien“ und bestätige das Update in Android.",
+    ),
+    "未能保存完整的安装包。请重新下载并选择可写位置。" to SupplementalTranslation(
+        "Could not save a complete APK. Download it again and choose a writable location.",
+        "未能儲存完整的安裝套件。請重新下載並選擇可寫入的位置。",
+        "APK を完全に保存できませんでした。再ダウンロードして書き込み可能な場所を選んでください。",
+        "Impossible d’enregistrer l’APK en entier. Téléchargez-le à nouveau, puis choisissez un dossier accessible en écriture.",
+        "Die APK konnte nicht vollständig gespeichert werden. Lade sie erneut herunter und wähle einen beschreibbaren Speicherort.",
+    ),
+    "临时安装包已清除。请重新下载。" to SupplementalTranslation(
+        "The temporary APK is gone. Download it again.",
+        "暫存安裝套件已清除。請重新下載。",
+        "一時 APK は削除されました。再ダウンロードしてください。",
+        "L’APK temporaire a été supprimé. Téléchargez-le à nouveau.",
+        "Die temporäre APK wurde entfernt. Lade sie erneut herunter.",
+    ),
     "订阅已保存，节点列表刷新失败，请重新打开应用" to SupplementalTranslation("Subscription saved, but the node list could not refresh. Reopen the app.", "訂閱已儲存，但無法重新整理節點清單。請重新開啟應用程式。", "購読は保存されましたが、ノード一覧を更新できませんでした。アプリを開き直してください。", "Abonnement enregistré, mais la liste des nœuds n’a pas pu être actualisée. Rouvrez l’application.", "Abo gespeichert, aber die Knotenliste konnte nicht aktualisiert werden. Öffne die App erneut."),
     "订阅已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。" to SupplementalTranslation(
         "Subscription saved, but the VPN configuration reload could not be started. Reconnect to apply the changes.",
@@ -27,13 +287,6 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "未找到适用的 Android 生产签名发布包。" to SupplementalTranslation("No compatible Android package with a production signature was found.", "找不到適用且具有正式簽章的 Android 套件。", "対応する正式署名済みの Android パッケージが見つかりませんでした。", "Aucun paquet Android compatible signé pour la distribution n’a été trouvé.", "Es wurde kein kompatibles Android-Paket mit Produktionssignatur gefunden."),
     "暂时连不上 GitHub，请检查网络后再试。" to SupplementalTranslation("Could not reach GitHub. Check your connection and try again.", "暫時無法連線到 GitHub，請檢查網路後再試。", "GitHub に接続できませんでした。ネットワークを確認して再試行してください。", "Impossible de joindre GitHub. Vérifiez votre connexion et réessayez.", "GitHub ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."),
     "无法读取 GitHub 发布信息，请稍后再试。" to SupplementalTranslation("Could not read GitHub release information. Try again later.", "無法讀取 GitHub 版本資訊，請稍後再試。", "GitHub のリリース情報を読み取れませんでした。しばらくしてから再試行してください。", "Impossible de lire les informations de version sur GitHub. Réessayez plus tard.", "Die Release-Informationen von GitHub konnten nicht gelesen werden. Versuche es später erneut."),
-    "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或自动下载安装；应用可向 GitHub 查询公开版本，启动检查可在关于中关闭；主动选择的第三方端点仍按隐私说明工作。" to SupplementalTranslation(
-        "This repository uses the local-open-source configuration. Weave has no cloud control, node relays, built-in credentials, or automatic downloads or installation. The app can check GitHub for public releases. You can turn off startup checks in About. Third-party endpoints you choose work as described in the privacy notice.",
-        "此儲存庫使用 local-open-source 設定：沒有 Weave 雲端控制、節點中繼、內建憑證或自動下載安裝。應用程式可向 GitHub 查詢公開版本，啟動檢查可在「關於」關閉。你主動選擇的第三方端點仍依隱私說明運作。",
-        "local-open-source 構成では、Weave によるクラウド制御、ノード中継、組み込み認証情報、自動ダウンロードやインストールはありません。GitHub の公開リリースを確認できます。起動時の確認は「アプリについて」で無効にできます。選択した第三者の接続先はプライバシーの説明に従って動作します。",
-        "Ce dépôt utilise la configuration local-open-source. Weave ne fournit ni pilotage dans le cloud, ni relais de nœuds, ni identifiants intégrés. L’application ne télécharge ni n’installe rien automatiquement. Elle peut consulter les versions publiques sur GitHub. Vous pouvez désactiver la vérification au démarrage dans À propos. Les points de connexion tiers que vous choisissez fonctionnent comme indiqué dans la notice de confidentialité.",
-        "Dieses Repository nutzt die Konfiguration local-open-source. Weave bietet weder Cloud-Steuerung noch Knoten-Relays oder integrierte Zugangsdaten. Die App lädt und installiert nichts automatisch. Sie kann auf GitHub nach öffentlichen Releases suchen. Die Prüfung beim Start lässt sich unter „Über“ ausschalten. Selbst gewählte Drittanbieter-Endpunkte funktionieren wie in den Datenschutzhinweisen beschrieben.",
-    ),
     "启动时检查应用更新" to SupplementalTranslation("Check for app updates on startup", "啟動時檢查應用程式更新", "起動時にアプリの更新を確認", "Vérifier les mises à jour au démarrage", "Beim Start nach App-Updates suchen"),
     "每天最多一次。GitHub 可看到连接 IP，不会收到节点、订阅或设备标识。" to SupplementalTranslation("At most once a day. GitHub can see your connection’s IP address, but receives no node or subscription details or device identifiers.", "每天最多一次。GitHub 可看到連線 IP，但不會收到節點、訂閱資料或裝置識別碼。", "1 日に最大 1 回。GitHub には接続元の IP アドレスが見えますが、ノードや購読の情報、端末識別子は送信されません。", "Au plus une fois par jour. GitHub peut voir l’adresse IP de la connexion, mais ne reçoit aucune information sur les nœuds ou les abonnements, ni aucun identifiant d’appareil.", "Höchstens einmal pro Tag. GitHub kann die IP-Adresse der Verbindung sehen, erhält aber keine Knoten- oder Abo-Daten und keine Gerätekennungen."),
     "检查应用更新" to SupplementalTranslation("Check for app updates", "檢查應用程式更新", "アプリの更新を確認", "Vérifier les mises à jour", "Nach App-Updates suchen"),
@@ -264,6 +517,7 @@ internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
     "备份已导出；请妥善保管文件和密码" to SupplementalTranslation("Backup exported. Keep the file and password safe.", "備份已匯出；請妥善保管檔案和密碼", "バックアップを書き出しました。ファイルとパスワードを安全に保管してください。", "Sauvegarde exportée. Conservez le fichier et le mot de passe en lieu sûr.", "Backup exportiert. Datei und Passwort sicher aufbewahren."),
     "备份导出失败" to SupplementalTranslation("Backup export failed", "備份匯出失敗", "バックアップの書き出しに失敗しました", "Échec de l’export", "Backup-Export fehlgeschlagen"),
     "无法写入所选文件" to SupplementalTranslation("Cannot write the selected file", "無法寫入所選檔案", "選択したファイルに書き込めません", "Impossible d’écrire le fichier", "Datei kann nicht geschrieben werden"),
+    "订阅仍在读取" to SupplementalTranslation("Subscriptions are still loading", "訂閱仍在載入", "購読を読み込み中です", "Chargement des abonnements en cours", "Abos werden noch geladen"),
     "无法读取所选文件" to SupplementalTranslation("Cannot read the selected file", "無法讀取所選檔案", "選択したファイルを読み取れません", "Impossible de lire le fichier", "Datei kann nicht gelesen werden"),
     "无法读取备份" to SupplementalTranslation("Cannot read the backup", "無法讀取備份", "バックアップを読み取れません", "Impossible de lire la sauvegarde", "Backup kann nicht gelesen werden"),
     "恢复失败，请重新预览后重试" to SupplementalTranslation("Restore failed; preview the backup again and retry", "還原失敗，請重新預覽後重試", "復元できませんでした。バックアップを再確認してからやり直してください", "Échec de la restauration ; prévisualisez à nouveau la sauvegarde et réessayez", "Wiederherstellung fehlgeschlagen; prüfen Sie die Vorschau erneut und versuchen Sie es noch einmal"),
@@ -441,10 +695,23 @@ private val COUNT_TEMPLATES = listOf(
 
 private val COUNT_REGEXES = COUNT_TEMPLATES.map { Regex(it.pattern) to it.translation }
 
-internal fun translateV2Patterns(text: String, language: WeaveLanguage): String? {
+internal fun translateV2Patterns(
+    text: String,
+    language: WeaveLanguage,
+    locale: StagedComposeLocale? = null,
+): String? {
     if (language == WeaveLanguage.SIMPLIFIED_CHINESE) return null
     COUNT_REGEXES.forEach { (regex, translation) ->
         regex.matchEntire(text)?.let { match ->
+            if (locale != null) {
+                val sourcePattern = regex.pattern
+                    .replace(RELEASE_VERSION_CAPTURE, "\${RELEASE_VERSION_CAPTURE}")
+                    .replace(RELEASE_BUILD_CAPTURE, "\${RELEASE_BUILD_CAPTURE}")
+                return locale.format(
+                    "v2:$sourcePattern", "first" to match.groupValues[1],
+                    "second" to match.groupValues.getOrElse(2) { "" },
+                )
+            }
             return translation.resolve(language)
                 .replace("%d", match.groupValues[1])
                 .replace("%t", match.groupValues.getOrElse(2) { "" })

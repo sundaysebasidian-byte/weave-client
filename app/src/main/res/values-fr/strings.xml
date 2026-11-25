@@ -23,11 +23,20 @@
     <string name="update_review_title">« %1$s » à vérifier</string>
     <string name="update_review_body">Cette mise à jour touche des sorties épinglées ou n’a pas passé l’audit de sécurité. Ouvrez Weave pour la prévisualiser.</string>
     <string name="update_failed_title">Échec de l’actualisation</string>
-    <string name="update_failed_body">%1$d abonnement(s) n’ont pas pu être actualisés. Les versions précédentes sont conservées.</string>
     <string name="notification_control_title">Notification de connexion</string>
     <string name="notification_control_enabled">Affiche l’état et une action de déconnexion dans les notifications.</string>
     <string name="notification_control_disabled">Les notifications sont désactivées. Le tunnel peut fonctionner, mais son état et la déconnexion peuvent être masqués.</string>
     <string name="notification_control_action">Gérer les notifications</string>
     <string name="action_choose_exit">Changer de sortie</string>
     <string name="widget_description">État de la connexion et bascule en un geste</string>
+    <plurals name="update_failed_body">
+        <item quantity="one">Impossible d’actualiser %1$d abonnement. La version précédente a été conservée.</item>
+        <item quantity="other">Impossible d’actualiser %1$d abonnements. Les versions précédentes ont été conservées.</item>
+        <item quantity="many">Impossible d’actualiser %1$d abonnements. Les versions précédentes ont été conservées.</item>
+    </plurals>
+    <string name="app_picker_title">Choisir une application</string>
+    <string name="app_picker_search">Rechercher par nom d’application ou de paquet</string>
+    <string name="app_picker_empty">Aucune application correspondante</string>
+    <string name="app_picker_add">Ajouter %1$s</string>
+    <string name="app_picker_close">Fermer</string>
 </resources>

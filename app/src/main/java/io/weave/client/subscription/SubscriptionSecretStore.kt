@@ -116,8 +116,9 @@ class SubscriptionSecretStore(
         id: String = UUID.randomUUID().toString(),
         counts: SubscriptionImportCounts? = null,
         remoteMetadata: SubscriptionRemoteMetadata? = null,
+        coroutine: CoroutineContext = EmptyCoroutineContext,
     ): StoredSubscription = locked {
-        commitBatch(listOf(SaveEntry(id, name, url, payload, parsed, counts, remoteMetadata)), EmptyCoroutineContext).single()
+        commitBatch(listOf(SaveEntry(id, name, url, payload, parsed, counts, remoteMetadata)), coroutine).single()
     }
 
     internal fun saveNewBatch(entries: List<NewSubscriptionBatchEntry>,
@@ -129,7 +130,11 @@ class SubscriptionSecretStore(
     }
 
     /** Resolve identities and capture revisions before provider downloads or parsing can suspend. */
-    internal fun captureTransfer(items: List<TransferSubscription>, preserveIds: Boolean = false): SubscriptionTransferSnapshot = locked {
+    internal fun captureTransfer(
+        items: List<TransferSubscription>,
+        preserveIds: Boolean = false,
+        selectedFile: Boolean = false,
+    ): SubscriptionTransferSnapshot = locked {
         require(items.isNotEmpty()) { "传输中没有订阅" }
         val incomingIds = items.map { item ->
             item.id.trim().takeIf(String::isNotEmpty)?.let {
@@ -147,8 +152,13 @@ class SubscriptionSecretStore(
         val sources = records.associate { it.id to readUrl(it.id) }
         val previous = items.mapIndexed { i, item ->
             val byId = incomingIds[i]?.let { id -> records.find { it.id.equals(id, ignoreCase = true) } }
-            val candidates = if (byId != null) listOf(byId) else if (preserveIds) emptyList() else records.filter {
-                it.name == normalizeName(item.name) && sources[it.id] == item.source
+            val candidates = when {
+                byId != null -> listOf(byId)
+                preserveIds || selectedFile && !item.source.startsWith("https://", ignoreCase = true) -> emptyList()
+                else -> records.filter {
+                    val storedName = if (selectedFile) normalizeName(it.name) else it.name
+                    storedName == normalizeName(item.name) && sources[it.id] == item.source
+                }
             }
             check(candidates.size <= 1) { "存在多个同名同来源订阅，请先明确同步目标" }
             candidates.singleOrNull()?.let { readForUpdate(it.id) }
@@ -249,9 +259,10 @@ class SubscriptionSecretStore(
 
     fun saveReviewed(id: String, expectedRevision: String, name: String, source: String,
         payload: String, parsed: ParsedSubscription, counts: SubscriptionImportCounts,
-        remoteMetadata: SubscriptionRemoteMetadata? = null): StoredSubscription = locked {
+        remoteMetadata: SubscriptionRemoteMetadata? = null,
+        coroutine: CoroutineContext = EmptyCoroutineContext): StoredSubscription = locked {
         requireRevision(id, expectedRevision)
-        save(name, source, payload, parsed, id, counts, remoteMetadata)
+        save(name, source, payload, parsed, id, counts, remoteMetadata, coroutine)
     }
 
     internal fun readForUpdate(id: String): StoredSubscriptionSnapshot = locked {
@@ -274,26 +285,29 @@ class SubscriptionSecretStore(
     }
 
     fun list(): List<StoredSubscription> = locked {
-        preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
-            .mapNotNull { id ->
-                val name = preferences.getString(key(id, "name"), null) ?: return@mapNotNull null
-                val format = preferences.getString(key(id, "format"), null)
-                    ?.let { runCatching { SubscriptionFormat.valueOf(it) }.getOrNull() }
-                    ?: return@mapNotNull null
-                StoredSubscription(
-                    id = id,
-                    name = name,
-                    nodeCount = preferences.getInt(key(id, "nodes"), 0),
-                    format = format,
-                    nodes = readNodeMetadata(id)
-                        .sortedBy { it.name.lowercase() },
-                    hasPayload = payloadFile(id).isFile,
-                    usage = SubscriptionUsage.decode(preferences.getString(key(id, "usage"), null)),
-                    updatedAtMillis = preferences.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
-                    updateIntervalHours = preferences.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
-                )
-            }
+        // The profile and subscription locks already cover the read. Use one fresh XML snapshot.
+        val snapshot = preferences
+        snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
+            .mapNotNull { id -> readRecord(id, snapshot) }
             .sortedBy { it.name.lowercase() }
+    }
+
+    private fun readRecord(id: String, snapshot: SharedPreferences): StoredSubscription? {
+        val name = snapshot.getString(key(id, "name"), null) ?: return null
+        val format = snapshot.getString(key(id, "format"), null)
+            ?.let { runCatching { SubscriptionFormat.valueOf(it) }.getOrNull() }
+            ?: return null
+        return StoredSubscription(
+            id = id,
+            name = name,
+            nodeCount = snapshot.getInt(key(id, "nodes"), 0),
+            format = format,
+            nodes = readNodeMetadata(id, snapshot).sortedBy { it.name.lowercase() },
+            hasPayload = payloadFile(id, snapshot).isFile,
+            usage = SubscriptionUsage.decode(snapshot.getString(key(id, "usage"), null)),
+            updatedAtMillis = snapshot.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
+            updateIntervalHours = snapshot.getInt(key(id, "update_interval_hours"), 0).takeIf { it > 0 },
+        )
     }
 
     /** Provider-declared quota and refresh interval; neither is secret nor an endpoint. */
@@ -315,13 +329,18 @@ class SubscriptionSecretStore(
         }
     }
 
-    fun get(id: String): StoredSubscription? = list().firstOrNull { it.id == id }
+    fun get(id: String): StoredSubscription? = locked {
+        val snapshot = preferences
+        if (id !in snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()) return@locked null
+        readRecord(id, snapshot)
+    }
 
     @SuppressLint("UseKtx") // commit() is required here because rename must report persistence failure.
-    fun rename(id: String, name: String): StoredSubscription {
+    fun rename(id: String, name: String, coroutine: CoroutineContext = EmptyCoroutineContext): StoredSubscription {
         locked {
             val record = get(id) ?: throw NoSuchElementException("订阅不存在")
             val normalizedName = normalizeName(name)
+            coroutine.ensureActive()
             check(
                 preferences.edit()
                     .putString(key(id, "name"), normalizedName)
@@ -393,8 +412,8 @@ class SubscriptionSecretStore(
         }
     }
 
-    private fun payloadFile(id: String): File {
-        val generation = preferences.getString(key(id, "payload_generation"), null)
+    private fun payloadFile(id: String, snapshot: SharedPreferences = preferences): File {
+        val generation = snapshot.getString(key(id, "payload_generation"), null)
         return File(
             payloadDirectory,
             generation?.let { payloadFileName(id, it) } ?: "$id.enc",
@@ -410,8 +429,8 @@ class SubscriptionSecretStore(
             associatedData = "$id:nodes".toByteArray(Charsets.UTF_8),
         )
 
-    private fun readNodeMetadata(id: String): List<StoredNode> {
-        val encrypted = preferences.getString(key(id, "node_metadata_encrypted"), null)
+    private fun readNodeMetadata(id: String, snapshot: SharedPreferences = preferences): List<StoredNode> {
+        val encrypted = snapshot.getString(key(id, "node_metadata_encrypted"), null)
         if (encrypted != null) {
             return runCatching {
                 secretBox.decrypt(
@@ -425,7 +444,7 @@ class SubscriptionSecretStore(
             }.getOrDefault(emptyList())
         }
         // Read the legacy plaintext field only long enough to migrate an older install.
-        return preferences.getStringSet(key(id, "node_metadata"), emptySet())
+        return snapshot.getStringSet(key(id, "node_metadata"), emptySet())
             .orEmpty()
             .mapNotNull(::decodeNode)
     }
@@ -543,7 +562,7 @@ class SubscriptionSecretStore(
     private fun key(id: String, field: String) = "subscription.$id.$field"
 
     private fun normalizeName(name: String): String =
-        name.trim().ifEmpty { "未命名订阅" }.take(MAX_NAME_LENGTH)
+        LocalSubscriptionNameLimit.truncate(name.trim().ifEmpty { "未命名订阅" }).trimEnd()
 
     private companion object {
         // UI, import worker and VPN service construct different instances in the same process.
@@ -557,7 +576,6 @@ class SubscriptionSecretStore(
         const val PREFERENCES_NAME = "encrypted_subscriptions_v1"
         const val KEY_IDS = "subscription.ids"
         const val PAYLOAD_DIRECTORY = "subscriptions"
-        const val MAX_NAME_LENGTH = 80
         const val DELETED_PAYLOAD_EXTENSION = "deleted"
         const val PENDING_PAYLOAD_EXTENSION = "pending"
         const val ENCRYPTED_PAYLOAD_EXTENSION = "enc"

@@ -22,7 +22,6 @@ sealed interface ExternalImport {
 
 object ExternalImportParser {
     private const val MAX_TEXT_LENGTH = 5 * 1024 * 1024
-    private const val MAX_NAME_LENGTH = 80
 
     /** Client URL schemes whose `install-config`/`import` links carry a subscription URL. */
     val LINK_SCHEMES = setOf(
@@ -33,7 +32,7 @@ object ExternalImportParser {
         val value = raw.trim()
         val uri = runCatching { URI(value) }.getOrNull() ?: return null
         return when (val scheme = uri.scheme?.lowercase(Locale.ROOT)) {
-            "https" -> remote(value, fragmentName(uri))
+            "https" -> remote(value.substringBefore('#'), fragmentName(uri))
             in LINK_SCHEMES -> {
                 val query = queryParameters(uri.rawQuery)
                 val wrapped = query["url"]
@@ -53,9 +52,10 @@ object ExternalImportParser {
         // Share sheets often prepend a title before the link; accept the first bare link line.
         value.lineSequence()
             .map(String::trim)
-            .firstOrNull { line -> line.startsWith("https://", ignoreCase = true) ||
+            .filter { line -> line.startsWith("https://", ignoreCase = true) ||
                 LINK_SCHEMES.any { line.startsWith("$it://", ignoreCase = true) } }
-            ?.let(::fromLink)
+            .mapNotNull(::fromLink)
+            .firstOrNull()
             ?.let { return it }
         return ExternalImport.Inline(value)
     }
@@ -72,10 +72,13 @@ object ExternalImportParser {
         if (scheme != "hiddify" && scheme != "weave") return null
         val raw = uri.rawSchemeSpecificPart?.removePrefix("//") ?: return null
         val path = raw.substringAfter("import/", missingDelimiterValue = "").substringBefore('#')
-        return decode(path).takeIf { it.startsWith("https://", ignoreCase = true) }
+        // An already literal URL contains its own valid percent escapes and plus signs.
+        // Decode only an encoded outer path, and preserve literal plus in URI components.
+        val candidate = if (path.startsWith("https://", ignoreCase = true)) path else decodeUriComponent(path)
+        return candidate.takeIf { it.startsWith("https://", ignoreCase = true) }
     }
 
-    private fun fragmentName(uri: URI): String? = uri.rawFragment?.let(::decode)
+    private fun fragmentName(uri: URI): String? = uri.rawFragment?.let(::decodeUriComponent)
 
     private fun queryParameters(rawQuery: String?): Map<String, String> =
         rawQuery.orEmpty().split('&').mapNotNull { field ->
@@ -87,9 +90,11 @@ object ExternalImportParser {
     private fun decode(value: String): String =
         runCatching { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) }.getOrDefault(value)
 
+    private fun decodeUriComponent(value: String): String = decode(value.replace("+", "%2B"))
+
     private fun cleanName(name: String?): String? = name
         ?.filterNot(Char::isISOControl)
         ?.trim()
-        ?.take(MAX_NAME_LENGTH)
+        ?.let(LocalSubscriptionNameLimit::truncate)
         ?.takeIf(String::isNotEmpty)
 }

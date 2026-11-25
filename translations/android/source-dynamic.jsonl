@@ -1,0 +1,146 @@
+{"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","sourcePattern":"^(.*) \\[(S0[1-6])\\]$","en":"{message} [{code}]","kind":"composition"}
+{"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","sourcePattern":"^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$","en":"DNS bypass protection","kind":"template"}
+{"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","sourcePattern":"^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$","en":"{transport} · {profile} · {explanation}","kind":"composition"}
+{"id":"dynamic:legacy:^(.+) · (.+)；这是配置证据，不是外部泄漏测试$#1","sourcePattern":"^(.+) · (.+)；这是配置证据，不是外部泄漏测试$","en":"{transport} · {profile}; this is configuration evidence, not an external leak test","kind":"template"}
+{"id":"dynamic:legacy:^(.+) · (\\d+) → (\\d+) 节点$#1","sourcePattern":"^(.+) · (\\d+) → (\\d+) 节点$","en":"{summary} · {oldCount} → {newCount} nodes","kind":"template"}
+{"id":"dynamic:legacy:^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$#1","sourcePattern":"^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$","en":"{protocol} · median {median} ms · P95 {p95} ms · jitter {jitter} · {loss}% loss · {successful}/{total}","kind":"template"}
+{"id":"dynamic:legacy:^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$#1","sourcePattern":"^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$","en":"{protocol} · latency— · P95— · jitter {jitter} · {loss}% loss · {successful}/{total}","kind":"template"}
+{"id":"dynamic:legacy:^(.+) 加密解析 · (.+)$#1","sourcePattern":"^(.+) 加密解析 · (.+)$","en":"encrypted resolution","kind":"template"}
+{"id":"dynamic:legacy:^(.+) 指向的节点已不存在，请重新选择$#1","sourcePattern":"^(.+) 指向的节点已不存在，请重新选择$","en":"The node targeted by {owner} no longer exists; select another","kind":"template"}
+{"id":"dynamic:legacy:^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$#1","sourcePattern":"^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$","en":"The subscription targeted by {owner} cannot be used by Mihomo; only Clash YAML is currently supported","kind":"template"}
+{"id":"dynamic:legacy:^(.+) 没有指定节点$#1","sourcePattern":"^(.+) 没有指定节点$","en":"{owner} has no node selected","kind":"template"}
+{"id":"dynamic:legacy:^(.+) 没有指定订阅$#1","sourcePattern":"^(.+) 没有指定订阅$","en":"{owner} has no subscription selected","kind":"template"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#1","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"UUID","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#2","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"V2Ray settings","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#3","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"encryption method or password","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#4","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"password","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#5","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"server list","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#6","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"server address","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#7","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"port","kind":"fragment"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#8","sourcePattern":"^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$","en":"{owner} is missing {localizedField}","kind":"template"}
+{"id":"dynamic:legacy:^(.+)，正在安全应用$#1","sourcePattern":"^(.+)，正在安全应用$","en":"{localizedPrefix}; safely applying changes","kind":"template"}
+{"id":"dynamic:legacy:^(.+)，正在安全更新运行配置$#1","sourcePattern":"^(.+)，正在安全更新运行配置$","en":"{localizedPrefix}; safely updating the runtime configuration","kind":"template"}
+{"id":"dynamic:legacy:^(.+)：(.+)$#1","sourcePattern":"^(.+)：(.+)$","en":": ","kind":"separator"}
+{"id":"dynamic:legacy:^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$#1","sourcePattern":"^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$","en":"Safe conversion of {family} {protocol} outbounds is not supported yet","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) GB 已用$#1","sourcePattern":"^(\\d+) GB 已用$","en":"{amount} GB used","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) ms · 丢(\\d+)%$#1","sourcePattern":"^(\\d+) ms · 丢(\\d+)%$","en":"{latency} ms · {loss}% loss","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) ms · 抖(\\d+)$#1","sourcePattern":"^(\\d+) ms · 抖(\\d+)$","en":"{latency} ms · jitter {jitter}","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) · (稳定|一般|波动|未完成)$#compose","sourcePattern":"^(\\d+) · (稳定|一般|波动|未完成)$","en":"{score} · {label}","kind":"composition"}
+{"id":"dynamic:legacy:^(\\d+) 个节点 · 本地加密保存$#1","sourcePattern":"^(\\d+) 个节点 · 本地加密保存$","en":"{count} nodes · encrypted locally","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) 个节点$#1","sourcePattern":"^(\\d+) 个节点$","en":"{count} nodes","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$#1","sourcePattern":"^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$","en":"{verified} confirmed from local configuration · {external} require external verification","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$#1","sourcePattern":"^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$","en":"{confirmed} local states confirmed · {configured} configured · {pending} awaiting verification","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$#1","sourcePattern":"^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$","en":"{count} advanced rules paused · switch to Standard mode to restore","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+)/(\\d+) 个上游可达$#1","sourcePattern":"^(\\d+)/(\\d+) 个上游可达$","en":"{available}/{total} upstreams reachable","kind":"template"}
+{"id":"dynamic:legacy:^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$#1","sourcePattern":"^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$","en":"{reachable}/{total} endpoints reachable · median {median} ms","kind":"template"}
+{"id":"dynamic:legacy:^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$#1","sourcePattern":"^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$","en":"{scheme} node {index}","kind":"template"}
+{"id":"dynamic:legacy:^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$#1","sourcePattern":"^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$","en":"{scheme} node","kind":"template"}
+{"id":"dynamic:legacy:^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$#1","sourcePattern":"^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$","en":"{scheme} node address format is invalid","kind":"template"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#1","sourcePattern":"^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$","en":"{englishKind} exceeds the {size} {unit} limit","kind":"template"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#englishKind:else","sourcePattern":"^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$","en":"Pasted content","kind":"fragment"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#englishKind:传输内容","sourcePattern":"^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$","en":"Transfer content","kind":"fragment"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#englishKind:订阅内容","sourcePattern":"^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$","en":"Subscription content","kind":"fragment"}
+{"id":"dynamic:legacy:^(极简风|艺术风) · (.+)$#compose","sourcePattern":"^(极简风|艺术风) · (.+)$","en":"{paletteGroup} · {palette}","kind":"composition"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#1","sourcePattern":"^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$","en":"Preview {count} selected subscription(s)","kind":"template"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#2","sourcePattern":"^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$","en":"Import {count} subscription(s)","kind":"template"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#3","sourcePattern":"^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$","en":"{count} subscription(s) to import","kind":"template"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#4","sourcePattern":"^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$","en":"{count} subscription(s) imported","kind":"template"}
+{"id":"dynamic:legacy:^ASN  (.+) · 未知运营商$#compose","sourcePattern":"^ASN  (.+) · 未知运营商$","en":"ASN {asn} · {carrier}","kind":"composition"}
+{"id":"dynamic:legacy:^HTTPS (\\d+) · (端点可达|服务端错误)$#compose","sourcePattern":"^HTTPS (\\d+) · (端点可达|服务端错误)$","en":"HTTPS {code} · {status}","kind":"composition"}
+{"id":"dynamic:legacy:^Mihomo TUN 启动失败，错误码 (\\d+)$#1","sourcePattern":"^Mihomo TUN 启动失败，错误码 (\\d+)$","en":"Mihomo TUN failed to start (error {code})","kind":"template"}
+{"id":"dynamic:legacy:^Mihomo 原生库复制不完整：(.*)$#1","sourcePattern":"^Mihomo 原生库复制不完整：(.*)$","en":"Mihomo native library copy is incomplete: {name}","kind":"template"}
+{"id":"dynamic:legacy:^STUN 端口 (\\d+) 已按规则阻断$#1","sourcePattern":"^STUN 端口 (\\d+) 已按规则阻断$","en":"STUN port {port} blocked by rule","kind":"template"}
+{"id":"dynamic:legacy:^v(.+) · (\\d+) 条 · (.+)$#1","sourcePattern":"^v(.+) · (\\d+) 条 · (.+)$","en":"v{version} · {count} rules · {integrity}","kind":"template"}
+{"id":"dynamic:legacy:^· (.+)：(.+)$#1","sourcePattern":"^· (.+)：(.+)$","en":": ","kind":"separator"}
+{"id":"dynamic:legacy:^· (\\d+) 个同名同协议节点未自动删除$#1","sourcePattern":"^· (\\d+) 个同名同协议节点未自动删除$","en":"· {count} same-name, same-protocol nodes were not removed automatically","kind":"template"}
+{"id":"dynamic:legacy:^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$#1","sourcePattern":"^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$","en":"“{name}” is not a remote HTTPS subscription; automatic refresh skipped","kind":"template"}
+{"id":"dynamic:legacy:^中位 (\\d+)ms$#1","sourcePattern":"^中位 (\\d+)ms$","en":"Median {latency}ms","kind":"template"}
+{"id":"dynamic:legacy:^从 (\\d+) 个节点中自动选择$#1","sourcePattern":"^从 (\\d+) 个节点中自动选择$","en":"Choose automatically from {count} nodes","kind":"template"}
+{"id":"dynamic:legacy:^例如 (.+)$#1","sourcePattern":"^例如 (.+)$","en":"e.g. {example}","kind":"template"}
+{"id":"dynamic:legacy:^共 (\\d+) 个节点$#1","sourcePattern":"^共 (\\d+) 个节点$","en":"{count} nodes total","kind":"template"}
+{"id":"dynamic:legacy:^删除后，(.+) 将改用默认出口。$#1","sourcePattern":"^删除后，(.+) 将改用默认出口。$","en":"After deletion, {app} will use the default exit.","kind":"template"}
+{"id":"dynamic:legacy:^发现未支持的节点格式：(.*)$#1","sourcePattern":"^发现未支持的节点格式：(.*)$","en":"Unsupported node format found: {value}","kind":"template"}
+{"id":"dynamic:legacy:^可达 (\\d+)/(\\d+) 项 · (\\d+) ms$#1","sourcePattern":"^可达 (\\d+)/(\\d+) 项 · (\\d+) ms$","en":"{available}/{total} sites reachable · {elapsed} ms","kind":"template"}
+{"id":"dynamic:legacy:^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$#1","sourcePattern":"^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$","en":"{completed}/{total} checks complete · {elapsed} ms","kind":"template"}
+{"id":"dynamic:legacy:^审计提示：(.*)$#1","sourcePattern":"^审计提示：(.*)$","en":"Audit note: {details}","kind":"template"}
+{"id":"dynamic:legacy:^审计阻止：(.*)$#1","sourcePattern":"^审计阻止：(.*)$","en":"Audit blocked: {details}","kind":"template"}
+{"id":"dynamic:legacy:^导出所选 (\\d+) 个订阅$#1","sourcePattern":"^导出所选 (\\d+) 个订阅$","en":"Export {count} selected subscriptions","kind":"template"}
+{"id":"dynamic:legacy:^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$#1","sourcePattern":"^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$","en":"This permanently deletes “{name}”, the encrypted subscription URL and {count} nodes.","kind":"template"}
+{"id":"dynamic:legacy:^已删除订阅「(.+)」$#1","sourcePattern":"^已删除订阅「(.+)」$","en":"Deleted subscription “{name}”","kind":"template"}
+{"id":"dynamic:legacy:^已刷新 (\\d+) 个远程订阅$#1","sourcePattern":"^已刷新 (\\d+) 个远程订阅$","en":"Refreshed {count} remote subscriptions","kind":"template"}
+{"id":"dynamic:legacy:^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$#1","sourcePattern":"^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$","en":"Safely synced {count} subscriptions; matching sources were updated in place","kind":"template"}
+{"id":"dynamic:legacy:^已安全导入「(.+)」$#1","sourcePattern":"^已安全导入「(.+)」$","en":"Imported “{name}” safely","kind":"template"}
+{"id":"dynamic:legacy:^已完成 (\\d+) 个，(\\d+) 个失败$#1","sourcePattern":"^已完成 (\\d+) 个，(\\d+) 个失败$","en":"{completed} complete, {failed} failed","kind":"template"}
+{"id":"dynamic:legacy:^已导入策略包「(.+)」$#1","sourcePattern":"^已导入策略包「(.+)」$","en":"Imported policy pack “{name}”","kind":"template"}
+{"id":"dynamic:legacy:^已连接 · (\\d+) 个订阅$#1","sourcePattern":"^已连接 · (\\d+) 个订阅$","en":"Connected · {count} subscriptions","kind":"template"}
+{"id":"dynamic:legacy:^已选 (\\d+)/(\\d+)$#1","sourcePattern":"^已选 (\\d+)/(\\d+)$","en":"{selected}/{total} selected","kind":"template"}
+{"id":"dynamic:legacy:^应用规则  (\\d+)$#1","sourcePattern":"^应用规则  (\\d+)$","en":"App rules  {count}","kind":"template"}
+{"id":"dynamic:legacy:^应用规则 · (.+)$#compose","sourcePattern":"^应用规则 · (.+)$","en":"{prefix} · {app}","kind":"composition"}
+{"id":"dynamic:legacy:^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$#1","sourcePattern":"^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$","en":"The {count} app rules that reference it will also be deleted; those apps will use the default exit.","kind":"template"}
+{"id":"dynamic:legacy:^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$#1","sourcePattern":"^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$","en":"Added {added} · removed {removed} · kept {kept}","kind":"template"}
+{"id":"dynamic:legacy:^无法写入订阅 (.+) 的运行时副本$#1","sourcePattern":"^无法写入订阅 (.+) 的运行时副本$","en":"Unable to write the runtime copy of subscription {name}","kind":"template"}
+{"id":"dynamic:legacy:^暂不支持将 (.+) URI 转换为 Mihomo$#1","sourcePattern":"^暂不支持将 (.+) URI 转换为 Mihomo$","en":"Converting {scheme} URIs to Mihomo is not supported yet","kind":"template"}
+{"id":"dynamic:legacy:^最多保存 (\\d+) 条本地规则$#1","sourcePattern":"^最多保存 (\\d+) 条本地规则$","en":"You can save up to {max} local rules","kind":"template"}
+{"id":"dynamic:legacy:^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$#1","sourcePattern":"^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$","en":"Last run: {available}/{total} available · median {median} ms · P95 {p95} ms · avg. loss {loss}%","kind":"template"}
+{"id":"dynamic:legacy:^最近可用快照：(.*)$#1","sourcePattern":"^最近可用快照：(.*)$","en":"Latest usable snapshot: {snapshot}","kind":"template"}
+{"id":"dynamic:legacy:^最近失败：(.*)$#1","sourcePattern":"^最近失败：(.*)$","en":"Latest failure: {failure}","kind":"template"}
+{"id":"dynamic:legacy:^有 (\\d+) 项本地配置需要注意；未知项必须外部复核$#1","sourcePattern":"^有 (\\d+) 项本地配置需要注意；未知项必须外部复核$","en":"{count} local configuration item(s) need attention; unknown items require external verification","kind":"template"}
+{"id":"dynamic:legacy:^未取得 IPv4 公网地址 · (.*)$#1","sourcePattern":"^未取得 IPv4 公网地址 · (.*)$","en":"No public IPv4 address obtained · {detail}","kind":"template"}
+{"id":"dynamic:legacy:^本地规则 · (.+)$#compose","sourcePattern":"^本地规则 · (.+)$","en":"{prefix} · {localizedSuffix}","kind":"composition"}
+{"id":"dynamic:legacy:^来源：(.*)$#1","sourcePattern":"^来源：(.*)$","en":"Source: {source}","kind":"template"}
+{"id":"dynamic:legacy:^检测到 (.*)；与“仅 IPv4”设置不一致$#1","sourcePattern":"^检测到 (.*)；与“仅 IPv4”设置不一致$","en":"Detected {address}; inconsistent with the IPv4-only setting","kind":"template"}
+{"id":"dynamic:legacy:^检测到 (\\d+) 个兼容客户端 · 由你确认后选择导出文件$#1","sourcePattern":"^检测到 (\\d+) 个兼容客户端 · 由你确认后选择导出文件$","en":"{count} compatible clients detected · confirm and choose an exported file","kind":"template"}
+{"id":"dynamic:legacy:^正在刷新 (.+)$#1","sourcePattern":"^正在刷新 (.+)$","en":"Refreshing {name}","kind":"template"}
+{"id":"dynamic:legacy:^正在恢复代理连接（第 (\\d+) 次）$#1","sourcePattern":"^正在恢复代理连接（第 (\\d+) 次）$","en":"Restoring proxy connection (attempt {count})","kind":"template"}
+{"id":"dynamic:legacy:^添加 (.+)$#1","sourcePattern":"^添加 (.+)$","en":"Add {app}","kind":"template"}
+{"id":"dynamic:legacy:^生成时间：(.*)$#1","sourcePattern":"^生成时间：(.*)$","en":"Generated: {time}","kind":"template"}
+{"id":"dynamic:legacy:^确认短码：(.*)$#1","sourcePattern":"^确认短码：(.*)$","en":"Confirmation code: {code}","kind":"template"}
+{"id":"dynamic:legacy:^端点不可达：(.*)$#1","sourcePattern":"^端点不可达：(.*)$","en":"Endpoint unreachable: {detail}","kind":"template"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#1","sourcePattern":"^第 (\\d+) 条(.+)$","en":"Rule {index}{englishReason}","kind":"template"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:CIDR 无效","sourcePattern":"^第 (\\d+) 条(.+)$","en":"CIDR is invalid","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:else","sourcePattern":"^第 (\\d+) 条(.+)$","en":"rule is invalid","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:域名无效","sourcePattern":"^第 (\\d+) 条(.+)$","en":"domain is invalid","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则不是对象","sourcePattern":"^第 (\\d+) 条(.+)$","en":"rule is not an object","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则值包含非法分隔符","sourcePattern":"^第 (\\d+) 条(.+)$","en":"rule value contains an invalid separator","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则值无效","sourcePattern":"^第 (\\d+) 条(.+)$","en":"rule value is invalid","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则动作不支持","sourcePattern":"^第 (\\d+) 条(.+)$","en":"rule action is unsupported","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则类型不支持","sourcePattern":"^第 (\\d+) 条(.+)$","en":"rule type is unsupported","kind":"fragment"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:进程名无效","sourcePattern":"^第 (\\d+) 条(.+)$","en":"process name is invalid","kind":"fragment"}
+{"id":"dynamic:legacy:^第三方信息服务标记为 (.*)；这不是恶意判定$#1","sourcePattern":"^第三方信息服务标记为 (.*)；这不是恶意判定$","en":"A third-party information service labels it {labels}; this is not a malicious verdict","kind":"template"}
+{"id":"dynamic:legacy:^策略包规则数量必须为 1–(\\d+)$#1","sourcePattern":"^策略包规则数量必须为 1–(\\d+)$","en":"A policy pack must contain 1–{max} rules","kind":"template"}
+{"id":"dynamic:legacy:^策略包超过 (\\d+) KiB 限制$#1","sourcePattern":"^策略包超过 (\\d+) KiB 限制$","en":"Policy pack exceeds the {size} KiB limit","kind":"template"}
+{"id":"dynamic:legacy:^节点  (\\d+)$#1","sourcePattern":"^节点  (\\d+)$","en":"Nodes  {count}","kind":"template"}
+{"id":"dynamic:legacy:^解锁入口 (\\d+)/(\\d+)$#1","sourcePattern":"^解锁入口 (\\d+)/(\\d+)$","en":"Unlock entry points {available}/{total}","kind":"template"}
+{"id":"dynamic:legacy:^订阅文件已安全替换 · (.*)$#1","sourcePattern":"^订阅文件已安全替换 · (.*)$","en":"Subscription file safely replaced · {detail}","kind":"template"}
+{"id":"dynamic:legacy:^订阅服务器返回 HTTP (\\d+)$#1","sourcePattern":"^订阅服务器返回 HTTP (\\d+)$","en":"The subscription server returned HTTP {status}","kind":"template"}
+{"id":"dynamic:legacy:^请选择 1–(\\d+) 个订阅$#1","sourcePattern":"^请选择 1–(\\d+) 个订阅$","en":"Select 1–{max} subscriptions","kind":"template"}
+{"id":"dynamic:legacy:^边缘节点  (.+)$#1","sourcePattern":"^边缘节点  (.+)$","en":"Edge  {edge}","kind":"template"}
+{"id":"dynamic:legacy:^远程订阅已安全更新 · (.*)$#1","sourcePattern":"^远程订阅已安全更新 · (.*)$","en":"Remote subscription safely updated · {detail}","kind":"template"}
+{"id":"dynamic:legacy:^连续失败：(\\d+) 次$#1","sourcePattern":"^连续失败：(\\d+) 次$","en":"Consecutive failures: {count}","kind":"template"}
+{"id":"dynamic:security-block-details","sourcePattern":"安全拦截 · {details}","en":"{securityBlock} · {details}","kind":"composition"}
+{"id":"dynamic:v2:^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用$","sourcePattern":"^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用$","en":"{first} · Build {second} available","kind":"template"}
+{"id":"dynamic:v2:^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用（上次检查）$","sourcePattern":"^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用（上次检查）$","en":"{first} · Build {second} available (last check)","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 个策略包$","sourcePattern":"^(\\d+) 个策略包$","en":"{first} policy pack(s)","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 个策略组$","sourcePattern":"^(\\d+) 个策略组$","en":"{first} group(s)","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 个规则集$","sourcePattern":"^(\\d+) 个规则集$","en":"{first} rule set(s)","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 个订阅$","sourcePattern":"^(\\d+) 个订阅$","en":"{first} subscription(s)","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 分钟前更新$","sourcePattern":"^(\\d+) 分钟前更新$","en":"Updated {first} min ago","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 天前更新$","sourcePattern":"^(\\d+) 天前更新$","en":"Updated {first} d ago","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 小时$","sourcePattern":"^(\\d+) 小时$","en":"{first} h","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 小时前更新$","sourcePattern":"^(\\d+) 小时前更新$","en":"Updated {first} h ago","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 条$","sourcePattern":"^(\\d+) 条$","en":"{first} entries","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 条应用分流$","sourcePattern":"^(\\d+) 条应用分流$","en":"{first} app route(s)","kind":"template"}
+{"id":"dynamic:v2:^(\\d+) 条本地规则$","sourcePattern":"^(\\d+) 条本地规则$","en":"{first} local rule(s)","kind":"template"}
+{"id":"dynamic:v2:^Weave ${RELEASE_VERSION_CAPTURE} 可用，可在设置中查看。$","sourcePattern":"^Weave ${RELEASE_VERSION_CAPTURE} 可用，可在设置中查看。$","en":"Weave {first} is available. See Settings.","kind":"template"}
+{"id":"dynamic:v2:^另有 (\\d+) 个$","sourcePattern":"^另有 (\\d+) 个$","en":"+{first} more","kind":"template"}
+{"id":"dynamic:v2:^所有规则集合计超过 (\\d+) 条上限$","sourcePattern":"^所有规则集合计超过 (\\d+) 条上限$","en":"All rule sets together exceed the {first}-entry limit","kind":"template"}
+{"id":"dynamic:v2:^显示 (\\d+) / (\\d+) 个订阅$","sourcePattern":"^显示 (\\d+) / (\\d+) 个订阅$","en":"Showing {first} of {second} subscription(s)","kind":"template"}
+{"id":"dynamic:v2:^最多保存 (\\d+) 个策略组$","sourcePattern":"^最多保存 (\\d+) 个策略组$","en":"You can save up to {first} groups","kind":"template"}
+{"id":"dynamic:v2:^最多添加 (\\d+) 个规则集$","sourcePattern":"^最多添加 (\\d+) 个规则集$","en":"You can add up to {first} rule sets","kind":"template"}
+{"id":"dynamic:v2:^有 (\\d+) 个规则集更新失败，已保留旧版本$","sourcePattern":"^有 (\\d+) 个规则集更新失败，已保留旧版本$","en":"{first} rule set(s) failed to update; the old versions are kept","kind":"template"}
+{"id":"dynamic:v2:^查看 v${RELEASE_VERSION_CAPTURE} 发布说明$","sourcePattern":"^查看 v${RELEASE_VERSION_CAPTURE} 发布说明$","en":"View v{first} release notes","kind":"template"}
+{"id":"dynamic:v2:^检测到 (\\d+) 个兼容客户端$","sourcePattern":"^检测到 (\\d+) 个兼容客户端$","en":"{first} compatible clients detected","kind":"template"}
+{"id":"dynamic:v2:^每 (\\d+) 小时$","sourcePattern":"^每 (\\d+) 小时$","en":"Every {first} h","kind":"template"}
+{"id":"dynamic:v2:^每个策略组最多 (\\d+) 个节点$","sourcePattern":"^每个策略组最多 (\\d+) 个节点$","en":"Each group can have up to {first} nodes","kind":"template"}
+{"id":"dynamic:v2:^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$","sourcePattern":"^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$","en":"No compatible release is newer than the current build ({first}).","kind":"template"}
+{"id":"dynamic:v2:^规则集条目超过 (\\d+) 条上限$","sourcePattern":"^规则集条目超过 (\\d+) 条上限$","en":"The rule set exceeds the {first}-entry limit","kind":"template"}

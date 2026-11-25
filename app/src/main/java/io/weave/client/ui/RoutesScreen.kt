@@ -660,7 +660,7 @@ private fun CollapsedGroup(
                             .background(badge.background),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(route.monogram.take(1), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                        Text(RouteBadgeMonogram.first(route.monogram), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
                     }
                 }
             }
