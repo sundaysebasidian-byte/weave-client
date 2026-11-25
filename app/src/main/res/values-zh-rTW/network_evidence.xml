@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="net_active_disclosure">點選執行後，ipify、ipwho.is、Cloudflare、Google（含 STUN）及下方列出的網站會收到請求，並可看到各自請求的出口。</string>
+    <string name="net_link_snapshot">Android 觀察到的應用程式預設網路</string>
+    <string name="net_seen">可見</string>
+    <string name="net_not_seen">未見</string>
+    <string name="net_dns_count">已設定的 DNS 伺服器：%1$s</string>
+    <string name="net_link_scope">VPN 表示網路類型，IPv4、IPv6 表示本機位址。這些設定無法證明某次請求使用哪個 DNS 或代理。</string>
+    <string name="net_download_scope">從 Cloudflare 下載一次，依照本應用程式的路由規則傳送。速度包含連線耗時，不代表線路峰值。</string>
+    <string name="net_download_phases">收到回應標頭：%1$d ms · 讀取本文：%2$d ms</string>
+    <string name="net_latency_scope">每個網站發出 3 次 HTTPS 204 請求。小樣本的 P95 是成功請求中的最慢值；抖動為相鄰成功請求耗時變化的平均值。請求失敗不等於丟包。</string>
+    <string name="net_reading_exit">正在讀取 HTTPS 請求的出口…</string>
+    <string name="net_run_exit">連線後執行檢測，查看測試網站觀察到的出口。</string>
+    <string name="net_route_scope">HTTPS 檢測依照本應用程式的路由規則，可能採用直連。網站回應不代表帳號或內容已解鎖。</string>
+</resources>

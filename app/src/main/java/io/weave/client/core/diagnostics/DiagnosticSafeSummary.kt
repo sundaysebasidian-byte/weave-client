@@ -23,7 +23,7 @@ object DiagnosticSafeSummary {
             val row = sites?.results?.firstOrNull { it.endpoint.id == trusted.id } ?: return@forEach
             append(trusted.id).append(": ").append(row.state.name)
             append("; http=").append(row.statusCode?.takeIf { it in 100..599 } ?: "unknown")
-            append("; ms=").append(row.latencyMs?.takeIf { it in 1..60_000 } ?: "unknown")
+            append("; ms=").append(row.latencyMs?.takeIf { it >= 0 } ?: "unknown")
             append("; failure=").append(row.failure?.name ?: "none").appendLine()
         }
         append("Snapshot only. No IP addresses, node/subscription names, credentials, fingerprints or raw errors. Not proof of leak-free networking.")

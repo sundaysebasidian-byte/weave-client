@@ -135,6 +135,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
@@ -278,6 +279,7 @@ internal fun HomeScreen(
             StatusBlock(state = overviewState, exit = exitState)
             WeaveStrands(
                 stage = weaveStage(state.connectionState),
+                mode = state.routingMode,
                 modifier = Modifier
                     .padding(top = 12.dp)
                     .fillMaxWidth()
@@ -482,47 +484,89 @@ private fun StatusMark(glyph: HeroGlyph, tone: WeaveStatusTone) {
     }
 }
 
-/** Download, upload and latency in three columns separated by hairlines. */
+/** Keep the full number and unit. The layout decision uses fixed worst-case samples, not
+ * the current rate, so a busy link doesn't make the metrics jump between layouts. */
 @Composable
-private fun LiveMetrics(
+internal fun LiveMetrics(
     connected: Boolean,
     download: Long,
     upload: Long,
     latencyMs: Int?,
     history: List<Long>,
 ) {
-    val divider = MaterialTheme.colorScheme.outlineVariant
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 24.dp)
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min),
-    ) {
-        Metric("下载", if (connected) formatRate(download) else "—", Modifier.weight(1f), history)
-        Box(Modifier.padding(horizontal = 14.dp).width(0.5.dp).fillMaxHeight().background(divider))
-        Metric("上传", if (connected) formatRate(upload) else "—", Modifier.weight(1f))
-        Box(Modifier.padding(horizontal = 14.dp).width(0.5.dp).fillMaxHeight().background(divider))
-        Metric("延迟", latencyMs?.let { "$it ms" } ?: "—", Modifier.weight(1f))
+    val language = LocalWeaveLanguage.current
+    val packaged = LocalReleasedAppCopy.current
+    val rtl = LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val symbols = remember(packaged) {
+        packaged?.let { java.text.DecimalFormatSymbols.getInstance(java.util.Locale.forLanguageTag(it.renderer.languageTag)) }
     }
-}
-
-@Composable
-private fun Metric(label: String, value: String, modifier: Modifier, history: List<Long> = emptyList()) {
-    Column(modifier = modifier.semantics(mergeDescendants = true) {}) {
-        Text(label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(6.dp))
-        Text(
-            value,
-            style = MaterialTheme.typography.headlineLarge.merge(TabularNumbers),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            translate = false,
-        )
-        // The download column keeps a hairline of recent throughput; its footprint is reserved so
-        // connecting does not move the content below.
-        Box(modifier = Modifier.padding(top = 6.dp).fillMaxWidth().height(14.dp)) {
-            if (history.size >= 2) {
-                Sparkline(samples = history, modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.secondary)
+    val labels = remember(language, packaged) {
+        listOf("下载", "上传", "延迟").map { resolveAppOwnedCopy(it, language, staged = null, released = packaged) }
+    }
+    val canonicalValues = listOf(
+        if (connected) formatRate(download) else "—",
+        if (connected) formatRate(upload) else "—",
+        latencyMs?.let { "$it ms" } ?: "—",
+    )
+    // Ordinary six locales allocate the same list as before; do not transform on that path.
+    val values = if (symbols == null) canonicalValues else
+        canonicalValues.map { ReleaseMeasurementText.reading(it, symbols, rtl) }
+    val labelStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal)
+    val large = MaterialTheme.typography.headlineLarge.merge(TabularNumbers)
+    val compact = large.copy(fontSize = 20.sp, lineHeight = 24.sp)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    // TrafficFormat can round up to four digits and can return every unit through PB/s.
+    val samples = remember(symbols, rtl) {
+        listOf("1023 B/s", "100.0 KB/s", "1024 KB/s", "1024 MB/s", "1024 GB/s", "1024 TB/s", "8192 PB/s", "10000 ms")
+            .map { ReleaseMeasurementText.reading(it, symbols, rtl) }
+    }
+    val density = LocalDensity.current
+    fun widest(texts: List<String>, style: androidx.compose.ui.text.TextStyle) =
+        texts.maxOf { measurer.measure(it, style, softWrap = false).size.width }
+    val labelWidth = remember(measurer, labelStyle, labels, density) { widest(labels, labelStyle) }
+    val largeWidth = remember(measurer, large, samples, density) { widest(samples, large) }
+    val compactWidth = remember(measurer, compact, samples, density) { widest(samples, compact) }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        val gap = 8.dp
+        val dividerWidth = 1.dp
+        // Weighted cells can differ by a pixel; keep a small inset for actual font shaping.
+        val cellWidth = with(density) { ((maxWidth - gap * 4 - dividerWidth * 2) / 3 - 2.dp).toPx().toInt() }
+        val horizontal = cellWidth >= maxOf(labelWidth, compactWidth)
+        val useLarge = if (horizontal) cellWidth >= largeWidth else
+            packaged == null || with(density) { maxWidth.toPx() } >= largeWidth
+        val valueStyle = if (useLarge) large else compact
+        val divider = MaterialTheme.colorScheme.outlineVariant
+        if (horizontal) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                labels.forEachIndexed { index, label ->
+                    if (index > 0) Box(Modifier.padding(horizontal = gap).width(dividerWidth).fillMaxHeight().background(divider))
+                    Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+                        Text(label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, translate = false)
+                        Spacer(Modifier.height(6.dp))
+                        // The entire reading fits this cell. Otherwise all metrics use the
+                        // full-width stack, without a live wrap changing the dock geometry.
+                        androidx.compose.material3.Text(
+                            values[index], modifier = Modifier.fillMaxWidth(), style = valueStyle,
+                            softWrap = false, maxLines = 1,
+                        )
+                        Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(14.dp)) {
+                            if (index == 0 && history.size >= 2) Sparkline(history, Modifier.fillMaxSize(), MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                labels.forEachIndexed { index, label ->
+                    if (index > 0) Box(Modifier.fillMaxWidth().height(dividerWidth).background(divider))
+                    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
+                        Text(label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, translate = false)
+                        Text(values[index], modifier = Modifier.fillMaxWidth(), style = valueStyle, translate = false)
+                        if (index == 0) Box(Modifier.fillMaxWidth().height(14.dp)) {
+                            if (history.size >= 2) Sparkline(history, Modifier.fillMaxSize(), MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                }
             }
         }
     }

@@ -118,7 +118,7 @@ internal fun ClientExportImportDialog(
         })
     }
     val batchCompleted = state.completedSubscriptions.isNotEmpty()
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         icon = { Icon(Icons.Rounded.SyncAlt, null) },
         title = { Text("从客户端导入订阅", fontWeight = FontWeight.Bold) },

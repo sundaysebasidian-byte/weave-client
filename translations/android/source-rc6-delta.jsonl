@@ -1,0 +1,12 @@
+{"id":"从加密订阅文件导入","en":"Open encrypted subscription file"}
+{"id":"保存为加密订阅文件","en":"Save encrypted subscription file"}
+{"id":"加密订阅文件已保存。请单独传递密码。","en":"Encrypted file saved. Share the password separately."}
+{"id":"只传订阅和节点，不会覆盖已有订阅、分流或设置。","en":"Only subscriptions and nodes are transferred. Existing subscriptions, routes and settings stay unchanged."}
+{"id":"文件包含已有订阅，未导入任何内容。","en":"This file contains an existing subscription. Nothing was added."}
+{"id":"无法打开订阅文件，请核对密码和文件。","en":"Cannot open the subscription file. Check the password and the file."}
+{"id":"未取得完整的第三方安全标签","en":"The provider did not return a full set of labels."}
+{"id":"未能导出，请检查所选位置和可用空间。","en":"Export failed. Check the destination and available space."}
+{"id":"未能添加，请重新打开文件预览。","en":"Nothing was added. Open the file again to review it."}
+{"id":"确认导入","en":"Confirm import"}
+{"id":"离线订阅文件不能下载节点集合","en":"An offline subscription file cannot download nodes."}
+{"id":"订阅互传","en":"Transfer subscriptions"}

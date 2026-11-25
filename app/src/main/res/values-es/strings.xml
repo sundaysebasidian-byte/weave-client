@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">Conexión del proxy</string>
+    <string name="vpn_channel_description">Muestra el estado de la conexión de Weave al proxy</string>
+    <string name="updates_channel_name">Actualizaciones de suscripciones</string>
+    <string name="updates_channel_description">Resultados de las actualizaciones programadas de suscripciones</string>
+    <string name="action_disconnect">Desconectar</string>
+    <string name="action_connect">Conectar</string>
+    <string name="notification_speed">↑ %1$s/s · ↓ %2$s/s</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">Conectado</string>
+    <string name="tile_disconnected">Desactivado</string>
+    <string name="tile_connecting">Conectando…</string>
+    <string name="tile_needs_app">Abre Weave para autorizar la VPN</string>
+    <string name="shortcut_connect_short">Conectar</string>
+    <string name="shortcut_connect_long">Conectar Weave</string>
+    <string name="shortcut_disconnect_short">Desconectar</string>
+    <string name="shortcut_disconnect_long">Desconectar Weave</string>
+    <string name="shortcut_import_short">Importar</string>
+    <string name="shortcut_import_long">Importar una suscripción</string>
+    <string name="update_applied_title">Suscripción actualizada: %1$s</string>
+    <string name="update_applied_body">Nodos añadidos: %1$d · Eliminados: %2$d · Sin cambios: %3$d</string>
+    <string name="update_review_title">Revisa la suscripción %1$s</string>
+    <string name="update_review_body">La actualización cambia nodos que usan tus rutas o no ha superado la comprobación de seguridad. Abre Weave para revisar los cambios.</string>
+    <string name="update_failed_title">No se pudieron actualizar las suscripciones</string>
+    <string name="notification_control_title">Notificación de conexión</string>
+    <string name="notification_control_enabled">Aparece en el panel de notificaciones e incluye un botón para desconectar.</string>
+    <string name="notification_control_disabled">Las notificaciones están desactivadas. El túnel puede seguir funcionando, pero es posible que no veas su estado ni el botón para desconectar.</string>
+    <string name="notification_control_action">Gestionar notificaciones</string>
+    <string name="action_choose_exit">Elegir salida</string>
+    <string name="widget_description">Estado de la conexión y botón para conectar o desconectar con un toque</string>
+    <plurals name="update_failed_body">
+        <item quantity="one">No se pudo actualizar %1$d suscripción. Se conservó la versión anterior.</item>
+        <item quantity="other">No se pudieron actualizar %1$d suscripciones. Se conservaron las versiones anteriores.</item>
+        <item quantity="many">No se pudieron actualizar %1$d suscripciones. Se conservaron las versiones anteriores.</item>
+    </plurals>
+    <string name="app_picker_title">Elegir una aplicación</string>
+    <string name="app_picker_search">Buscar por nombre de aplicación o paquete</string>
+    <string name="app_picker_empty">No hay aplicaciones que coincidan</string>
+    <string name="app_picker_add">Añadir %1$s</string>
+    <string name="app_picker_close">Cerrar</string>
+</resources>

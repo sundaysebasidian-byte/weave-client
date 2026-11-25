@@ -8,15 +8,15 @@
 <p align="center">A beautiful, local-first Android proxy client.</p>
 
 <p align="center">
-  <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4">下载公开测试版</a> ·
+  <a href="https://github.com/sundaysebasidian-byte/weave-client/releases/tag/weave-next-v0.4.0-rc5">下载 Weave Next 公开测试版</a> ·
   <a href="docs/BUILD_ANDROID.md">构建指南</a> ·
   <a href="PRIVACY.zh-CN.md">隐私说明</a> ·
   <a href="https://github.com/sundaysebasidian-byte/weave-client/issues">反馈问题</a>
 </p>
 
-> **最新公开版本：0.4.0-rc4（Build 110）· Prerelease。** 生产签名，适用于 Android 8.0+ 的 ARM64 设备，尚未达到稳定版验收范围。验证范围见 [RC4 说明](docs/releases/v0.4.0-rc4.md)。
+> **已发布：Weave Next 0.4.0-rc5（Build 111）· Prerelease。** 适用于 Android ARM64，采用生产签名。[变更与验收范围](https://sundaysebasidian-byte.github.io/weave-client/android-next-rc5.html)。
 >
-> **源码请按版本选择。** `main` 已整合 RC4 / Build 110 的代码及测试，并保留 main 的既有修复和最近文档。已发布 APK 的固定对应源码仍是 [`v0.4.0-rc4` 标签](https://github.com/sundaysebasidian-byte/weave-client/tree/v0.4.0-rc4)；复现公开包请使用该标签。后续 main 构建不自动成为已发布或已验收的二进制。
+> 复现公开包请使用对应的 [RC5 标签](https://github.com/sundaysebasidian-byte/weave-client/tree/weave-next-v0.4.0-rc5)。源码分支上的新功能不代表已进入公开安装包。
 
 ![Weave 八种主题配色展示](docs/images/themes.png)
 
@@ -72,7 +72,7 @@ RC4 新增可跳过、可从设置重开的三步引导；手动更新单个订�
 
 ## 开始使用
 
-1. 从 [RC4 Release](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4) 下载生产签名的 **ARM64** APK，核对附件校验和后安装。
+1. 从 [Weave Next RC5 Release](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/weave-next-v0.4.0-rc5) 下载生产签名的 **ARM64** APK，核对附件校验和后安装。
 2. 导入你已有的订阅，选择订阅与节点。
 3. 按需设置应用分流，确认系统 VPN 授权后连接。
 
@@ -80,6 +80,11 @@ Weave 不提供、销售或推荐节点。支持 Clash/Mihomo YAML、JSON、URI/
 
 ### 升级前
 
+Weave Next 与旧版可同时安装，不会覆盖旧版应用。需要迁移时，请先在旧版导出加密备份，在 Weave Next 导入并核对数据，再决定是否移除旧版。见[迁移和更新指南](docs/ANDROID_PACKAGE_MIGRATION.md)。
+
+已发布的 RC5 本身没有应用更新入口，安装包仍需手动下载。带有更新功能的 Weave Next 官方构建可在「设置 → 关于 → 应用更新」检查 GitHub；自动检查可以关闭。下载和安装仍由你确认。
+
+旧版历史：
 公开 Build 106 使用开发证书，通常不能被 RC4 生产签名包直接覆盖；106 的数据迁移尚未验收。请先导出加密备份并确认可以解密恢复，不要通过卸载、清空数据或强制降级解决签名冲突。生产签名 RC107–RC110 使用同一证书，详见 [RC4 的签名与验证范围](docs/releases/v0.4.0-rc4.md)。
 
 RC4 已完成既往回归及 Pixel 四项 UI 检查，真机确认保存、重装、VPN 流量、泄漏与耐久、OEM 全覆盖及 Windows 10/11 VPN 回滚仍未验收。其他平台源码存在不代表已通过验收。
@@ -88,7 +93,7 @@ RC4 已完成既往回归及 Pixel 四项 UI 检查，真机确认保存、重�
 
 本地优先不等于绝对匿名。订阅、代理节点、DNS 和检测服务由第三方提供，仍可能看到完成请求所需的信息；主动检测也会连接相应服务。HTTP 探测失败率不等于底层数据包丢失，网站可达不等于账号或流媒体解锁。DNS 泄漏需结合独立服务核验，不用一个“安全分数”代替证据。
 
-了解 [隐私说明（简体中文）](PRIVACY.zh-CN.md)与[端点清单](https://github.com/sundaysebasidian-byte/weave-client/blob/v0.4.0-rc4/docs/NETWORK_ENDPOINT_INVENTORY.md)。英文原文见 [RC4 隐私说明](https://github.com/sundaysebasidian-byte/weave-client/blob/v0.4.0-rc4/PRIVACY.md)或 [main 代码线的隐私说明](PRIVACY.md)；[安全反馈方式](SECURITY.md)。
+了解[隐私说明（简体中文）](PRIVACY.zh-CN.md)、[英文隐私说明](PRIVACY.md)、[端点清单](docs/NETWORK_ENDPOINT_INVENTORY.md)与[安全反馈方式](SECURITY.md)。
 
 ## 开源与共建
 
@@ -98,4 +103,4 @@ RC4 已完成既往回归及 Pixel 四项 UI 检查，真机确认保存、重�
 
 [构建指南](docs/BUILD_ANDROID.md) · [更新记录](CHANGELOG.md) · [贡献指南](CONTRIBUTING.md) · [第三方说明](THIRD_PARTY.md)
 
-采用 [GPL-3.0-or-later](LICENSE) 许可证。当前公开 Release 仅面向 Android；完整对应源码与第三方通知随 RC4 附件提供，GitHub 自动生成的源码 ZIP 不能替代完整对应源码包。
+采用 [GPL-3.0-or-later](LICENSE) 许可证。当前公开安装包面向 Android。分发时须保留对应版本的完整源码和第三方通知，GitHub 自动生成的源码 ZIP 不能替代完整对应源码包。

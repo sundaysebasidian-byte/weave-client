@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Traffic-rule features that only need "hot-reload a running tunnel": offline policy packs,
@@ -46,6 +48,8 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private val mutableRuleSetState = MutableStateFlow(RuleSetState())
     val ruleSetState = mutableRuleSetState.asStateFlow()
+    private val ruleSetSnapshotOrder = LocalRuleSnapshotOrder()
+    private val ruleSetMutations = Mutex()
 
     init {
         reload()
@@ -55,6 +59,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private fun reload() {
         policyPackReload.request()
+        loadRuleSets()
         viewModelScope.launch {
             val localRuleRead = localRuleSnapshotOrder.beginRead()
             withContext(Dispatchers.IO) { probeSafely { localRouteRuleStore.list() } }
@@ -63,9 +68,6 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
                         mutableLocalRouteRuleState.update { it.copy(rules = rules) }
                     }
                 }
-            withContext(Dispatchers.IO) { probeSafely { ruleSetStore.list() } }
-                .onSuccess { sets -> mutableRuleSetState.update { it.copy(sets = sets) } }
-                .onFailure { mutableRuleSetState.update { it.copy(error = "规则集读取失败，原数据已保留") } }
         }
     }
 
@@ -142,8 +144,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
         return runCatching {
             val rule = LocalRouteRule(type = type, value = value, action = action)
             val normalized = LocalRouteRuleValidator.normalize(rule)
-            val next = localRouteRuleStore.list() + normalized
-            localRouteRuleStore.save(next)
+            val next = localRouteRuleStore.edit { it + normalized }
             publishSavedLocalRules(next)
             reloadIfConnected("本地路由规则已添加，正在安全更新运行配置")
         }.onFailure { error ->
@@ -153,10 +154,9 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     fun setLocalRouteRuleEnabled(id: String, enabled: Boolean) {
         runCatching {
-            val next = localRouteRuleStore.list().map { rule ->
-                if (rule.id == id) rule.copy(enabled = enabled) else rule
+            val next = localRouteRuleStore.edit { current ->
+                current.map { rule -> if (rule.id == id) rule.copy(enabled = enabled) else rule }
             }
-            localRouteRuleStore.save(next)
             publishSavedLocalRules(next)
             reloadIfConnected("本地路由规则已更新，正在安全应用")
         }.onFailure { error ->
@@ -166,8 +166,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     fun deleteLocalRouteRule(id: String) {
         runCatching {
-            val next = localRouteRuleStore.list().filterNot { it.id == id }
-            localRouteRuleStore.save(next)
+            val next = localRouteRuleStore.edit { current -> current.filterNot { it.id == id } }
             publishSavedLocalRules(next)
             reloadIfConnected("本地路由规则已删除，正在安全应用")
         }.onFailure { error ->
@@ -189,8 +188,10 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
 
     fun loadRuleSets() {
+        val request = ruleSetSnapshotOrder.beginRead()
         viewModelScope.launch {
             val sets = withContext(Dispatchers.IO) { probeSafely { ruleSetStore.list() } }
+            if (!ruleSetSnapshotOrder.acceptRead(request)) return@launch
             sets.onSuccess { value -> mutableRuleSetState.update { it.copy(sets = value, error = null) } }
                 .onFailure { mutableRuleSetState.update { it.copy(error = "规则集读取失败，原数据已保留") } }
         }
@@ -201,14 +202,17 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
         if (mutableRuleSetState.value.running) return
         mutableRuleSetState.update { it.copy(running = true, error = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { probeSafely { ruleSetStore.refresh(candidate); ruleSetStore.list() } }
-                .onSuccess { sets ->
-                    mutableRuleSetState.value = RuleSetState(sets = sets)
-                    reloadIfConnected("正在应用远程规则集")
-                }
-                .onFailure { error ->
-                    mutableRuleSetState.update { it.copy(running = false, error = error.message ?: "规则集更新失败") }
-                }
+            ruleSetMutations.withLock {
+                withContext(Dispatchers.IO) { probeSafely { ruleSetStore.refresh(candidate); ruleSetStore.list() } }
+                    .onSuccess { sets ->
+                        ruleSetSnapshotOrder.localWritePublished()
+                        mutableRuleSetState.value = RuleSetState(sets = sets)
+                        reloadIfConnected("正在应用远程规则集")
+                    }
+                    .onFailure { error ->
+                        mutableRuleSetState.update { it.copy(running = false, error = error.message ?: "规则集更新失败") }
+                    }
+            }
         }
     }
 
@@ -216,21 +220,24 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
         if (mutableRuleSetState.value.running) return
         mutableRuleSetState.update { it.copy(running = true, error = null) }
         viewModelScope.launch {
-            var failures = 0
-            val result = withContext(Dispatchers.IO) { probeSafely {
-                ruleSetStore.list().forEach { set ->
-                    if (probeSafely { ruleSetStore.refresh(set) }.isFailure) failures++
+            ruleSetMutations.withLock {
+                var failures = 0
+                val result = withContext(Dispatchers.IO) { probeSafely {
+                    ruleSetStore.list().forEach { set ->
+                        if (probeSafely { ruleSetStore.refresh(set) }.isFailure) failures++
+                    }
+                    ruleSetStore.list()
+                } }
+                result.onSuccess { sets ->
+                    ruleSetSnapshotOrder.localWritePublished()
+                    mutableRuleSetState.value = RuleSetState(
+                        sets = sets,
+                        error = if (failures > 0) "有 $failures 个规则集更新失败，已保留旧版本" else null,
+                    )
+                    reloadIfConnected("正在应用远程规则集")
+                }.onFailure {
+                    mutableRuleSetState.update { it.copy(running = false, error = "规则集读取失败，原数据已保留") }
                 }
-                ruleSetStore.list()
-            } }
-            result.onSuccess { sets ->
-                mutableRuleSetState.value = RuleSetState(
-                    sets = sets,
-                    error = if (failures > 0) "有 $failures 个规则集更新失败，已保留旧版本" else null,
-                )
-                reloadIfConnected("正在应用远程规则集")
-            }.onFailure {
-                mutableRuleSetState.update { it.copy(running = false, error = "规则集读取失败，原数据已保留") }
             }
         }
     }
@@ -245,13 +252,16 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private fun mutateRuleSet(mutation: () -> Unit) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { probeSafely { mutation(); ruleSetStore.list() } }
-                .onSuccess { sets ->
-                    mutableRuleSetState.update { it.copy(sets = sets, error = null) }
-                    reloadIfConnected("正在应用远程规则集")
-                }.onFailure { error ->
-                    mutableRuleSetState.update { it.copy(error = error.message ?: "规则集更新失败") }
-                }
+            ruleSetMutations.withLock {
+                withContext(Dispatchers.IO) { probeSafely { mutation(); ruleSetStore.list() } }
+                    .onSuccess { sets ->
+                        ruleSetSnapshotOrder.localWritePublished()
+                        mutableRuleSetState.update { it.copy(sets = sets, error = null) }
+                        reloadIfConnected("正在应用远程规则集")
+                    }.onFailure { error ->
+                        mutableRuleSetState.update { it.copy(error = error.message ?: "规则集更新失败") }
+                    }
+            }
         }
     }
 

@@ -121,15 +121,16 @@ jobs:
           emulator_pid=$!
           export WEAVE_TEST_EMULATOR_PID="$emulator_pid"
           bash tools/test-android-storage.sh emulator-5580
-          grep -Fx 'OK (87 tests)' "$WEAVE_TEST_RESULTS/instrumentation.txt"
+          expected_storage_tests=99
+          grep -Fx "OK ($expected_storage_tests tests)" "$WEAVE_TEST_RESULTS/instrumentation.txt"
           # JUnit's summary alone can count an assumption failure as run. Require every pass.
-          awk '
+          awk -v expected="$expected_storage_tests" '
             /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
             /^INSTRUMENTATION_STATUS_CODE: 0\r?$/ { passed++ }
             /^INSTRUMENTATION_STATUS_CODE: -[0-9]+\r?$/ { unsuccessful++ }
             END {
               printf "Device tests: %d started, %d passed, %d unsuccessful\n", started, passed, unsuccessful
-              exit !(started == 87 && passed == 87 && unsuccessful == 0)
+              exit !(started == expected && passed == expected && unsuccessful == 0)
             }
           ' "$WEAVE_TEST_RESULTS/instrumentation.txt"
       - name: Preserve device test evidence

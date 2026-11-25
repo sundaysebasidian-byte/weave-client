@@ -86,7 +86,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -195,7 +194,7 @@ internal fun LocalRouteRulesDialog(
     var action by remember { mutableStateOf(LocalRuleAction.DIRECT) }
     var draft by remember { mutableStateOf(LocalRuleValueDraft()) }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
@@ -356,7 +355,7 @@ internal fun RouteLensDialog(
     val error = (submission as? RouteLensSubmission.Invalid)?.message
     val result = (submission as? RouteLensSubmission.Explained)?.result
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {

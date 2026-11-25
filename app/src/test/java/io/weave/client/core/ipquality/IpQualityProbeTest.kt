@@ -77,7 +77,7 @@ class IpQualityProbeTest {
         assertEquals(IpQualityState.ATTENTION, report.checks.first { it.id == "ipv6" }.state)
         assertEquals(IpQualityState.VERIFIED, report.checks.first { it.id == "latency" }.state)
         assertTrue(report.completedProbes == report.totalProbes)
-        assertEquals(42, report.medianLatencyMs)
+        assertTrue(report.latency.all { it.latencyMs == 42 })
     }
 
     @Test
@@ -115,7 +115,7 @@ class IpQualityProbeTest {
     }
 
     private fun response(body: String, elapsed: Long = 15L) = IpQualityHttpResponse(
-        statusCode = 200,
+        statusCode = if (body.isEmpty()) 204 else 200,
         body = body,
         elapsedMillis = elapsed,
     )

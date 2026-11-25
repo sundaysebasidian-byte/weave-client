@@ -179,9 +179,9 @@ object RouteLens {
             DnsProfile.CUSTOM -> if (preferences.customDnsEndpoint.isBlank()) {
                 "自定义 DNS 尚未填写"
             } else {
-                "${preferences.dnsTransport.label} 加密解析 · 自定义端点"
+                "${preferences.effectiveDnsTransport.label} 加密解析 · 自定义端点"
             }
-            else -> "${preferences.dnsTransport.label} 加密解析 · ${preferences.dnsProfile.label}"
+            else -> "${preferences.effectiveDnsTransport.label} 加密解析 · ${preferences.dnsProfile.label}"
         }
         val state = if (preferences.dnsProfile == DnsProfile.CUSTOM &&
             preferences.customDnsEndpoint.isBlank()

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="net_active_disclosure">عند تشغيل الفحص، تُرسل طلبات إلى ipify وipwho.is وCloudflare وGoogle ‏(بما فيها STUN) والمواقع المذكورة أدناه. يمكن لكل جهة رؤية عنوان الخروج المستخدم في طلبها.</string>
+    <string name="net_link_snapshot">الشبكة الافتراضية التي يراها Android</string>
+    <string name="net_seen">تم رصده</string>
+    <string name="net_not_seen">لم يُرصد</string>
+    <string name="net_dns_count">خوادم DNS المضبوطة: ⁦%1$s⁩</string>
+    <string name="net_link_scope">يشير VPN إلى نوع الاتصال، ويشير IPv4 وIPv6 إلى العناوين المحلية. لا تكشف هذه المعلومات أي محلّل DNS أو خادم وكيل استُخدم في الطلب.</string>
+    <string name="net_download_scope">تنزيل واحد عبر HTTPS من Cloudflare باستخدام مسار هذا التطبيق. تشمل النتيجة وقت الاتصال ولا تمثّل السرعة القصوى للخط.</string>
+    <string name="net_download_phases">حتى ترويسات الاستجابة: ⁦%1$d⁩ مللي ثانية · قراءة المحتوى: ⁦%2$d⁩ مللي ثانية</string>
+    <string name="net_latency_scope">تُرسل ثلاثة طلبات HTTPS لكل موقع مع توقّع الرمز 204. مع ثلاث عينات، يكون P95 أبطأ طلب ناجح. التذبذب هو متوسط الفرق بين أزمنة الطلبات الناجحة المتتالية. فشل الطلب لا يعني فقدان حزمة.</string>
+    <string name="net_reading_exit">جارٍ التحقق من عنوان خروج HTTPS…</string>
+    <string name="net_run_exit">شغّل الفحص أثناء الاتصال لتعرف عنوان الخروج الذي تراه مواقع الاختبار.</string>
+    <string name="net_route_scope">تتبع فحوص HTTPS قواعد التوجيه في التطبيق، وقد تستخدم اتصالاً مباشراً. استجابة الموقع لا تثبت إمكانية الوصول إلى المحتوى أو الحساب.</string>
+</resources>

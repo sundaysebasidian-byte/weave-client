@@ -6,6 +6,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExternalImportParserTest {
+    @Test fun directHttpsFragmentLabelsDoNotReachTheFetcher() {
+        val url = "https://example.invalid/sub?token=fixture%2Bvalue"
+        val parsed = ExternalImportParser.fromLink("$url#Home+Desk") as ExternalImport.Remote
+        assertEquals(url, parsed.url)
+        assertEquals(QrSubscriptionInput.RemoteUrl(url), QrSubscriptionDecoder().decode("$url#Home+Desk"))
+        assertEquals("Home+Desk", parsed.suggestedName)
+    }
+
+    @Test fun rawAndEscapedWrapperPathsPreserveOpaqueSourceBytes() {
+        val url = "https://example.invalid/sub?token=fixture+a%2Bb%26c%2520"
+        for (scheme in listOf("hiddify", "weave")) {
+            assertEquals(url, (ExternalImportParser.fromLink("$scheme://import/$url") as ExternalImport.Remote).url)
+            val wrapped = java.net.URLEncoder.encode(url, Charsets.UTF_8.name())
+            assertEquals(url, (ExternalImportParser.fromLink("$scheme://import/$wrapped") as ExternalImport.Remote).url)
+        }
+    }
+
+    @Test fun malformedEarlierLinkLineDoesNotHideAValidSubscription() {
+        val parsed = ExternalImportParser.fromSharedText(
+            "My profile\nhttps://missing subscription\nhttps://example.invalid/working"
+        )
+        assertEquals("https://example.invalid/working", (parsed as? ExternalImport.Remote)?.url)
+    }
+
+    @Test fun longSharedSubscriptionNamesKeepValidUnicodeAtTheBoundary() {
+        val prefix = "x".repeat(79)
+        val tail = java.net.URLEncoder.encode("🚇 tail", Charsets.UTF_8.name())
+        val parsed = ExternalImportParser.fromLink("https://example.invalid/sub#$prefix$tail") as ExternalImport.Remote
+        assertEquals(prefix, parsed.suggestedName)
+        assertTrue(Charsets.UTF_8.newEncoder().canEncode(parsed.suggestedName!!))
+    }
+
     @Test fun `clash install-config link`() {
         val value = ExternalImportParser.fromLink(
             "clash://install-config?url=https%3A%2F%2Fexample.com%2Fsub%3Ftoken%3Dabc&name=My%20Sub",

@@ -109,6 +109,15 @@ class CommonEndpointProbeTest {
         assertEquals(0, seen.get())
     }
 
+    @Test fun `do not fabricate a minimum or maximum timing`() = runBlocking {
+        for (raw in listOf(-1L, 0L, 12001L)) {
+            val report = CommonEndpointProbe(CommonEndpointHttpTransport { _, _ ->
+                CommonEndpointHttpResponse(204, raw)
+            }).run()
+            assertTrue(report.results.all { it.latencyMs == raw.takeIf { it >= 0 }?.toInt() })
+        }
+    }
+
     @Test fun `dns error category excludes raw request details`() {
         val report = runBlocking {
             CommonEndpointProbe(CommonEndpointHttpTransport { _, _ -> throw java.net.UnknownHostException("private-secret.example") }).run()

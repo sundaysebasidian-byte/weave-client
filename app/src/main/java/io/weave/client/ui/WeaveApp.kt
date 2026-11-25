@@ -19,6 +19,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -86,7 +90,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -105,11 +108,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text as MaterialText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
@@ -177,6 +183,7 @@ import io.weave.client.domain.WeaveAppearanceGroup
 import io.weave.client.domain.WeavePalette
 import io.weave.client.domain.WeaveLanguage
 import io.weave.client.ui.LocalWeaveLanguage
+import io.weave.client.ui.update.NextUpdateController
 import io.weave.client.ui.theme.LocalWeavePalette
 import io.weave.client.routing.LocalRouteRule
 import io.weave.client.routing.LocalRuleAction
@@ -222,7 +229,12 @@ private fun WeaveNavigationDock(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(WeaveUiTokens.navigationHeight)
+                .heightIn(min = WeaveUiTokens.navigationHeight)
+                .testTag("navigation-dock")
+                .selectableGroup()
+                .weaveSwipe(threshold = 48.dp) { step ->
+                    destinations.getOrNull(destinations.indexOf(selected) - step)?.let(onSelect)
+                }
                 .padding(5.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -249,9 +261,12 @@ private fun WeaveNavigationDock(
                 Surface(
                     modifier = Modifier
                         .weight(1f)
-                        .height(WeaveUiTokens.navigationItemHeight)
+                        .testTag("navigation-tab-${item.name}")
+                        .heightIn(min = WeaveUiTokens.navigationItemHeight)
                         .pressScale(interactionSource, pressedScale = 0.94f)
-                        .clickable(
+                        .selectable(
+                            selected = active,
+                            role = Role.Tab,
                             interactionSource = interactionSource,
                             indication = null,
                             onClick = {
@@ -279,7 +294,7 @@ private fun WeaveNavigationDock(
                     ) {
                         Icon(
                             item.icon,
-                            contentDescription = localizedContentDescription(item.label),
+                            contentDescription = null,
                             modifier = Modifier
                                 .size(21.dp)
                                 .graphicsLayer {
@@ -322,8 +337,10 @@ internal fun Text(
     fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
 ) {
     val language = LocalWeaveLanguage.current
-    val localizedText = remember(text, language, translate) {
-        if (translate) localizeWeaveText(text, language) else text
+    val staged = if (translate) LocalStagedWeaveLocale.current else null
+    val released = if (translate) LocalReleasedAppCopy.current else null
+    val localizedText = remember(text, language, staged, released, translate) {
+        resolveAppOwnedCopy(text, language, staged, released, translate)
     }
     MaterialText(
         text = localizedText,
@@ -344,7 +361,11 @@ internal fun Text(
 @Composable
 internal fun localizedContentDescription(text: String): String {
     val language = LocalWeaveLanguage.current
-    return remember(text, language) { localizeWeaveText(text, language) }
+    val staged = LocalStagedWeaveLocale.current
+    val released = LocalReleasedAppCopy.current
+    return remember(text, language, staged, released) {
+        resolveAppOwnedCopy(text, language, staged, released)
+    }
 }
 
 /**
@@ -382,16 +403,36 @@ fun WeaveApp(
     val snackbar = remember { SnackbarHostState() }
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     val destinationState = rememberSaveableStateHolder()
+    val updateContext = LocalContext.current.applicationContext
+    val updateScope = rememberCoroutineScope()
+    val appUpdates = remember(updateContext, updateScope) { NextUpdateController(updateContext, updateScope) }
+    DisposableEffect(appUpdates) { onDispose { appUpdates.close() } }
+    var showAppUpdates by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importStartWith by remember { mutableStateOf<io.weave.client.domain.SubscriptionSourceKind?>(null) }
     var showProxyMigration by remember { mutableStateOf(false) }
     var showConnectionActions by remember { mutableStateOf(false) }
     var showLanTransferDialog by remember { mutableStateOf(false) }
-    var showAppPicker by remember { mutableStateOf(false) }
-    var editingRoute by remember { mutableStateOf<AppRoute?>(null) }
-    var showDefaultRoutePicker by remember { mutableStateOf(false) }
+    // Picker events must carry the profile revision when the picker was opened, even if a
+    // restored profile has the same route IDs or the chosen target is the generic DIRECT option.
+    var appPickerEpoch by remember { mutableStateOf<String?>(null) }
+    var editingRoute by remember { mutableStateOf<Pair<String, AppRoute>?>(null) }
+    var defaultRoutePickerEpoch by remember { mutableStateOf<String?>(null) }
+    val showAppPicker = appPickerEpoch != null
+    val showDefaultRoutePicker = defaultRoutePickerEpoch != null
+    var routePickerSaving by remember { mutableStateOf(false) }
+    var routePickerError by remember { mutableStateOf<String?>(null) }
+    fun openDefaultRoutePicker() {
+        if (!routePickerSaving) defaultRoutePickerEpoch = viewModel.groupProfileEpoch.value
+    }
+    fun finishRouteChoice(result: Result<Unit>, success: () -> Unit) {
+        routePickerSaving = false
+        result.onSuccess { success() }.onFailure {
+            routePickerError = it.message ?: "本机配置已变化，请关闭后重新编辑"
+        }
+    }
     var managedSubscriptionId by remember { mutableStateOf<String?>(null) }
-    var showVpnDisclosure by remember { mutableStateOf(false) }
+    var disclosureMode by rememberSaveable { mutableStateOf<VpnDisclosureMode?>(null) }
     var showRouteLens by remember { mutableStateOf(false) }
     var showNetworkPrivacyCenter by remember { mutableStateOf(false) }
     var browserPrivacyResult by remember { mutableStateOf<BrowserPrivacyResult?>(null) }
@@ -405,7 +446,7 @@ fun WeaveApp(
     var showRuleSets by remember { mutableStateOf(false) }
     var showCustomGroups by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
-    var externalImport by remember { mutableStateOf<io.weave.client.subscription.ExternalImport?>(null) }
+    var externalImport by remember { mutableStateOf<OwnedExternalImport?>(null) }
     var resumeRevision by remember { mutableStateOf(0) }
     val quickStartStore = remember(LocalContext.current.applicationContext) {
         io.weave.client.data.QuickStartStore(viewModel.getApplication())
@@ -467,7 +508,7 @@ fun WeaveApp(
                 if (dashboard.coreAvailable && vpnDisclosureAccepted) {
                     onRequestConnection()
                 } else if (dashboard.coreAvailable) {
-                    showVpnDisclosure = true
+                    disclosureMode = VpnDisclosureMode.CONNECT
                 } else {
                     viewModel.connect()
                 }
@@ -476,16 +517,17 @@ fun WeaveApp(
     }
 
     val externalRequest by viewModel.externalRequest.collectAsStateWithLifecycle()
-    LaunchedEffect(externalRequest) {
+    LaunchedEffect(externalRequest, routePickerSaving) {
         val request = externalRequest ?: return@LaunchedEffect
-        if (request != ExternalRequest.ChooseExit) {
-            quickStartExternalLaunch = true
-            if (quickStart.visible) closeQuickStart()
-            if (request == ExternalRequest.Connect) destination = Destination.HOME
-        }
-        if (!viewModel.claimExternalRequest(request)) return@LaunchedEffect
+        // Do not claim a shortcut while an existing picker is writing. The request stays pending
+        // and will open a fresh picker once the earlier completion can no longer close it.
+        if (request == ExternalRequest.ChooseExit && routePickerSaving) return@LaunchedEffect
+        if (!viewModel.claimExternalRequest(request) { request != ExternalRequest.ChooseExit || !routePickerSaving }) return@LaunchedEffect
+        quickStartExternalLaunch = true
+        if (quickStart.visible) closeQuickStart()
         when (request) {
             ExternalRequest.Connect -> {
+                destination = Destination.HOME
                 if (viewModel.dashboard.value.connectionState == ConnectionState.DISCONNECTED ||
                     viewModel.dashboard.value.connectionState == ConnectionState.ERROR
                 ) {
@@ -498,26 +540,14 @@ fun WeaveApp(
                 showImportDialog = true
             }
             ExternalRequest.ChooseExit -> {
-                quickStartExternalLaunch = true
-                if (quickStart.visible) closeQuickStart()
                 destination = Destination.HOME
-                showDefaultRoutePicker = true
+                openDefaultRoutePicker()
             }
             is ExternalRequest.Import -> {
                 destination = Destination.SUBSCRIPTIONS
                 viewModel.resetImportState()
-                externalImport = request.value
+                externalImport = OwnedExternalImport(ExternalImportPreviewOwner.newId(), request.value)
             }
-        }
-    }
-
-    fun openNetworkPrivacyCenter(runFullCheck: Boolean) {
-        showNetworkPrivacyCenter = true
-        if (runFullCheck && viewModel.ipQualityState.value.report == null) {
-            browserPrivacyResult = null
-            browserPrivacyError = null
-            browserProbeRequest = BrowserProbeRequest()
-            viewModel.runIpQualityProbe()
         }
     }
 
@@ -550,13 +580,16 @@ fun WeaveApp(
     // No native dashboard queries underneath dialogs, during scrolling or outside RESUMED.
     val dashboardObscured = showImportDialog || showProxyMigration || showConnectionActions || showLanTransferDialog ||
         showAppPicker || editingRoute != null || showDefaultRoutePicker || managedSubscriptionId != null ||
-        showVpnDisclosure || showRouteLens || showNetworkPrivacyCenter || showRecoveryCenter ||
+        disclosureMode != null || showRouteLens || showNetworkPrivacyCenter || showRecoveryCenter ||
         showPolicyPacks || showLocalRouteRules || showConnections || showLogs || showRuleSets ||
-        showCustomGroups || showBackup || externalImport != null || quickStart.visible
+        showCustomGroups || showBackup || externalImport != null || quickStart.visible || showAppUpdates
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, appUpdates) {
         val lifecycle = lifecycleOwner.lifecycle
-        val observer = lifecycle.addForegroundResumeObserver { resumeRevision++ }
+        val observer = lifecycle.addForegroundResumeObserver {
+            resumeRevision++
+            appUpdates.foreground()
+        }
         onDispose { lifecycle.removeObserver(observer) }
     }
     DisposableEffect(lifecycleOwner, destination, dashboardObscured) {
@@ -571,6 +604,9 @@ fun WeaveApp(
             if (event == Lifecycle.Event.ON_STOP) {
                 viewModel.cancelForegroundDiagnostics()
                 showNetworkPrivacyCenter = false
+                // Do not compare candidates from a closed dialog against a later exit.
+                browserPrivacyResult = null
+                browserPrivacyError = null
                 browserProbeRequest = null
             }
             updateVisibility()
@@ -586,11 +622,12 @@ fun WeaveApp(
     DashboardEffects(
         viewModel = viewModel,
         snackbar = snackbar,
-        onImportCompleted = {
-            showImportDialog = false
-            importStartWith = null
-            showProxyMigration = false
-            externalImport = null
+        onImportCompleted = { owner ->
+            if (owner == null) {
+                showImportDialog = false
+                importStartWith = null
+            }
+            if (ExternalImportPreviewOwner.owns(externalImport?.id, owner)) externalImport = null
             quickStart = quickStart.imported(usableGuideNodes().isNotEmpty())
         },
     )
@@ -619,7 +656,16 @@ fun WeaveApp(
             },
             contentWindowInsets = WindowInsets(0),
         ) { innerPadding ->
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val direction = LocalLayoutDirection.current
+            val gestures = WindowInsets.systemGestures
+            val edgeInset = with(density) {
+                maxOf(24.dp, gestures.getLeft(this, direction).toDp(), gestures.getRight(this, direction).toDp())
+            }
             androidx.compose.animation.AnimatedContent(
+                modifier = Modifier.fillMaxSize().testTag("navigation-content").weaveSwipe(threshold = 56.dp, edgeInset = edgeInset) { step ->
+                    visibleDestinations.getOrNull(visibleDestinations.indexOf(destination) - step)?.let { destination = it }
+                },
                 targetState = destination,
                 transitionSpec = {
                     androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, delayMillis = 40))
@@ -638,9 +684,9 @@ fun WeaveApp(
                     trafficHistory = trafficHistory,
                     onConnect = ::requestConnect,
                     onModeSelected = viewModel::selectMode,
-                    onDefaultRouteClick = { showDefaultRoutePicker = true },
+                    onDefaultRouteClick = { openDefaultRoutePicker() },
                     onMoreClick = { showConnectionActions = true },
-                    onIpQuality = { openNetworkPrivacyCenter(runFullCheck = true) },
+                    onIpQuality = { showNetworkPrivacyCenter = true },
                     contentPadding = innerPadding,
                 )
             }
@@ -651,9 +697,11 @@ fun WeaveApp(
                     onPreset = viewModel::applyRoutingPreset,
                     routes = routes,
                     onRouteClick = { packageName ->
-                        editingRoute = routes.firstOrNull { it.packageName == packageName }
+                        editingRoute = viewModel.groupProfileEpoch.value?.let { epoch ->
+                            routes.firstOrNull { it.packageName == packageName }?.let { epoch to it }
+                        }
                     },
-                    onAdd = { showAppPicker = true },
+                    onAdd = { appPickerEpoch = viewModel.groupProfileEpoch.value },
                     onRouteLens = { showRouteLens = true },
                     contentPadding = innerPadding,
                     routingMode = dashboard.routingMode,
@@ -709,8 +757,8 @@ fun WeaveApp(
                     onDomesticDirectChanged = viewModel::setDomesticDirect,
                     onPaletteSelected = viewModel::setWeavePalette,
                     onLanguageSelected = viewModel::setLanguage,
-                    onShowVpnDisclosure = { showVpnDisclosure = true },
-                    onOpenPrivacyObservatory = { openNetworkPrivacyCenter(runFullCheck = false) },
+                    onShowVpnDisclosure = { disclosureMode = VpnDisclosureMode.INFORMATION },
+                    onOpenPrivacyObservatory = { showNetworkPrivacyCenter = true },
                     onOpenRecoveryCenter = {
                         viewModel.refreshRecoveryState()
                         showRecoveryCenter = true
@@ -735,17 +783,14 @@ fun WeaveApp(
                         showRuleSets = true
                     },
                     onOpenCustomGroups = {
-                        viewModel.clearCustomGroupError()
                         showCustomGroups = true
                     },
-                    onOpenBackup = {
-                        viewModel.discardBackupState()
-                        showBackup = true
-                    },
+                    onOpenBackup = { showBackup = true },
                     onOpenLanTransfer = { showLanTransferDialog = true },
                     onOpenQuickStart = { quickStart = quickStart.open() },
                     quickStartReducedMotion = quickStartReducedMotion,
                     onQuickStartMotionChanged = ::changeQuickStartMotion,
+                    onOpenAppUpdates = { showAppUpdates = true },
                 )
             }
             }
@@ -754,6 +799,15 @@ fun WeaveApp(
     }
 
     }
+
+    NextUpdateUi(
+        controller = appUpdates,
+        visible = showAppUpdates,
+        canShowNotice = !dashboardObscured,
+        snackbar = snackbar,
+        onOpen = { showAppUpdates = true },
+        onDismiss = { showAppUpdates = false },
+    )
 
     if (quickStart.visible) {
         val guideDashboard by viewModel.dashboard.collectAsStateWithLifecycle()
@@ -771,7 +825,7 @@ fun WeaveApp(
                 resumed = resumeRevision > quickStartConnectResume,
             )
         }
-        val childVisible = showImportDialog || showDefaultRoutePicker || showVpnDisclosure
+        val childVisible = showImportDialog || showDefaultRoutePicker || disclosureMode != null
         if (!childVisible) {
             QuickStartDialog(
                 step = quickStart.step, hasNodes = usableNodes.isNotEmpty(), hasProxyTarget = hasProxyTarget,
@@ -803,7 +857,7 @@ fun WeaveApp(
                             }
                             QuickStartStep.NODE -> if (usableNodes.isNotEmpty()) {
                                 quickStart = quickStart.beginAction(QuickStartAction.NODE)
-                                showDefaultRoutePicker = true
+                                openDefaultRoutePicker()
                             } else {
                                 quickStart = quickStart.copy(step = QuickStartStep.IMPORT)
                             }
@@ -830,17 +884,23 @@ fun WeaveApp(
         }
     }
 
-    if (showVpnDisclosure) {
+    disclosureMode?.let { mode ->
         VpnDisclosureDialog(
             accepted = vpnDisclosureAccepted,
+            mode = mode,
             onDismiss = {
-                showVpnDisclosure = false
-                quickStart = quickStart.cancelAction()
+                disclosureMode = null
+                if (mode == VpnDisclosureMode.CONNECT) quickStart = quickStart.cancelAction()
             },
             onAcceptAndContinue = {
-                onAcceptVpnDisclosure()
-                showVpnDisclosure = false
-                onRequestConnection()
+                if (disclosureMode == VpnDisclosureMode.CONNECT) {
+                    onAcceptVpnDisclosure()
+                    disclosureMode = null
+                    val state = viewModel.dashboard.value.connectionState
+                    if (state == ConnectionState.DISCONNECTED || state == ConnectionState.ERROR) {
+                        onRequestConnection()
+                    }
+                }
             },
         )
     }
@@ -862,8 +922,9 @@ fun WeaveApp(
     if (showNetworkPrivacyCenter) {
         val probeRuntime by io.weave.client.core.vpn.VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
         val expectedRevision = probeRuntime.revision
-        val expectedBrowserRequest = browserProbeRequest
         var browserRevision by remember { mutableStateOf(expectedRevision) }
+        val browserOnCurrentPath = browserRevision == expectedRevision
+        val expectedBrowserRequest = browserProbeRequest.takeIf { browserOnCurrentPath }
         LaunchedEffect(expectedRevision) {
             if (browserRevision != expectedRevision) {
                 browserPrivacyResult = null
@@ -888,19 +949,27 @@ fun WeaveApp(
             report = privacyReport,
             ipQualityState = ipQualityState,
             endpointState = commonEndpointState,
-            browserResult = browserPrivacyResult,
-            browserProbeRequest = browserProbeRequest,
-            browserError = browserPrivacyError,
+            browserResult = browserPrivacyResult.takeIf { browserOnCurrentPath },
+            browserProbeRequest = expectedBrowserRequest,
+            browserError = browserPrivacyError.takeIf { browserOnCurrentPath },
             onRunFullCheck = {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                browserProbeRequest = BrowserProbeRequest()
+                // Do not start external STUN if the HTTPS checks reject this path.
+                browserProbeRequest = if (io.weave.client.core.vpn.VpnRuntimeState.acceptsEvidence(expectedRevision)) {
+                    BrowserProbeRequest()
+                } else null
                 viewModel.runIpQualityProbe()
             },
             onRunBrowserCheck = {
                 browserPrivacyResult = null
-                browserPrivacyError = null
-                browserProbeRequest = BrowserProbeRequest()
+                if (io.weave.client.core.vpn.VpnRuntimeState.acceptsEvidence(expectedRevision)) {
+                    browserPrivacyError = null
+                    browserProbeRequest = BrowserProbeRequest()
+                } else {
+                    browserProbeRequest = null
+                    browserPrivacyError = "网络尚未就绪，请连接并等待恢复后重试"
+                }
             },
             onBrowserResult = {
                 if (expectedBrowserRequest?.canPublish(
@@ -926,6 +995,9 @@ fun WeaveApp(
             },
             onDismiss = {
                 showNetworkPrivacyCenter = false
+                // Do not compare candidates from a closed dialog against a later exit.
+                browserPrivacyResult = null
+                browserPrivacyError = null
                 browserProbeRequest = null
                 viewModel.clearIpQualityState()
             },
@@ -941,7 +1013,7 @@ fun WeaveApp(
             it.target.nodeId in preview.removedNodeIds }.map { it.appName }
         val defaultAffected = currentDashboard.defaultRouteTarget?.let {
             it.subscriptionId == preview.subscriptionId && it.nodeId in preview.removedNodeIds } == true
-        AlertDialog(onDismissRequest = viewModel::discardUpdatePreview,
+        WeaveDialog(onDismissRequest = viewModel::discardUpdatePreview,
             title = { Text("订阅更新预览") },
             text = {
                 LazyColumn(Modifier.heightIn(max = 450.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1032,8 +1104,8 @@ fun WeaveApp(
         val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
         ConnectionActionsDialog(
             state = dashboard.connectionState, onDismiss = { showConnectionActions = false },
-            onChooseExit = { showConnectionActions = false; showDefaultRoutePicker = true },
-            onDiagnostics = { showConnectionActions = false; openNetworkPrivacyCenter(runFullCheck = false) },
+            onChooseExit = { showConnectionActions = false; openDefaultRoutePicker() },
+            onDiagnostics = { showConnectionActions = false; showNetworkPrivacyCenter = true },
             onConnections = { showConnectionActions = false; showConnections = true },
             onLogs = { showConnectionActions = false; showLogs = true },
             onRecovery = { showConnectionActions = false; viewModel.refreshRecoveryState(); showRecoveryCenter = true },
@@ -1076,23 +1148,30 @@ fun WeaveApp(
     if (showLanTransferDialog) {
         val lanTransferState by viewModel.lanTransferState.collectAsStateWithLifecycle()
         val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
-        LanTransferDialog(
-            state = lanTransferState,
-            subscriptions = subscriptions,
-            onDismiss = {
-                if (!lanTransferState.running) {
-                    showLanTransferDialog = false
-                    viewModel.stopLanExport()
-                }
-            },
-            onStartExport = viewModel::startLanExport,
-            onStopExport = viewModel::stopLanExport,
-            onImport = viewModel::importLanTransfer,
-            onScanQr = viewModel::importLanTransferQr,
-        )
+        val transferEpoch by viewModel.groupProfileEpoch.collectAsStateWithLifecycle()
+        // Drop stale selections and drafts across a full-profile restore.
+        key(transferEpoch) {
+            LanTransferDialog(
+                state = lanTransferState,
+                subscriptions = subscriptions,
+                onDismiss = {
+                    if (!lanTransferState.running) {
+                        showLanTransferDialog = false
+                        viewModel.stopLanExport()
+                    }
+                },
+                onStartExport = viewModel::startLanExport,
+                onStopExport = viewModel::stopLanExport,
+                onImport = viewModel::importLanTransfer,
+                onScanQr = viewModel::importLanTransferQr,
+                fileDialog = { selected, close ->
+                    SubscriptionFileDialog(selected, transferEpoch, viewModel.subscriptionFiles, viewModel::addSubscriptionFile, close)
+                },
+            )
+        }
     }
 
-    if (showAppPicker) {
+    appPickerEpoch?.let { epoch ->
         val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
         val routes by viewModel.routes.collectAsStateWithLifecycle()
         val unroutedApps = remember(installedApps, routes) {
@@ -1100,15 +1179,20 @@ fun WeaveApp(
         }
         AppPickerDialog(
             apps = unroutedApps,
-            onDismiss = { showAppPicker = false },
+            onDismiss = { if (!routePickerSaving) appPickerEpoch = null },
             onSelect = { packageName ->
-                viewModel.addAppRoute(packageName)
-                showAppPicker = false
+                if (!routePickerSaving) {
+                    routePickerSaving = true
+                    viewModel.addAppRoute(epoch, packageName) { result ->
+                        finishRouteChoice(result) { appPickerEpoch = null }
+                    }
+                }
             },
         )
     }
 
-    editingRoute?.let { route ->
+    editingRoute?.let { (epoch, route) ->
+        val healthOwner = remember { Any() }
         val favorites by viewModel.favoriteNodes.collectAsStateWithLifecycle()
         val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
         val nodes by viewModel.nodes.collectAsStateWithLifecycle()
@@ -1118,27 +1202,36 @@ fun WeaveApp(
             RouteTargetDialog(
                 favorites = favorites,
                 onFavorite = viewModel::toggleFavoriteNode,
-                onSubscriptionSelected = viewModel::selectHealthSubscription,
+                onSubscriptionSelected = { viewModel.selectRouteHealthSubscription(healthOwner, it) },
                 route = route,
                 subscriptions = subscriptions,
                 nodes = nodes,
                 health = subscriptionHealth,
                 vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
-                onCheckHealth = viewModel::checkSubscriptionHealth,
-                onDismiss = { editingRoute = null },
+                onCheckHealth = { viewModel.checkRouteSubscriptionHealth(healthOwner, it) },
+                onDismiss = { if (!routePickerSaving) editingRoute = null },
                 customGroups = customGroups,
             onSelect = { target ->
-                viewModel.setRouteTarget(route.packageName, target)
-                editingRoute = null
+                if (!routePickerSaving) {
+                    routePickerSaving = true
+                    viewModel.setRouteTarget(epoch, route.packageName, target) { result ->
+                        finishRouteChoice(result) { editingRoute = null }
+                    }
+                }
             },
             onDelete = {
-                viewModel.removeAppRoute(route.packageName)
-                editingRoute = null
+                if (!routePickerSaving) {
+                    routePickerSaving = true
+                    viewModel.removeAppRoute(epoch, route.packageName) { result ->
+                        finishRouteChoice(result) { editingRoute = null }
+                    }
+                }
             },
         )
     }
 
-    if (showDefaultRoutePicker) {
+    defaultRoutePickerEpoch?.let { epoch ->
+        val healthOwner = remember { Any() }
         val favorites by viewModel.favoriteNodes.collectAsStateWithLifecycle()
         val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
         val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
@@ -1148,38 +1241,80 @@ fun WeaveApp(
         DefaultRouteTargetDialog(
             favorites = favorites,
             onFavorite = viewModel::toggleFavoriteNode,
-            onSubscriptionSelected = viewModel::selectHealthSubscription,
+            onSubscriptionSelected = { viewModel.selectRouteHealthSubscription(healthOwner, it) },
             selectedTarget = dashboard.defaultRouteTarget,
             subscriptions = subscriptions,
             nodes = nodes,
             health = subscriptionHealth,
             vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
-            onCheckHealth = viewModel::checkSubscriptionHealth,
+            onCheckHealth = { viewModel.checkRouteSubscriptionHealth(healthOwner, it) },
             onDismiss = {
-                showDefaultRoutePicker = false
-                quickStart = quickStart.cancelAction()
+                if (!routePickerSaving) {
+                    defaultRoutePickerEpoch = null
+                    quickStart = quickStart.cancelAction()
+                }
             },
             onSelect = { target ->
-                viewModel.setDefaultRouteTarget(target)
-                showDefaultRoutePicker = false
-                quickStart = quickStart.selected(QuickStartPolicy.hasProxyTarget(target, usableGuideNodes(), viewModel.customGroups.value))
+                if (!routePickerSaving) {
+                    routePickerSaving = true
+                    viewModel.setDefaultRouteTarget(epoch, target) { result ->
+                        finishRouteChoice(result) {
+                            defaultRoutePickerEpoch = null
+                            quickStart = quickStart.selected(QuickStartPolicy.hasProxyTarget(target, usableGuideNodes(), viewModel.customGroups.value))
+                        }
+                    }
+                }
             },
             customGroups = customGroups,
         )
     }
 
-    externalImport?.let { value ->
-        val importState by viewModel.importState.collectAsStateWithLifecycle()
-        ExternalImportDialog(
-            value = value,
-            running = importState.running,
-            error = importState.error,
-            onDismiss = {
-                externalImport = null
-                viewModel.resetImportState()
+    if (routePickerSaving) {
+        WeaveDialog(
+            onDismissRequest = {},
+            text = {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp))
+                    Text("正在保存")
+                }
             },
-            onConfirm = { name -> viewModel.importExternal(value, name) },
+            confirmButton = {},
         )
+    }
+    routePickerError?.let { error ->
+        WeaveDialog(
+            onDismissRequest = { routePickerError = null },
+            title = { Text("未保存所选出口") },
+            text = { Text(error) },
+            confirmButton = { TextButton(onClick = { routePickerError = null }) { Text("返回") } },
+        )
+    }
+
+    externalImport?.let { preview ->
+        val importState by viewModel.importState.collectAsStateWithLifecycle()
+        androidx.compose.runtime.key(preview.id) {
+            ExternalImportDialog(
+                value = preview.value,
+                running = ExternalImportPreviewOwner.isRunning(preview.id, importState.externalPreviewId, importState.running),
+                blockedByOtherImport = ExternalImportPreviewOwner.isBlockedByOtherImport(
+                    preview.id, importState.externalPreviewId, importState.running,
+                ),
+                error = importState.error.takeIf { ExternalImportPreviewOwner.owns(preview.id, importState.externalPreviewId) },
+                onDismiss = {
+                    if (ExternalImportPreviewOwner.owns(externalImport?.id, preview.id)) {
+                        externalImport = null
+                        viewModel.resetImportState()
+                    }
+                },
+                onConfirm = { name ->
+                    val currentImport = viewModel.importState.value
+                    val completedOwner = currentImport.externalPreviewId.takeIf { currentImport.completedId != null }
+                    if (ExternalImportPreviewOwner.canConfirm(externalImport?.id, preview.id, currentImport.running, completedOwner)) {
+                        viewModel.importExternal(preview.value, name, preview.id)
+                    }
+                },
+            )
+        }
     }
 
     if (showConnections) {
@@ -1204,14 +1339,14 @@ fun WeaveApp(
 
     if (showCustomGroups) {
         val customGroups by viewModel.customGroups.collectAsStateWithLifecycle()
-        val customGroupError by viewModel.customGroupError.collectAsStateWithLifecycle()
+        val groupProfileEpoch by viewModel.groupProfileEpoch.collectAsStateWithLifecycle()
         val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
         val nodes by viewModel.nodes.collectAsStateWithLifecycle()
         CustomGroupsScreen(
             groups = customGroups,
             subscriptions = subscriptions,
             nodes = nodes,
-            error = customGroupError,
+            profileEpoch = groupProfileEpoch,
             onSave = viewModel::saveCustomGroup,
             onDelete = viewModel::deleteCustomGroup,
             onDismiss = { showCustomGroups = false },
@@ -1226,10 +1361,7 @@ fun WeaveApp(
             onRead = viewModel::readBackup,
             onConfirmRestore = viewModel::confirmRestore,
             onDismiss = {
-                if (!backupState.running) {
-                    showBackup = false
-                    viewModel.discardBackupState()
-                }
+                if (viewModel.discardBackupState()) showBackup = false
             },
         )
     }
@@ -1281,6 +1413,11 @@ fun WeaveApp(
     }
 }
 
+private data class OwnedExternalImport(
+    val id: String,
+    val value: io.weave.client.subscription.ExternalImport,
+)
+
 /**
  * Effects that are independent from the currently visible destination. Keeping their flow
  * collection in a child prevents dashboard/status emissions from invalidating the whole shell.
@@ -1289,7 +1426,7 @@ fun WeaveApp(
 private fun DashboardEffects(
     viewModel: AppViewModel,
     snackbar: SnackbarHostState,
-    onImportCompleted: () -> Unit,
+    onImportCompleted: (String?) -> Unit,
 ) {
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
@@ -1302,16 +1439,18 @@ private fun DashboardEffects(
         }
     }
 
+    val latestPackaged by rememberUpdatedState(LocalReleasedAppCopy.current)
     LaunchedEffect(Unit) {
         StatusBus.messages.collect { message ->
-            snackbar.showSnackbar(localizeWeaveText(message, viewModel.language.value))
+            snackbar.showSnackbar(resolveAppOwnedCopy(message, viewModel.language.value, staged = null, released = latestPackaged))
         }
     }
 
-    LaunchedEffect(importState.completedId) {
-        if (importState.completedId != null) {
-            onImportCompleted()
-            viewModel.resetImportState()
+    val completion = importState.takeIf { it.completedId != null }
+    LaunchedEffect(completion) {
+        if (completion != null) {
+            onImportCompleted(completion.externalPreviewId)
+            viewModel.resetImportState(completion)
         }
     }
 }

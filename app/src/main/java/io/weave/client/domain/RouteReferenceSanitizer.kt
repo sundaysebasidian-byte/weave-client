@@ -16,6 +16,7 @@ object RouteReferenceSanitizer {
         groups: Map<String, String> = emptyMap(),
     ): List<AppRoute> {
         val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
+        val fixedNodes = fixedNodeMatches(routes, subscriptionIds, nodes)
         return routes.map { route ->
             val target = route.target
             when (target.kind) {
@@ -32,27 +33,45 @@ object RouteReferenceSanitizer {
                     }
                 }
                 RouteKind.FIXED -> {
-                    val subscriptionId = target.subscriptionId
-                    val nodeExists = subscriptionId in subscriptionIds && nodes.any {
-                        it.subscriptionId == subscriptionId && it.id == target.nodeId
-                    }
-                    when {
-                        nodeExists -> route.copy(
-                            target = target.copy(
-                                label = NodeDisplayName.core(
-                                    nodes.first {
-                                        it.subscriptionId == subscriptionId &&
-                                            it.id == target.nodeId
-                                    }.name,
-                                ),
-                            ),
-                        )
-                        else -> route.copy(target = target.copy(kind = RouteKind.BLOCK,
+                    val node = fixedNodes[target.subscriptionId]?.get(target.nodeId)
+                    if (node != null) {
+                        route.copy(target = target.copy(label = NodeDisplayName.core(node.name)))
+                    } else {
+                        route.copy(target = target.copy(kind = RouteKind.BLOCK,
                             label = "出口已失效，请重新选择"))
                     }
                 }
             }
         }.distinctBy(AppRoute::packageName)
+    }
+
+    private fun fixedNodeMatches(
+        routes: List<AppRoute>,
+        subscriptionIds: Set<String>,
+        nodes: List<ProxyNode>,
+    ): Map<String, Map<String, ProxyNode?>> {
+        val matches = mutableMapOf<String, MutableMap<String, ProxyNode?>>()
+        var unmatched = 0
+        for (route in routes) {
+            val target = route.target
+            if (target.kind != RouteKind.FIXED) continue
+            val subscriptionId = target.subscriptionId ?: continue
+            val nodeId = target.nodeId ?: continue
+            if (subscriptionId !in subscriptionIds) continue
+            val byId = matches.getOrPut(subscriptionId) { mutableMapOf() }
+            if (!byId.containsKey(nodeId)) {
+                byId[nodeId] = null
+                unmatched++
+            }
+        }
+        if (unmatched == 0) return emptyMap()
+        for (node in nodes) {
+            val byId = matches[node.subscriptionId] ?: continue
+            if (!byId.containsKey(node.id) || byId[node.id] != null) continue
+            byId[node.id] = node
+            if (--unmatched == 0) break
+        }
+        return matches
     }
 
     fun defaultTarget(

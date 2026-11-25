@@ -14,7 +14,7 @@ an unsigned developer preview.
 
 ## Local-open-source boundary
 
-- [ ] Confirm the exact build has no Weave account/backend, proxy relay, node marketplace, telemetry, crash reporter, remote app updater, dynamic remote configuration, bundled node credentials, or hidden management endpoint.
+- [ ] Confirm the exact build has no Weave account/backend, proxy relay, node marketplace, telemetry, crash reporter, silent app-install path, dynamic remote configuration, bundled node credentials, or hidden management endpoint.
 - [ ] Run `bash tools/audit-local-release.sh` and review [`NETWORK_ENDPOINT_INVENTORY.md`](NETWORK_ENDPOINT_INVENTORY.md) against the actual code and binary.
 - [ ] Ensure README, privacy notice, screenshots, issue templates, and release notes do not promise anonymity, zero logs, guaranteed availability, regulatory exemption, or bypassing network controls.
 - [ ] State clearly that user-selected subscriptions, nodes, DNS resolvers, IP-quality services, and destinations are third parties and that Weave is not a hosted access service.
@@ -30,6 +30,8 @@ an unsigned developer preview.
 - [ ] Verify every iOS XCFramework slice hash, SBOM, corresponding source, and Network Extension memory budget.
 - [ ] Publish SHA-256, native symbols, R8 mapping, SBOM, and provenance attestation.
 - [ ] Make the GitHub release immutable after all assets are attached.
+- [ ] For the Android Weave Next channel use `weave-next-v<version>` consistently for tags and `Weave-Next-<version>-build<versionCode>-arm64-v8a.apk` for the sole matching ARM64 asset. Ensure public metadata includes its size and SHA-256 digest, and mark release candidates as prereleases. Match the documented Weave Next package and production signer. Never replace a legacy asset or mark a prerelease as stable.
+- [ ] On a disposable Android ARM64 target, verify the published feed, opt-out and manual check separately from a signed in-place upgrade. Exercise rejection of wrong package, signer, build and modified bytes. For a successful upgrade, cold-start and compare local profile data before and after. Do not count a synthetic feed or debug APK as publication or production-signature evidence.
 
 ## Runtime validation
 

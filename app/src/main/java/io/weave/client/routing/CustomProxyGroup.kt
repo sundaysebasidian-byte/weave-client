@@ -43,7 +43,9 @@ object CustomProxyGroupValidator {
 
     fun normalize(group: CustomProxyGroup): CustomProxyGroup {
         require(UUID_REGEX.matches(group.id)) { "策略组 ID 无效" }
-        val name = group.name.filterNot(Char::isISOControl).trim().take(40)
+        val clipped = group.name.filterNot(Char::isISOControl).trim().take(40)
+        // The editor and imported backups can both land exactly on a UTF-16 boundary.
+        val name = if (clipped.lastOrNull()?.isHighSurrogate() == true) clipped.dropLast(1) else clipped
         require(name.isNotEmpty()) { "请填写策略组名称" }
         val members = group.members.distinct()
         require(members.isNotEmpty()) { "请至少选择一个节点" }

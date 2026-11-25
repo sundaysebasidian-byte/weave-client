@@ -37,6 +37,10 @@ object WeaveLocales {
         val store = RuntimeSettingsStore(context)
         val manager = context.getSystemService(LocaleManager::class.java) ?: return
         if (!store.isLocaleMigrated()) {
+            // An explicit choice not supported by this binary belongs to Android, not to
+            // legacy migration. Keep leaving it untouched until the explicit choice changes.
+            val beforeMigration = manager.applicationLocales
+            if (!beforeMigration.isEmpty && WeaveLanguage.matchSystem(beforeMigration[0]) == null) return
             // Versions before 0.4 kept the in-app choice only in the store. Hand it to the system
             // once instead of treating the empty system setting as "follow the device".
             if (migrateLegacyAppLanguage(
@@ -46,8 +50,13 @@ object WeaveLocales {
                 )
             ) return
         }
+        // Keep the legacy post-migration observation when there was no selection to hand off.
         val locales = manager.applicationLocales
-        val selected = if (locales.isEmpty) null else WeaveLanguage.fromSystem(locales[0])
+        val selected = if (locales.isEmpty) {
+            null
+        } else {
+            WeaveLanguage.matchSystem(locales[0]) ?: return
+        }
         if (selected != store.explicitLanguage()) {
             if (selected == null) store.setFollowSystemLanguage() else store.setLanguage(selected)
         }

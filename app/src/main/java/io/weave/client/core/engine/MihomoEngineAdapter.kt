@@ -63,48 +63,48 @@ internal object NodeHealthAggregator {
     fun aggregate(rounds: List<List<NodeHealthSnapshot>>): List<NodeHealthSnapshot> {
         if (rounds.isEmpty()) return emptyList()
         val byName = HashMap<String, ProbeSamples>()
+        val expected = rounds.size
         for (round in rounds) {
             for (snapshot in round) {
-                val samples = byName.getOrPut(snapshot.name) { ProbeSamples(snapshot.protocol) }
+                val samples = byName.getOrPut(snapshot.name) { ProbeSamples(snapshot.protocol, minOf(3, expected)) }
                 // Keep the last protocol even if that row has no usable latency.
                 samples.protocol = snapshot.protocol
                 LatencySamplePolicy.sanitize(snapshot.latencyMs)?.let { delay -> samples.add(delay) }
             }
         }
-        val expected = rounds.size
         return byName.map { (name, samples) ->
-            val delays = samples.delays
-            val successful = delays.size
-            delays.sort()
+            val successful = samples.size
+            samples.sort()
             NodeHealthSnapshot(
                 name = name,
                 protocol = samples.protocol,
-                latencyMs = delays.getOrNull(successful / 2),
+                latencyMs = if (successful == 0) null else samples[successful / 2],
                 samples = expected,
                 successfulSamples = successful,
                 jitterMs = if (successful < 2) null else (samples.jitterTotal.toDouble() / (successful - 1)).toInt(),
                 packetLossPercent = ((expected - successful) * 100 / expected).coerceIn(0, 100),
-                p95LatencyMs = percentile(delays, 95),
+                p95LatencyMs = if (successful == 0) null else samples[((successful - 1) * 95 + 99) / 100],
             )
         }.sortedBy { it.name }
     }
 
-    private class ProbeSamples(var protocol: String) {
-        val delays = ArrayList<Int>()
+    private class ProbeSamples(var protocol: String, capacity: Int) {
+        private var delays = IntArray(capacity)
+        var size = 0
+            private set
         var jitterTotal = 0
             private set
 
         fun add(delay: Int) {
-            // Jitter uses the original successful-probe order, not the later sorted order.
-            delays.lastOrNull()?.let { previous -> jitterTotal += abs(delay - previous) }
-            delays.add(delay)
+            // Jitter uses arrival order. Preserve repeated rows even when the array must grow.
+            if (size > 0) jitterTotal += abs(delay - delays[size - 1])
+            if (size == delays.size) delays = delays.copyOf(size * 2)
+            delays[size++] = delay
         }
-    }
 
-    private fun percentile(sorted: List<Int>, percentile: Int): Int? {
-        if (sorted.isEmpty()) return null
-        val index = (((sorted.size - 1) * percentile) + 99) / 100
-        return sorted[index.coerceAtMost(sorted.lastIndex)]
+        operator fun get(index: Int): Int = delays[index]
+
+        fun sort() = java.util.Arrays.sort(delays, 0, size)
     }
 }
 

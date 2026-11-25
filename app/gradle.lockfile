@@ -148,6 +148,7 @@ com.android.tools.analytics-library:protos:32.2.0=androidLintTool,unified-test-p
 com.android.tools.analytics-library:shared:32.2.0=androidLintTool,unified-test-platform-android-test-plugin-result-listener-gradle
 com.android.tools.analytics-library:tracker:32.2.0=androidLintTool
 com.android.tools.build:aapt2-proto:9.2.0-15009934=androidLintTool,unified-test-platform-android-test-plugin-result-listener-gradle
+com.android.tools.build:apksig:9.2.0=debugAndroidTestCompileClasspath,debugAndroidTestLintChecksClasspath,debugCompileClasspath,debugLintChecksClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestLintChecksClasspath,debugUnitTestRuntimeClasspath,localOptimizedCompileClasspath,localOptimizedLintChecksClasspath,localOptimizedRuntimeClasspath,releaseCompileClasspath,releaseLintChecksClasspath,releaseRuntimeClasspath
 com.android.tools.build:builder-model:9.2.0=androidLintTool
 com.android.tools.build:manifest-merger:32.2.0=androidLintTool
 com.android.tools.ddms:ddmlib:32.2.0=androidLintTool,unified-test-platform-android-device-provider-ddmlib,unified-test-platform-android-test-plugin-result-listener-gradle,unified-test-platform-gradle-work-action

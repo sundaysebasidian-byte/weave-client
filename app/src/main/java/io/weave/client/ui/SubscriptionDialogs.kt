@@ -93,7 +93,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -103,6 +102,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -271,7 +271,7 @@ internal fun ImportSubscriptionDialog(
         })
     }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text("添加订阅", fontWeight = FontWeight.Bold) },
         text = {
@@ -372,7 +372,9 @@ internal fun LanTransferDialog(
     onStopExport: () -> Unit,
     onImport: (String, String, Long) -> Unit,
     onScanQr: (String) -> Unit,
+    fileDialog: (@Composable (Set<String>, () -> Unit) -> Unit)? = null,
 ) {
+    var fileSelection by remember { mutableStateOf<Set<String>?>(null) }
     var importDraft by remember {
         mutableStateOf(LanImportDraft().acceptValidatedScan(state.pendingLinkRevision, state.pendingLink))
     }
@@ -426,13 +428,18 @@ internal fun LanTransferDialog(
     }
     val exporting = state.exportLink.isNotEmpty()
     val allSelected = availableIds.isNotEmpty() && selectedIds.containsAll(availableIds)
+    val fileIds = fileSelection
+    if (fileIds != null && fileDialog != null) {
+        fileDialog(fileIds) { fileSelection = null }
+        return
+    }
     val statusText = state.error ?: scannerError ?: state.message
     val statusIsError = state.error != null || scannerError != null
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("局域网互传", fontWeight = FontWeight.Bold,
+            Text("订阅互传", fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.headlineSmall.copy(
                     lineBreak = androidx.compose.ui.text.style.LineBreak.Heading,
                 ))
@@ -657,6 +664,16 @@ internal fun LanTransferDialog(
                         ) {
                             Text("从链接导入")
                         }
+                    }
+                }
+                if (fileDialog != null && !exporting) {
+                    item(key = "subscription-file") {
+                        val sending = mode == LanTransferMode.EXPORT
+                        OutlinedButton(
+                            onClick = { fileSelection = if (sending) selectedIds.toSet() else emptySet() },
+                            enabled = !state.running && (!sending || selectedIds.isNotEmpty()),
+                            modifier = Modifier.fillMaxWidth().testTag("subscription-file"),
+                        ) { Text(if (sending) "保存为加密订阅文件" else "从加密订阅文件导入") }
                     }
                 }
                 statusText?.let { status ->
@@ -887,7 +904,7 @@ internal fun SubscriptionManagerDialog(
     }
 
     if (confirmingDelete) {
-        AlertDialog(
+        WeaveDialog(
             onDismissRequest = { confirmingDelete = false },
             title = { Text("删除订阅？", fontWeight = FontWeight.Bold) },
             text = {
@@ -931,7 +948,7 @@ internal fun SubscriptionManagerDialog(
         return
     }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="net_active_disclosure">Al iniciar la prueba se envían solicitudes a ipify, ipwho.is, Cloudflare, Google (incluido STUN) y los sitios indicados abajo. Cada servicio puede ver la IP de salida de su solicitud.</string>
+    <string name="net_link_snapshot">Red predeterminada que detecta Android</string>
+    <string name="net_seen">Detectado</string>
+    <string name="net_not_seen">No detectado</string>
+    <string name="net_dns_count">Servidores DNS configurados: %1$s</string>
+    <string name="net_link_scope">VPN indica el tipo de transporte. IPv4 e IPv6 indican las direcciones locales. Estos datos no prueban qué resolvedor DNS o proxy usó una solicitud.</string>
+    <string name="net_download_scope">Una descarga HTTPS desde Cloudflare por la ruta de esta aplicación. Incluye el tiempo de conexión y no mide la velocidad máxima de la línea.</string>
+    <string name="net_download_phases">Hasta las cabeceras: %1$d ms · Lectura del cuerpo: %2$d ms</string>
+    <string name="net_latency_scope">Tres solicitudes HTTPS con respuesta esperada 204 por sitio. Con tres muestras, el P95 es la respuesta correcta más lenta. La fluctuación es la variación media entre respuestas correctas consecutivas. Una solicitud fallida no equivale a un paquete perdido.</string>
+    <string name="net_reading_exit">Comprobando la salida HTTPS…</string>
+    <string name="net_run_exit">Ejecuta la prueba mientras estés conectado para saber qué salida ven los sitios de prueba.</string>
+    <string name="net_route_scope">Las pruebas HTTPS siguen las reglas de esta aplicación, que también pueden usar una conexión directa. Una respuesta del sitio no garantiza el acceso a contenido o cuentas.</string>
+</resources>
