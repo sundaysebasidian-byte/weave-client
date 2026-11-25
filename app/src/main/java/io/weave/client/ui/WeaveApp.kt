@@ -109,6 +109,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -188,8 +189,6 @@ import io.weave.client.routing.LocalRuleAction
 import io.weave.client.routing.LocalRuleType
 import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import java.util.Date
 
 private enum class Destination(
@@ -770,10 +769,8 @@ fun WeaveApp(
             Destination.ROUTES -> {
                 val routes by viewModel.routes.collectAsStateWithLifecycle()
                 // Routes only needs the routing mode; live traffic updates must not recompose it.
-                val routingModeFlow = remember(viewModel) {
-                    viewModel.dashboard.map { it.routingMode }.distinctUntilChanged()
-                }
-                val routingMode by routingModeFlow.collectAsStateWithLifecycle(viewModel.dashboard.value.routingMode)
+                val routesDashboard = viewModel.dashboard.collectAsStateWithLifecycle()
+                val routingMode by remember(routesDashboard) { derivedStateOf { routesDashboard.value.routingMode } }
                 RoutesScreen(
                     onPreset = viewModel::applyRoutingPreset,
                     routes = routes,
@@ -1514,8 +1511,8 @@ private fun DashboardEffects(
     onImportCompleted: (String?) -> Unit,
 ) {
     // Only the status message matters here; traffic ticks must not recompose this effect host.
-    val statusMessageFlow = remember(viewModel) { viewModel.dashboard.map { it.statusMessage }.distinctUntilChanged() }
-    val statusMessage by statusMessageFlow.collectAsStateWithLifecycle(viewModel.dashboard.value.statusMessage)
+    val dashboardState = viewModel.dashboard.collectAsStateWithLifecycle()
+    val statusMessage by remember(dashboardState) { derivedStateOf { dashboardState.value.statusMessage } }
     val language by viewModel.language.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
 
