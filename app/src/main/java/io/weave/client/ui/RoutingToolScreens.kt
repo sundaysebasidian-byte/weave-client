@@ -1,5 +1,6 @@
 package io.weave.client.ui
 
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,7 +30,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,13 +43,15 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -68,6 +70,7 @@ import io.weave.client.routing.RuleSetBehavior
 import io.weave.client.transfer.BackupCodec
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 
 // Remote rule sets ------------------------------------------------------------------------------
 
@@ -125,16 +128,18 @@ internal fun RuleSetsScreen(
             }
             items(state.sets, key = { it.id }) { set ->
                 val language = LocalWeaveLanguage.current
+                val packaged = LocalReleasedAppCopy.current
                 LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth(), onClick = { editing = set }) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(set.name, fontWeight = FontWeight.SemiBold, translate = false)
                             Text(
                                 listOf(set.behavior.label, set.action.label, "${set.entryCount} 条").joinToString(" · ") {
-                                    localizeWeaveText(it, language)
+                                    resolveAppOwnedCopy(it, language, staged = null, released = packaged)
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
+                                translate = packaged == null,
                             )
                             set.sha256?.let {
                                 Text("SHA-256 ${it.take(16)}…", fontFamily = FontFamily.Monospace, fontSize = 10.sp,
@@ -175,7 +180,7 @@ private fun RuleSetEditorDialog(
     var url by remember { mutableStateOf(initial?.url.orEmpty()) }
     var behavior by remember { mutableStateOf(initial?.behavior ?: RuleSetBehavior.DOMAIN) }
     var action by remember { mutableStateOf(initial?.action ?: LocalRuleAction.DEFAULT) }
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "添加规则集" else "编辑规则集", fontWeight = FontWeight.Bold) },
         text = {
@@ -225,37 +230,34 @@ private fun RuleSetEditorDialog(
 
 // Custom groups and chains -----------------------------------------------------------------------
 
+private data class GroupEditorSession(val epoch: String, val initial: CustomProxyGroup?)
+
 @Composable
 internal fun CustomGroupsScreen(
     groups: List<CustomProxyGroup>,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
-    error: String?,
-    onSave: (CustomProxyGroup) -> Result<Unit>,
-    onDelete: (String) -> Unit,
+    profileEpoch: String?,
+    onSave: suspend (String, CustomProxyGroup, CustomProxyGroup?) -> Result<Unit>,
+    onDelete: suspend (String, CustomProxyGroup) -> Result<Unit>,
     onDismiss: () -> Unit,
 ) {
-    var editing by remember { mutableStateOf<CustomProxyGroup?>(null) }
-    var creating by remember { mutableStateOf(false) }
+    var session by remember { mutableStateOf<GroupEditorSession?>(null) }
     val nodeNames = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to NodeDisplayName.core(it.name) } }
     WeaveToolScreen(
         title = "自定义策略组",
         subtitle = "跨订阅组合节点；设置入口节点后成为链式代理",
         onDismiss = onDismiss,
         actions = {
-            IconButton(onClick = { creating = true }, enabled = nodes.isNotEmpty()) {
+            IconButton(
+                onClick = { profileEpoch?.let { session = GroupEditorSession(it, null) } },
+                enabled = nodes.isNotEmpty() && profileEpoch != null,
+                modifier = Modifier.testTag("add-custom-group"),
+            ) {
                 Icon(Icons.Rounded.Add, localizedContentDescription("新建策略组"))
             }
         },
     ) {
-        error?.let {
-            WeaveNotice(
-                icon = Icons.Rounded.Warning,
-                message = it,
-                tone = WeaveStatusTone.CRITICAL,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
@@ -271,19 +273,22 @@ internal fun CustomGroupsScreen(
             }
             items(groups, key = { it.id }) { group ->
                 val language = LocalWeaveLanguage.current
-                LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth(), onClick = { editing = group }) {
+                val packaged = LocalReleasedAppCopy.current
+                LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth(), onClick = { profileEpoch?.let { session = GroupEditorSession(it, group) } }) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(group.name, fontWeight = FontWeight.SemiBold, translate = false)
                         Text(
                             listOf(group.strategy.label, "${group.members.size} 个节点").joinToString(" · ") {
-                                localizeWeaveText(it, language)
+                                resolveAppOwnedCopy(it, language, staged = null, released = packaged)
                             },
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
+                            translate = packaged == null,
                         )
                         group.entry?.let { entry ->
+                            val label = resolveAppOwnedCopy("入口", language, staged = null, released = packaged)
                             Text(
-                                "${localizeWeaveText("入口", language)} · ${nodeNames[entry] ?: "?"}",
+                                "$label · ${nodeNames[entry] ?: "?"}",
                                 color = MaterialTheme.colorScheme.secondary,
                                 fontSize = 12.sp,
                                 translate = false,
@@ -294,15 +299,14 @@ internal fun CustomGroupsScreen(
             }
         }
     }
-    val target = editing
-    if (creating || target != null) {
+    session?.let { editor ->
         CustomGroupEditor(
-            initial = target,
+            initial = editor.initial,
             subscriptions = subscriptions,
             nodes = nodes,
-            onDismiss = { creating = false; editing = null },
-            onSave = { group -> onSave(group).onSuccess { creating = false; editing = null } },
-            onDelete = target?.let { group -> { onDelete(group.id); editing = null } },
+            onDismiss = { session = null },
+            onSave = { group -> onSave(editor.epoch, group, editor.initial).onSuccess { session = null } },
+            onDelete = editor.initial?.let { group -> suspend { onDelete(editor.epoch, group).onSuccess { session = null } } },
         )
     }
 }
@@ -314,8 +318,8 @@ private fun CustomGroupEditor(
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
     onDismiss: () -> Unit,
-    onSave: (CustomProxyGroup) -> Result<Unit>,
-    onDelete: (() -> Unit)?,
+    onSave: suspend (CustomProxyGroup) -> Result<Unit>,
+    onDelete: (suspend () -> Result<Unit>)?,
 ) {
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var strategy by remember { mutableStateOf(initial?.strategy ?: CustomGroupStrategy.LOWEST_LATENCY) }
@@ -326,29 +330,41 @@ private fun CustomGroupEditor(
     var pickingEntry by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
     var saveRejection by remember(initial?.id) { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun submit(action: suspend () -> Result<Unit>) {
+        if (saving) return
+        saving = true
+        saveRejection = null
+        scope.launch {
+            try { action().onFailure { saveRejection = it.message ?: "无法保存策略组" } }
+            finally { saving = false }
+        }
+    }
     val subscriptionNames = remember(subscriptions) { subscriptions.associate { it.id to it.name } }
     val groupedNodes = remember(nodes, query) { groupMatchingCustomGroupNodes(nodes, query) }
     WeaveToolScreen(
         title = if (initial == null) "新建策略组" else "编辑策略组",
         subtitle = "已选 ${members.size} 个节点",
-        onDismiss = onDismiss,
+        onDismiss = { if (!saving) onDismiss() },
         actions = {
             if (onDelete != null) {
-                IconButton(onClick = { confirmingDelete = true }) {
+                IconButton(onClick = { confirmingDelete = true }, enabled = !saving) {
                     Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("删除"))
                 }
             }
             TextButton(
-                enabled = name.isNotBlank() && members.isNotEmpty() && (!chained || entry != null),
+                enabled = !saving && name.isNotBlank() && members.isNotEmpty() && (!chained || entry != null),
+                modifier = Modifier.testTag("save-custom-group"),
                 onClick = {
-                    onSave(
-                        (initial ?: CustomProxyGroup(name = name, members = members.toList()))
-                            .copy(name = name, strategy = strategy, members = members.toList(), entry = entry.takeIf { chained }),
-                    ).onFailure { saveRejection = it.message }
+                    val draft = (initial ?: CustomProxyGroup(name = name, members = members.toList()))
+                        .copy(name = name, strategy = strategy, members = members.toList(), entry = entry.takeIf { chained })
+                    submit { onSave(draft) }
                 },
             ) { Text("保存") }
         },
     ) {
+        if (saving) CircularProgressIndicator(Modifier.testTag("saving-custom-group").padding(12.dp))
         saveRejection?.let {
             WeaveNotice(
                 icon = Icons.Rounded.Warning,
@@ -364,7 +380,7 @@ private fun CustomGroupEditor(
         ) {
             item {
                 OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("名称") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                    enabled = !saving, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("custom-group-name"))
             }
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -390,10 +406,12 @@ private fun CustomGroupEditor(
                         }
                         if (chained) {
                             OutlinedButton(onClick = { pickingEntry = true }, modifier = Modifier.fillMaxWidth()) {
+                                val language = LocalWeaveLanguage.current
+                                val packaged = LocalReleasedAppCopy.current
                                 Text(
                                     entry?.let { ref -> nodes.firstOrNull { it.subscriptionId == ref.subscriptionId && it.id == ref.nodeId } }
                                         ?.let { NodeDisplayName.core(it.name) }
-                                        ?: localizeWeaveText("选择入口节点", LocalWeaveLanguage.current),
+                                        ?: resolveAppOwnedCopy("选择入口节点", language, staged = null, released = packaged),
                                     translate = false,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -430,12 +448,12 @@ private fun CustomGroupEditor(
         }
     }
     if (confirmingDelete && onDelete != null) {
-        AlertDialog(
+        WeaveDialog(
             onDismissRequest = { confirmingDelete = false },
             title = { Text("删除策略组？", fontWeight = FontWeight.Bold) },
             text = { Text("默认出口或应用分流若在使用它，将改为阻止联网，直到你重新选择出口。") },
             confirmButton = {
-                TextButton(onClick = { confirmingDelete = false; onDelete() }) {
+                TextButton(onClick = { confirmingDelete = false; submit(onDelete) }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -448,7 +466,7 @@ private fun CustomGroupEditor(
             val needle = entryQuery.trim()
             nodes.filter { needle.isEmpty() || it.name.contains(needle, true) }
         }
-        AlertDialog(
+        WeaveDialog(
             onDismissRequest = { pickingEntry = false },
             title = { Text("选择入口节点", fontWeight = FontWeight.Bold) },
             text = {
@@ -495,18 +513,42 @@ internal fun BackupScreen(
 ) {
     var passphrase by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
+    var pickerPending by remember { mutableStateOf(false) }
+    var pickerError by remember { mutableStateOf(false) }
+    val picker = remember { BackupPickerRequest() }
+    DisposableEffect(picker) { onDispose { picker.close() } }
+    fun picked(kind: BackupPickerRequest.Kind, uri: Uri?, callback: (Uri, CharArray) -> Unit) {
+        val key = picker.consume(kind, uri != null)
+        pickerPending = picker.active
+        if (uri != null && key != null) {
+            passphrase = ""
+            confirmation = ""
+            callback(uri, key)
+        }
+    }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        if (uri != null) onExport(uri, passphrase.toCharArray())
+        picked(BackupPickerRequest.Kind.EXPORT, uri, onExport)
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onRead(uri, passphrase.toCharArray())
+        picked(BackupPickerRequest.Kind.IMPORT, uri, onRead)
     }
-    LaunchedEffect(state.message) { if (state.message != null) { passphrase = ""; confirmation = "" } }
+    fun launchPicker(kind: BackupPickerRequest.Kind, launch: () -> Unit) {
+        pickerError = false
+        try {
+            picker.start(kind, passphrase, launch)
+        } catch (_: ActivityNotFoundException) {
+            pickerError = true
+        } catch (_: SecurityException) {
+            pickerError = true
+        }
+        pickerPending = picker.active
+    }
+    val busy = state.running || pickerPending
     val longEnough = passphrase.length >= BackupCodec.MIN_PASSPHRASE_LENGTH
     WeaveToolScreen(
         title = "备份与恢复",
         subtitle = "PBKDF2 + AES-256-GCM 加密；Weave 无法找回忘记的密码",
-        onDismiss = onDismiss,
+        onDismiss = { if (!pickerPending) onDismiss() },
         secure = true,
     ) {
         // Scrollable so the password form, notes and restore preview remain reachable at 2.0 font.
@@ -520,6 +562,7 @@ internal fun BackupScreen(
             WeaveToolSection(title = "备份密码", icon = Icons.Rounded.Lock) {
                     OutlinedTextField(
                         value = passphrase,
+                        enabled = !busy,
                         onValueChange = { passphrase = it.take(128) },
                         label = { Text("至少 8 个字符") },
                         visualTransformation = PasswordVisualTransformation(),
@@ -528,6 +571,7 @@ internal fun BackupScreen(
                     )
                     OutlinedTextField(
                         value = confirmation,
+                        enabled = !busy,
                         onValueChange = { confirmation = it.take(128) },
                         label = { Text("再次输入（导出时）") },
                         visualTransformation = PasswordVisualTransformation(),
@@ -536,13 +580,19 @@ internal fun BackupScreen(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
-                            enabled = !state.running && longEnough && passphrase == confirmation,
-                            onClick = { exportLauncher.launch("weave-${System.currentTimeMillis() / 1000}.${BackupCodec.FILE_EXTENSION}") },
+                            enabled = !busy && longEnough && passphrase == confirmation,
+                            onClick = {
+                                launchPicker(BackupPickerRequest.Kind.EXPORT) {
+                                    exportLauncher.launch("weave-${System.currentTimeMillis() / 1000}.${BackupCodec.FILE_EXTENSION}")
+                                }
+                            },
                             modifier = Modifier.weight(1f),
                         ) { Text("导出备份") }
                         OutlinedButton(
-                            enabled = !state.running && longEnough,
-                            onClick = { importLauncher.launch(arrayOf("*/*")) },
+                            enabled = !busy && longEnough,
+                            onClick = {
+                                launchPicker(BackupPickerRequest.Kind.IMPORT) { importLauncher.launch(arrayOf("*/*")) }
+                            },
                             modifier = Modifier.weight(1f),
                         ) { Text("读取备份") }
                     }
@@ -552,6 +602,11 @@ internal fun BackupScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
+            )
+            if (pickerError) WeaveNotice(
+                icon = Icons.Rounded.Warning,
+                message = "无法打开系统文件选择器。请安装或启用文件管理应用后重试。",
+                tone = WeaveStatusTone.CRITICAL,
             )
             if (state.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             state.error?.let {
@@ -584,7 +639,7 @@ internal fun BackupScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                         )
-                        Button(onClick = onConfirmRestore, enabled = !state.running, modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = onConfirmRestore, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                             Text("恢复")
                         }
                     }

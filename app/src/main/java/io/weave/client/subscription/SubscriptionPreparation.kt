@@ -15,8 +15,18 @@ internal data class PreparedSubscription(
 
 /** The same data-only pipeline is used by URL, file, QR, and LAN imports and updates. */
 internal class SubscriptionPreparation(private val resolver: ClashProviderResolver, private val parser: SubscriptionPayloadParser) {
-    suspend fun prepare(payload: String, source: String): PreparedSubscription {
-        val resolved = resolver.resolveDetailed(payload, source)
+    suspend fun prepare(payload: String, source: String): PreparedSubscription =
+        normalize(resolver.resolveDetailed(payload, source))
+
+    /** Files exported by Weave already contain materialized nodes. Do not resolve or fetch. */
+    suspend fun prepareOffline(payload: String): PreparedSubscription {
+        val plain = ClashSubscriptionDocument.unwrap(payload)
+        if (ClashSubscriptionDocument.hasRootKey(plain, "proxy-providers"))
+            throw SubscriptionImportException("离线订阅文件不能下载节点集合")
+        return normalize(ClashProviderResolver.Resolution(payload, null, 0, 0))
+    }
+
+    private suspend fun normalize(resolved: ClashProviderResolver.Resolution): PreparedSubscription {
         val parsed = parser.parse(resolved.payload)
         val normalized = parser.normalizeForMihomo(resolved.payload, parsed)
         val stored = parser.parse(normalized)

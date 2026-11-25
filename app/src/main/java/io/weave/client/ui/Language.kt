@@ -7,6 +7,32 @@ import java.util.concurrent.ConcurrentHashMap
 /** The UI language is app-local and does not change the device-wide locale. */
 val LocalWeaveLanguage = staticCompositionLocalOf { WeaveLanguage.SIMPLIFIED_CHINESE }
 
+/** Supplied only by an isolated locale preview at present; no settings picker is wired to it. */
+internal val LocalStagedWeaveLocale = staticCompositionLocalOf<StagedComposeLocale?> { null }
+
+/** No released build installs a provider yet. Only a package-verified catalog can be supplied. */
+internal val LocalReleasedAppCopy = staticCompositionLocalOf<ReleasedAppCopy?> { null }
+
+internal class ReleasedAppCopy private constructor(internal val renderer: StagedComposeLocale) {
+    companion object {
+        fun load(languageTag: String, input: java.io.InputStream): ReleasedAppCopy =
+            ReleasedAppCopy(StagedComposeLocale(languageTag, ReleaseCopyCatalog.loadVerified(languageTag, input)))
+    }
+}
+
+/** Resolves app-owned copy only; opt-out never inspects a supplied user string. */
+internal fun resolveAppOwnedCopy(
+    text: String,
+    language: WeaveLanguage,
+    staged: StagedComposeLocale?,
+    released: ReleasedAppCopy?,
+    translate: Boolean = true,
+): String {
+    if (!translate) return text
+    val catalog = staged ?: released?.renderer
+    return if (catalog == null) localizeWeaveText(text, language) else localizeStagedWeaveText(text, catalog)
+}
+
 private val TRANSLATION_REGEX_CACHE = ConcurrentHashMap<String, Regex>()
 
 /**
@@ -30,109 +56,127 @@ private fun translationRegex(pattern: String): Regex {
  * the existing Chinese source text so older persisted labels and runtime error messages remain
  * compatible while the Compose UI is migrated incrementally to resources.
  */
-fun localizeWeaveText(text: String, language: WeaveLanguage): String {
+fun localizeWeaveText(text: String, language: WeaveLanguage): String =
+    localizeWeaveText(text, language, null)
+
+internal fun localizeStagedWeaveText(text: String, locale: StagedComposeLocale): String =
+    localizeWeaveText(text, WeaveLanguage.ENGLISH, locale)
+
+private fun localizeWeaveText(text: String, language: WeaveLanguage, locale: StagedComposeLocale?): String {
     if (language == WeaveLanguage.SIMPLIFIED_CHINESE || text.isBlank()) return text
     val depth = TRANSLATION_DEPTH.get() ?: 0
     if (depth >= MAX_TRANSLATION_DEPTH) return text
-    translationTable(language)[text]?.let { return it }
+    locale?.lookupStatic(text)?.let { return it }
+    translationTable(language)[text]?.let { return locale?.static(text) ?: it }
 
     TRANSLATION_DEPTH.set(depth + 1)
     return try {
-        translateCommonPatterns(text, language) ?: text
+        translateCommonPatterns(text, language, locale) ?: text
     } finally {
         TRANSLATION_DEPTH.set(depth)
     }
 }
 
-private fun translateCommonPatterns(text: String, language: WeaveLanguage): String? {
-    translateV2Patterns(text, language)?.let { return it }
+private fun translatePattern(pattern: String, text: String): Pair<String, MatchResult>? =
+    translationRegex(pattern).matchEntire(text)?.let { pattern to it }
+
+private fun translateCommonPatterns(text: String, language: WeaveLanguage, locale: StagedComposeLocale?): String? {
+    fun localize(value: String): String = localizeWeaveText(value, language, locale)
+    translateV2Patterns(text, language, locale)?.let { return it }
     if (text.startsWith("安全拦截 · ")) {
-        return localizeWeaveText("安全拦截", language) + " · " + text.substringAfter(" · ")
+        val securityBlock = localize("安全拦截")
+        val details = text.substringAfter(" · ")
+        return locale?.format("security-block-details", "securityBlock" to securityBlock, "details" to details)
+            ?: "$securityBlock · $details"
     }
-    translationRegex("^(.*) \\[(S0[1-6])\\]$").matchEntire(text)?.let { match ->
-        return "${localizeWeaveText(match.groupValues[1], language)} [${match.groupValues[2]}]"
+    translatePattern("^(.*) \\[(S0[1-6])\\]$", text)?.let { (pattern, match) ->
+        val message = localize(match.groupValues[1])
+        val code = match.groupValues[2]
+        return locale?.format("legacy:$pattern#compose", "message" to message, "code" to code) ?: "$message [$code]"
     }
-    translationRegex("^有 (\\d+) 项本地配置需要注意；未知项必须外部复核$").matchEntire(text)?.let { match ->
+    translatePattern("^有 (\\d+) 项本地配置需要注意；未知项必须外部复核$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "有 $count 項本機設定需要注意；未知項目必須外部複核"
-            WeaveLanguage.ENGLISH -> "$count local configuration item(s) need attention; unknown items require external verification"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "$count local configuration item(s) need attention; unknown items require external verification"
             WeaveLanguage.JAPANESE -> "ローカル設定 $count 件に注意が必要です。不明な項目は外部検証してください"
             WeaveLanguage.FRENCH -> "$count élément(s) de configuration locale nécessitent votre attention ; les éléments inconnus doivent être vérifiés à l’extérieur"
             WeaveLanguage.GERMAN -> "$count lokale Konfigurationseinträge benötigen Aufmerksamkeit; unbekannte Einträge müssen extern geprüft werden"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$").matchEntire(text)?.let { match ->
+    translatePattern("^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$", text)?.let { (pattern, match) ->
         val completed = match.groupValues[1]
         val total = match.groupValues[2]
         val elapsed = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "完成 $completed/$total 項 · $elapsed ms"
-            WeaveLanguage.ENGLISH -> "$completed/$total checks complete · $elapsed ms"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "completed" to completed, "total" to total, "elapsed" to elapsed) ?: "$completed/$total checks complete · $elapsed ms"
             WeaveLanguage.JAPANESE -> "$completed/$total 件完了 · $elapsed ms"
             WeaveLanguage.FRENCH -> "$completed/$total vérifications terminées · $elapsed ms"
             WeaveLanguage.GERMAN -> "$completed/$total Prüfungen abgeschlossen · $elapsed ms"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^可达 (\\d+)/(\\d+) 项 · (\\d+) ms$").matchEntire(text)?.let { match ->
+    translatePattern("^可达 (\\d+)/(\\d+) 项 · (\\d+) ms$", text)?.let { (pattern, match) ->
         val available = match.groupValues[1]
         val total = match.groupValues[2]
         val elapsed = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "可達 $available/$total 項 · $elapsed ms"
-            WeaveLanguage.ENGLISH -> "$available/$total sites reachable · $elapsed ms"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "available" to available, "total" to total, "elapsed" to elapsed) ?: "$available/$total sites reachable · $elapsed ms"
             WeaveLanguage.JAPANESE -> "$available/$total 件が到達可能 · $elapsed ms"
             WeaveLanguage.FRENCH -> "$available/$total sites accessibles · $elapsed ms"
             WeaveLanguage.GERMAN -> "$available/$total Sites erreichbar · $elapsed ms"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^解锁入口 (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^解锁入口 (\\d+)/(\\d+)$", text)?.let { (pattern, match) ->
         val available = match.groupValues[1]
         val total = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "解鎖入口 $available/$total"
-            WeaveLanguage.ENGLISH -> "Unlock entry points $available/$total"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "available" to available, "total" to total) ?: "Unlock entry points $available/$total"
             WeaveLanguage.JAPANESE -> "解除入口 $available/$total"
             WeaveLanguage.FRENCH -> "Points d’entrée débloqués $available/$total"
             WeaveLanguage.GERMAN -> "Freischaltbare Einstiege $available/$total"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$count 項進階規則已暫停 · 切換標準模式可恢復"
-            WeaveLanguage.ENGLISH -> "$count advanced rules paused · switch to Standard mode to restore"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "$count advanced rules paused · switch to Standard mode to restore"
             WeaveLanguage.JAPANESE -> "高度なルール $count 件を一時停止中 · 標準モードで復元できます"
             WeaveLanguage.FRENCH -> "$count règles avancées suspendues · passez en mode standard pour les rétablir"
             WeaveLanguage.GERMAN -> "$count erweiterte Regeln pausiert · im Standardmodus wiederherstellen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^检测到 (\\d+) 个兼容客户端 · 由你确认后选择导出文件$").matchEntire(text)?.let { match ->
+    translatePattern("^检测到 (\\d+) 个兼容客户端 · 由你确认后选择导出文件$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "偵測到 $count 個相容客戶端 · 由你確認後選擇匯出檔案"
-            WeaveLanguage.ENGLISH -> "$count compatible clients detected · confirm and choose an exported file"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "$count compatible clients detected · confirm and choose an exported file"
             WeaveLanguage.JAPANESE -> "互換クライアントを $count 個検出 · 確認後に書き出しファイルを選択"
             WeaveLanguage.FRENCH -> "$count clients compatibles détectés · confirmez puis choisissez un fichier exporté"
             WeaveLanguage.GERMAN -> "$count kompatible Clients erkannt · bestätigen und Exportdatei wählen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(极简风|艺术风) · (.+)$").matchEntire(text)?.let { match ->
-        return "${localizeWeaveText(match.groupValues[1], language)} · ${localizeWeaveText(match.groupValues[2], language)}"
+    translatePattern("^(极简风|艺术风) · (.+)$", text)?.let { (pattern, match) ->
+        val paletteGroup = localize(match.groupValues[1])
+        val palette = localize(match.groupValues[2])
+        return locale?.format("legacy:$pattern#compose", "paletteGroup" to paletteGroup, "palette" to palette) ?: "$paletteGroup · $palette"
     }
-    translationRegex("^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$", text)?.let { (pattern, match) ->
         val owner = match.groupValues[1]
         val field = match.groupValues[2]
         val localizedField = when (field) {
             "UUID" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "UUID"
-                WeaveLanguage.ENGLISH -> "UUID"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1") ?: "UUID"
                 WeaveLanguage.JAPANESE -> "UUID"
                 WeaveLanguage.FRENCH -> "UUID"
                 WeaveLanguage.GERMAN -> "UUID"
@@ -140,7 +184,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "V2Ray settings" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "V2Ray 設定"
-                WeaveLanguage.ENGLISH -> "V2Ray settings"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#2") ?: "V2Ray settings"
                 WeaveLanguage.JAPANESE -> "V2Ray 設定"
                 WeaveLanguage.FRENCH -> "paramètres V2Ray"
                 WeaveLanguage.GERMAN -> "V2Ray-Einstellungen"
@@ -148,7 +192,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "加密方式或密码" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "加密方式或密碼"
-                WeaveLanguage.ENGLISH -> "encryption method or password"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#3") ?: "encryption method or password"
                 WeaveLanguage.JAPANESE -> "暗号方式またはパスワード"
                 WeaveLanguage.FRENCH -> "méthode de chiffrement ou mot de passe"
                 WeaveLanguage.GERMAN -> "Verschlüsselungsmethode oder Passwort"
@@ -156,7 +200,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "密码" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "密碼"
-                WeaveLanguage.ENGLISH -> "password"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#4") ?: "password"
                 WeaveLanguage.JAPANESE -> "パスワード"
                 WeaveLanguage.FRENCH -> "mot de passe"
                 WeaveLanguage.GERMAN -> "Passwort"
@@ -164,7 +208,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "服务器列表" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "伺服器清單"
-                WeaveLanguage.ENGLISH -> "server list"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#5") ?: "server list"
                 WeaveLanguage.JAPANESE -> "サーバー一覧"
                 WeaveLanguage.FRENCH -> "liste des serveurs"
                 WeaveLanguage.GERMAN -> "Serverliste"
@@ -172,7 +216,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "服务器地址" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "伺服器位址"
-                WeaveLanguage.ENGLISH -> "server address"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#6") ?: "server address"
                 WeaveLanguage.JAPANESE -> "サーバーアドレス"
                 WeaveLanguage.FRENCH -> "adresse du serveur"
                 WeaveLanguage.GERMAN -> "Serveradresse"
@@ -180,7 +224,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             else -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "連接埠"
-                WeaveLanguage.ENGLISH -> "port"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#7") ?: "port"
                 WeaveLanguage.JAPANESE -> "ポート"
                 WeaveLanguage.FRENCH -> "port"
                 WeaveLanguage.GERMAN -> "Port"
@@ -189,104 +233,104 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         }
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 缺少 $localizedField"
-            WeaveLanguage.ENGLISH -> "$owner is missing $localizedField"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#8", "owner" to owner, "localizedField" to localizedField) ?: "$owner is missing $localizedField"
             WeaveLanguage.JAPANESE -> "$owner に $localizedField がありません"
             WeaveLanguage.FRENCH -> "$owner n’a pas de $localizedField"
             WeaveLanguage.GERMAN -> "$owner benötigt $localizedField"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$").matchEntire(text)?.let { match ->
+    translatePattern("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$", text)?.let { (pattern, match) ->
         val scheme = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$scheme 節點位址格式無效"
-            WeaveLanguage.ENGLISH -> "$scheme node address format is invalid"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "scheme" to scheme) ?: "$scheme node address format is invalid"
             WeaveLanguage.JAPANESE -> "$scheme ノードのアドレス形式が無効です"
             WeaveLanguage.FRENCH -> "Format d’adresse du nœud $scheme invalide"
             WeaveLanguage.GERMAN -> "Ungültiges Adressformat für $scheme-Knoten"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$").matchEntire(text)?.let { match ->
+    translatePattern("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$", text)?.let { (pattern, match) ->
         val scheme = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$scheme 節點"
-            WeaveLanguage.ENGLISH -> "$scheme node"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "scheme" to scheme) ?: "$scheme node"
             WeaveLanguage.JAPANESE -> "$scheme ノード"
             WeaveLanguage.FRENCH -> "Nœud $scheme"
             WeaveLanguage.GERMAN -> "$scheme-Knoten"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$", text)?.let { (pattern, match) ->
         val scheme = match.groupValues[1]
         val index = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$scheme 節點 $index"
-            WeaveLanguage.ENGLISH -> "$scheme node $index"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "scheme" to scheme, "index" to index) ?: "$scheme node $index"
             WeaveLanguage.JAPANESE -> "$scheme ノード $index"
             WeaveLanguage.FRENCH -> "Nœud $scheme $index"
             WeaveLanguage.GERMAN -> "$scheme-Knoten $index"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^暂不支持将 (.+) URI 转换为 Mihomo$").matchEntire(text)?.let { match ->
+    translatePattern("^暂不支持将 (.+) URI 转换为 Mihomo$", text)?.let { (pattern, match) ->
         val scheme = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "目前不支援將 $scheme URI 轉換為 Mihomo"
-            WeaveLanguage.ENGLISH -> "Converting $scheme URIs to Mihomo is not supported yet"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "scheme" to scheme) ?: "Converting $scheme URIs to Mihomo is not supported yet"
             WeaveLanguage.JAPANESE -> "$scheme URI の Mihomo への変換には未対応です"
             WeaveLanguage.FRENCH -> "La conversion des URI $scheme vers Mihomo n’est pas encore prise en charge"
             WeaveLanguage.GERMAN -> "Die Umwandlung von $scheme-URIs in Mihomo wird noch nicht unterstützt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$").matchEntire(text)?.let { match ->
+    translatePattern("^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$", text)?.let { (pattern, match) ->
         val family = match.groupValues[1]
         val protocol = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$family $protocol 出站目前不支援安全轉換"
-            WeaveLanguage.ENGLISH -> "Safe conversion of $family $protocol outbounds is not supported yet"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "family" to family, "protocol" to protocol) ?: "Safe conversion of $family $protocol outbounds is not supported yet"
             WeaveLanguage.JAPANESE -> "$family $protocol outbound の安全な変換には未対応です"
             WeaveLanguage.FRENCH -> "La conversion sécurisée des sorties $family $protocol n’est pas encore prise en charge"
             WeaveLanguage.GERMAN -> "Die sichere Umwandlung von $family-$protocol-Ausgängen wird noch nicht unterstützt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^· (\\d+) 个同名同协议节点未自动删除$").matchEntire(text)?.let { match ->
+    translatePattern("^· (\\d+) 个同名同协议节点未自动删除$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "· $count 個同名同協定節點未自動刪除"
-            WeaveLanguage.ENGLISH -> "· $count same-name, same-protocol nodes were not removed automatically"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "· $count same-name, same-protocol nodes were not removed automatically"
             WeaveLanguage.JAPANESE -> "· 同名・同プロトコルのノード $count 件は自動削除されませんでした"
             WeaveLanguage.FRENCH -> "· $count nœuds de même nom et protocole n’ont pas été supprimés automatiquement"
             WeaveLanguage.GERMAN -> "· $count Knoten mit gleichem Namen und Protokoll wurden nicht automatisch entfernt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$").matchEntire(text)?.let { match ->
+    translatePattern("^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "「$name」不是遠端 HTTPS 訂閱，已略過自動重新整理"
-            WeaveLanguage.ENGLISH -> "“$name” is not a remote HTTPS subscription; automatic refresh skipped"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "“$name” is not a remote HTTPS subscription; automatic refresh skipped"
             WeaveLanguage.JAPANESE -> "「$name」はリモート HTTPS 購読ではないため、自動更新をスキップしました"
             WeaveLanguage.FRENCH -> "« $name » n’est pas un abonnement HTTPS distant ; actualisation automatique ignorée"
             WeaveLanguage.GERMAN -> "„$name“ ist kein HTTPS-Fernabonnement; automatische Aktualisierung übersprungen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已连接 · (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translatePattern("^已连接 · (\\d+) 个订阅$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已連線 · $count 個訂閱"
-            WeaveLanguage.ENGLISH -> "Connected · $count subscriptions"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Connected · $count subscriptions"
             WeaveLanguage.JAPANESE -> "接続済み · 購読 $count 件"
             WeaveLanguage.FRENCH -> "Connecté · $count abonnements"
             WeaveLanguage.GERMAN -> "Verbunden · $count Abonnements"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$").matchEntire(text)?.let { match ->
+    translatePattern("^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$", text)?.let { (pattern, match) ->
         val kind = match.groupValues[1]
         val size = match.groupValues[2]
         val unit = match.groupValues[3]
@@ -316,40 +360,41 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
                 "订阅内容" -> "Abonnementinhalt"
                 else -> "Eingefügter Inhalt"
             }
-            WeaveLanguage.ENGLISH, WeaveLanguage.SIMPLIFIED_CHINESE -> englishKind
+            WeaveLanguage.ENGLISH, WeaveLanguage.SIMPLIFIED_CHINESE ->
+                locale?.format("legacy:$pattern#englishKind:${if (kind == "传输内容" || kind == "订阅内容") kind else "else"}") ?: englishKind
         }
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "${localizedKind}超過 $size $unit 限制"
-            WeaveLanguage.ENGLISH -> "$englishKind exceeds the $size $unit limit"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "englishKind" to localizedKind, "size" to size, "unit" to unit) ?: "$englishKind exceeds the $size $unit limit"
             WeaveLanguage.JAPANESE -> "${localizedKind}が $size $unit の上限を超えています"
             WeaveLanguage.FRENCH -> "$localizedKind dépasse la limite de $size $unit"
             WeaveLanguage.GERMAN -> "$localizedKind überschreitet das Limit von $size $unit"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^请选择 1–(\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translatePattern("^请选择 1–(\\d+) 个订阅$", text)?.let { (pattern, match) ->
         val max = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "請選擇 1–$max 個訂閱"
-            WeaveLanguage.ENGLISH -> "Select 1–$max subscriptions"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "max" to max) ?: "Select 1–$max subscriptions"
             WeaveLanguage.JAPANESE -> "購読を 1～$max 件選択してください"
             WeaveLanguage.FRENCH -> "Sélectionnez 1 à $max abonnements"
             WeaveLanguage.GERMAN -> "Wähle 1–$max Abonnements"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^策略包规则数量必须为 1–(\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^策略包规则数量必须为 1–(\\d+)$", text)?.let { (pattern, match) ->
         val max = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "策略包規則數量必須為 1–$max"
-            WeaveLanguage.ENGLISH -> "A policy pack must contain 1–$max rules"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "max" to max) ?: "A policy pack must contain 1–$max rules"
             WeaveLanguage.JAPANESE -> "ポリシーパックのルール数は 1～$max 件である必要があります"
             WeaveLanguage.FRENCH -> "Un pack de règles doit contenir 1 à $max règles"
             WeaveLanguage.GERMAN -> "Ein Richtlinienpaket muss 1–$max Regeln enthalten"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^第 (\\d+) 条(.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^第 (\\d+) 条(.+)$", text)?.let { (pattern, match) ->
         val index = match.groupValues[1]
         val reason = match.groupValues[2].trimStart()
         val englishReason = when {
@@ -363,6 +408,14 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             reason == "进程名无效" -> " process name is invalid"
             else -> " rule is invalid"
         }
+        val localeRuleReason = if (locale != null) {
+            val key = when (reason) {
+                "规则不是对象", "规则值包含非法分隔符", "规则值无效", "规则动作不支持",
+                "规则类型不支持", "域名无效", "CIDR 无效", "进程名无效" -> reason
+                else -> "else"
+            }
+            locale.format("legacy:$pattern#englishReason:$key")
+        } else englishReason
         val traditionalReason = when {
             reason == "规则不是对象" -> "規則不是物件"
             reason == "规则值包含非法分隔符" -> "規則值包含無效分隔符"
@@ -387,164 +440,164 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         }
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "第 $index 條$traditionalReason"
-            WeaveLanguage.ENGLISH -> "Rule $index$englishReason"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "index" to index, "englishReason" to localeRuleReason) ?: "Rule $index$englishReason"
             WeaveLanguage.JAPANESE -> "$index 件目：$japaneseReason"
             WeaveLanguage.FRENCH -> "Règle $index$englishReason"
             WeaveLanguage.GERMAN -> "Regel $index$englishReason"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^Mihomo 原生库复制不完整：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^Mihomo 原生库复制不完整：(.*)$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "Mihomo 原生函式庫複製不完整：$name"
-            WeaveLanguage.ENGLISH -> "Mihomo native library copy is incomplete: $name"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "Mihomo native library copy is incomplete: $name"
             WeaveLanguage.JAPANESE -> "Mihomo ネイティブライブラリのコピーが不完全です：$name"
             WeaveLanguage.FRENCH -> "La copie de la bibliothèque native Mihomo est incomplète : $name"
             WeaveLanguage.GERMAN -> "Die Kopie der nativen Mihomo-Bibliothek ist unvollständig: $name"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^订阅服务器返回 HTTP (\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^订阅服务器返回 HTTP (\\d+)$", text)?.let { (pattern, match) ->
         val status = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "訂閱伺服器回傳 HTTP $status"
-            WeaveLanguage.ENGLISH -> "The subscription server returned HTTP $status"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "status" to status) ?: "The subscription server returned HTTP $status"
             WeaveLanguage.JAPANESE -> "購読サーバーが HTTP $status を返しました"
             WeaveLanguage.FRENCH -> "Le serveur d’abonnement a renvoyé HTTP $status"
             WeaveLanguage.GERMAN -> "Der Abonnementserver gab HTTP $status zurück"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^发现未支持的节点格式：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^发现未支持的节点格式：(.*)$", text)?.let { (pattern, match) ->
         val value = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "發現不支援的節點格式：$value"
-            WeaveLanguage.ENGLISH -> "Unsupported node format found: $value"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "value" to value) ?: "Unsupported node format found: $value"
             WeaveLanguage.JAPANESE -> "未対応のノード形式：$value"
             WeaveLanguage.FRENCH -> "Format de nœud non pris en charge : $value"
             WeaveLanguage.GERMAN -> "Nicht unterstütztes Knotenformat: $value"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^最多保存 (\\d+) 条本地规则$").matchEntire(text)?.let { match ->
+    translatePattern("^最多保存 (\\d+) 条本地规则$", text)?.let { (pattern, match) ->
         val max = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最多保存 $max 條本機規則"
-            WeaveLanguage.ENGLISH -> "You can save up to $max local rules"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "max" to max) ?: "You can save up to $max local rules"
             WeaveLanguage.JAPANESE -> "ローカルルールは最大 $max 件保存できます"
             WeaveLanguage.FRENCH -> "Vous pouvez enregistrer jusqu’à $max règles locales"
             WeaveLanguage.GERMAN -> "Bis zu $max lokale Regeln können gespeichert werden"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$", text)?.let { (pattern, match) ->
         val added = match.groupValues[1]
         val removed = match.groupValues[2]
         val kept = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "新增 $added · 移除 $removed · 保留 $kept"
-            WeaveLanguage.ENGLISH -> "Added $added · removed $removed · kept $kept"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "added" to added, "removed" to removed, "kept" to kept) ?: "Added $added · removed $removed · kept $kept"
             WeaveLanguage.JAPANESE -> "追加 $added · 削除 $removed · 保持 $kept"
             WeaveLanguage.FRENCH -> "Ajoutés $added · supprimés $removed · conservés $kept"
             WeaveLanguage.GERMAN -> "Hinzugefügt $added · entfernt $removed · behalten $kept"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^共 (\\d+) 个节点$").matchEntire(text)?.let { match ->
+    translatePattern("^共 (\\d+) 个节点$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "共 $count 個節點"
-            WeaveLanguage.ENGLISH -> "$count nodes total"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "$count nodes total"
             WeaveLanguage.JAPANESE -> "ノード合計 $count"
             WeaveLanguage.FRENCH -> "$count nœuds au total"
             WeaveLanguage.GERMAN -> "$count Knoten insgesamt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^应用规则  (\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^应用规则  (\\d+)$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "應用規則  $count"
-            WeaveLanguage.ENGLISH -> "App rules  $count"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "App rules  $count"
             WeaveLanguage.JAPANESE -> "アプリルール  $count"
             WeaveLanguage.FRENCH -> "Règles d’app  $count"
             WeaveLanguage.GERMAN -> "App-Regeln  $count"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) 个节点$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) 个节点$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$count 個節點"
-            WeaveLanguage.ENGLISH -> "$count nodes"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "$count nodes"
             WeaveLanguage.JAPANESE -> "$count ノード"
             WeaveLanguage.FRENCH -> "$count nœuds"
             WeaveLanguage.GERMAN -> "$count Knoten"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^导出所选 (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translatePattern("^导出所选 (\\d+) 个订阅$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "匯出所選 $count 個訂閱"
-            WeaveLanguage.ENGLISH -> "Export $count selected subscriptions"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Export $count selected subscriptions"
             WeaveLanguage.JAPANESE -> "選択したサブスクリプション $count 件をエクスポート"
             WeaveLanguage.FRENCH -> "Exporter $count abonnements sélectionnés"
             WeaveLanguage.GERMAN -> "$count ausgewählte Abonnements exportieren"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^从 (\\d+) 个节点中自动选择$").matchEntire(text)?.let { match ->
+    translatePattern("^从 (\\d+) 个节点中自动选择$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "從 $count 個節點中自動選擇"
-            WeaveLanguage.ENGLISH -> "Choose automatically from $count nodes"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Choose automatically from $count nodes"
             WeaveLanguage.JAPANESE -> "$count ノードから自動選択"
             WeaveLanguage.FRENCH -> "Choisir automatiquement parmi $count nœuds"
             WeaveLanguage.GERMAN -> "Automatisch aus $count Knoten wählen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^连续失败：(\\d+) 次$").matchEntire(text)?.let { match ->
+    translatePattern("^连续失败：(\\d+) 次$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "連續失敗：$count 次"
-            WeaveLanguage.ENGLISH -> "Consecutive failures: $count"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Consecutive failures: $count"
             WeaveLanguage.JAPANESE -> "連続失敗：$count 回"
             WeaveLanguage.FRENCH -> "Échecs consécutifs : $count"
             WeaveLanguage.GERMAN -> "Aufeinanderfolgende Fehler: $count"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^正在恢复代理连接（第 (\\d+) 次）$").matchEntire(text)?.let { match ->
+    translatePattern("^正在恢复代理连接（第 (\\d+) 次）$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "正在恢復代理連線（第 $count 次）"
-            WeaveLanguage.ENGLISH -> "Restoring proxy connection (attempt $count)"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Restoring proxy connection (attempt $count)"
             WeaveLanguage.JAPANESE -> "プロキシ接続を復元中（$count 回目）"
             WeaveLanguage.FRENCH -> "Restauration de la connexion proxy (tentative $count)"
             WeaveLanguage.GERMAN -> "Proxy-Verbindung wird wiederhergestellt (Versuch $count)"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) 个节点 · 本地加密保存$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) 个节点 · 本地加密保存$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$count 個節點 · 本機加密保存"
-            WeaveLanguage.ENGLISH -> "$count nodes · encrypted locally"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "$count nodes · encrypted locally"
             WeaveLanguage.JAPANESE -> "$count ノード · 端末内で暗号化保存"
             WeaveLanguage.FRENCH -> "$count nœuds · chiffrés localement"
             WeaveLanguage.GERMAN -> "$count Knoten · lokal verschlüsselt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) · (稳定|一般|波动|未完成)$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) · (稳定|一般|波动|未完成)$", text)?.let { (pattern, match) ->
         val score = match.groupValues[1]
-        val label = localizeWeaveText(match.groupValues[2], language)
-        return "$score · $label"
+        val label = localize(match.groupValues[2])
+        return locale?.format("legacy:$pattern#compose", "score" to score, "label" to label) ?: "$score · $label"
     }
-    translationRegex("^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$", text)?.let { (pattern, match) ->
         val protocol = match.groupValues[1]
         val median = match.groupValues[2]
         val p95 = match.groupValues[3]
@@ -554,14 +607,14 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         val total = match.groupValues[7]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$protocol · 中位數 $median ms · P95 $p95 ms · 抖動$jitter · 丟失$loss% · $successful/$total"
-            WeaveLanguage.ENGLISH -> "$protocol · median $median ms · P95 $p95 ms · jitter $jitter · $loss% loss · $successful/$total"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "protocol" to protocol, "median" to median, "p95" to p95, "jitter" to jitter, "loss" to loss, "successful" to successful, "total" to total) ?: "$protocol · median $median ms · P95 $p95 ms · jitter $jitter · $loss% loss · $successful/$total"
             WeaveLanguage.JAPANESE -> "$protocol · 中央値 $median ms · P95 $p95 ms · ジッター $jitter · 損失 $loss% · $successful/$total"
             WeaveLanguage.FRENCH -> "$protocol · médiane $median ms · P95 $p95 ms · gigue $jitter · perte $loss % · $successful/$total"
             WeaveLanguage.GERMAN -> "$protocol · Median $median ms · P95 $p95 ms · Jitter $jitter · $loss% Verlust · $successful/$total"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$", text)?.let { (pattern, match) ->
         val protocol = match.groupValues[1]
         val jitter = match.groupValues[2]
         val loss = match.groupValues[3]
@@ -569,339 +622,340 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         val total = match.groupValues[5]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$protocol · 延遲— · P95— · 抖動$jitter · 丟失$loss% · $successful/$total"
-            WeaveLanguage.ENGLISH -> "$protocol · latency— · P95— · jitter $jitter · $loss% loss · $successful/$total"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "protocol" to protocol, "jitter" to jitter, "loss" to loss, "successful" to successful, "total" to total) ?: "$protocol · latency— · P95— · jitter $jitter · $loss% loss · $successful/$total"
             WeaveLanguage.JAPANESE -> "$protocol · レイテンシ— · P95— · ジッター $jitter · 損失 $loss% · $successful/$total"
             WeaveLanguage.FRENCH -> "$protocol · latence — · P95— · gigue $jitter · perte $loss % · $successful/$total"
             WeaveLanguage.GERMAN -> "$protocol · Latenz— · P95— · Jitter $jitter · $loss% Verlust · $successful/$total"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^例如 (.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^例如 (.+)$", text)?.let { (pattern, match) ->
         val example = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "例如 $example"
-            WeaveLanguage.ENGLISH -> "e.g. $example"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "example" to example) ?: "e.g. $example"
             WeaveLanguage.JAPANESE -> "例：$example"
             WeaveLanguage.FRENCH -> "ex. $example"
             WeaveLanguage.GERMAN -> "z. B. $example"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$").matchEntire(text)?.let { match ->
-        val profile = localizeWeaveText(match.groupValues[1], language)
-        val transport = localizeWeaveText(match.groupValues[2], language)
-        val routing = localizeWeaveText(match.groupValues[3], language)
+    translatePattern("^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$", text)?.let { (pattern, match) ->
+        val profile = localize(match.groupValues[1])
+        val transport = localize(match.groupValues[2])
+        val routing = localize(match.groupValues[3])
         val bypass = when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "DNS 旁路保護"
-            WeaveLanguage.ENGLISH -> "DNS bypass protection"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1") ?: "DNS bypass protection"
             WeaveLanguage.JAPANESE -> "DNS バイパス保護"
             WeaveLanguage.FRENCH -> "Protection contre le contournement DNS"
             WeaveLanguage.GERMAN -> "DNS-Umgehungsschutz"
             WeaveLanguage.SIMPLIFIED_CHINESE -> "DNS 旁路保护"
         }
-        val suffix = localizeWeaveText(match.groupValues[4], language)
+        val suffix = localize(match.groupValues[4])
         return "$profile · $transport · $routing · $bypass + $suffix"
     }
-    translationRegex("^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$", text)?.let { (pattern, match) ->
         val confirmed = match.groupValues[1]
         val configured = match.groupValues[2]
         val pending = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$confirmed 項本機狀態已確認 · $configured 項已設定 · $pending 項待核驗"
-            WeaveLanguage.ENGLISH -> "$confirmed local states confirmed · $configured configured · $pending awaiting verification"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "confirmed" to confirmed, "configured" to configured, "pending" to pending) ?: "$confirmed local states confirmed · $configured configured · $pending awaiting verification"
             WeaveLanguage.JAPANESE -> "$confirmed 件の端末状態を確認 · $configured 件を設定済み · $pending 件は未検証"
             WeaveLanguage.FRENCH -> "$confirmed états locaux confirmés · $configured configurés · $pending à vérifier"
             WeaveLanguage.GERMAN -> "$confirmed lokale Zustände bestätigt · $configured konfiguriert · $pending noch zu prüfen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$", text)?.let { (pattern, match) ->
         val verified = match.groupValues[1]
         val external = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$verified 項已從本機設定確認 · $external 項需要外部驗證"
-            WeaveLanguage.ENGLISH -> "$verified confirmed from local configuration · $external require external verification"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "verified" to verified, "external" to external) ?: "$verified confirmed from local configuration · $external require external verification"
             WeaveLanguage.JAPANESE -> "$verified 件はローカル設定で確認済み · $external 件は外部検証が必要"
             WeaveLanguage.FRENCH -> "$verified confirmés par la configuration locale · $external nécessitent une vérification externe"
             WeaveLanguage.GERMAN -> "$verified aus der lokalen Konfiguration bestätigt · $external benötigen eine externe Prüfung"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$", text)?.let { (pattern, match) ->
         val reachable = match.groupValues[1]
         val total = match.groupValues[2]
         val median = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$reachable/$total 個端點可達 · 中位數 $median ms"
-            WeaveLanguage.ENGLISH -> "$reachable/$total endpoints reachable · median $median ms"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "reachable" to reachable, "total" to total, "median" to median) ?: "$reachable/$total endpoints reachable · median $median ms"
             WeaveLanguage.JAPANESE -> "$reachable/$total 件のエンドポイントが到達可能 · 中央値 $median ms"
             WeaveLanguage.FRENCH -> "$reachable/$total points accessibles · médiane $median ms"
             WeaveLanguage.GERMAN -> "$reachable/$total Endpunkte erreichbar · Median $median ms"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^端点不可达：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^端点不可达：(.*)$", text)?.let { (pattern, match) ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "端點無法連線：$detail"
-            WeaveLanguage.ENGLISH -> "Endpoint unreachable: $detail"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "detail" to detail) ?: "Endpoint unreachable: $detail"
             WeaveLanguage.JAPANESE -> "エンドポイントに到達できません：$detail"
             WeaveLanguage.FRENCH -> "Point inaccessible : $detail"
             WeaveLanguage.GERMAN -> "Endpunkt nicht erreichbar: $detail"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^ASN  (.+) · 未知运营商$").matchEntire(text)?.let { match ->
+    translatePattern("^ASN  (.+) · 未知运营商$", text)?.let { (pattern, match) ->
         val asn = match.groupValues[1]
-        val carrier = localizeWeaveText("未知运营商", language)
-        return "ASN  $asn · $carrier"
+        val carrier = localize("未知运营商")
+        return locale?.format("legacy:$pattern#compose", "asn" to asn, "carrier" to carrier) ?: "ASN  $asn · $carrier"
     }
-    translationRegex("^应用规则 · (.+)$").matchEntire(text)?.let { match ->
-        val prefix = localizeWeaveText("应用规则", language)
-        return "$prefix · ${match.groupValues[1]}"
+    translatePattern("^应用规则 · (.+)$", text)?.let { (pattern, match) ->
+        val prefix = localize("应用规则")
+        val app = match.groupValues[1]
+        return locale?.format("legacy:$pattern#compose", "prefix" to prefix, "app" to app) ?: "$prefix · $app"
     }
-    translationRegex("^本地规则 · (.+)$").matchEntire(text)?.let { match ->
-        val prefix = localizeWeaveText("本地规则", language)
+    translatePattern("^本地规则 · (.+)$", text)?.let { (pattern, match) ->
+        val prefix = localize("本地规则")
         val suffix = match.groupValues[1]
         val separator = suffix.indexOf(' ')
         val localizedSuffix = if (separator > 0) {
-            "${localizeWeaveText(suffix.substring(0, separator), language)}${suffix.substring(separator)}"
+            "${localize(suffix.substring(0, separator))}${suffix.substring(separator)}"
         } else {
             suffix
         }
-        return "$prefix · $localizedSuffix"
+        return locale?.format("legacy:$pattern#compose", "prefix" to prefix, "localizedSuffix" to localizedSuffix) ?: "$prefix · $localizedSuffix"
     }
-    translationRegex("^(.+) 加密解析 · (.+)$").matchEntire(text)?.let { match ->
-        val transport = localizeWeaveText(match.groupValues[1], language)
-        val endpoint = localizeWeaveText(match.groupValues[2], language)
+    translatePattern("^(.+) 加密解析 · (.+)$", text)?.let { (pattern, match) ->
+        val transport = localize(match.groupValues[1])
+        val endpoint = localize(match.groupValues[2])
         return "$transport ${when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "加密解析"
-            WeaveLanguage.ENGLISH -> "encrypted resolution"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1") ?: "encrypted resolution"
             WeaveLanguage.JAPANESE -> "暗号化解決"
             WeaveLanguage.FRENCH -> "résolution chiffrée"
             WeaveLanguage.GERMAN -> "verschlüsselte Auflösung"
             WeaveLanguage.SIMPLIFIED_CHINESE -> "加密解析"
         }} · $endpoint"
     }
-    translationRegex("^STUN 端口 (\\d+) 已按规则阻断$").matchEntire(text)?.let { match ->
+    translatePattern("^STUN 端口 (\\d+) 已按规则阻断$", text)?.let { (pattern, match) ->
         val port = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "STUN 連接埠 $port 已按規則阻擋"
-            WeaveLanguage.ENGLISH -> "STUN port $port blocked by rule"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "port" to port) ?: "STUN port $port blocked by rule"
             WeaveLanguage.JAPANESE -> "STUN ポート $port はルールでブロック済み"
             WeaveLanguage.FRENCH -> "Port STUN $port bloqué par la règle"
             WeaveLanguage.GERMAN -> "STUN-Port $port per Regel blockiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+)/(\\d+) 个上游可达$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+)/(\\d+) 个上游可达$", text)?.let { (pattern, match) ->
         val available = match.groupValues[1]
         val total = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$available/$total 個上游可達"
-            WeaveLanguage.ENGLISH -> "$available/$total upstreams reachable"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "available" to available, "total" to total) ?: "$available/$total upstreams reachable"
             WeaveLanguage.JAPANESE -> "$available/$total 件の上流に到達可能"
             WeaveLanguage.FRENCH -> "$available/$total amonts accessibles"
             WeaveLanguage.GERMAN -> "$available/$total Upstreams erreichbar"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^HTTPS (\\d+) · (端点可达|服务端错误)$").matchEntire(text)?.let { match ->
+    translatePattern("^HTTPS (\\d+) · (端点可达|服务端错误)$", text)?.let { (pattern, match) ->
         val code = match.groupValues[1]
-        val status = localizeWeaveText(match.groupValues[2], language)
-        return "HTTPS $code · $status"
+        val status = localize(match.groupValues[2])
+        return locale?.format("legacy:$pattern#compose", "code" to code, "status" to status) ?: "HTTPS $code · $status"
     }
-    translationRegex("^(.+) 没有指定订阅$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) 没有指定订阅$", text)?.let { (pattern, match) ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 未指定訂閱"
-            WeaveLanguage.ENGLISH -> "$owner has no subscription selected"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "owner" to owner) ?: "$owner has no subscription selected"
             WeaveLanguage.JAPANESE -> "$owner に購読が指定されていません"
             WeaveLanguage.FRENCH -> "$owner n’a pas d’abonnement sélectionné"
             WeaveLanguage.GERMAN -> "$owner hat kein Abonnement ausgewählt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) 没有指定节点$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) 没有指定节点$", text)?.let { (pattern, match) ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 未指定節點"
-            WeaveLanguage.ENGLISH -> "$owner has no node selected"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "owner" to owner) ?: "$owner has no node selected"
             WeaveLanguage.JAPANESE -> "$owner にノードが指定されていません"
             WeaveLanguage.FRENCH -> "$owner n’a pas de nœud sélectionné"
             WeaveLanguage.GERMAN -> "$owner hat keinen Knoten ausgewählt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$", text)?.let { (pattern, match) ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 指向的訂閱不可用於 Mihomo；目前僅支援 Clash YAML"
-            WeaveLanguage.ENGLISH -> "The subscription targeted by $owner cannot be used by Mihomo; only Clash YAML is currently supported"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "owner" to owner) ?: "The subscription targeted by $owner cannot be used by Mihomo; only Clash YAML is currently supported"
             WeaveLanguage.JAPANESE -> "$owner が指定する購読は Mihomo で使用できません。現在は Clash YAML のみ対応しています"
             WeaveLanguage.FRENCH -> "L’abonnement ciblé par $owner ne peut pas être utilisé par Mihomo ; seul Clash YAML est pris en charge"
             WeaveLanguage.GERMAN -> "Das von $owner angegebene Abonnement ist für Mihomo ungeeignet; derzeit wird nur Clash YAML unterstützt"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) 指向的节点已不存在，请重新选择$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+) 指向的节点已不存在，请重新选择$", text)?.let { (pattern, match) ->
         val owner = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$owner 指向的節點已不存在，請重新選擇"
-            WeaveLanguage.ENGLISH -> "The node targeted by $owner no longer exists; select another"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "owner" to owner) ?: "The node targeted by $owner no longer exists; select another"
             WeaveLanguage.JAPANESE -> "$owner が指定するノードは存在しません。選び直してください"
             WeaveLanguage.FRENCH -> "Le nœud ciblé par $owner n’existe plus ; sélectionnez-en un autre"
             WeaveLanguage.GERMAN -> "Der von $owner angegebene Knoten existiert nicht mehr; bitte neu auswählen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^Mihomo TUN 启动失败，错误码 (\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^Mihomo TUN 启动失败，错误码 (\\d+)$", text)?.let { (pattern, match) ->
         val code = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "Mihomo TUN 啟動失敗，錯誤碼 $code"
-            WeaveLanguage.ENGLISH -> "Mihomo TUN failed to start (error $code)"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "code" to code) ?: "Mihomo TUN failed to start (error $code)"
             WeaveLanguage.JAPANESE -> "Mihomo TUN の起動に失敗しました（エラー $code）"
             WeaveLanguage.FRENCH -> "Échec du démarrage du TUN Mihomo (erreur $code)"
             WeaveLanguage.GERMAN -> "Mihomo-TUN konnte nicht gestartet werden (Fehler $code)"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^无法写入订阅 (.+) 的运行时副本$").matchEntire(text)?.let { match ->
+    translatePattern("^无法写入订阅 (.+) 的运行时副本$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "無法寫入訂閱 $name 的執行副本"
-            WeaveLanguage.ENGLISH -> "Unable to write the runtime copy of subscription $name"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "Unable to write the runtime copy of subscription $name"
             WeaveLanguage.JAPANESE -> "購読 $name の実行用コピーを書き込めません"
             WeaveLanguage.FRENCH -> "Impossible d’écrire la copie d’exécution de l’abonnement $name"
             WeaveLanguage.GERMAN -> "Laufzeitkopie des Abonnements $name konnte nicht geschrieben werden"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^第三方信息服务标记为 (.*)；这不是恶意判定$").matchEntire(text)?.let { match ->
+    translatePattern("^第三方信息服务标记为 (.*)；这不是恶意判定$", text)?.let { (pattern, match) ->
         val labels = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "第三方資訊服務標記為 $labels；這不是惡意判定"
-            WeaveLanguage.ENGLISH -> "A third-party information service labels it $labels; this is not a malicious verdict"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "labels" to labels) ?: "A third-party information service labels it $labels; this is not a malicious verdict"
             WeaveLanguage.JAPANESE -> "第三者情報サービスのラベル：$labels。悪意の判定ではありません"
             WeaveLanguage.FRENCH -> "Un service tiers le signale comme $labels ; ce n’est pas un verdict malveillant"
             WeaveLanguage.GERMAN -> "Ein Drittanbieter markiert es als $labels; dies ist kein Schadensbefund"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^未取得 IPv4 公网地址 · (.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^未取得 IPv4 公网地址 · (.*)$", text)?.let { (pattern, match) ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "未取得 IPv4 公網地址 · $detail"
-            WeaveLanguage.ENGLISH -> "No public IPv4 address obtained · $detail"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "detail" to detail) ?: "No public IPv4 address obtained · $detail"
             WeaveLanguage.JAPANESE -> "IPv4 パブリックアドレスを取得できません · $detail"
             WeaveLanguage.FRENCH -> "Aucune adresse IPv4 publique obtenue · $detail"
             WeaveLanguage.GERMAN -> "Keine öffentliche IPv4-Adresse erhalten · $detail"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^检测到 (.*)；与“仅 IPv4”设置不一致$").matchEntire(text)?.let { match ->
+    translatePattern("^检测到 (.*)；与“仅 IPv4”设置不一致$", text)?.let { (pattern, match) ->
         val address = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "偵測到 $address；與「僅 IPv4」設定不一致"
-            WeaveLanguage.ENGLISH -> "Detected $address; inconsistent with the IPv4-only setting"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "address" to address) ?: "Detected $address; inconsistent with the IPv4-only setting"
             WeaveLanguage.JAPANESE -> "$address を検出しました。「IPv4 のみ」設定と一致しません"
             WeaveLanguage.FRENCH -> "$address détectée ; incohérent avec le réglage IPv4 uniquement"
             WeaveLanguage.GERMAN -> "$address erkannt; widerspricht der Einstellung Nur IPv4"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$").matchEntire(text)?.let { match ->
-        val transport = localizeWeaveText(match.groupValues[1], language)
-        val profile = localizeWeaveText(match.groupValues[2], language)
-        val explanation = localizeWeaveText("解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验", language)
-        return "$transport · $profile · $explanation"
+    translatePattern("^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$", text)?.let { (pattern, match) ->
+        val transport = localize(match.groupValues[1])
+        val profile = localize(match.groupValues[2])
+        val explanation = localize("解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验")
+        return locale?.format("legacy:$pattern#compose", "transport" to transport, "profile" to profile, "explanation" to explanation) ?: "$transport · $profile · $explanation"
     }
-    translationRegex("^(.+) · (.+)；这是配置证据，不是外部泄漏测试$").matchEntire(text)?.let { match ->
-        val transport = localizeWeaveText(match.groupValues[1], language)
-        val profile = localizeWeaveText(match.groupValues[2], language)
+    translatePattern("^(.+) · (.+)；这是配置证据，不是外部泄漏测试$", text)?.let { (pattern, match) ->
+        val transport = localize(match.groupValues[1])
+        val profile = localize(match.groupValues[2])
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$transport · $profile；這是設定證據，不是外部洩漏測試"
-            WeaveLanguage.ENGLISH -> "$transport · $profile; this is configuration evidence, not an external leak test"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "transport" to transport, "profile" to profile) ?: "$transport · $profile; this is configuration evidence, not an external leak test"
             WeaveLanguage.JAPANESE -> "$transport · $profile。これは設定の証拠であり、外部リークテストではありません"
             WeaveLanguage.FRENCH -> "$transport · $profile ; preuve de configuration, pas un test externe de fuite"
             WeaveLanguage.GERMAN -> "$transport · $profile; Konfigurationsnachweis, kein externer Lecktest"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) GB 已用$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) GB 已用$", text)?.let { (pattern, match) ->
         val amount = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$amount GB 已用"
-            WeaveLanguage.ENGLISH -> "$amount GB used"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "amount" to amount) ?: "$amount GB used"
             WeaveLanguage.JAPANESE -> "$amount GB 使用済み"
             WeaveLanguage.FRENCH -> "$amount Go utilisés"
             WeaveLanguage.GERMAN -> "$amount GB verwendet"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^节点  (\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^节点  (\\d+)$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "節點  $count"
-            WeaveLanguage.ENGLISH -> "Nodes  $count"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Nodes  $count"
             WeaveLanguage.JAPANESE -> "ノード  $count"
             WeaveLanguage.FRENCH -> "Nœuds  $count"
             WeaveLanguage.GERMAN -> "Knoten  $count"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^中位 (\\d+)ms$").matchEntire(text)?.let { match ->
+    translatePattern("^中位 (\\d+)ms$", text)?.let { (pattern, match) ->
         val latency = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "中位數 ${latency}ms"
-            WeaveLanguage.ENGLISH -> "Median ${latency}ms"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "latency" to latency) ?: "Median ${latency}ms"
             WeaveLanguage.JAPANESE -> "中央値 ${latency}ms"
             WeaveLanguage.FRENCH -> "Médiane ${latency} ms"
             WeaveLanguage.GERMAN -> "Median ${latency} ms"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) ms · 丢(\\d+)%$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) ms · 丢(\\d+)%$", text)?.let { (pattern, match) ->
         val latency = match.groupValues[1]
         val loss = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "${latency} ms · 丟${loss}%"
-            WeaveLanguage.ENGLISH -> "${latency} ms · ${loss}% loss"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "latency" to latency, "loss" to loss) ?: "${latency} ms · ${loss}% loss"
             WeaveLanguage.JAPANESE -> "${latency} ms · 損失 ${loss}%"
             WeaveLanguage.FRENCH -> "${latency} ms · perte ${loss} %"
             WeaveLanguage.GERMAN -> "${latency} ms · ${loss}% Verlust"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(\\d+) ms · 抖(\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^(\\d+) ms · 抖(\\d+)$", text)?.let { (pattern, match) ->
         val latency = match.groupValues[1]
         val jitter = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "${latency} ms · 抖動${jitter}"
-            WeaveLanguage.ENGLISH -> "${latency} ms · jitter ${jitter}"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "latency" to latency, "jitter" to jitter) ?: "${latency} ms · jitter ${jitter}"
             WeaveLanguage.JAPANESE -> "${latency} ms · ジッター ${jitter}"
             WeaveLanguage.FRENCH -> "${latency} ms · gigue ${jitter}"
             WeaveLanguage.GERMAN -> "${latency} ms · Jitter ${jitter}"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^边缘节点  (.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^边缘节点  (.+)$", text)?.let { (pattern, match) ->
         val edge = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "邊緣節點  $edge"
-            WeaveLanguage.ENGLISH -> "Edge  $edge"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "edge" to edge) ?: "Edge  $edge"
             WeaveLanguage.JAPANESE -> "エッジ  $edge"
             WeaveLanguage.FRENCH -> "Nœud périphérique  $edge"
             WeaveLanguage.GERMAN -> "Edge  $edge"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已选 (\\d+)/(\\d+)$").matchEntire(text)?.let { match ->
+    translatePattern("^已选 (\\d+)/(\\d+)$", text)?.let { (pattern, match) ->
         val selected = match.groupValues[1]
         val total = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已選 $selected/$total"
-            WeaveLanguage.ENGLISH -> "$selected/$total selected"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "selected" to selected, "total" to total) ?: "$selected/$total selected"
             WeaveLanguage.JAPANESE -> "$selected/$total 件選択"
             WeaveLanguage.FRENCH -> "$selected/$total sélectionnés"
             WeaveLanguage.GERMAN -> "$selected/$total ausgewählt"
@@ -909,12 +963,12 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         }
     }
     // Client source import counts; the number is always the real list or preview size.
-    translationRegex("^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$").matchEntire(text)?.let { match ->
+    translatePattern("^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$", text)?.let { (pattern, match) ->
         val count = match.groupValues[2]
         return when (match.groupValues[1]) {
             "预览所选" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "預覽所選 $count 個訂閱"
-                WeaveLanguage.ENGLISH -> "Preview $count selected subscription(s)"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Preview $count selected subscription(s)"
                 WeaveLanguage.JAPANESE -> "選択した購読 $count 件をプレビュー"
                 WeaveLanguage.FRENCH -> "Prévisualiser $count abonnement(s) sélectionné(s)"
                 WeaveLanguage.GERMAN -> "$count ausgewählte(s) Abo(s) prüfen"
@@ -922,7 +976,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "确认导入" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "確認匯入 $count 個訂閱"
-                WeaveLanguage.ENGLISH -> "Import $count subscription(s)"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#2", "count" to count) ?: "Import $count subscription(s)"
                 WeaveLanguage.JAPANESE -> "購読 $count 件を取り込む"
                 WeaveLanguage.FRENCH -> "Importer $count abonnement(s)"
                 WeaveLanguage.GERMAN -> "$count Abo(s) importieren"
@@ -930,7 +984,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             "将导入" -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "將匯入 $count 個訂閱"
-                WeaveLanguage.ENGLISH -> "$count subscription(s) to import"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#3", "count" to count) ?: "$count subscription(s) to import"
                 WeaveLanguage.JAPANESE -> "取り込む購読 $count 件"
                 WeaveLanguage.FRENCH -> "$count abonnement(s) à importer"
                 WeaveLanguage.GERMAN -> "$count Abo(s) zum Import"
@@ -938,7 +992,7 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
             else -> when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE -> "已匯入 $count 個訂閱"
-                WeaveLanguage.ENGLISH -> "$count subscription(s) imported"
+                WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#4", "count" to count) ?: "$count subscription(s) imported"
                 WeaveLanguage.JAPANESE -> "購読 $count 件を取り込みました"
                 WeaveLanguage.FRENCH -> "$count abonnement(s) importé(s)"
                 WeaveLanguage.GERMAN -> "$count Abo(s) importiert"
@@ -946,56 +1000,56 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             }
         }
     }
-    translationRegex("^确认短码：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^确认短码：(.*)$", text)?.let { (pattern, match) ->
         val code = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "確認短碼：$code"
-            WeaveLanguage.ENGLISH -> "Confirmation code: $code"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "code" to code) ?: "Confirmation code: $code"
             WeaveLanguage.JAPANESE -> "確認コード：$code"
             WeaveLanguage.FRENCH -> "Code de confirmation : $code"
             WeaveLanguage.GERMAN -> "Bestätigungscode: $code"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^添加 (.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^添加 (.+)$", text)?.let { (pattern, match) ->
         val app = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "新增 $app"
-            WeaveLanguage.ENGLISH -> "Add $app"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "app" to app) ?: "Add $app"
             WeaveLanguage.JAPANESE -> "$app を追加"
             WeaveLanguage.FRENCH -> "Ajouter $app"
             WeaveLanguage.GERMAN -> "$app hinzufügen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^删除后，(.+) 将改用默认出口。$").matchEntire(text)?.let { match ->
+    translatePattern("^删除后，(.+) 将改用默认出口。$", text)?.let { (pattern, match) ->
         val app = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "刪除後，$app 將改用預設出口。"
-            WeaveLanguage.ENGLISH -> "After deletion, $app will use the default exit."
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "app" to app) ?: "After deletion, $app will use the default exit."
             WeaveLanguage.JAPANESE -> "削除後、$app はデフォルト出口を使用します。"
             WeaveLanguage.FRENCH -> "Après suppression, $app utilisera la sortie par défaut."
             WeaveLanguage.GERMAN -> "Nach dem Löschen verwendet $app den Standardausgang."
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$").matchEntire(text)?.let { match ->
+    translatePattern("^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         val count = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "將永久刪除「$name」、加密訂閱地址和 $count 個節點。"
-            WeaveLanguage.ENGLISH -> "This permanently deletes “$name”, the encrypted subscription URL and $count nodes."
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name, "count" to count) ?: "This permanently deletes “$name”, the encrypted subscription URL and $count nodes."
             WeaveLanguage.JAPANESE -> "「$name」、暗号化された購読 URL、$count ノードを完全に削除します。"
             WeaveLanguage.FRENCH -> "« $name », l’URL chiffrée et $count nœuds seront supprimés définitivement."
             WeaveLanguage.GERMAN -> "„$name“, die verschlüsselte Abo-URL und $count Knoten werden dauerhaft gelöscht."
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$").matchEntire(text)?.let { match ->
+    translatePattern("^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "引用它的 $count 條應用程式規則也會刪除，這些應用程式隨後使用預設出口。"
-            WeaveLanguage.ENGLISH -> "The $count app rules that reference it will also be deleted; those apps will use the default exit."
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "The $count app rules that reference it will also be deleted; those apps will use the default exit."
             WeaveLanguage.JAPANESE -> "参照しているアプリルール $count 件も削除され、対象アプリはデフォルト出口を使用します。"
             WeaveLanguage.FRENCH -> "Les $count règles d’application qui le référencent seront aussi supprimées ; ces apps utiliseront la sortie par défaut."
             WeaveLanguage.GERMAN -> "Die $count darauf verweisenden App-Regeln werden ebenfalls gelöscht; diese Apps nutzen den Standardausgang."
@@ -1015,63 +1069,63 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已刷新 (\\d+) 个远程订阅$").matchEntire(text)?.let { match ->
+    translatePattern("^已刷新 (\\d+) 个远程订阅$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已重新整理 $count 個遠端訂閱"
-            WeaveLanguage.ENGLISH -> "Refreshed $count remote subscriptions"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Refreshed $count remote subscriptions"
             WeaveLanguage.JAPANESE -> "リモート購読を $count 件更新しました"
             WeaveLanguage.FRENCH -> "$count abonnements distants actualisés"
             WeaveLanguage.GERMAN -> "$count entfernte Abonnements aktualisiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已完成 (\\d+) 个，(\\d+) 个失败$").matchEntire(text)?.let { match ->
+    translatePattern("^已完成 (\\d+) 个，(\\d+) 个失败$", text)?.let { (pattern, match) ->
         val completed = match.groupValues[1]
         val failed = match.groupValues[2]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已完成 $completed 個，$failed 個失敗"
-            WeaveLanguage.ENGLISH -> "$completed complete, $failed failed"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "completed" to completed, "failed" to failed) ?: "$completed complete, $failed failed"
             WeaveLanguage.JAPANESE -> "$completed 件完了、$failed 件失敗"
             WeaveLanguage.FRENCH -> "$completed terminés, $failed échecs"
             WeaveLanguage.GERMAN -> "$completed abgeschlossen, $failed fehlgeschlagen"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$").matchEntire(text)?.let { match ->
+    translatePattern("^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$", text)?.let { (pattern, match) ->
         val count = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已安全同步 $count 個訂閱；同源訂閱已原位更新"
-            WeaveLanguage.ENGLISH -> "Safely synced $count subscriptions; matching sources were updated in place"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "count" to count) ?: "Safely synced $count subscriptions; matching sources were updated in place"
             WeaveLanguage.JAPANESE -> "$count 件の購読を安全に同期し、同一ソースを更新しました"
             WeaveLanguage.FRENCH -> "$count abonnements synchronisés en sécurité ; les sources identiques ont été mises à jour"
             WeaveLanguage.GERMAN -> "$count Abonnements sicher synchronisiert; gleiche Quellen wurden aktualisiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^生成时间：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^生成时间：(.*)$", text)?.let { (pattern, match) ->
         val time = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "產生時間：$time"
-            WeaveLanguage.ENGLISH -> "Generated: $time"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "time" to time) ?: "Generated: $time"
             WeaveLanguage.JAPANESE -> "生成日時：$time"
             WeaveLanguage.FRENCH -> "Généré : $time"
             WeaveLanguage.GERMAN -> "Erstellt: $time"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^来源：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^来源：(.*)$", text)?.let { (pattern, match) ->
         val source = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "來源：$source"
-            WeaveLanguage.ENGLISH -> "Source: $source"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "source" to source) ?: "Source: $source"
             WeaveLanguage.JAPANESE -> "ソース：$source"
             WeaveLanguage.FRENCH -> "Source : $source"
             WeaveLanguage.GERMAN -> "Quelle: $source"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$").matchEntire(text)?.let { match ->
+    translatePattern("^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$", text)?.let { (pattern, match) ->
         val available = match.groupValues[1]
         val total = match.groupValues[2]
         val median = match.groupValues[3]
@@ -1079,212 +1133,214 @@ private fun translateCommonPatterns(text: String, language: WeaveLanguage): Stri
         val loss = match.groupValues[5]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最近一次：可用 $available/$total · 中位數 $median ms · P95 $p95 ms · 平均丟包 $loss%"
-            WeaveLanguage.ENGLISH -> "Last run: $available/$total available · median $median ms · P95 $p95 ms · avg. loss $loss%"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "available" to available, "total" to total, "median" to median, "p95" to p95, "loss" to loss) ?: "Last run: $available/$total available · median $median ms · P95 $p95 ms · avg. loss $loss%"
             WeaveLanguage.JAPANESE -> "前回：$available/$total 件利用可能 · 中央値 $median ms · P95 $p95 ms · 平均損失 $loss%"
             WeaveLanguage.FRENCH -> "Dernier test : $available/$total disponibles · médiane $median ms · P95 $p95 ms · perte moy. $loss %"
             WeaveLanguage.GERMAN -> "Letzter Lauf: $available/$total verfügbar · Median $median ms · P95 $p95 ms · Ø Verlust $loss%"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^v(.+) · (\\d+) 条 · (.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^v(.+) · (\\d+) 条 · (.+)$", text)?.let { (pattern, match) ->
         val version = match.groupValues[1]
         val count = match.groupValues[2]
         val integrity = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "v$version · $count 條 · $integrity"
-            WeaveLanguage.ENGLISH -> "v$version · $count rules · $integrity"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "version" to version, "count" to count, "integrity" to integrity) ?: "v$version · $count rules · $integrity"
             WeaveLanguage.JAPANESE -> "v$version · $count 件 · $integrity"
             WeaveLanguage.FRENCH -> "v$version · $count règles · $integrity"
             WeaveLanguage.GERMAN -> "v$version · $count Regeln · $integrity"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^正在刷新 (.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^正在刷新 (.+)$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "正在重新整理 $name"
-            WeaveLanguage.ENGLISH -> "Refreshing $name"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "Refreshing $name"
             WeaveLanguage.JAPANESE -> "$name を更新中"
             WeaveLanguage.FRENCH -> "Actualisation de $name"
             WeaveLanguage.GERMAN -> "$name wird aktualisiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已删除订阅「(.+)」$").matchEntire(text)?.let { match ->
+    translatePattern("^已删除订阅「(.+)」$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已刪除訂閱「$name」"
-            WeaveLanguage.ENGLISH -> "Deleted subscription “$name”"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "Deleted subscription “$name”"
             WeaveLanguage.JAPANESE -> "購読「$name」を削除しました"
             WeaveLanguage.FRENCH -> "Abonnement « $name » supprimé"
             WeaveLanguage.GERMAN -> "Abonnement „$name“ gelöscht"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已导入策略包「(.+)」$").matchEntire(text)?.let { match ->
+    translatePattern("^已导入策略包「(.+)」$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已匯入策略包「$name」"
-            WeaveLanguage.ENGLISH -> "Imported policy pack “$name”"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "Imported policy pack “$name”"
             WeaveLanguage.JAPANESE -> "ポリシーパック「$name」をインポートしました"
             WeaveLanguage.FRENCH -> "Pack de règles « $name » importé"
             WeaveLanguage.GERMAN -> "Richtlinienpaket „$name“ importiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^策略包超过 (\\d+) KiB 限制$").matchEntire(text)?.let { match ->
+    translatePattern("^策略包超过 (\\d+) KiB 限制$", text)?.let { (pattern, match) ->
         val size = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "策略包超過 $size KiB 限制"
-            WeaveLanguage.ENGLISH -> "Policy pack exceeds the $size KiB limit"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "size" to size) ?: "Policy pack exceeds the $size KiB limit"
             WeaveLanguage.JAPANESE -> "ポリシーパックが $size KiB の上限を超えています"
             WeaveLanguage.FRENCH -> "Le pack de règles dépasse la limite de $size KiB"
             WeaveLanguage.GERMAN -> "Das Richtlinienpaket überschreitet das Limit von $size KiB"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+)，正在安全更新运行配置$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+)，正在安全更新运行配置$", text)?.let { (pattern, match) ->
         val prefix = match.groupValues[1]
-        val localizedPrefix = localizeWeaveText(prefix, language)
+        val localizedPrefix = localize(prefix)
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$localizedPrefix，正在安全更新執行設定"
-            WeaveLanguage.ENGLISH -> "$localizedPrefix; safely updating the runtime configuration"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "localizedPrefix" to localizedPrefix) ?: "$localizedPrefix; safely updating the runtime configuration"
             WeaveLanguage.JAPANESE -> "$localizedPrefix。実行設定を安全に更新中"
             WeaveLanguage.FRENCH -> "$localizedPrefix ; mise à jour sécurisée de la configuration"
             WeaveLanguage.GERMAN -> "$localizedPrefix; Laufzeitkonfiguration wird sicher aktualisiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+)，正在安全应用$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+)，正在安全应用$", text)?.let { (pattern, match) ->
         val prefix = match.groupValues[1]
-        val localizedPrefix = localizeWeaveText(prefix, language)
+        val localizedPrefix = localize(prefix)
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$localizedPrefix，正在安全套用"
-            WeaveLanguage.ENGLISH -> "$localizedPrefix; safely applying changes"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "localizedPrefix" to localizedPrefix) ?: "$localizedPrefix; safely applying changes"
             WeaveLanguage.JAPANESE -> "$localizedPrefix。安全に適用中"
             WeaveLanguage.FRENCH -> "$localizedPrefix ; application sécurisée"
             WeaveLanguage.GERMAN -> "$localizedPrefix; Änderungen werden sicher angewendet"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^最近可用快照：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^最近可用快照：(.*)$", text)?.let { (pattern, match) ->
         val snapshot = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最近可用快照：$snapshot"
-            WeaveLanguage.ENGLISH -> "Latest usable snapshot: $snapshot"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "snapshot" to snapshot) ?: "Latest usable snapshot: $snapshot"
             WeaveLanguage.JAPANESE -> "最新の利用可能なスナップショット：$snapshot"
             WeaveLanguage.FRENCH -> "Dernier instantané utilisable : $snapshot"
             WeaveLanguage.GERMAN -> "Letzter nutzbarer Snapshot: $snapshot"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^最近失败：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^最近失败：(.*)$", text)?.let { (pattern, match) ->
         val failure = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "最近失敗：$failure"
-            WeaveLanguage.ENGLISH -> "Latest failure: $failure"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "failure" to failure) ?: "Latest failure: $failure"
             WeaveLanguage.JAPANESE -> "直近の失敗：$failure"
             WeaveLanguage.FRENCH -> "Dernier échec : $failure"
             WeaveLanguage.GERMAN -> "Letzter Fehler: $failure"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^远程订阅已安全更新 · (.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^远程订阅已安全更新 · (.*)$", text)?.let { (pattern, match) ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "遠端訂閱已安全更新 · $detail"
-            WeaveLanguage.ENGLISH -> "Remote subscription safely updated · $detail"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "detail" to detail) ?: "Remote subscription safely updated · $detail"
             WeaveLanguage.JAPANESE -> "リモート購読を安全に更新しました · $detail"
             WeaveLanguage.FRENCH -> "Abonnement distant mis à jour en sécurité · $detail"
             WeaveLanguage.GERMAN -> "Entferntes Abonnement sicher aktualisiert · $detail"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^订阅文件已安全替换 · (.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^订阅文件已安全替换 · (.*)$", text)?.let { (pattern, match) ->
         val detail = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "訂閱檔案已安全替換 · $detail"
-            WeaveLanguage.ENGLISH -> "Subscription file safely replaced · $detail"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "detail" to detail) ?: "Subscription file safely replaced · $detail"
             WeaveLanguage.JAPANESE -> "購読ファイルを安全に置換しました · $detail"
             WeaveLanguage.FRENCH -> "Fichier d’abonnement remplacé en sécurité · $detail"
             WeaveLanguage.GERMAN -> "Abonnementdatei sicher ersetzt · $detail"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^已安全导入「(.+)」$").matchEntire(text)?.let { match ->
+    translatePattern("^已安全导入「(.+)」$", text)?.let { (pattern, match) ->
         val name = match.groupValues[1]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "已安全匯入「$name」"
-            WeaveLanguage.ENGLISH -> "Imported “$name” safely"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "name" to name) ?: "Imported “$name” safely"
             WeaveLanguage.JAPANESE -> "「$name」を安全にインポートしました"
             WeaveLanguage.FRENCH -> "« $name » importé en sécurité"
             WeaveLanguage.GERMAN -> "„$name“ sicher importiert"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+) · (\\d+) → (\\d+) 节点$").matchEntire(text)?.let { match ->
-        val summary = localizeWeaveText(match.groupValues[1], language)
+    translatePattern("^(.+) · (\\d+) → (\\d+) 节点$", text)?.let { (pattern, match) ->
+        val summary = localize(match.groupValues[1])
         val oldCount = match.groupValues[2]
         val newCount = match.groupValues[3]
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "$summary · $oldCount → $newCount 個節點"
-            WeaveLanguage.ENGLISH -> "$summary · $oldCount → $newCount nodes"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "summary" to summary, "oldCount" to oldCount, "newCount" to newCount) ?: "$summary · $oldCount → $newCount nodes"
             WeaveLanguage.JAPANESE -> "$summary · $oldCount → $newCount ノード"
             WeaveLanguage.FRENCH -> "$summary · $oldCount → $newCount nœuds"
             WeaveLanguage.GERMAN -> "$summary · $oldCount → $newCount Knoten"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^· (.+)：(.+)$").matchEntire(text)?.let { match ->
-        val title = localizeWeaveText(match.groupValues[1], language)
-        val detail = localizeWeaveText(match.groupValues[2], language)
+    translatePattern("^· (.+)：(.+)$", text)?.let { (pattern, match) ->
+        val title = localize(match.groupValues[1])
+        val detail = localize(match.groupValues[2])
         val separator = when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE, WeaveLanguage.JAPANESE, WeaveLanguage.SIMPLIFIED_CHINESE -> "："
-            WeaveLanguage.ENGLISH -> ": "
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1") ?: ": "
             WeaveLanguage.FRENCH -> " : "
             WeaveLanguage.GERMAN -> ": "
         }
         return "· $title$separator$detail"
     }
-    translationRegex("^审计提示：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^审计提示：(.*)$", text)?.let { (pattern, match) ->
         val details = match.groupValues[1]
             .split("；")
             .joinToString(when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE, WeaveLanguage.JAPANESE, WeaveLanguage.SIMPLIFIED_CHINESE -> "；"
-                WeaveLanguage.ENGLISH, WeaveLanguage.FRENCH, WeaveLanguage.GERMAN -> "; "
-            }) { localizeWeaveText(it, language) }
+                WeaveLanguage.ENGLISH, WeaveLanguage.FRENCH, WeaveLanguage.GERMAN -> if (locale?.languageTag == "ar") "؛ " else "; "
+            }) { localize(it) }
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "稽核提示：$details"
-            WeaveLanguage.ENGLISH -> "Audit note: $details"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "details" to details) ?: "Audit note: $details"
             WeaveLanguage.JAPANESE -> "監査の注意：$details"
             WeaveLanguage.FRENCH -> "Avertissement d’audit : $details"
             WeaveLanguage.GERMAN -> "Audit-Hinweis: $details"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^审计阻止：(.*)$").matchEntire(text)?.let { match ->
+    translatePattern("^审计阻止：(.*)$", text)?.let { (pattern, match) ->
         val details = match.groupValues[1]
             .split("；")
             .joinToString(when (language) {
                 WeaveLanguage.TRADITIONAL_CHINESE, WeaveLanguage.JAPANESE, WeaveLanguage.SIMPLIFIED_CHINESE -> "；"
-                WeaveLanguage.ENGLISH, WeaveLanguage.FRENCH, WeaveLanguage.GERMAN -> "; "
-            }) { localizeWeaveText(it, language) }
+                WeaveLanguage.ENGLISH, WeaveLanguage.FRENCH, WeaveLanguage.GERMAN -> if (locale?.languageTag == "ar") "؛ " else "; "
+            }) { localize(it) }
         return when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE -> "稽核阻止：$details"
-            WeaveLanguage.ENGLISH -> "Audit blocked: $details"
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1", "details" to details) ?: "Audit blocked: $details"
             WeaveLanguage.JAPANESE -> "監査によりブロック：$details"
             WeaveLanguage.FRENCH -> "Audit bloqué : $details"
             WeaveLanguage.GERMAN -> "Audit blockiert: $details"
             WeaveLanguage.SIMPLIFIED_CHINESE -> text
         }
     }
-    translationRegex("^(.+)：(.+)$").matchEntire(text)?.let { match ->
+    translatePattern("^(.+)：(.+)$", text)?.let { (pattern, match) ->
         val prefix = match.groupValues[1]
-        val localizedPrefix = translationTable(language)[prefix] ?: return@let
-        val localizedValue = localizeWeaveText(match.groupValues[2], language)
+        val localizedPrefix = locale?.lookupStatic(prefix)
+            ?: translationTable(language)[prefix]?.let { locale?.static(prefix) ?: it }
+            ?: return@let
+        val localizedValue = localize(match.groupValues[2])
         val separator = when (language) {
             WeaveLanguage.TRADITIONAL_CHINESE, WeaveLanguage.JAPANESE -> "："
-            WeaveLanguage.ENGLISH -> ": "
+            WeaveLanguage.ENGLISH -> locale?.format("legacy:$pattern#1") ?: ": "
             WeaveLanguage.FRENCH -> " : "
             WeaveLanguage.GERMAN -> ": "
             WeaveLanguage.SIMPLIFIED_CHINESE -> "："
@@ -2250,7 +2306,6 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "尚未导入策略包。策略包必须包含格式、版本、规则和 SHA-256；无签名包会标记为需复核。" to SupplementalTranslation("No policy pack imported. A pack must include format, version, rules and SHA-256; unsigned packs are marked for review."),
     "本机加密保存的域名、关键词和 CIDR 规则；不联网、不上传，可由路由解释预览。" to SupplementalTranslation("Domains, keywords and CIDR rules are encrypted locally; no network or upload is used, and Route explanation can preview them."),
     "每个公开发行版应在同一 GitHub Release 附近提供对应源码、构建说明、校验和与第三方清单。" to SupplementalTranslation("Each public release should provide matching source, build instructions, checksums and the third-party inventory near the same GitHub Release."),
-    "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或应用远程更新；主动选择的第三方端点仍按隐私说明工作。" to SupplementalTranslation("This repository uses the local-open-source profile: no Weave cloud control, node relay, embedded credentials or app remote updates; third-party endpoints you choose still follow their privacy terms."),
     "HTTP 只承载 AES-256-GCM 密文，密钥保存在 weave:// 链接的 fragment 中，不随 HTTP 请求发送。" to SupplementalTranslation("HTTP carries only AES-256-GCM ciphertext; the key is kept in the weave:// link fragment and is not sent in the HTTP request."),
     "Weave 会建立本地 VPN 接口，以便把设备流量交给你选择的规则和代理节点。" to SupplementalTranslation("Weave creates a local VPN interface so device traffic can follow your selected rules and proxy nodes."),
     "系统级保护" to SupplementalTranslation("System protection", "系統級保護", "システム保護", "Protection système", "Systemschutz"),
@@ -2646,7 +2701,7 @@ private data class CachedTranslationTable(
 private var cachedTranslationTable: CachedTranslationTable? = null
 private val TRANSLATION_CACHE_LOCK = Any()
 
-private fun translationTable(language: WeaveLanguage): Map<String, String> {
+internal fun translationTable(language: WeaveLanguage): Map<String, String> {
     cachedTranslationTable?.takeIf { it.language == language }?.let { return it.values }
     return synchronized(TRANSLATION_CACHE_LOCK) {
         cachedTranslationTable?.takeIf { it.language == language }?.values ?: run {
@@ -3202,7 +3257,6 @@ private fun commonUiTranslations(language: WeaveLanguage): Map<String, String> =
         "降低 WebRTC 暴露风险；可能影响音视频通话" to "降低 WebRTC 暴露風險；可能影響音視訊通話",
         "服务边界" to "服務邊界",
         "Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。" to "Weave 只提供本機客戶端，不提供節點、線路、帳號、託管 VPN 或集中式控制服務。",
-        "本地开源发行配置：Weave 不运营账户、云端控制、节点中继、遥测或远程更新；用户主动选择的订阅、代理、DNS 和 IP 检测端点仍可能收到完成请求所需的数据。" to "本機開源發行設定：Weave 不營運帳戶、雲端控制、節點中繼、遙測或遠端更新；使用者主動選擇的訂閱、代理、DNS 與 IP 檢測端點仍可能收到完成請求所需的資料。",
     )
     WeaveLanguage.ENGLISH -> mapOf(
         "私密网络" to "Private network",
@@ -3268,7 +3322,6 @@ private fun commonUiTranslations(language: WeaveLanguage): Map<String, String> =
         "降低 WebRTC 暴露风险；可能影响音视频通话" to "Reduce WebRTC exposure; may affect audio/video calls",
         "服务边界" to "Service boundary",
         "Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。" to "Weave is a local client; it does not provide nodes, lines, accounts, hosted VPN access or a centralized control service.",
-        "本地开源发行配置：Weave 不运营账户、云端控制、节点中继、遥测或远程更新；用户主动选择的订阅、代理、DNS 和 IP 检测端点仍可能收到完成请求所需的数据。" to "Local open-source profile: Weave has no account service, cloud control, relay, telemetry or remote updater; endpoints you choose may still receive data needed to complete your request.",
     )
     WeaveLanguage.JAPANESE -> mapOf(
         "私密网络" to "プライベートネットワーク",
@@ -3333,7 +3386,6 @@ private fun commonUiTranslations(language: WeaveLanguage): Map<String, String> =
         "降低 WebRTC 暴露风险；可能影响音视频通话" to "WebRTC の露出リスクを低減。音声・ビデオ通話に影響する場合があります",
         "服务边界" to "サービスの範囲",
         "Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。" to "Weave は端末内クライアントのみを提供し、ノード、回線、アカウント、ホステッド VPN、集中管理サービスは提供しません。",
-        "本地开源发行配置：Weave 不运营账户、云端控制、节点中继、遥测或远程更新；用户主动选择的订阅、代理、DNS 和 IP 检测端点仍可能收到完成请求所需的数据。" to "ローカルオープンソース設定：Weave はアカウント、クラウド制御、リレー、テレメトリ、リモート更新を運用しません。選択した端点にはリクエスト完了に必要なデータが届く場合があります。",
     )
     WeaveLanguage.FRENCH -> mapOf(
         "私密网络" to "Réseau privé",
@@ -3398,7 +3450,6 @@ private fun commonUiTranslations(language: WeaveLanguage): Map<String, String> =
         "降低 WebRTC 暴露风险；可能影响音视频通话" to "Réduire l’exposition WebRTC ; peut affecter les appels audio/vidéo",
         "服务边界" to "Périmètre du service",
         "Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。" to "Weave est un client local ; il ne fournit ni nœuds, ni lignes, ni comptes, ni VPN hébergé, ni service de contrôle centralisé.",
-        "本地开源发行配置：Weave 不运营账户、云端控制、节点中继、遥测或远程更新；用户主动选择的订阅、代理、DNS 和 IP 检测端点仍可能收到完成请求所需的数据。" to "Profil open source local : Weave n’exploite ni comptes, ni contrôle cloud, ni relais, ni télémétrie, ni mise à jour distante ; les points choisis peuvent recevoir les données nécessaires à la requête.",
     )
     WeaveLanguage.GERMAN -> mapOf(
         "私密网络" to "Privates Netzwerk",
@@ -3463,6 +3514,5 @@ private fun commonUiTranslations(language: WeaveLanguage): Map<String, String> =
         "降低 WebRTC 暴露风险；可能影响音视频通话" to "WebRTC-Exposition reduzieren; Audio-/Videoanrufe können beeinträchtigt werden",
         "服务边界" to "Dienstgrenze",
         "Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。" to "Weave ist ein lokaler Client und bietet keine Knoten, Leitungen, Konten, gehosteten VPN-Zugänge oder zentrale Steuerung.",
-        "本地开源发行配置：Weave 不运营账户、云端控制、节点中继、遥测或远程更新；用户主动选择的订阅、代理、DNS 和 IP 检测端点仍可能收到完成请求所需的数据。" to "Lokales Open-Source-Profil: Weave betreibt keine Konten, Cloud-Steuerung, Relays, Telemetrie oder Remote-Updates; von dir gewählte Endpunkte können für die Anfrage notwendige Daten erhalten.",
     )
 }

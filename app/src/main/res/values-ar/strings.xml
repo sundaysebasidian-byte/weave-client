@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">اتصال الوكيل</string>
+    <string name="vpn_channel_description">يعرض حالة اتصال Weave بالوكيل</string>
+    <string name="updates_channel_name">تحديثات الاشتراكات</string>
+    <string name="updates_channel_description">نتائج تحديثات الاشتراكات المجدولة</string>
+    <string name="action_disconnect">قطع الاتصال</string>
+    <string name="action_connect">اتصال</string>
+    <string name="notification_speed">⁦↑ %1$s/s⁩ · ⁦↓ %2$s/s⁩</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">متصل</string>
+    <string name="tile_disconnected">متوقف</string>
+    <string name="tile_connecting">جارٍ الاتصال…</string>
+    <string name="tile_needs_app">افتح Weave للسماح باتصال VPN</string>
+    <string name="shortcut_connect_short">اتصال</string>
+    <string name="shortcut_connect_long">الاتصال عبر Weave</string>
+    <string name="shortcut_disconnect_short">قطع الاتصال</string>
+    <string name="shortcut_disconnect_long">قطع اتصال Weave</string>
+    <string name="shortcut_import_short">استيراد</string>
+    <string name="shortcut_import_long">استيراد اشتراك</string>
+    <string name="update_applied_title">تم تحديث الاشتراك: ⁨%1$s⁩</string>
+    <string name="update_applied_body">العُقد المضافة: %1$d · المحذوفة: %2$d · دون تغيير: %3$d</string>
+    <string name="update_review_title">يحتاج الاشتراك ⁨%1$s⁩ إلى مراجعة</string>
+    <string name="update_review_body">يغيّر التحديث عُقدًا تعتمد عليها قواعد التوجيه، أو لم يجتز فحص الأمان. افتح Weave لمراجعة التغييرات.</string>
+    <string name="update_failed_title">تعذّر تحديث الاشتراكات</string>
+    <string name="notification_control_title">إشعار الاتصال</string>
+    <string name="notification_control_enabled">يظهر في لوحة الإشعارات ويتضمن زرًا لقطع الاتصال.</string>
+    <string name="notification_control_disabled">الإشعارات متوقفة. يمكن للنفق أن يعمل، لكن قد لا تظهر حالة الاتصال أو زر قطع الاتصال.</string>
+    <string name="notification_control_action">إدارة الإشعارات</string>
+    <string name="action_choose_exit">اختيار نقطة الخروج</string>
+    <string name="widget_description">عرض حالة الاتصال والاتصال أو قطع الاتصال بنقرة واحدة</string>
+    <plurals name="update_failed_body">
+        <item quantity="zero">عدد الاشتراكات التي تعذّر تحديثها: %1$d.</item>
+        <item quantity="one">تعذّر تحديث %1$d من الاشتراكات. احتُفظ بالنسخة السابقة.</item>
+        <item quantity="two">تعذّر تحديث %1$d من الاشتراكات. احتُفظ بالنسختين السابقتين.</item>
+        <item quantity="few">تعذّر تحديث %1$d اشتراكات. احتُفظ بالنسخ السابقة.</item>
+        <item quantity="many">تعذّر تحديث %1$d اشتراكًا. احتُفظ بالنسخ السابقة.</item>
+        <item quantity="other">تعذّر تحديث %1$d من الاشتراكات. احتُفظ بالنسخ السابقة.</item>
+    </plurals>
+    <string name="app_picker_title">اختيار تطبيق</string>
+    <string name="app_picker_search">البحث باسم التطبيق أو الحزمة</string>
+    <string name="app_picker_empty">لا توجد تطبيقات مطابقة في مشغّل التطبيقات</string>
+    <string name="app_picker_add">إضافة ⁨%1$s⁩</string>
+    <string name="app_picker_close">إغلاق</string>
+</resources>

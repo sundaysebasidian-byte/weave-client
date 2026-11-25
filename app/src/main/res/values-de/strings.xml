@@ -23,11 +23,19 @@
     <string name="update_review_title">„%1$s“ prüfen</string>
     <string name="update_review_body">Das Update betrifft festgelegte Ausgänge oder hat die Sicherheitsprüfung nicht bestanden. Öffne Weave für die Vorschau.</string>
     <string name="update_failed_title">Abo-Aktualisierung fehlgeschlagen</string>
-    <string name="update_failed_body">%1$d Abonnement(s) konnten nicht aktualisiert werden. Vorherige Versionen bleiben erhalten.</string>
     <string name="notification_control_title">Verbindungsbenachrichtigung</string>
     <string name="notification_control_enabled">Zeigt den Status und eine Trennaktion in den Benachrichtigungen.</string>
     <string name="notification_control_disabled">Benachrichtigungen sind aus. Der Tunnel kann laufen, aber Status und Trennaktion werden möglicherweise nicht angezeigt.</string>
     <string name="notification_control_action">Benachrichtigungen verwalten</string>
     <string name="action_choose_exit">Ausgang wechseln</string>
     <string name="widget_description">Verbindungsstatus mit Ein-Tipp-Schalter</string>
+    <plurals name="update_failed_body">
+        <item quantity="one">%1$d Abonnement konnte nicht aktualisiert werden. Die vorherige Version wurde beibehalten.</item>
+        <item quantity="other">%1$d Abonnements konnten nicht aktualisiert werden. Die vorherigen Versionen wurden beibehalten.</item>
+    </plurals>
+    <string name="app_picker_title">App auswählen</string>
+    <string name="app_picker_search">Nach App- oder Paketnamen suchen</string>
+    <string name="app_picker_empty">Keine passende App gefunden</string>
+    <string name="app_picker_add">%1$s hinzufügen</string>
+    <string name="app_picker_close">Schließen</string>
 </resources>

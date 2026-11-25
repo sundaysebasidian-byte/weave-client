@@ -122,6 +122,23 @@ class ExternalRequestClaimTest {
     }
 
     @Test
+    fun chooseExitStaysPendingWhenAnotherSaveStartsDuringReadiness() = runBlocking {
+        val pending = MutableStateFlow<ExternalRequest?>(ExternalRequest.ChooseExit)
+        val ready = CompletableDeferred<Unit>()
+        var saving = false
+        val waiting = async(start = CoroutineStart.UNDISPATCHED) {
+            claimExternalRequest(pending, ExternalRequest.ChooseExit, mayClaim = { !saving }) { ready.await() }
+        }
+        saving = true
+        ready.complete(Unit)
+        assertFalse(waiting.await())
+        assertSame(ExternalRequest.ChooseExit, pending.value)
+        saving = false
+        assertTrue(claimExternalRequest(pending, ExternalRequest.ChooseExit, mayClaim = { !saving }) {})
+        assertNull(pending.value)
+    }
+
+    @Test
     fun equivalentShareClaimsRespectExistingStateFlowEquality() = runBlocking {
         val earlier = ExternalRequest.Import(ExternalImport.Inline("fixture subscription"))
         val pending = MutableStateFlow<ExternalRequest?>(

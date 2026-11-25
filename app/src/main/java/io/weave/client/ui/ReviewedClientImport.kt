@@ -7,8 +7,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 
-private const val NodeRefreshWarning = "订阅已保存，节点列表刷新失败，请重新打开应用"
-private const val ReloadRequestWarning = "订阅已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。"
+internal const val NodeRefreshWarning = "订阅已保存，节点列表刷新失败，请重新打开应用"
+internal const val ReloadRequestWarning = "订阅已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。"
 
 /** A reviewed import that reached disk is complete even if its node list or runtime cannot refresh. */
 internal suspend fun finishReviewedClientImport(

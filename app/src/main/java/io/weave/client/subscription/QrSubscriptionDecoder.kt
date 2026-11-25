@@ -27,11 +27,7 @@ class QrSubscriptionDecoder {
         if (scheme == "http") {
             throw SubscriptionImportException("二维码订阅地址必须使用 HTTPS")
         }
-        if (scheme == "https") {
-            return QrSubscriptionInput.RemoteUrl(value)
-        }
-
-        if (scheme in WRAPPER_SCHEMES) {
+        if (scheme == "https" || scheme in WRAPPER_SCHEMES) {
             val remote = ExternalImportParser.fromLink(value) as? ExternalImport.Remote
                 ?: throw SubscriptionImportException("客户端链接未包含有效 HTTPS 订阅地址")
             return QrSubscriptionInput.RemoteUrl(remote.url)

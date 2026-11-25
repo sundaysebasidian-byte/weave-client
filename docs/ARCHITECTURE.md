@@ -35,8 +35,8 @@ Android 使用 `VpnService` 接管 TUN；iOS 使用独立 `NEPacketTunnelProvide
 token 对应的 AES-256-GCM 密文，接收端从二维码/链接 fragment 取得密钥。成功读取一次或
 5 分钟后监听立即关闭；订阅落盘分别使用 Android Keystore，以及 iOS/macOS Keychain 主密钥。
 
-公开发行配置不包含 Weave 后端、远程更新器、遥测或集中式控制 API。订阅刷新、加密 DNS、IP
-质量检测和局域网互传属于用户主动选择的第三方/同局域网请求，固定端点和触发条件维护在
+公开发行配置不包含 Weave 后端、遥测或集中式控制 API。Android Weave Next 通过 GitHub 公开发布检查版本；
+不自动下载或安装。订阅刷新、加密 DNS、IP 质量检测和局域网互传属于用户主动选择的第三方或同局域网请求；固定端点和触发条件维护在
 [`NETWORK_ENDPOINT_INVENTORY.md`](NETWORK_ENDPOINT_INVENTORY.md)。
 
 ## 为什么不直接 fork CMFA 或 Karing

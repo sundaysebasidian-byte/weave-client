@@ -28,6 +28,27 @@ class ProductFlowVisualTest {
         compose.onNodeWithText("Weave").assertIsDisplayed()
     }
 
+    @Test fun dockSwipesOneTabAtATimeAndDoesNotWrap() {
+        val dock = compose.onNodeWithTag("navigation-dock")
+        val body = compose.onNodeWithTag("navigation-content")
+        compose.onNodeWithTag("navigation-tab-HOME").performClick().assertIsSelected()
+        body.performTouchInput {
+            swipe(start = androidx.compose.ui.geometry.Offset(width * 0.75f, height * 0.4f),
+                end = androidx.compose.ui.geometry.Offset(width * 0.25f, height * 0.4f))
+        }
+        compose.onNodeWithTag("navigation-tab-ROUTES").assertIsSelected()
+        body.performTouchInput { swipeUp() }
+        compose.onNodeWithTag("navigation-tab-ROUTES").assertIsSelected()
+        compose.onNodeWithTag("navigation-tab-HOME").performClick()
+        for (name in listOf("ROUTES", "SUBSCRIPTIONS", "SETTINGS", "SETTINGS")) {
+            dock.performTouchInput { swipeLeft() }
+            compose.onNodeWithTag("navigation-tab-$name").assertIsSelected()
+        }
+        dock.performTouchInput { swipeRight() }
+        compose.onNodeWithTag("navigation-tab-SUBSCRIPTIONS").assertIsSelected()
+        compose.onNodeWithTag("navigation-tab-HOME").performClick().assertIsSelected()
+    }
+
     private fun capture(name: String) {
         compose.waitForIdle()
         val phase = InstrumentationRegistry.getArguments().getString("qaPhase", "baseline")

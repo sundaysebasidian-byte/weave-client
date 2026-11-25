@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ApplicationInfo
 import androidx.test.platform.app.InstrumentationRegistry
+import io.weave.client.core.engine.MihomoConfigAssembler
+import io.weave.client.data.AppRouteStore
+import io.weave.client.data.ProfileStorage
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.data.crossProcessPreferences
 import io.weave.client.domain.RoutingMode
@@ -12,7 +15,11 @@ import io.weave.client.domain.RouteKind
 import io.weave.client.policy.*
 import io.weave.client.routing.*
 import io.weave.client.subscription.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -209,6 +216,138 @@ class BackupRestoreIntegrationTest {
         f.context.crossProcessPreferences("app_routes_v1").edit().putStringSet("route.packages", setOf("example.app"))
             .putString("route.example.app.kind", "UNKNOWN").commit()
         assertTrue(runCatching { f.backup.export("fixture backup password".toCharArray()) }.isFailure)
+    } }
+
+    /** Uses the same stored inputs and lock as the VPN process. Does not start a tunnel. */
+    private fun runtimeYaml(context: Context) = ProfileStorage.access(context) {
+        val settings = RuntimeSettingsStore(context)
+        MihomoConfigAssembler(context).assemble(
+            AppRouteStore(context).load(), settings.routingMode(), settings.defaultRouteTarget(),
+        ).yaml
+    }
+
+    private fun Fixture.groupsAndRoutes(group: CustomProxyGroup) = entries().apply {
+        val membership = JSONArray().put(JSONObject().put("s", old.id).put("n", old.nodes.single().id))
+        put("custom-groups.json", JSONArray().put(JSONObject().put("id", group.id)
+            .put("name", group.name).put("strategy", group.strategy.name).put("members", membership)).toString())
+        val target = JSONObject().put("kind", "GROUP").put("label", group.name).put("group", group.id)
+        put("routes.json", JSONArray().put(JSONObject().put("package", "example.app").put("name", "Example")
+            .put("target", target)).toString())
+        put("settings.json", JSONObject().put("routingMode", "RULE").put("defaultTarget", target).toString())
+    }
+
+    @Test fun deferredEditCannotOverwriteRestoreAndNextEditReachesRuntime() = isolated { f -> runBlocking {
+        withTimeout(30_000) {
+            val editor = GroupProfileStore(f.context, f.repository)
+            val original = editor.read()
+            val restored = f.group.copy(name = "Restored group", strategy = CustomGroupStrategy.FAILOVER)
+            val plan = f.backup.prepareRestore(f.groupsAndRoutes(restored))
+            val enqueued = CompletableDeferred<Unit>()
+            val releaseEdit = CompletableDeferred<Unit>()
+            val queued = async(Dispatchers.IO) {
+                enqueued.complete(Unit)
+                releaseEdit.await()
+                runCatching {
+                    editor.change(original.epoch, f.group.id, f.group, f.group.copy(name = "Stale draft",
+                        strategy = CustomGroupStrategy.LOAD_BALANCE))
+                }
+            }
+            enqueued.await()
+            try {
+                f.backup.restore(plan)
+                val beforeStale = f.fingerprint()
+                val afterRestore = editor.read()
+                assertNotEquals(original.epoch, afterRestore.epoch)
+                assertEquals(restored, afterRestore.groups.single())
+                assertEquals("Restored group", afterRestore.routes.single().target.label)
+                assertEquals(restored.id, afterRestore.defaultTarget?.groupId)
+                val groupPrefix = "  - name: \"group.${restored.id}\""
+                assertTrue(runtimeYaml(f.context).contains("$groupPrefix\n    type: fallback"))
+                releaseEdit.complete(Unit)
+                assertTrue(queued.await().isFailure)
+                assertEquals(beforeStale, f.fingerprint())
+                assertTrue(runtimeYaml(f.context).contains("$groupPrefix\n    type: fallback"))
+
+                val newEdit = restored.copy(name = "New edit", strategy = CustomGroupStrategy.LOAD_BALANCE)
+                editor.change(afterRestore.epoch, restored.id, restored, newEdit)
+                assertEquals(newEdit, editor.read().groups.single())
+                assertEquals("New edit", AppRouteStore(f.context).load().single().target.label)
+                assertEquals("New edit", editor.read().defaultTarget?.label)
+                assertTrue(runtimeYaml(f.context).contains("$groupPrefix\n    type: load-balance"))
+            } finally { releaseEdit.complete(Unit) }
+        }
+    } }
+
+    @Test fun committedGroupEditInvalidatesOlderRestorePreviewAndAnotherDraftOfSameGroup() = isolated { f -> runBlocking {
+        val editor = GroupProfileStore(f.context, f.repository)
+        val epoch = editor.read().epoch
+        val plan = f.backup.prepareRestore(f.entries())
+        val edited = f.group.copy(name = "Committed")
+        editor.change(epoch, f.group.id, f.group, edited)
+        val after = f.fingerprint()
+        assertTrue(runCatching { f.backup.restore(plan) }.isFailure)
+        assertTrue(runCatching { editor.change(epoch, f.group.id, f.group, f.group.copy(name = "Other draft")) }.isFailure)
+        assertEquals(after, f.fingerprint())
+        assertEquals(edited, editor.read().groups.single())
+        assertEquals(epoch, editor.read().epoch)
+    } }
+
+    @Test fun preRestoreSubscriptionPruneCannotDeleteRestoredDataButNewPruneCan() = isolated { f -> runBlocking {
+        val editor = GroupProfileStore(f.context, f.repository)
+        val original = editor.read()
+        f.backup.restore(f.groupsAndRoutes(f.group))
+        val restored = editor.read()
+        val before = f.fingerprint()
+        assertTrue(runCatching { editor.deleteSubscription(original.epoch, f.old.id) }.isFailure)
+        assertEquals(before, f.fingerprint())
+        assertNotNull(f.store.get(f.old.id))
+        val (_, committed) = editor.deleteSubscription(restored.epoch, f.old.id)
+        assertTrue(committed.groups.isEmpty())
+        assertNull(f.store.get(f.old.id))
+        assertEquals(RouteKind.BLOCK, AppRouteStore(f.context).load().single().target.kind)
+        assertEquals(f.group.id, committed.defaultTarget?.groupId) // invalid default stays fail-closed
+    } }
+
+    @Test fun anUnchangedGroupAndMissingNewIdDoNotReauthorizeAnOldDraftOrRouteWrite() = isolated { f -> runBlocking {
+        val editor = GroupProfileStore(f.context, f.repository)
+        val beforeRestore = editor.read()
+        f.backup.restore(f.groupsAndRoutes(f.group))
+        val afterRestore = editor.read()
+        assertEquals(beforeRestore.groups, afterRestore.groups)
+        assertNotEquals(beforeRestore.epoch, afterRestore.epoch)
+        val previouslyUnsaved = f.group.copy(id = UUID.randomUUID().toString(), name = "Unsaved")
+        val beforeOldWrites = f.fingerprint()
+        assertTrue(runCatching { editor.change(beforeRestore.epoch, f.group.id, f.group, f.group.copy(name = "Stale")) }
+            .exceptionOrNull() is io.weave.client.data.StaleProfileEditor)
+        assertTrue(runCatching { editor.change(beforeRestore.epoch, previouslyUnsaved.id, null, previouslyUnsaved) }
+            .exceptionOrNull() is io.weave.client.data.StaleProfileEditor)
+        var staleRouteTransformRan = false
+        assertTrue(runCatching { editor.changeRoutes(beforeRestore.epoch) { staleRouteTransformRan = true; emptyList() } }
+            .exceptionOrNull() is io.weave.client.data.StaleProfileEditor)
+        assertFalse(staleRouteTransformRan)
+        assertTrue(runCatching { editor.changeDefault(beforeRestore.epoch, RouteTarget(RouteKind.DIRECT, "Direct")) }
+            .exceptionOrNull() is io.weave.client.data.StaleProfileEditor)
+        assertEquals(beforeOldWrites, f.fingerprint())
+
+        editor.change(afterRestore.epoch, previouslyUnsaved.id, null, previouslyUnsaved)
+        val fresh = editor.changeRoutes(afterRestore.epoch) { current ->
+            current.routes.map { it.copy(target = RouteTarget(RouteKind.GROUP, "Unsaved", groupId = previouslyUnsaved.id)) }
+        }
+        assertEquals(previouslyUnsaved.id, fresh?.routes?.single()?.target?.groupId)
+        assertEquals(f.group.id, fresh?.defaultTarget?.groupId)
+        assertEquals(setOf(f.group.id, previouslyUnsaved.id), editor.read().groups.map { it.id }.toSet())
+    } }
+
+    @Test fun confirmedDefaultChoiceReturnsTheStoredTargetWithItsCurrentGroupLabel() = isolated { f -> runBlocking {
+        f.backup.restore(f.groupsAndRoutes(f.group))
+        val editor = GroupProfileStore(f.context, f.repository)
+        val before = editor.read()
+        val written = editor.changeDefault(before.epoch, RouteTarget(RouteKind.GROUP, "Old label", groupId = f.group.id))
+        assertEquals(before.routes, written.routes)
+        assertEquals(before.groups, written.groups)
+        assertEquals(f.group.name, written.defaultTarget?.label)
+        assertEquals(f.group.id, RuntimeSettingsStore(f.context).defaultRouteTarget()?.groupId)
+        assertEquals(written, editor.read())
     } }
 
     companion object {

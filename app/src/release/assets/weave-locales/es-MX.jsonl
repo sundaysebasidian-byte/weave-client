@@ -1,0 +1,1467 @@
+{"id":"1 · 应用规则","text":"1 · Reglas por aplicación"}
+{"id":"127.0.0.1:7890，本机其他应用也能访问","text":"127.0.0.1:7890; también pueden acceder otras aplicaciones del dispositivo"}
+{"id":"2 · 本地域名 / IP","text":"2 · Dominios y direcciones IP locales"}
+{"id":"3 · 国内智能直连","text":"3 · Conexión directa inteligente en China continental"}
+{"id":"3 · 远程规则集","text":"3 · Conjuntos de reglas remotos"}
+{"id":"4 · 国内智能直连","text":"4 · Conexión directa inteligente en China continental"}
+{"id":"4 · 默认出口","text":"4 · Salida predeterminada"}
+{"id":"5 · 默认出口","text":"5 · Salida predeterminada"}
+{"id":"AdGuard DNS + 本地规则：过滤广告、跟踪器与恶意域名","text":"AdGuard DNS y reglas locales: bloquean anuncios, rastreadores y dominios maliciosos"}
+{"id":"AdGuard Family + 本地规则：广告、跟踪器与成人内容过滤","text":"AdGuard Family y reglas locales: filtran anuncios, rastreadores y contenido para adultos"}
+{"id":"Always-on 与断网保护","text":"VPN siempre activa y bloqueo del tráfico sin VPN"}
+{"id":"Android 不允许 Weave 读取其他应用的私有数据。请选择来源并确认，然后在系统窗口中选择该客户端主动导出的 YAML、JSON 或文本文件。","text":"Android no permite que Weave lea los datos privados de otras aplicaciones. Selecciona y confirma el origen. Luego, en el selector del sistema, elige un archivo YAML, JSON o de texto exportado desde esa aplicación."}
+{"id":"Apache-2.0。用于 Android UI、生命周期和系统兼容。","text":"Apache-2.0. Se usa para la interfaz de Android, el ciclo de vida de la aplicación y la compatibilidad con el sistema."}
+{"id":"Clash 订阅缺少 proxies 节点列表","text":"La suscripción de Clash no contiene la lista de nodos «proxies»"}
+{"id":"DNS 与连接","text":"DNS y conexión"}
+{"id":"DNS 旁路保护","text":"Protección frente al tráfico DNS fuera del túnel"}
+{"id":"DNS 旁路拒绝","text":"Bloqueo de consultas DNS fuera del túnel"}
+{"id":"DNS 泄漏","text":"Fuga de DNS"}
+{"id":"DNS 泄漏不能仅靠本机代码准确判定；必须由独立权威 DNS 服务观察查询来源。下方外部测试才是实际 DNS 泄漏验证。","text":"El dispositivo no puede determinar por sí solo si hay una fuga de DNS. Un servidor DNS autoritativo independiente debe comprobar de dónde provienen las consultas. Usa la prueba externa de abajo para verificarlo."}
+{"id":"DNS 泄漏测试","text":"Prueba de fugas de DNS"}
+{"id":"DNS 端点检测","text":"Prueba del servidor DNS"}
+{"id":"DNS 策略","text":"Política de DNS"}
+{"id":"DNS 设置无法解密，已停止备份","text":"No se pudo descifrar la configuración de DNS. Se ha detenido la copia de seguridad."}
+{"id":"DNS 配置未通过校验，请检查自定义 DNS 地址或重新选择预设","text":"La configuración de DNS no es válida. Revisa la dirección DNS personalizada o elige un ajuste predefinido."}
+{"id":"DoH / DoT 地址","text":"Dirección DoH / DoT"}
+{"id":"DoT 缺少主机名","text":"Falta el nombre de host de DoT"}
+{"id":"GPL-3.0-or-later。你可以运行、研究、修改和重新分发；本软件不提供任何担保。","text":"GPL-3.0-or-later. Puedes ejecutar, estudiar, modificar y redistribuir este software. Se proporciona sin garantía alguna."}
+{"id":"GPL-3.0。发行内核来自仓库锁定的源码提交，并记录构建补丁与 SHA-256。","text":"GPL-3.0. El núcleo distribuido se compila a partir de la revisión fijada en el repositorio. Se documentan los parches de compilación y la suma SHA-256."}
+{"id":"GitHub 拒绝了本次访问，可尝试打开官方发布页。","text":"GitHub ha denegado el acceso. Prueba a abrir la página oficial de versiones."}
+{"id":"GitHub 暂无适用的安装包。","text":"Por ahora no hay ningún paquete de instalación compatible en GitHub."}
+{"id":"GitHub 暂时未能提供版本信息。","text":"No se ha podido obtener la información de la versión desde GitHub."}
+{"id":"GitHub 暂时限制访问，请稍后再试。","text":"GitHub ha limitado temporalmente el acceso. Inténtalo de nuevo más tarde."}
+{"id":"HTTP 只承载 AES-256-GCM 密文，密钥保存在 weave:// 链接的 fragment 中，不随 HTTP 请求发送。","text":"Por HTTP solo se envían datos cifrados con AES-256-GCM. La clave se guarda en el fragmento del enlace weave:// y no se incluye en la solicitud HTTP."}
+{"id":"HTTP 探测结果，不等同于 ICMP/UDP 丢包率；少量样本仅供参考。","text":"Estos resultados corresponden a sondeos HTTP; no miden la pérdida de paquetes ICMP o UDP. Con pocas muestras, son solo orientativos."}
+{"id":"HTTPS 下载 · 逐条校验 · SHA-256 记录","text":"Descarga por HTTPS · Verificación de cada entrada · Registro de SHA-256"}
+{"id":"HTTPS 可达性","text":"Disponibilidad por HTTPS"}
+{"id":"HTTPS 地址","text":"Dirección HTTPS"}
+{"id":"HTTPS 延迟","text":"Latencia HTTPS"}
+{"id":"HTTPS 端点可达","text":"Servidor accesible por HTTPS"}
+{"id":"HTTPS 订阅地址","text":"URL de suscripción HTTPS"}
+{"id":"HTTPS 远程订阅","text":"Suscripción remota por HTTPS"}
+{"id":"IP 出口","text":"IP de salida"}
+{"id":"IP 出口、DNS、WebRTC 与浏览器身份表面","text":"IP de salida, DNS, WebRTC y datos que identifican al navegador"}
+{"id":"IP 出口质量","text":"Calidad de la IP de salida"}
+{"id":"IP 协议","text":"Protocolo IP"}
+{"id":"IP 网段列表","text":"Lista de rangos de IP"}
+{"id":"IP 质量检测","text":"Prueba de calidad de la IP"}
+{"id":"IP 质量检测失败","text":"Ha fallado la prueba de calidad de la IP"}
+{"id":"IPv4 出口","text":"Salida IPv4"}
+{"id":"IPv4 网段","text":"Subred IPv4"}
+{"id":"IPv4 网段无效","text":"Subred IPv4 no válida"}
+{"id":"IPv6 / WebRTC 测试","text":"Prueba de IPv6 / WebRTC"}
+{"id":"IPv6 出口","text":"Salida IPv6"}
+{"id":"IPv6 已在运行规则中拒绝","text":"Las reglas activas bloquean IPv6"}
+{"id":"IPv6 旁路","text":"Tráfico IPv6 fuera del túnel"}
+{"id":"IPv6 网段","text":"Subred IPv6"}
+{"id":"IPv6 网段无效","text":"Subred IPv6 no válida"}
+{"id":"IP（可选，用于 CIDR 规则）","text":"IP (opcional, para reglas CIDR)"}
+{"id":"JSON 出站缺少必要的认证字段，未导入任何节点","text":"Faltan campos de autenticación obligatorios en una salida del JSON. No se ha importado ningún nodo."}
+{"id":"Karing 没有公开的订阅列表接口，其备份格式仍在核实，暂不支持直接选择订阅。可先用下方的其他导入方式。","text":"Karing no ofrece una interfaz pública para consultar sus suscripciones y aún se está verificando su formato de copia de seguridad. Por ahora no se pueden seleccionar suscripciones directamente. Usa otro método de importación de los que aparecen abajo."}
+{"id":"Karing 节点含未支持选项，请导出兼容配置","text":"Los nodos de Karing incluyen opciones no compatibles. Exporta una configuración compatible."}
+{"id":"Keystore 加密 · 明文按会话清理","text":"Cifrado con Keystore · El texto sin cifrar se borra al finalizar cada sesión"}
+{"id":"Mihomo 原生库无法加载或初始化","text":"No se pudo cargar o inicializar la biblioteca nativa de Mihomo"}
+{"id":"Mihomo 原生库未加载","text":"La biblioteca nativa de Mihomo no está cargada"}
+{"id":"Mihomo 原生库未能加载","text":"No se pudo cargar la biblioteca nativa de Mihomo"}
+{"id":"Mihomo 原生库未能加载，已拒绝建立 VPN","text":"No se pudo cargar la biblioteca nativa de Mihomo. No se ha permitido iniciar la VPN."}
+{"id":"PBKDF2 + AES-256-GCM 加密；Weave 无法找回忘记的密码","text":"Cifrado con PBKDF2 y AES-256-GCM. Weave no puede recuperar tu contraseña si la olvidas."}
+{"id":"QUIC","text":"QUIC"}
+{"id":"SSR 节点参数不是有效 Base64","text":"Los parámetros del nodo SSR no están en Base64 válido"}
+{"id":"SSR 节点字段不完整","text":"Faltan campos en el nodo SSR"}
+{"id":"SSR 节点缺少服务器地址","text":"Falta la dirección del servidor del nodo SSR"}
+{"id":"SSR 节点缺少端口","text":"Falta el puerto del nodo SSR"}
+{"id":"STUN 端口未阻断；是否暴露取决于应用和运行时","text":"El puerto STUN no está bloqueado. La exposición depende de la aplicación y de su entorno de ejecución."}
+{"id":"TLS 握手失败","text":"Ha fallado la negociación TLS"}
+{"id":"TLS 握手成功 · 端点可达","text":"Negociación TLS correcta · Servidor accesible"}
+{"id":"UDP / QUIC","text":"UDP / QUIC"}
+{"id":"UDP / WebRTC","text":"UDP / WebRTC"}
+{"id":"UDP STUN 端口规则已启用；这不等于所有 WebRTC 实现都被禁用","text":"Las reglas de puertos UDP para STUN están activas. Esto no significa que todas las implementaciones de WebRTC estén deshabilitadas."}
+{"id":"UDP/443 不属于当前 STUN 阻断范围；此处不宣称 QUIC 已禁用","text":"El puerto UDP/443 queda fuera del bloqueo actual de STUN. Esto no indica que QUIC esté deshabilitado."}
+{"id":"V2Ray outbounds 结构无效","text":"La estructura de «outbounds» de V2Ray no es válida"}
+{"id":"V2Ray 中没有可转换的代理出站","text":"No hay salidas de proxy de V2Ray que se puedan convertir"}
+{"id":"V2Ray 配置含多个服务器或用户，请分别导出节点链接","text":"La configuración de V2Ray contiene varios servidores o usuarios. Exporta un enlace por nodo."}
+{"id":"VMess 节点参数不是有效 Base64 JSON","text":"Los parámetros del nodo VMess no contienen un JSON válido codificado en Base64"}
+{"id":"VPN 授权","text":"Permiso de VPN"}
+{"id":"VPN 数据路径说明","text":"Cómo circulan los datos por la VPN"}
+{"id":"VPN 权限未授予","text":"No se ha concedido el permiso de VPN"}
+{"id":"VPN 用于连接；相机仅扫码；通知可稍后设置。","text":"La VPN permite establecer la conexión. La cámara solo se usa para escanear códigos. Puedes configurar las notificaciones más tarde."}
+{"id":"VPN 进程已停止，请重新连接","text":"El proceso de la VPN se ha detenido. Vuelve a conectarte."}
+{"id":"VPN 隧道","text":"Túnel VPN"}
+{"id":"Weave 一次性局域网链接","text":"Enlace de un solo uso de Weave para la red local"}
+{"id":"Weave 不提供节点，订阅需要由你自己提供。选一种方式导入就行。","text":"Weave no proporciona nodos. Usa tu propia suscripción y elige cómo importarla."}
+{"id":"Weave 不运营账号、云端控制、节点中继或遥测。Weave Next 可查询 GitHub 公开发布，不自行下载安装。第三方端点可能收到完成请求所需的数据。","text":"Weave no gestiona cuentas, controles en la nube, nodos de retransmisión ni telemetría. Weave Next puede consultar las versiones públicas de GitHub, pero no las descarga ni las instala por su cuenta. Los servicios de terceros pueden recibir los datos necesarios para atender una solicitud."}
+{"id":"Weave 会在服务停止时清理运行配置；本报告不读取系统抓包结果","text":"Weave borra la configuración de ejecución al detenerse el servicio. Este informe no consulta las capturas de paquetes del sistema."}
+{"id":"Weave 会建立本地 VPN 接口，以便把设备流量交给你选择的规则和代理节点。","text":"Weave crea una interfaz VPN local para dirigir el tráfico del dispositivo según las reglas y los nodos de proxy que elijas."}
+{"id":"Weave 只提供本地客户端，不提供节点、线路、账号、托管 VPN 或集中式控制服务。","text":"Weave solo ofrece un cliente local. No proporciona nodos, rutas, cuentas, VPN alojadas ni un servicio de control centralizado."}
+{"id":"WebRTC / IPv6 测试","text":"Prueba de WebRTC / IPv6"}
+{"id":"WebRTC / STUN","text":"WebRTC / STUN"}
+{"id":"WebRTC 候选","text":"Candidatos de WebRTC"}
+{"id":"WebRTC 公网候选与 HTTPS 代理出口一致。","text":"La dirección pública del candidato WebRTC coincide con la IP de salida del proxy HTTPS."}
+{"id":"WebRTC 公网候选与 HTTPS 代理出口不一致，请检查分流或泄漏。","text":"La dirección pública del candidato WebRTC no coincide con la IP de salida del proxy HTTPS. Revisa las rutas y comprueba si hay una fuga."}
+{"id":"WebRTC 地址","text":"Dirección WebRTC"}
+{"id":"WebRTC 泄漏测试","text":"Prueba de fugas de WebRTC"}
+{"id":"WebRTC 需要浏览器 JS 和 UDP 候选测试；本报告不把 HTTP 结果冒充 WebRTC 结论","text":"Para probar WebRTC se necesitan JavaScript en el navegador y pruebas de candidatos UDP. Este informe no extrae conclusiones sobre WebRTC a partir de resultados HTTP."}
+{"id":"WebView 不能代表 Chrome、Firefox 的扩展、Secure DNS 或 WebRTC 策略。以下页面会交给系统浏览器打开。","text":"WebView no refleja las extensiones ni la configuración de DNS seguro o de WebRTC de Chrome y Firefox. Las siguientes páginas se abrirán en el navegador del sistema."}
+{"id":"WireGuard URI 需要私钥与地址字段，当前请导入 Clash YAML","text":"El URI de WireGuard necesita los campos de clave privada y dirección. Por ahora, importa un archivo YAML de Clash."}
+{"id":"host 数字地址会暴露本地网络表面；srflx 通常是当前 WebRTC 公网出口，必须与 VPN 出口对照后才能判断泄漏。","text":"Una dirección numérica de tipo host revela información sobre la red local. El candidato srflx suele indicar la IP pública de salida de WebRTC; compárala con la IP de salida de la VPN antes de concluir que hay una fuga."}
+{"id":"sing-box outbounds 结构无效","text":"La estructura de «outbounds» de sing-box no es válida"}
+{"id":"sing-box 中没有可转换的代理出站","text":"No hay salidas de proxy de sing-box que se puedan convertir"}
+{"id":"ssr 节点","text":"Nodo SSR"}
+{"id":"vmess 节点","text":"Nodo VMess"}
+{"id":"x2ray 尚未确认对应应用和公开接口，当前不提供订阅列表迁移。","text":"Aún no se han verificado la aplicación correspondiente a x2ray ni su interfaz pública. Por ahora no se pueden migrar listas de suscripciones."}
+{"id":"x2ray 暂无经核实的公开接口，Weave 不会读取它的数据。可在 x2ray 中分享节点链接后，用下方的其他导入方式导入。","text":"No se ha verificado ninguna interfaz pública de x2ray. Weave no leerá sus datos. Comparte los enlaces de los nodos desde x2ray e impórtalos con otro de los métodos que aparecen abajo."}
+{"id":"一切就绪","text":"Todo listo"}
+{"id":"一次性传输二维码","text":"Código QR de transferencia de un solo uso"}
+{"id":"一次性链接将在 5 分钟或导入一次后失效","text":"El enlace caduca a los 5 minutos o tras la primera importación"}
+{"id":"一般","text":"Regular"}
+{"id":"三步引导连接，并暂停应用分流、策略包与本地规则","text":"Conéctate en tres pasos y pausa el enrutamiento por aplicación, los paquetes de políticas y las reglas locales"}
+{"id":"上传","text":"Subida"}
+{"id":"上移","text":"Mover hacia arriba"}
+{"id":"下一步","text":"Siguiente"}
+{"id":"下一步：在下方选择出口，然后连接。","text":"Siguiente paso: elige una salida abajo y conéctate."}
+{"id":"下移","text":"Mover hacia abajo"}
+{"id":"下载","text":"Descargar"}
+{"id":"下载并保存","text":"Descargar y guardar"}
+{"id":"下载并验证","text":"Descargar y verificar"}
+{"id":"下载或验证失败，未保留安装包。请检查网络后重试。","text":"Ha fallado la descarga o la verificación. No se ha guardado el paquete de instalación. Comprueba la conexión y vuelve a intentarlo."}
+{"id":"下载测速失败","text":"Ha fallado la prueba de velocidad de descarga"}
+{"id":"下载测速（最多 1 MiB）","text":"Prueba de velocidad de descarga (hasta 1 MiB)"}
+{"id":"不会上传","text":"No se subirá nada"}
+{"id":"不使用任何代理节点","text":"No usar ningún nodo de proxy"}
+{"id":"不可达","text":"Inaccesible"}
+{"id":"不同探测端点返回了多个出口地址；可能存在代理链或网络切换","text":"Los servidores de prueba han devuelto distintas direcciones de salida. Puede que haya una cadena de proxies o que haya cambiado la red."}
+{"id":"不支持循环或多层节点集合","text":"No se admiten grupos de nodos circulares ni anidados"}
+{"id":"不支持的 DNS 协议","text":"Protocolo DNS no compatible"}
+{"id":"不支持的传输协议版本","text":"Versión del protocolo de transporte no compatible"}
+{"id":"不支持的备份参数","text":"Parámetros de copia de seguridad no compatibles"}
+{"id":"不支持的备份版本","text":"Versión de copia de seguridad no compatible"}
+{"id":"不支持的策略包格式","text":"Formato de paquete de políticas no compatible"}
+{"id":"不确定选哪个？","text":"¿No sabes cuál elegir?"}
+{"id":"与连接分开，完全可选。","text":"Es opcional y no afecta a la conexión."}
+{"id":"中位","text":"Mediana"}
+{"id":"中位延迟","text":"Latencia mediana"}
+{"id":"中国大陆直连已开启；匹配的国内与局域网连接不经过代理节点","text":"La conexión directa en China continental está activa. Las conexiones nacionales y de la red local que coincidan con las reglas no pasarán por el proxy."}
+{"id":"中国大陆（阿里 / 腾讯）","text":"China continental (Alibaba / Tencent)"}
+{"id":"临时安装包已清除。请重新下载。","text":"Se ha eliminado el paquete de instalación temporal. Vuelve a descargarlo."}
+{"id":"临时开启，只在内存中显示；复制内容默认脱敏","text":"Se activa temporalmente. Los datos solo se muestran en memoria y se ocultan los detalles sensibles al copiar, salvo que indiques lo contrario."}
+{"id":"为执行按应用分流，Weave 会在设备内读取连接所属应用、DNS 请求和路由元数据。","text":"Para dirigir el tráfico por aplicación, Weave consulta en el dispositivo a qué aplicación pertenece cada conexión, las solicitudes DNS y los metadatos de enrutamiento."}
+{"id":"主文件","text":"Archivo principal"}
+{"id":"主机解析失败","text":"No se pudo resolver el nombre del host"}
+{"id":"之后可以在应用里重新选择。","text":"Podrás cambiar tu elección en la aplicación más adelante."}
+{"id":"也可以使用自动选择。","text":"También puedes usar la selección automática."}
+{"id":"了解并继续","text":"Entendido, continuar"}
+{"id":"事务快照不完整","text":"La instantánea de la transacción está incompleta"}
+{"id":"二维码","text":"Código QR"}
+{"id":"二维码内容为空","text":"El código QR está vacío"}
+{"id":"二维码内容过大","text":"El contenido del código QR es demasiado grande"}
+{"id":"二维码和链接只传输端到端加密密文；成功导入一次或 5 分钟后自动失效。","text":"El código QR y el enlace solo transmiten datos cifrados de extremo a extremo. Caducan tras la primera importación correcta o al cabo de 5 minutos."}
+{"id":"二维码图片不能超过 20 MiB","text":"La imagen del código QR no puede superar los 20 MiB"}
+{"id":"二维码图片识别失败","text":"No se pudo reconocer el código QR de la imagen"}
+{"id":"二维码已读入，请核对短码后再次点击导入","text":"Código QR leído. Comprueba el código corto y vuelve a pulsar Importar."}
+{"id":"二维码已读取，请输入发送设备显示的 6 位短码后导入","text":"Código QR leído. Introduce el código de 6 dígitos que aparece en el dispositivo emisor para importar."}
+{"id":"二维码未包含订阅地址","text":"El código QR no contiene una dirección de suscripción"}
+{"id":"二维码订阅地址必须使用 HTTPS","text":"La dirección de suscripción del código QR debe usar HTTPS"}
+{"id":"仅 IPv4","text":"Solo IPv4"}
+{"id":"仅不计流量网络","text":"Solo redes sin límite de datos"}
+{"id":"仅供浏览：当前构建或设备不属于官方 ARM64 发布渠道。","text":"Solo consulta: esta compilación o este dispositivo no pertenece al canal oficial de distribución para ARM64."}
+{"id":"仅内存显示，复制默认脱敏","text":"Los datos solo se muestran en memoria. Al copiarlos se ocultan los detalles sensibles de forma predeterminada."}
+{"id":"仅包含检测状态与耗时，不含 IP、订阅或节点信息。复制后，其他应用可能读取剪贴板。","text":"Solo incluye el estado y la duración de la prueba, sin direcciones IP ni datos de suscripciones o nodos. Otras aplicaciones podrían leer el portapapeles después de copiar."}
+{"id":"仅包含版本、系统 API、恢复状态和错误代码；不包含原始日志、地址或订阅数据。","text":"Solo incluye la versión, la API del sistema, el estado de recuperación y los códigos de error. No incluye registros sin procesar, direcciones ni datos de suscripción."}
+{"id":"仅在不计流量的网络","text":"Solo en redes sin límite de datos"}
+{"id":"仅在你点击检测时请求公开 HTTPS 端点；Weave 不保存或上传结果","text":"Solo se contacta con servidores HTTPS públicos al pulsar el botón de prueba. Weave no guarda ni sube los resultados."}
+{"id":"仅在订阅页主动生成后临时开启","text":"Solo se activa temporalmente cuando generas el enlace desde la página de suscripciones"}
+{"id":"仅展示前 8 个候选；完整结果只在本机内存中使用。","text":"Solo se muestran los primeros 8 candidatos. Los resultados completos se usan únicamente en la memoria del dispositivo."}
+{"id":"仅手动读取当前活跃连接；不保存域名或地址，结果两分钟后清除。链路按内核返回顺序显示。","text":"Las conexiones activas solo se consultan cuando lo solicitas. No se guardan dominios ni direcciones y los resultados se borran a los dos minutos. Las rutas se muestran en el orden que devuelve el núcleo."}
+{"id":"仅支持加密地址：HTTPS DoH 或 TLS DoT。不会接受 udp://、tcp:// 或明文 IP DNS。","text":"Solo se admiten direcciones cifradas: DoH por HTTPS o DoT por TLS. No se aceptan udp://, tcp:// ni servidores DNS sin cifrar indicados mediante una IP."}
+{"id":"仅检测应用内 WebView，不代表 Chrome 或其他应用的隐私状态。","text":"Solo se analiza el componente WebView de esta aplicación. El resultado no indica el nivel de privacidad de Chrome ni de otras aplicaciones."}
+{"id":"仅测 TLS / HTTPS 端点，不发送域名查询","text":"Solo se comprueban los servidores TLS / HTTPS; no se envían consultas de dominios"}
+{"id":"仅用于解析加密 DNS 服务器地址","text":"Solo se usa para resolver la dirección del servidor DNS cifrado"}
+{"id":"仅记录应用归属、协议和端口，不保存访问地址；不代表内核最终命中规则。","text":"Solo se registra la aplicación, el protocolo y el puerto; no se guardan las direcciones de destino. Estos datos no indican qué regla acabó aplicando el núcleo."}
+{"id":"仅重新检测浏览器表面","text":"Volver a comprobar solo los datos expuestos por el navegador"}
+{"id":"仅重试失败项","text":"Reintentar solo los elementos fallidos"}
+{"id":"从其他客户端迁移","text":"Migrar desde otro cliente"}
+{"id":"从另一台设备导入","text":"Importar desde otro dispositivo"}
+{"id":"从另一台设备接收或发送订阅","text":"Recibir o enviar suscripciones entre dispositivos"}
+{"id":"从客户端导入订阅","text":"Importar suscripciones desde un cliente"}
+{"id":"从链接导入","text":"Importar desde un enlace"}
+{"id":"代理","text":"Proxy"}
+{"id":"代理 / 数据中心标签","text":"Etiqueta de proxy o centro de datos"}
+{"id":"代理内核无法加载，请重新安装应用","text":"No se pudo cargar el núcleo del proxy. Vuelve a instalar la aplicación."}
+{"id":"代理启动失败，VPN 未连接；请查看恢复中心的最近失败记录","text":"No se pudo iniciar el proxy y la VPN no se ha conectado. Consulta los fallos recientes en el centro de recuperación."}
+{"id":"代理配置或内核启动失败，已保留上一份安全状态","text":"No se pudo configurar el proxy o iniciar el núcleo. Se ha conservado el último estado seguro."}
+{"id":"以下订阅更新失败","text":"No se han podido actualizar estas suscripciones"}
+{"id":"以下订阅需确认更新","text":"Estas suscripciones requieren confirmación para actualizarse"}
+{"id":"任意网络","text":"Cualquier red"}
+{"id":"优先使用订阅中的首个可用节点，故障时自动切换","text":"Usa el primer nodo disponible de la suscripción y cambia automáticamente si falla"}
+{"id":"传输 token 无效","text":"Token de transferencia no válido"}
+{"id":"传输中包含重复的同一订阅，已停止同步","text":"La transferencia contiene la misma suscripción varias veces. Se ha detenido la sincronización."}
+{"id":"传输中包含重复的订阅 ID，已停止同步","text":"La transferencia contiene ID de suscripción repetidos. Se ha detenido la sincronización."}
+{"id":"传输中没有订阅","text":"La transferencia no contiene suscripciones"}
+{"id":"传输中的订阅 ID 无效","text":"ID de suscripción no válido en la transferencia"}
+{"id":"传输内容包含多余数据","text":"La transferencia contiene datos adicionales"}
+{"id":"传输内容标识无效","text":"Identificador de contenido de transferencia no válido"}
+{"id":"传输内容超过 20 MiB 限制","text":"La transferencia supera el límite de 20 MiB"}
+{"id":"传输内容超过限制","text":"La transferencia supera el límite"}
+{"id":"传输内容过大","text":"La transferencia es demasiado grande"}
+{"id":"传输包认证失败或已被篡改","text":"No se pudo autenticar el paquete de transferencia o este ha sido manipulado"}
+{"id":"传输字段过大","text":"Campo de transferencia demasiado grande"}
+{"id":"传输密钥无效","text":"Clave de transferencia no válida"}
+{"id":"传输密钥长度无效","text":"Longitud de la clave de transferencia no válida"}
+{"id":"传输文本不是有效 UTF-8","text":"El texto de la transferencia no es UTF-8 válido"}
+{"id":"传输端口无效","text":"Puerto de transferencia no válido"}
+{"id":"低亮度深色画布，适合夜间与极客习惯","text":"Fondo oscuro de bajo brillo, pensado para usar la aplicación de noche"}
+{"id":"低（仅健康探测）","text":"Bajo (solo comprobaciones de funcionamiento)"}
+{"id":"你已经确认当前版本的说明。","text":"Ya has confirmado las notas de esta versión."}
+{"id":"你添加的 HTTPS 规则集，下载后逐条校验并记录 SHA-256；只在手动刷新时联网。","text":"Tras descargar los conjuntos de reglas HTTPS que añadas, se comprueba cada entrada y se registra la suma SHA-256. Solo se accede a Internet al actualizar manualmente."}
+{"id":"你选择的订阅提供方、代理节点和目标网站仍可能看到连接所必需的元数据。","text":"El proveedor de la suscripción, los nodos de proxy y los sitios web que elijas aún pueden ver los metadatos necesarios para establecer la conexión."}
+{"id":"你选择的订阅提供方和代理节点仍可能看到来源 IP、连接时间与部分流量元数据。","text":"El proveedor de la suscripción y los nodos de proxy que elijas todavía pueden ver la IP de origen, la hora de conexión y algunos metadatos del tráfico."}
+{"id":"使用手机的系统语言；也可在系统“应用语言”中单独设置","text":"Usa el idioma del dispositivo. Puedes cambiarlo en los ajustes del sistema, en «Idioma de la aplicación»."}
+{"id":"使用模式","text":"Modo de uso"}
+{"id":"保存","text":"Guardar"}
+{"id":"保存名称","text":"Guardar nombre"}
+{"id":"保存安装包","text":"Guardar paquete de instalación"}
+{"id":"保持私密","text":"Mantener privado"}
+{"id":"修改分享范围","text":"Cambiar con quién se comparte"}
+{"id":"候选版本未通过最小安全检查","text":"La versión candidata no ha superado la comprobación básica de seguridad"}
+{"id":"候选节点少于旧版本四分之一，旧版本已保留","text":"El número de nodos es inferior a la cuarta parte del anterior. Se ha conservado la versión anterior."}
+{"id":"候选节点超过旧版本四倍，旧版本已保留","text":"El número de nodos supera cuatro veces el anterior. Se ha conservado la versión anterior."}
+{"id":"候选订阅没有节点","text":"La suscripción candidata no contiene nodos"}
+{"id":"候选配置与上一份配置均无法启动","text":"No se pudo iniciar ni con la configuración candidata ni con la anterior"}
+{"id":"候选配置先由内核解析验证；失败时保留上一份可用配置。","text":"El núcleo comprueba la configuración candidata antes de aplicarla. Si no pasa la comprobación, se conserva la última configuración que funcionaba."}
+{"id":"候选配置尚未完成","text":"La configuración candidata todavía no está completa"}
+{"id":"停止记录","text":"Detener el registro"}
+{"id":"停用 IPv6 解析并在隧道内拒绝 IPv6，防止旁路","text":"Desactiva la resolución IPv6 y bloquea IPv6 en el túnel para impedir que el tráfico se desvíe"}
+{"id":"先在 Karing 中导出一次官方备份，再选择该备份文件，即可在 Weave 内勾选要导入的订阅。","text":"Exporta una copia de seguridad oficial desde Karing. Selecciona ese archivo para elegir en Weave las suscripciones que quieres importar."}
+{"id":"先在来源客户端导出或分享，再由 Weave 解析。无需让 Weave 读取其他应用的私有数据。","text":"Exporta o comparte los datos desde el cliente de origen para que Weave los pueda interpretar. Weave no necesita leer datos privados de otras aplicaciones."}
+{"id":"先连接入口节点，再由成员节点访问目标；延迟会叠加","text":"La conexión pasa por el nodo de entrada y luego por uno de los nodos del grupo hasta llegar al destino. La latencia de ambos se suma."}
+{"id":"先选择订阅，再选择出口","text":"Elige una suscripción antes de seleccionar la salida"}
+{"id":"入口","text":"Entrada"}
+{"id":"入口可用","text":"Entrada disponible"}
+{"id":"入口节点不能同时作为出口成员","text":"Un nodo de entrada no puede ser también miembro del grupo de salida"}
+{"id":"全不选","text":"No seleccionar nada"}
+{"id":"全局","text":"Global"}
+{"id":"全局模式下分流不生效","text":"Las reglas de enrutamiento no se aplican en modo global"}
+{"id":"全局模式忽略已保存的应用规则与国内直连；出口由默认路由决定，其他策略规则仍需核验","text":"El modo global ignora las reglas guardadas por aplicación y la conexión directa en China continental. La ruta predeterminada determina la salida. Aún debes comprobar las demás reglas de las políticas."}
+{"id":"全局直连已选择，代理不会接管流量","text":"Se ha seleccionado la conexión directa global. El proxy no gestionará el tráfico."}
+{"id":"全局直连模式","text":"Modo de conexión directa global"}
+{"id":"全球通用解析；中国大陆网络可能不可达","text":"Resolución de alcance mundial; puede no estar disponible desde China continental"}
+{"id":"全选","text":"Seleccionar todo"}
+{"id":"全部代理","text":"Pasar todo por el proxy"}
+{"id":"全部刷新","text":"Actualizar todo"}
+{"id":"全部来源","text":"Todas las fuentes"}
+{"id":"公开探测端点返回的出口地址没有明显冲突","text":"Las direcciones de salida obtenidas de los servidores públicos de prueba no muestran discrepancias claras"}
+{"id":"公网出口、地区、ASN、代理标签与真实 HTTPS 延迟","text":"Salida a Internet, región, ASN, etiqueta del proxy y latencia real por HTTPS"}
+{"id":"关于","text":"Acerca de"}
+{"id":"关闭","text":"Desactivar"}
+{"id":"关闭 · 仅手动刷新","text":"Desactivado · Solo actualización manual"}
+{"id":"关闭 · 可供热点或同一 Wi‑Fi 的设备使用","text":"Desactivado · Disponible para dispositivos conectados al punto de acceso o a la misma red Wi-Fi"}
+{"id":"关闭补光","text":"Apagar la luz"}
+{"id":"其他导入方式","text":"Otros métodos de importación"}
+{"id":"内核不可用","text":"Núcleo no disponible"}
+{"id":"内核实际命中","text":"Regla aplicada por el núcleo"}
+{"id":"内核已安装","text":"Núcleo instalado"}
+{"id":"内核日志","text":"Registro del núcleo"}
+{"id":"再次输入（导出时）","text":"Repite la contraseña (al exportar)"}
+{"id":"准备就绪","text":"Todo preparado"}
+{"id":"准备连接","text":"Preparar conexión"}
+{"id":"减少动效","text":"Reducir el movimiento"}
+{"id":"减弱引导动画","text":"Reducir las animaciones de la guía"}
+{"id":"出口","text":"Salida"}
+{"id":"出口一致性","text":"Coherencia de las salidas"}
+{"id":"出口交叉验证","text":"Comprobación cruzada de la salida"}
+{"id":"出口信息","text":"Información de la salida"}
+{"id":"出口信息服务没有返回可比对的地址","text":"El servicio de información de salida no devolvió una dirección que se pueda comparar"}
+{"id":"出口已失效","text":"La salida ya no está disponible"}
+{"id":"出口已失效，请重新选择","text":"La salida ya no está disponible. Elige otra."}
+{"id":"出口已验证","text":"Salida verificada"}
+{"id":"出现未列入审计白名单的协议","text":"Se ha detectado un protocolo que no figura en la lista de protocolos permitidos de la auditoría"}
+{"id":"出站保护失败，请检查网络","text":"Ha fallado la protección del tráfico saliente. Comprueba la conexión."}
+{"id":"出站保护暂时失败，Weave 将继续重试","text":"La protección del tráfico saliente ha fallado temporalmente. Weave seguirá reintentándolo."}
+{"id":"出站保护暂时失败，请检查网络后重试","text":"La protección del tráfico saliente ha fallado temporalmente. Comprueba la red y vuelve a intentarlo."}
+{"id":"出站保护正在恢复，Weave 将保持断网保护","text":"Se está restableciendo la protección del tráfico saliente. Weave mantendrá el tráfico bloqueado."}
+{"id":"分享中","text":"Compartiendo"}
+{"id":"分流","text":"Enrutamiento"}
+{"id":"分流规则已删除","text":"Se ha eliminado la regla de enrutamiento"}
+{"id":"切回规则","text":"Volver al modo de reglas"}
+{"id":"刚刚","text":"Ahora mismo"}
+{"id":"刚刚更新","text":"Actualizado ahora mismo"}
+{"id":"删除","text":"Eliminar"}
+{"id":"删除分流规则？","text":"¿Eliminar la regla de enrutamiento?"}
+{"id":"删除策略组？","text":"¿Eliminar el grupo de políticas?"}
+{"id":"删除规则","text":"Eliminar regla"}
+{"id":"删除订阅","text":"Eliminar suscripción"}
+{"id":"删除订阅？","text":"¿Eliminar la suscripción?"}
+{"id":"到期","text":"Vencimiento"}
+{"id":"刷新","text":"Actualizar"}
+{"id":"刷新记录","text":"Historial de actualizaciones"}
+{"id":"刷新远程订阅","text":"Actualizar suscripciones remotas"}
+{"id":"前往订阅页，点击互传按钮，选择生成二维码/链接或扫描导入。","text":"Ve a Suscripciones y pulsa el botón de transferencia. Allí podrás generar un código QR o un enlace, o escanear un código para importar."}
+{"id":"加密","text":"Cifrar"}
+{"id":"加密 DNS 配置","text":"Configuración de DNS cifrado"}
+{"id":"加密传输包无效","text":"Paquete de transferencia cifrado no válido"}
+{"id":"包含订阅、应用分流、默认出口、DNS 与路由设置、本地规则、远程规则集、自定义策略组和离线策略包。系统 HTTP 代理和局域网共享需要重新开启。","text":"Incluye suscripciones, enrutamiento por aplicación, salida predeterminada, ajustes de DNS y enrutamiento, reglas locales, conjuntos de reglas remotos, grupos de políticas personalizados y paquetes de políticas sin conexión. Tendrás que volver a activar el proxy HTTP del sistema y el uso compartido en la red local."}
+{"id":"匹配规则","text":"Regla coincidente"}
+{"id":"协议","text":"Protocolo"}
+{"id":"即将到期","text":"Vence pronto"}
+{"id":"历史结果：节点、网络或配置已变化，请重新检测。","text":"Resultados anteriores: ha cambiado el nodo, la red o la configuración. Repite la prueba."}
+{"id":"原生内核加载失败，已禁止建立 VPN","text":"No se pudo cargar el núcleo nativo. No se ha permitido establecer la VPN."}
+{"id":"双栈已开启；此解释器不执行外部 IPv6 泄漏测试","text":"Doble pila activada. Esta herramienta no realiza pruebas externas de fugas de IPv6."}
+{"id":"双栈模式；未执行外部 IPv6 泄漏测试","text":"Modo de doble pila. No se ha realizado ninguna prueba externa de fugas de IPv6."}
+{"id":"发布列表较长，未能完整核对。","text":"La lista de versiones es demasiado larga para revisarla por completo."}
+{"id":"发布列表过大，请查看官方发布页。","text":"La lista de versiones es demasiado grande. Consulta la página oficial de versiones."}
+{"id":"发现可用的应用更新","text":"Hay una actualización de la aplicación disponible"}
+{"id":"发行配置","text":"Configuración de distribución"}
+{"id":"发送设备拒绝了传输或链接已失效","text":"El dispositivo emisor rechazó la transferencia o el enlace ha caducado"}
+{"id":"发送设备显示的 6 位确认短码","text":"Código de confirmación de 6 dígitos que aparece en el dispositivo emisor"}
+{"id":"发送设备缺少传输长度","text":"El dispositivo emisor no indicó el tamaño de la transferencia"}
+{"id":"发送设备返回了不受信任的传输类型","text":"El dispositivo emisor ha devuelto un tipo de transferencia que no es de confianza"}
+{"id":"发送设备返回无效响应","text":"El dispositivo emisor ha devuelto una respuesta no válida"}
+{"id":"发送设备返回的传输长度无效","text":"El tamaño de transferencia indicado por el dispositivo emisor no es válido"}
+{"id":"取消","text":"Cancelar"}
+{"id":"取消收藏","text":"Quitar de favoritos"}
+{"id":"取消检测","text":"Cancelar prueba"}
+{"id":"受影响的应用规则","text":"Reglas por aplicación afectadas"}
+{"id":"受限","text":"Restringido"}
+{"id":"变更安全","text":"Seguridad de los cambios"}
+{"id":"另一个应用分享了一个订阅文件。导入前会完整校验，不执行其中的规则或控制面配置。","text":"Otra aplicación ha compartido un archivo de suscripción. Se comprobará por completo antes de importarlo. No se aplicarán las reglas ni la configuración del plano de control que contenga."}
+{"id":"另一个应用分享了一段订阅文本。导入前会完整校验。","text":"Otra aplicación ha compartido el texto de una suscripción. Se comprobará por completo antes de importarlo."}
+{"id":"另一个应用请求 Weave 从下面的 HTTPS 地址下载订阅。只有在你信任此来源时才导入。","text":"Otra aplicación ha pedido a Weave que descargue una suscripción desde la dirección HTTPS de abajo. Impórtala solo si confías en el origen."}
+{"id":"只分享勾选的订阅，未勾选的不会包含在二维码或链接中。","text":"Solo se compartirán las suscripciones marcadas. Las demás no se incluirán en el código QR ni en el enlace."}
+{"id":"只刷新 HTTPS 远程订阅。节点变化通过安全审计后才会生效；影响已固定出口的更新会保留旧版本并提醒你预览。","text":"Solo se actualizan las suscripciones remotas por HTTPS. Los cambios de nodo se aplican tras superar la revisión de seguridad. Si afectan a una salida fijada, se conserva la versión anterior y se te pedirá que revises los cambios."}
+{"id":"只在打开应用时检查，每 24 小时最多一次。","text":"Solo se comprueba al abrir la aplicación y, como máximo, una vez cada 24 horas."}
+{"id":"只在本机生效；应用规则优先于这里的规则","text":"Solo se aplica a este dispositivo. Las reglas por aplicación tienen prioridad."}
+{"id":"只在需要时出现，由系统弹窗确认，你也可以拒绝。","text":"El sistema te pedirá permiso solo cuando haga falta. Puedes denegarlo."}
+{"id":"只展示当前内核实际测到的字段；未测项目保持“—”，不估算 DNS、TLS 或带宽。","text":"Solo se muestran los datos medidos por el núcleo activo. Los campos sin medición aparecen como «—». No se estiman DNS, TLS ni ancho de banda."}
+{"id":"只有你主动生成时才监听局域网；成功读取一次或 5 分钟后自动失效。","text":"La aplicación solo escucha en la red local si generas el enlace. Caduca tras la primera lectura correcta o al cabo de 5 minutos."}
+{"id":"只有选择扫码导入时才会用到。","text":"Solo se usa si decides importar escaneando un código QR."}
+{"id":"只查询 Android 发布，不会下载或安装。","text":"Solo se consultan las versiones de Android. No se descarga ni se instala nada."}
+{"id":"只模拟本机规则，不执行网络请求","text":"Solo se simulan las reglas locales. No se hacen solicitudes por la red."}
+{"id":"只看收藏","text":"Solo favoritos"}
+{"id":"可以重试、返回更换节点，或稍后再连接。","text":"Puedes volver a intentarlo, regresar y elegir otro nodo o conectarte más tarde."}
+{"id":"可用","text":"Disponible"}
+{"id":"可用格式：Clash YAML、sing-box JSON、V2Ray JSON、节点 URI 与 Base64。完整应用备份、数据库和策略包不适用于此入口。","text":"Formatos compatibles: Clash YAML, sing-box JSON, V2Ray JSON, URI de nodos y Base64. Aquí no se admiten copias completas de aplicaciones, bases de datos ni paquetes de políticas."}
+{"id":"可用版本","text":"Versión disponible"}
+{"id":"可用的导入方式","text":"Métodos de importación disponibles"}
+{"id":"可能受限","text":"Posiblemente restringido"}
+{"id":"可见来源客户端","text":"Clientes de origen visibles"}
+{"id":"可达","text":"Accesible"}
+{"id":"名称","text":"Nombre"}
+{"id":"名称已保存，刷新失败，请关闭并重新打开订阅","text":"Se ha guardado el nombre, pero no se pudo actualizar. Cierra la suscripción y vuelve a abrirla."}
+{"id":"名称（可选）","text":"Nombre (opcional)"}
+{"id":"启动时检查应用更新","text":"Buscar actualizaciones al iniciar"}
+{"id":"命中后","text":"Si coincide"}
+{"id":"哈希已验证","text":"Hash verificado"}
+{"id":"响应内容不完整","text":"La respuesta está incompleta"}
+{"id":"固定节点","text":"Nodo fijo"}
+{"id":"固定节点、自动策略、直连或阻止。应用选择始终优先。","text":"Nodo fijo, selección automática, conexión directa o bloqueo. La selección por aplicación siempre tiene prioridad."}
+{"id":"国内 / 海外分流","text":"Enrutamiento nacional e internacional"}
+{"id":"国内域名优先国内上游，海外域名使用隐私上游","text":"Da prioridad a servidores DNS de China continental para dominios nacionales. Para dominios del resto del mundo, usa servidores que protegen la privacidad."}
+{"id":"国内智能直连","text":"Conexión directa inteligente en China continental"}
+{"id":"国内网络友好，使用腾讯加密 DoH / DoT","text":"Optimizado para redes de China continental. Usa DoH / DoT cifrado de Tencent."}
+{"id":"国内网络友好，使用阿里加密 DoH / DoT","text":"Optimizado para redes de China continental. Usa DoH / DoT cifrado de Alibaba."}
+{"id":"国内隐私","text":"Privacidad en China continental"}
+{"id":"图片中没有识别到二维码","text":"No se detectó ningún código QR en la imagen"}
+{"id":"在真实浏览器中复核","text":"Verificar en el navegador externo"}
+{"id":"在系统窗口中选择 CMFA 的配置目录并授权一次，之后可在 Weave 内勾选一个或多个订阅。","text":"En el selector del sistema, elige la carpeta de configuración de CMFA y concede acceso una vez. Luego podrás seleccionar una o varias suscripciones en Weave."}
+{"id":"地址使用这台手机在当前 Wi‑Fi 或热点中的 IP。修改后需要重新连接才会生效。","text":"La dirección corresponde a la IP del teléfono en la red Wi-Fi o en el punto de acceso actual. Los cambios se aplican al volver a conectarte."}
+{"id":"地址无效：请使用 https:// 或 tls://，并填写主机名","text":"Dirección no válida. Usa https:// o tls:// e indica el nombre de host."}
+{"id":"域名","text":"Dominio"}
+{"id":"域名关键词","text":"Palabra clave del dominio"}
+{"id":"域名关键词无效","text":"Palabra clave de dominio no válida"}
+{"id":"域名列表","text":"Lista de dominios"}
+{"id":"域名后缀","text":"Sufijo de dominio"}
+{"id":"域名无效","text":"Dominio no válido"}
+{"id":"域名解析失败","text":"No se pudo resolver el dominio"}
+{"id":"填写自己的加密 DoH 或 DoT 地址","text":"Introduce tu dirección DoH o DoT cifrada"}
+{"id":"墨绿画布与冷薄荷，柔和但保持对比","text":"Fondo verde oscuro y menta fría, suaves pero con buen contraste"}
+{"id":"墨蓝黑画布、柔白文字与克制青绿高光","text":"Fondo azul casi negro, texto blanco suave y toques discretos de verde azulado"}
+{"id":"备份与恢复","text":"Copia de seguridad y restauración"}
+{"id":"备份中存在重复记录","text":"La copia de seguridad contiene registros duplicados"}
+{"id":"备份中的应用分流无效","text":"El enrutamiento por aplicación de la copia de seguridad no es válido"}
+{"id":"备份中的订阅 ID 无效","text":"La copia de seguridad contiene un ID de suscripción no válido"}
+{"id":"备份中的订阅缺少 ID","text":"En la copia de seguridad hay una suscripción sin ID"}
+{"id":"备份中的设置无效","text":"Los ajustes de la copia de seguridad no son válidos"}
+{"id":"备份内容","text":"Contenido de la copia de seguridad"}
+{"id":"备份内容格式无效","text":"Formato no válido del contenido de la copia de seguridad"}
+{"id":"备份内容格式无效，请使用完整的原始备份文件","text":"El formato de la copia de seguridad no es válido. Usa el archivo original completo."}
+{"id":"备份内容缺失或包含未知数据","text":"Faltan datos en la copia de seguridad o contiene datos desconocidos"}
+{"id":"备份内容过大","text":"El contenido de la copia de seguridad es demasiado grande"}
+{"id":"备份分流引用的订阅、节点或策略组已不存在","text":"Ya no existe alguna suscripción, nodo o grupo de políticas al que hacen referencia las reglas de la copia de seguridad"}
+{"id":"备份包含不支持的设置","text":"La copia de seguridad contiene ajustes no compatibles"}
+{"id":"备份密码","text":"Contraseña de la copia de seguridad"}
+{"id":"备份密码至少 8 个字符","text":"La contraseña de la copia de seguridad debe tener al menos 8 caracteres"}
+{"id":"备份导出失败","text":"No se pudo exportar la copia de seguridad"}
+{"id":"备份已导出；请妥善保管文件和密码","text":"Copia de seguridad exportada. Guarda bien el archivo y la contraseña."}
+{"id":"备份文件过大","text":"El archivo de copia de seguridad es demasiado grande"}
+{"id":"备份时间无效","text":"Fecha de la copia de seguridad no válida"}
+{"id":"备份更新周期无效","text":"Intervalo de actualización no válido en la copia de seguridad"}
+{"id":"备份策略组引用的节点已不存在","text":"Ya no existe un nodo al que hace referencia un grupo de políticas de la copia de seguridad"}
+{"id":"备份缺少清单","text":"Falta el manifiesto de la copia de seguridad"}
+{"id":"复制","text":"Copiar"}
+{"id":"复制脱敏日志","text":"Copiar registros sin datos sensibles"}
+{"id":"复制诊断摘要","text":"Copiar resumen de diagnóstico"}
+{"id":"复制链接","text":"Copiar enlace"}
+{"id":"外观","text":"Apariencia"}
+{"id":"外观与语言","text":"Apariencia e idioma"}
+{"id":"外部复核入口","text":"Herramientas de verificación externa"}
+{"id":"多次测速并排序","text":"Medir varias veces y ordenar por velocidad"}
+{"id":"夜松青","text":"Verde pino nocturno"}
+{"id":"大陆直连 · 海外代理","text":"Conexión directa en China continental · Proxy para el resto"}
+{"id":"失败","text":"Fallido"}
+{"id":"失败的候选配置不会覆盖上一份可用配置；运行快照只保留在应用私有缓存中。","text":"Una configuración candidata que falle no sustituirá a la última que funcionaba. Las instantáneas de ejecución solo se guardan en la caché privada de la aplicación."}
+{"id":"如何使用","text":"Cómo se usa"}
+{"id":"存在同名同协议重复节点","text":"Hay nodos duplicados con el mismo nombre y protocolo"}
+{"id":"存在多个同名同来源订阅，请先明确同步目标","text":"Hay varias suscripciones con el mismo nombre y origen. Elige primero con cuál quieres sincronizar."}
+{"id":"安全与隐私","text":"Seguridad y privacidad"}
+{"id":"安全代理已连接","text":"Proxy seguro conectado"}
+{"id":"安全保护","text":"Protección"}
+{"id":"安全拦截","text":"Bloqueo de seguridad"}
+{"id":"安全拦截 > 应用规则 > 离线规则包 > 本地域名/IP规则 > 远程规则集 > 国内直连 > 默认出口；地域规则和最终命中需由内核确认","text":"Bloqueo de seguridad > Reglas por aplicación > Paquetes de reglas sin conexión > Reglas locales de dominio e IP > Conjuntos de reglas remotos > Conexión directa en China continental > Salida predeterminada. El núcleo debe confirmar las reglas geográficas y la regla aplicada."}
+{"id":"安全模式已启用","text":"Modo seguro activado"}
+{"id":"安全模式已启用，请在恢复中心解除后再连接","text":"El modo seguro está activo. Desactívalo en el centro de recuperación antes de conectarte."}
+{"id":"安全模式已解除，可以重新连接","text":"Se ha desactivado el modo seguro. Ya puedes volver a conectarte."}
+{"id":"安装包已验证。建议保存到下载目录，再用「文件」打开并按 Android 提示确认更新。","text":"Paquete de instalación verificado. Guárdalo en Descargas, ábrelo con Archivos y sigue las indicaciones de Android para confirmar la actualización."}
+{"id":"完成","text":"Listo"}
+{"id":"完整域名","text":"Dominio completo"}
+{"id":"完整接管 IPv4 与 IPv6 流量","text":"Dirige todo el tráfico IPv4 e IPv6 por el túnel"}
+{"id":"定时探测订阅内节点，自动选择延迟最低的可用节点","text":"Comprueba periódicamente los nodos de la suscripción y elige el nodo disponible con menor latencia"}
+{"id":"实时数据","text":"Datos en tiempo real"}
+{"id":"实时数据与检测","text":"Datos en tiempo real y pruebas"}
+{"id":"实时流量","text":"Tráfico en tiempo real"}
+{"id":"实时连接","text":"Conexiones en tiempo real"}
+{"id":"客户端提示","text":"Aviso del cliente"}
+{"id":"客户端链接未包含有效 HTTPS 订阅地址","text":"El enlace del cliente no contiene una dirección HTTPS de suscripción válida"}
+{"id":"家庭过滤","text":"Filtro familiar"}
+{"id":"密码","text":"Contraseña"}
+{"id":"密码错误或备份已损坏","text":"Contraseña incorrecta o copia de seguridad dañada"}
+{"id":"对准二维码即可识别；轻点画面可对焦，不会拍照或保存图片","text":"Apunta al código QR para leerlo. Toca la imagen para enfocar. No se tomarán ni guardarán fotos."}
+{"id":"对应源码","text":"Código fuente correspondiente"}
+{"id":"导入","text":"Importar"}
+{"id":"导入 .weave-policy JSON","text":"Importar JSON .weave-policy"}
+{"id":"导入、选节点，再连接","text":"Importa una suscripción, elige un nodo y conéctate"}
+{"id":"导入一个订阅","text":"Importar una suscripción"}
+{"id":"导入你的订阅","text":"Importa tu suscripción"}
+{"id":"导入其他客户端导出的订阅文件、链接或二维码","text":"Importa un archivo, enlace o código QR de suscripción exportado por otro cliente"}
+{"id":"导入其他订阅","text":"Importar otras suscripciones"}
+{"id":"导入内容为本地快照，不会自动从原订阅地址更新。","text":"Se importa una instantánea local. No se actualizará automáticamente desde la dirección original de la suscripción."}
+{"id":"导入外部订阅？","text":"¿Importar una suscripción externa?"}
+{"id":"导入客户端导出内容","text":"Importar datos exportados por otro cliente"}
+{"id":"导入的是本地快照：CMFA 不提供原始订阅地址，因此不会自动远程更新；原有 DNS、分流和策略组不会迁移。","text":"Se importa una instantánea local. CMFA no proporciona la dirección original de la suscripción, así que no se actualizará automáticamente desde Internet. No se migran el DNS, las reglas de enrutamiento ni los grupos de políticas originales."}
+{"id":"导入计数","text":"Número de importaciones"}
+{"id":"导入订阅","text":"Importar suscripción"}
+{"id":"导出","text":"Exportar"}
+{"id":"导出为带密码的加密文件，可在新设备恢复","text":"Exporta un archivo cifrado con contraseña para restaurarlo en otro dispositivo"}
+{"id":"导出到另一台设备","text":"Exportar a otro dispositivo"}
+{"id":"导出备份","text":"Exportar copia de seguridad"}
+{"id":"尚未导入策略包。策略包必须包含格式、版本、规则和 SHA-256；无签名包会标记为需复核。","text":"Aún no se ha importado ningún paquete de políticas. Debe incluir formato, versión, reglas y suma SHA-256. Los paquetes sin firma se marcan para revisión."}
+{"id":"尚未检测","text":"Aún no se ha comprobado"}
+{"id":"尚未选择出口","text":"No se ha seleccionado una salida"}
+{"id":"局域网二维码导入失败","text":"No se pudo importar el código QR de la red local"}
+{"id":"局域网互传","text":"Transferencia por red local"}
+{"id":"局域网代理共享","text":"Compartir el proxy en la red local"}
+{"id":"局域网共享","text":"Uso compartido en la red local"}
+{"id":"局域网地址无效","text":"Dirección de red local no válida"}
+{"id":"局域网导入失败","text":"No se pudo importar desde la red local"}
+{"id":"局域网订阅已导入","text":"Se ha importado la suscripción desde la red local"}
+{"id":"局域网链接过长","text":"El enlace de red local es demasiado largo"}
+{"id":"屏蔽广告","text":"Bloquear anuncios"}
+{"id":"展开","text":"Expandir"}
+{"id":"已从备份恢复；设备相关设置（系统代理、局域网共享）需重新开启","text":"Copia de seguridad restaurada. Vuelve a activar el proxy del sistema y el uso compartido en la red local."}
+{"id":"已保存并核对。请在「文件」中打开刚保存的安装包，按 Android 提示确认更新。","text":"Paquete guardado y verificado. Ábrelo en Archivos y sigue las indicaciones de Android para confirmar la actualización."}
+{"id":"已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。","text":"Cambios guardados, pero no se pudo recargar la configuración de VPN. Vuelve a conectarte para aplicarlos."}
+{"id":"已保护","text":"Protegido"}
+{"id":"已停用","text":"Desactivado"}
+{"id":"已到期","text":"Vencido"}
+{"id":"已复制脱敏摘要","text":"Resumen sin datos sensibles copiado"}
+{"id":"已安装","text":"Instalado"}
+{"id":"已完成","text":"Completado"}
+{"id":"已导入的订阅没有可用配置内容，请重新导入","text":"La suscripción importada no contiene ninguna configuración utilizable. Vuelve a importarla."}
+{"id":"已开启","text":"Activado"}
+{"id":"已开启 · 需要用户名和密码","text":"Activado · Requiere nombre de usuario y contraseña"}
+{"id":"已找到可用节点。可以继续下一步，也可以再导入其他订阅。","text":"Se han encontrado nodos disponibles. Puedes continuar al siguiente paso o importar otras suscripciones."}
+{"id":"已断开","text":"Desconectado"}
+{"id":"已更新","text":"Actualizado"}
+{"id":"已有可用节点","text":"Hay nodos disponibles"}
+{"id":"已有可用节点，可以继续。","text":"Hay nodos disponibles. Puedes continuar."}
+{"id":"已用","text":"Consumido"}
+{"id":"已确认","text":"Confirmado"}
+{"id":"已确认仅表示本机连接或系统状态；已配置表示保存的设置。实际防护效果仍需独立核验。","text":"«Confirmado» solo se refiere a la conexión local o al estado del sistema. «Configurado» indica que el ajuste se ha guardado. La eficacia de la protección aún debe verificarse por separado."}
+{"id":"已确认表示来自本机状态或已写入的规则；未知/未测试必须用外部 DNS、IPv6、WebRTC 和 QUIC 测试站复核。","text":"«Confirmado» se basa en el estado local o en las reglas guardadas. Los estados desconocidos o sin probar deben comprobarse en servicios externos de pruebas de DNS, IPv6, WebRTC y QUIC."}
+{"id":"已进入新手模式，高级分流规则已暂停","text":"Modo Principiante activo. Las reglas de enrutamiento avanzadas están en pausa."}
+{"id":"已进入标准模式，正在恢复完整分流配置","text":"Modo Estándar activo. Se está restaurando la configuración completa de enrutamiento."}
+{"id":"已连接","text":"Conectado"}
+{"id":"已连接 · 直连规则","text":"Conectado · Reglas de conexión directa"}
+{"id":"已连接，现在可以开始使用。需要时可以随时断开。","text":"Ya estás conectado. Puedes empezar a usar la conexión y desconectarte cuando quieras."}
+{"id":"已选好节点","text":"Nodo elegido"}
+{"id":"已选择","text":"Seleccionado"}
+{"id":"已选择仅 IPv4；IPv6 实际阻断情况仍需核验","text":"Se ha seleccionado «Solo IPv4». El bloqueo efectivo de IPv6 aún debe verificarse."}
+{"id":"已选择本地广告或家庭过滤；实际过滤效果仍需核验","text":"Se ha seleccionado el bloqueo local de anuncios o el filtro familiar. La eficacia del filtro aún debe verificarse."}
+{"id":"已选择直连模式，连接不经过代理节点","text":"Se ha seleccionado la conexión directa. El tráfico no pasa por nodos de proxy."}
+{"id":"已选择直连，无需订阅","text":"Se ha seleccionado la conexión directa. No hace falta una suscripción."}
+{"id":"已配置","text":"Configurado"}
+{"id":"已配置 DNS 旁路拒绝规则；实际阻断仍需核验，自定义浏览器 DoH 需单独检查","text":"Las reglas de bloqueo de DNS fuera del túnel están configuradas. Aún debes verificar el bloqueo y comprobar por separado el DoH personalizado del navegador."}
+{"id":"已配置 STUN 端口拒绝规则；不代表禁用所有 WebRTC 连接","text":"Se han configurado reglas para bloquear puertos STUN. Esto no significa que se bloqueen todas las conexiones WebRTC."}
+{"id":"带恶意域名拦截的安全解析，不记录完整查询日志","text":"Resolución segura que bloquea dominios maliciosos sin guardar un registro completo de consultas"}
+{"id":"常用","text":"Frecuentes"}
+{"id":"常用站点与解锁入口","text":"Sitios populares y puntos de acceso para desbloqueo"}
+{"id":"常用站点检测失败","text":"Ha fallado la prueba de sitios populares"}
+{"id":"常用站点连通性","text":"Disponibilidad de sitios populares"}
+{"id":"平台","text":"Plataforma"}
+{"id":"广告 / 家庭过滤","text":"Bloqueo de anuncios y filtro familiar"}
+{"id":"应用与域名规则优先，其余流量走默认出口","text":"Las reglas de aplicaciones y dominios tienen prioridad. El resto del tráfico usa la salida predeterminada"}
+{"id":"应用内 HTTPS 探测无法证明浏览器或系统 DNS 是否泄漏，请用外部 DNS 测试页复核","text":"Las pruebas HTTPS de la aplicación no permiten saber si el navegador o el sistema tienen fugas de DNS. Compruébalo en una página externa de pruebas de DNS"}
+{"id":"应用内探测无法替代浏览器 DNS、IPv6 或 WebRTC 测试；点击后交给系统浏览器打开公开测试站。","text":"Las pruebas de la aplicación no sustituyen las de DNS, IPv6 o WebRTC en el navegador. Toca para abrir una página pública de pruebas en el navegador del sistema."}
+{"id":"应用内结果只代表本机或当前 HTTPS 出口证据。DNS、IPv6 和 WebRTC 泄漏仍应在真实浏览器中用独立测试站复核。","text":"Los resultados de la aplicación solo muestran lo que se observa en el dispositivo o en la salida HTTPS actual. Comprueba las fugas de DNS, IPv6 y WebRTC en un navegador con sitios de prueba independientes."}
+{"id":"应用分流","text":"Enrutamiento por aplicación"}
+{"id":"应用分流无法完整读取，已停止备份","text":"No se pudieron leer todas las rutas por aplicación. Se detuvo la copia de seguridad"}
+{"id":"应用分流暂停，流量统一走默认出口","text":"Las rutas por aplicación están en pausa. Todo el tráfico usa la salida predeterminada"}
+{"id":"应用包名（用于匹配规则）","text":"Nombre del paquete de la aplicación (para identificar las reglas)"}
+{"id":"应用名称（可选）","text":"Nombre de la aplicación (opcional)"}
+{"id":"应用更新","text":"Actualizaciones de la aplicación"}
+{"id":"应用规则","text":"Regla de aplicación"}
+{"id":"应用规则优先 · 修改后安全热重载","text":"Reglas de aplicación con prioridad · Recarga segura sin reiniciar tras los cambios"}
+{"id":"应用识别正常","text":"Se identifica correctamente la aplicación de cada conexión"}
+{"id":"应用连接记录","text":"Conexiones observadas por aplicación"}
+{"id":"底层网络已断开，Weave 将在网络恢复后自动重连","text":"Se ha interrumpido la conexión de red. Weave volverá a conectarse cuando se restablezca"}
+{"id":"底层网络暂时不可用，网络恢复后将自动重连","text":"La red no está disponible temporalmente. La conexión se restablecerá de forma automática cuando vuelva"}
+{"id":"延迟","text":"Latencia"}
+{"id":"延迟—","text":"Latencia —"}
+{"id":"建议分享节点链接或导出 URI 文本；不要选择客户端数据库备份。","text":"Comparte enlaces de nodos o exporta el texto de la URI. No selecciones una copia de seguridad de la base de datos del cliente."}
+{"id":"建议导出兼容配置或复制 HTTPS 订阅链接；Weave 会按内容自动识别格式。","text":"Exporta una configuración compatible o copia el enlace HTTPS de la suscripción. Weave detecta el formato a partir del contenido."}
+{"id":"开启共享","text":"Compartir"}
+{"id":"开启后，同一 Wi‑Fi 或连接你热点的设备可以把这台手机当作 HTTP/SOCKS 代理。其他设备必须使用下方的用户名和密码；这些设备的流量会按你的默认出口转发。","text":"Al activar esta opción, los dispositivos de la misma red Wi‑Fi o conectados a tu punto de acceso pueden usar este teléfono como proxy HTTP/SOCKS. Tendrán que introducir el nombre de usuario y la contraseña que se muestran abajo. Su tráfico usará tu salida predeterminada."}
+{"id":"开启网络保护","text":"Activar la protección de red"}
+{"id":"开启补光","text":"Encender la luz"}
+{"id":"开始使用","text":"Empezar"}
+{"id":"开始记录","text":"Empezar a registrar"}
+{"id":"开始连接","text":"Conectar ahora"}
+{"id":"开源组件","text":"Componentes de código abierto"}
+{"id":"开源许可、第三方组件与无担保声明","text":"Licencias de código abierto, componentes de terceros y aviso de ausencia de garantía"}
+{"id":"开源许可与第三方组件","text":"Licencias de código abierto y componentes de terceros"}
+{"id":"引导 DNS","text":"DNS de arranque"}
+{"id":"引导页面使用即时转场","text":"Usar transiciones instantáneas en la guía"}
+{"id":"当前","text":"Actual"}
+{"id":"当前 WebView 不支持 RTCPeerConnection，结果未知。","text":"Esta WebView no admite RTCPeerConnection. No se puede determinar el resultado."}
+{"id":"当前出口","text":"Salida actual"}
+{"id":"当前已是最新版本。","text":"Ya tienes la última versión."}
+{"id":"当前按“应用规则 > 本地域名/IP规则 > 默认出口”匹配；路由解释可在连接前预览命中结果。","text":"Orden de prioridad: reglas de aplicación > reglas locales de dominio/IP > salida predeterminada. Consulta «Explicación de la ruta» para ver qué regla se aplicará antes de conectar."}
+{"id":"当前无活跃连接证据","text":"No se detectan conexiones activas"}
+{"id":"当前查询不触发专门的 UDP 检查","text":"Esta consulta no hace una comprobación específica de UDP"}
+{"id":"当前模式下未发现默认或应用直连出口；其他路由规则和真实旁路仍需核验","text":"En este modo no se encontró una salida directa predeterminada ni por aplicación. Aún hay que verificar otras reglas de enrutamiento y posibles desvíos reales"}
+{"id":"当前没有活动连接","text":"No hay conexiones activas"}
+{"id":"当前版本不把访问域名、应用规则、节点凭据或流量记录发送到 Weave 服务器。","text":"Esta versión no envía los dominios visitados, las reglas de aplicación, las credenciales de los nodos ni los registros de tráfico a los servidores de Weave."}
+{"id":"当前版本或设备不支持从 GitHub 更新。","text":"Esta versión o dispositivo no admite actualizaciones desde GitHub."}
+{"id":"当前版本没有广告、统计或第三方崩溃上报 SDK，也不上传访问域名、节点地址和应用规则。","text":"Esta versión no contiene anuncios ni SDK de terceros para estadísticas o informes de fallos. Tampoco sube dominios visitados, direcciones de nodos ni reglas de aplicación."}
+{"id":"当前选择","text":"Selección actual"}
+{"id":"当前配置未启用本地过滤规则","text":"La configuración actual no tiene activadas las reglas de filtrado local"}
+{"id":"快速开始","text":"Inicio rápido"}
+{"id":"快速开始进度：第 1 步，共 3 步","text":"Inicio rápido: paso 1 de 3"}
+{"id":"快速开始进度：第 2 步，共 3 步","text":"Inicio rápido: paso 2 de 3"}
+{"id":"快速开始进度：第 3 步，共 3 步","text":"Inicio rápido: paso 3 de 3"}
+{"id":"恢复","text":"Restaurar"}
+{"id":"恢复中心","text":"Centro de recuperación"}
+{"id":"恢复中心不保存订阅 URL、节点凭据或明文配置；解除安全模式后需要你主动重新连接。","text":"El Centro de recuperación no guarda URL de suscripción, credenciales de nodos ni configuraciones en texto claro. Cuando salgas del modo seguro, tendrás que volver a conectarte manualmente."}
+{"id":"恢复中心已启用安全模式，请解除后再连接","text":"El Centro de recuperación activó el modo seguro. Desactívalo antes de conectar"}
+{"id":"恢复失败，请重新预览后重试","text":"No se pudo restaurar. Vuelve a revisar la vista previa de la copia e inténtalo de nuevo"}
+{"id":"恢复完整分流、诊断与全部可审计网络设置","text":"Restaurar todas las rutas, los diagnósticos y los ajustes de red que se pueden auditar"}
+{"id":"恢复未完成，原数据恢复记录已保留；请释放存储空间后重试","text":"No se completó la restauración. Se guardaron copias de recuperación de los datos originales. Libera espacio y vuelve a intentarlo"}
+{"id":"恢复默认导航","text":"Restaurar la navegación predeterminada"}
+{"id":"成功","text":"Completado"}
+{"id":"我已核对异常数量变化，允许本次更新","text":"Revisé el cambio inusual en la cantidad y autorizo esta actualización"}
+{"id":"所有 DNS 端点都无法完成检测","text":"Ningún servidor DNS superó la prueba"}
+{"id":"所有 GitHub 发布","text":"Todas las versiones publicadas en GitHub"}
+{"id":"所有域名使用当前选择的加密 DNS","text":"Usar el DNS cifrado seleccionado para todos los dominios"}
+{"id":"所选订阅已不存在，请重新选择出口","text":"La suscripción elegida ya no existe. Selecciona otra salida"}
+{"id":"所选订阅已变化，请重新选择","text":"Las suscripciones seleccionadas han cambiado. Vuelve a seleccionarlas."}
+{"id":"手动选择节点","text":"Elegir nodos manualmente"}
+{"id":"打开","text":"Abrir"}
+{"id":"打开所选客户端","text":"Abrir el cliente seleccionado"}
+{"id":"打开系统 VPN 设置","text":"Abrir los ajustes de VPN del sistema"}
+{"id":"托管","text":"Alojamiento"}
+{"id":"扫描二维码","text":"Escanear un código QR"}
+{"id":"扫描订阅二维码","text":"Escanear un código QR de suscripción"}
+{"id":"把当前加载的多个订阅放入同一个测速与故障切换组","text":"Reunir las suscripciones cargadas en un solo grupo de pruebas y conmutación por error"}
+{"id":"抖动","text":"Variación de latencia"}
+{"id":"拒绝这个应用的连接","text":"Rechazar las conexiones de esta aplicación"}
+{"id":"拒绝（未配置默认出口）","text":"Rechazar (no hay una salida predeterminada configurada)"}
+{"id":"按一致性哈希把不同连接分配到多个可用节点","text":"Distribuir las conexiones entre los nodos disponibles mediante hash consistente"}
+{"id":"按应用、域名或规则筛选","text":"Filtrar por aplicación, dominio o regla"}
+{"id":"按应用选择出口","text":"Elegir una salida para cada aplicación"}
+{"id":"按订阅独立","text":"Por suscripción"}
+{"id":"按顺序完成三步即可连接；高级分流不会在新手模式中后台生效。","text":"Completa los tres pasos en orden para conectarte. El enrutamiento avanzado no se ejecuta en segundo plano en el modo Principiante."}
+{"id":"授权配置目录","text":"Autorizar la carpeta de configuración"}
+{"id":"探测响应过大","text":"La respuesta de la prueba es demasiado grande"}
+{"id":"探测失败率","text":"Tasa de error de las pruebas"}
+{"id":"探测端点必须使用 HTTPS","text":"Los puntos de prueba deben usar HTTPS"}
+{"id":"搜索应用或包名","text":"Buscar por aplicación o nombre de paquete"}
+{"id":"搜索节点","text":"Buscar nodos"}
+{"id":"搜索节点或协议","text":"Buscar nodos o protocolos"}
+{"id":"搜索订阅名称","text":"Buscar por nombre de suscripción"}
+{"id":"搜索设置","text":"Buscar en los ajustes"}
+{"id":"支持 CMFA、Clash、Karing、FlClash、Clash Mi、Hiddify、v2rayNG、NekoBox、SagerNet 与 sing-box 的兼容订阅导出。","text":"Formatos de exportación de suscripciones compatibles: CMFA, Clash, Karing, FlClash, Clash Mi, Hiddify, v2rayNG, NekoBox, SagerNet y sing-box."}
+{"id":"支持 HTTPS、URI/Base64、Clash YAML、sing-box JSON、二维码和本地文件；内容仅在本机校验并用 Android Keystore 加密保存。","text":"Admite HTTPS, URI/Base64, YAML de Clash, JSON de sing-box, códigos QR y archivos locales. El contenido se valida en el dispositivo y se guarda cifrado con Android Keystore."}
+{"id":"支持每行一条的文本列表或 YAML payload；二进制 .mrs 格式不受支持。","text":"Admite texto sin formato (una entrada por línea) o un campo YAML payload. No se admiten archivos binarios .mrs."}
+{"id":"收藏节点","text":"Añadir nodo a favoritos"}
+{"id":"收起","text":"Contraer"}
+{"id":"改为 HTTPS 订阅地址（可选）","text":"Cambiar a una URL de suscripción HTTPS (opcional)"}
+{"id":"故障切换","text":"Conmutación por error"}
+{"id":"数据管理","text":"Gestión de datos"}
+{"id":"文件","text":"Archivo"}
+{"id":"文件只会在本机解析、校验并加密保存；不会上传，也不会修改来源客户端。","text":"El archivo solo se lee, valida y guarda cifrado en este dispositivo. No se sube ni se modifica el cliente de origen."}
+{"id":"断开","text":"Desconectar"}
+{"id":"断开全部","text":"Cerrar todas las conexiones"}
+{"id":"断开后清理","text":"Limpiar al desconectar"}
+{"id":"断开连接","text":"Cerrar conexión"}
+{"id":"新增节点","text":"Nodos añadidos"}
+{"id":"新建后可在默认出口或应用分流中选择。链式代理的路径为：本机 → 入口节点 → 成员节点 → 目标网站。","text":"Una vez creado, puedes elegirlo como salida predeterminada o en las rutas por aplicación. Una cadena de proxy sigue este camino: este teléfono → nodo de entrada → nodo del grupo → sitio de destino."}
+{"id":"新建策略组","text":"Crear grupo"}
+{"id":"新手保护方案","text":"Perfil de protección para principiantes"}
+{"id":"新手引导","text":"Guía de inicio rápido"}
+{"id":"新手模式","text":"Modo Principiante"}
+{"id":"新配置与原配置均无法启动，VPN 已安全关闭","text":"No se pudo iniciar ni con la configuración nueva ni con la anterior. La VPN se cerró de forma segura"}
+{"id":"新配置已安全生效","text":"La nueva configuración se aplicó correctamente"}
+{"id":"无效","text":"No válido"}
+{"id":"无法保存本地路由规则","text":"No se pudieron guardar las reglas de enrutamiento local"}
+{"id":"无法保存检查时间，未连接 GitHub。","text":"No se pudo guardar la hora de comprobación. No se hizo ninguna solicitud a GitHub."}
+{"id":"无法保存策略包","text":"No se pudo guardar el paquete de políticas"}
+{"id":"无法保存策略组","text":"No se pudo guardar el grupo"}
+{"id":"无法写入剪贴板，请重试","text":"No se pudo copiar al portapapeles. Inténtalo de nuevo"}
+{"id":"无法写入所选文件","text":"No se pudo escribir en el archivo seleccionado"}
+{"id":"无法创建 HTTPS 连接","text":"No se pudo establecer una conexión HTTPS"}
+{"id":"无法创建 Mihomo provider 目录","text":"No se pudo crear la carpeta de proveedores de Mihomo"}
+{"id":"无法创建 Mihomo 原生库临时目录","text":"No se pudo crear una carpeta temporal para la biblioteca nativa de Mihomo"}
+{"id":"无法创建 Mihomo 数据目录","text":"No se pudo crear la carpeta de datos de Mihomo"}
+{"id":"无法启动局域网导出","text":"No se pudo iniciar la exportación por red local"}
+{"id":"无法复制运行配置","text":"No se pudo copiar la configuración activa"}
+{"id":"无法开启相机，请检查权限或使用识别图片","text":"No se pudo abrir la cámara. Revisa los permisos o elige una imagen para escanear."}
+{"id":"无法打开本机配置","text":"No se pudo abrir la configuración local"}
+{"id":"无法打开此客户端，请自行打开后导出或分享。","text":"No se pudo abrir este cliente. Ábrelo manualmente y luego exporta o comparte el contenido."}
+{"id":"无法打开系统文件选择器。请安装或启用文件管理应用后重试。","text":"No se pudo abrir el selector de archivos. Activa o instala un gestor de archivos y vuelve a intentarlo."}
+{"id":"无法打开系统目录选择器","text":"No se pudo abrir el selector de carpetas del sistema"}
+{"id":"无法打开订阅","text":"No se pudo abrir la suscripción"}
+{"id":"无法确认现有 VPN 状态；可在系统设置中查看或断开。","text":"No se pudo confirmar el estado actual de la VPN. Puedes consultarlo o desconectarla desde los ajustes del sistema."}
+{"id":"无法解析订阅服务器地址","text":"No se pudo resolver la dirección del servidor de suscripciones"}
+{"id":"无法访问剪贴板","text":"No se pudo acceder al portapapeles"}
+{"id":"无法读取 GitHub 发布信息，请稍后再试。","text":"No se pudo obtener información sobre las versiones publicadas en GitHub. Inténtalo más tarde."}
+{"id":"无法读取内核日志；请确认 VPN 已连接。","text":"No se pudo leer el registro del motor. Comprueba que la VPN esté conectada."}
+{"id":"无法读取内核连接；请确认 VPN 已连接。","text":"No se pudieron leer las conexiones del motor. Comprueba que la VPN esté conectada."}
+{"id":"无法读取内核连接；请连接后重试，不使用配置推测代替结果。","text":"No se pudieron consultar las conexiones del motor. Conéctate y vuelve a intentarlo. No se muestran suposiciones basadas en la configuración."}
+{"id":"无法读取备份","text":"No se pudo leer la copia de seguridad"}
+{"id":"无法读取所选二维码图片","text":"No se pudo leer la imagen del código QR seleccionado"}
+{"id":"无法读取所选文件","text":"No se pudo leer el archivo seleccionado"}
+{"id":"无法读取所选订阅文件","text":"No se pudo leer el archivo de suscripción seleccionado"}
+{"id":"无法读取策略包","text":"No se pudo leer el paquete de políticas"}
+{"id":"无签名·需复核","text":"Sin firma · Revisión necesaria"}
+{"id":"日出·印象","text":"Impresión, sol naciente"}
+{"id":"日志已暂停","text":"Registro en pausa"}
+{"id":"日本語インターフェース","text":"Interfaz en japonés"}
+{"id":"时区 / 屏幕","text":"Zona horaria / Pantalla"}
+{"id":"明文，仅解析 DoH/DoT 服务器域名","text":"En texto claro. Solo resuelve los dominios de los servidores DoH/DoT"}
+{"id":"显示全部节点","text":"Mostrar todos los nodos"}
+{"id":"显示订阅地址","text":"Mostrar URL de suscripción"}
+{"id":"暂不可导入","text":"No se puede importar por ahora"}
+{"id":"暂不连接","text":"Ahora no"}
+{"id":"暂停","text":"Pausar"}
+{"id":"暂时不可达","text":"No disponible temporalmente"}
+{"id":"暂时连不上 GitHub，请检查网络后再试。","text":"No se pudo acceder a GitHub. Comprueba la conexión y vuelve a intentarlo."}
+{"id":"暮色花园","text":"Jardín al anochecer"}
+{"id":"更多","text":"Más"}
+{"id":"更换出口","text":"Cambiar salida"}
+{"id":"更换订阅","text":"Cambiar suscripción"}
+{"id":"更新失败","text":"No se pudo actualizar"}
+{"id":"更新订阅","text":"Actualizar suscripción"}
+{"id":"更新远程订阅","text":"Actualizar suscripciones remotas"}
+{"id":"更新需要人工确认，旧版本仍可回退","text":"La actualización requiere confirmación manual. Puedes volver a la versión anterior"}
+{"id":"最低延迟","text":"Latencia más baja"}
+{"id":"最后一个代理已删除，连接已安全关闭","text":"Se eliminó el último proxy. La conexión se cerró de forma segura"}
+{"id":"最终出口","text":"Salida final"}
+{"id":"最终导入","text":"Importado"}
+{"id":"最近一次候选配置与旧配置均未能启动","text":"No se pudo iniciar ni con la última configuración candidata ni con la anterior"}
+{"id":"最近一次：未发现可用节点","text":"Última prueba: no se encontraron nodos utilizables"}
+{"id":"服务端错误","text":"Error del servidor"}
+{"id":"服务边界","text":"Alcance del servicio"}
+{"id":"未保存所选出口","text":"No se guardó la selección"}
+{"id":"未发现显式直连；真实旁路仍需外部测试","text":"No se detectó acceso directo explícito. Usa una prueba externa para detectar posibles desvíos reales"}
+{"id":"未发现该服务标记的代理、VPN、Tor 或托管出口","text":"El servicio no identificó esta salida como proxy, VPN, Tor ni servicio de alojamiento"}
+{"id":"未取得 ICE 候选。可能是 STUN 被阻止、网络超时或浏览器策略限制；不能单独据此判定无泄漏。","text":"No se obtuvo ningún candidato ICE. STUN puede estar bloqueado, la solicitud de red pudo haber agotado el tiempo de espera o el navegador pudo limitarla. Esto no descarta una fuga."}
+{"id":"未取得 IPv6 公网地址；这不能单独证明没有 IPv6 泄漏","text":"No se obtuvo una dirección pública IPv6. Esto no descarta una fuga de IPv6."}
+{"id":"未取得可比对的 HTTPS 代理出口，WebRTC 结果保持未知。","text":"No se obtuvo una salida HTTPS del proxy con la que comparar. El resultado de WebRTC sigue siendo desconocido."}
+{"id":"未取得可比对的 WebRTC 公网候选，不作无泄漏结论。","text":"No se obtuvo un candidato público de WebRTC con el que comparar. Esto no descarta una fuga."}
+{"id":"未取得第三方安全标签","text":"No se obtuvo ningún indicador de seguridad de terceros"}
+{"id":"未启用 STUN 阻断，浏览器策略可能继续暴露候选地址","text":"El bloqueo de STUN está desactivado. El navegador aún podría exponer direcciones candidatas"}
+{"id":"未命中前面规则的流量使用连接页选择的订阅、节点或自定义策略组。","text":"El tráfico que no coincida con otra regla usa la suscripción, el nodo o el grupo personalizado elegido en la pestaña «Conectar»."}
+{"id":"未命中前面规则的流量使用连接页选择的订阅与节点。","text":"El tráfico que no coincida con otra regla usa la suscripción y el nodo seleccionados en la página «Conexión»."}
+{"id":"未命中可用出口","text":"No se encontró ninguna salida utilizable"}
+{"id":"未命中应用规则时不使用代理","text":"No usar proxy si no coincide ninguna regla de aplicación"}
+{"id":"未命名节点","text":"Nodo sin nombre"}
+{"id":"未命名订阅","text":"Suscripción sin nombre"}
+{"id":"未响应","text":"Sin respuesta"}
+{"id":"未完成","text":"Incompleto"}
+{"id":"未开启","text":"Desactivado"}
+{"id":"未找到可用的局域网 IPv4 地址","text":"No se encontró ninguna dirección IPv4 utilizable en la red local"}
+{"id":"未找到适用的 Android 生产签名发布包。","text":"No se encontró ningún paquete Android compatible con firma de producción."}
+{"id":"未指定应用","text":"Aplicación sin especificar"}
+{"id":"未指定应用的 CN 流量直连","text":"Conexión directa a China continental para las aplicaciones sin regla"}
+{"id":"未提供流量信息","text":"No hay datos de tráfico"}
+{"id":"未检测","text":"Sin comprobar"}
+{"id":"未检测到","text":"No detectado"}
+{"id":"未检测到可见客户端，仍可直接导入文件、链接或二维码。","text":"No se encontró ningún cliente visible. Aún puedes importar un archivo, un enlace o un código QR."}
+{"id":"未测试","text":"Sin probar"}
+{"id":"未知","text":"Desconocido"}
+{"id":"未知地区","text":"Región desconocida"}
+{"id":"未知运营商","text":"Operador desconocido"}
+{"id":"未能保存完整的安装包。请重新下载并选择可写位置。","text":"No se pudo guardar el APK completo. Vuelve a descargarlo y elige una ubicación con permiso de escritura."}
+{"id":"未获得相机权限，可选择二维码图片","text":"No se concedió permiso para usar la cámara. Elige una imagen con un código QR"}
+{"id":"未被当前运行配置加载","text":"El motor en uso no lo ha cargado"}
+{"id":"未识别到受支持的节点或配置","text":"No se reconoció ningún nodo ni configuración compatible"}
+{"id":"未识别到可转换的节点协议","text":"No se reconoció ningún protocolo de nodo que se pueda convertir"}
+{"id":"未连接","text":"Desconectado"}
+{"id":"未连接，无法确认设备流量受保护","text":"Sin conexión. No se puede confirmar la protección del tráfico del dispositivo"}
+{"id":"未连接：仅保留配置，尚未验证运行效果","text":"Sin conexión: los ajustes se guardaron, pero aún no se ha comprobado su funcionamiento"}
+{"id":"未选择时自动使用第一个可用订阅","text":"Mientras no elijas una, se usará la primera suscripción disponible"}
+{"id":"本仓库采用 local-open-source 配置。官方 Android ARM64 版可查询 GitHub；可在应用更新中关闭自动检查。安装包仅在你点击后下载，安装须由你在 Android 中确认。","text":"Este repositorio usa el perfil local-open-source. Las compilaciones oficiales de Android para ARM64 pueden consultar GitHub. Puedes desactivar las comprobaciones automáticas en «Actualizaciones de la aplicación». Debes tocar para descargar el APK y confirmar la instalación cuando Android te lo pida."}
+{"id":"本地发行边界","text":"Alcance de la versión local"}
+{"id":"本地域名 / IP 规则","text":"Reglas locales de dominio / IP"}
+{"id":"本地导入、哈希校验、可回滚启停","text":"Importación local, verificación de hash y recuperación de la versión anterior"}
+{"id":"本地快照","text":"Instantánea local"}
+{"id":"本地拒绝规则已启用；应用自带 DoH/DoT 仍需单独验证","text":"Las reglas de bloqueo local están activadas. Aún debes verificar por separado el DoH/DoT propio de la aplicación"}
+{"id":"本地文件","text":"Archivo local"}
+{"id":"本地来源","text":"Local del dispositivo"}
+{"id":"本地策略","text":"Política local"}
+{"id":"本地规则","text":"Regla local"}
+{"id":"本地订阅已变化，请重新同步","text":"Las suscripciones locales han cambiado. Vuelve a iniciar la sincronización"}
+{"id":"本地证据 + 当前出口 + 浏览器表面","text":"Datos locales, salida actual y datos visibles para el navegador"}
+{"id":"本地证据检查 · 不生成虚假安全百分比","text":"Comprobaciones locales · Sin porcentajes de seguridad inventados"}
+{"id":"本地路由规则已删除","text":"Regla de enrutamiento local eliminada"}
+{"id":"本地路由规则已更新","text":"Regla de enrutamiento local actualizada"}
+{"id":"本地路由规则已添加","text":"Regla de enrutamiento local añadida"}
+{"id":"本地运行状态确认 TUN 已建立","text":"El motor local confirma que se ha establecido el túnel TUN"}
+{"id":"本地配置未发现注意项；这不是对外部网络的绝对安全承诺","text":"No se encontraron avisos en la configuración local. Esto no garantiza la seguridad de la red externa."}
+{"id":"本地配置证据","text":"Datos de la configuración local"}
+{"id":"本机加密","text":"Cifrado en el dispositivo"}
+{"id":"本机加密保存 · 应用规则优先 · 连接前可解释","text":"Cifrado en el dispositivo · Prioridad a las reglas de aplicación · Consulta la ruta antes de conectar"}
+{"id":"本机加密保存的域名、关键词和 CIDR 规则；不联网、不上传，可由路由解释预览。","text":"Los dominios, las palabras clave y las reglas CIDR se cifran en el dispositivo. No se usa la red ni se sube información. Puedes consultarlos en «Explicación de la ruta»."}
+{"id":"本机加密管理","text":"Gestión local con cifrado"}
+{"id":"本机存储","text":"Almacenamiento local"}
+{"id":"本机导入、哈希校验、可回滚启停","text":"Importación local, verificación de hash y vuelta a la versión anterior"}
+{"id":"本机规则已就绪，连接时按需加载原生内核","text":"Las reglas locales están listas. El motor nativo se carga al conectar"}
+{"id":"本机规则拒绝应用的明文 53、DoT/DoQ 853、已知公共 DoH 与公共 DNS 地址；自定义浏览器 DoH 仍需手动关闭","text":"Las reglas locales bloquean el puerto 53 sin cifrar de las aplicaciones, DoT/DoQ en el puerto 853, los servicios públicos DoH conocidos y las direcciones DNS públicas. Debes desactivar manualmente el DoH personalizado del navegador."}
+{"id":"本机访问","text":"Acceso local"}
+{"id":"本机配置已变化，请关闭后重新编辑","text":"La configuración local ha cambiado. Cierra el editor y vuelve a abrirlo."}
+{"id":"本机配置已变化，请重新预览备份","text":"Los ajustes locales han cambiado. Vuelve a revisar la vista previa de la copia"}
+{"id":"本次分享的订阅","text":"Suscripciones compartidas"}
+{"id":"本次检测只在内存中运行。WebRTC 会向 stun.l.google.com:19302 发送一次 ICE 探测；不上传检测报告。","text":"La prueba se ejecuta solo en memoria. WebRTC envía una petición ICE a stun.l.google.com:19302. El informe no se sube."}
+{"id":"权限在使用时确认","text":"Permisos solo cuando hacen falta"}
+{"id":"来源","text":"Origen"}
+{"id":"极简风","text":"Mínimo"}
+{"id":"查看内核当前连接、命中规则与链路，可逐条断开","text":"Consulta las conexiones, las reglas aplicadas y las cadenas del motor. Puedes cerrar cualquier conexión"}
+{"id":"查看和编辑订阅","text":"Ver y editar suscripciones"}
+{"id":"查看失败记录、解除安全模式","text":"Ver los fallos y salir del modo seguro"}
+{"id":"查看更新","text":"Ver actualización"}
+{"id":"查看订阅","text":"Ver suscripción"}
+{"id":"查看首次连接前的独立隐私说明","text":"Consulta el aviso de privacidad antes de conectarte por primera vez"}
+{"id":"标准模式","text":"Modo Estándar"}
+{"id":"格式","text":"Formato"}
+{"id":"格式变化本身不等于恶意，但需要留意","text":"Un cambio de formato no significa que el contenido sea malicioso, pero conviene revisarlo"}
+{"id":"检查应用更新","text":"Buscar actualizaciones de la aplicación"}
+{"id":"检查更新","text":"Buscar actualizaciones"}
+{"id":"检测 DNS","text":"Probar DNS"}
+{"id":"检测中…","text":"Probando…"}
+{"id":"检测全部 DNS","text":"Probar todos los servidores DNS"}
+{"id":"检测时间","text":"Hora de la prueba"}
+{"id":"检测结果反映当前 VPN 出口，不等同于网站信誉或绝对匿名性。地区、ASN 和代理标签来自第三方信息服务，可能存在误判。","text":"Los resultados corresponden a la salida VPN actual. No indican la reputación del sitio ni garantizan el anonimato. Los datos de región, ASN y proxy provienen de servicios de terceros y pueden ser incorrectos."}
+{"id":"正在下载并校验","text":"Descargando y validando"}
+{"id":"正在下载并验证安装包。","text":"Descargando y verificando el APK…"}
+{"id":"正在保存","text":"Guardando"}
+{"id":"正在保存并核对安装包。","text":"Guardando y verificando el APK…"}
+{"id":"正在关闭 UDP STUN 阻断","text":"Desactivando el bloqueo de STUN por UDP"}
+{"id":"正在关闭国内智能直连","text":"Desactivando la conexión directa inteligente a China continental"}
+{"id":"正在关闭局域网共享","text":"Desactivando el uso compartido en la red local"}
+{"id":"正在关闭系统 HTTP 代理","text":"Desactivando el proxy HTTP del sistema"}
+{"id":"正在切换到安全规则模式","text":"Cambiando al modo seguro de reglas"}
+{"id":"正在刷新","text":"Actualizando"}
+{"id":"正在启用 UDP STUN 阻断","text":"Activando el bloqueo de STUN por UDP"}
+{"id":"正在启用国内域名与 IP 直连","text":"Activando la conexión directa a dominios e IP de China continental"}
+{"id":"正在启用系统 HTTP 代理","text":"Activando el proxy HTTP del sistema"}
+{"id":"正在安全切换加密 DNS","text":"Cambiando de DNS cifrado sin interrumpir la protección"}
+{"id":"正在安全切换默认出口","text":"Cambiando la salida predeterminada sin interrumpir la protección"}
+{"id":"正在安全应用 IP 协议设置","text":"Aplicando los ajustes del protocolo IP de forma segura"}
+{"id":"正在安全应用新的应用分流","text":"Aplicando el nuevo enrutamiento por aplicación de forma segura"}
+{"id":"正在安全应用新的运行模式","text":"Aplicando el nuevo modo de enrutamiento de forma segura"}
+{"id":"正在安全应用新规则","text":"Aplicando las reglas nuevas de forma segura"}
+{"id":"正在导入","text":"Importando"}
+{"id":"正在应用 DNS 分流策略","text":"Aplicando la política de DNS por dominio"}
+{"id":"正在应用 DNS 过滤策略","text":"Aplicando la política de filtrado DNS"}
+{"id":"正在应用引导 DNS","text":"Aplicando el DNS de arranque"}
+{"id":"正在应用恢复的配置","text":"Aplicando la configuración restaurada"}
+{"id":"正在应用新的自动节点策略","text":"Aplicando la nueva estrategia automática de nodos"}
+{"id":"正在应用新的订阅策略组范围","text":"Aplicando el nuevo alcance de los grupos de suscripción"}
+{"id":"正在应用新规则","text":"Aplicando las reglas nuevas"}
+{"id":"正在应用直连应用绕过设置","text":"Aplicando la exclusión de aplicaciones que se conectan directamente"}
+{"id":"正在应用自定义加密 DNS","text":"Aplicando el DNS cifrado personalizado"}
+{"id":"正在应用自定义策略组","text":"Aplicando los grupos personalizados"}
+{"id":"正在应用远程规则集","text":"Aplicando los conjuntos de reglas remotas"}
+{"id":"正在建立隧道","text":"Estableciendo el túnel"}
+{"id":"正在建立隧道并校验配置，请稍候。","text":"Estableciendo el túnel y validando la configuración. Espera un momento."}
+{"id":"正在建立，尚未完成检查","text":"Estableciendo la conexión. Aún faltan comprobaciones"}
+{"id":"正在开启局域网共享","text":"Activando el uso compartido en la red local"}
+{"id":"正在恢复","text":"Recuperando"}
+{"id":"正在恢复代理连接","text":"Restableciendo la conexión del proxy"}
+{"id":"正在恢复出站保护","text":"Restableciendo la protección del tráfico saliente"}
+{"id":"正在收集本机浏览器表面与 ICE 候选…","text":"Obteniendo los datos visibles para el navegador y los candidatos ICE…"}
+{"id":"正在查询 GitHub…","text":"Consultando GitHub…"}
+{"id":"正在查询 GitHub。","text":"Consultando GitHub…"}
+{"id":"正在校验","text":"Validando"}
+{"id":"正在检查 HTTPS 远程订阅","text":"Comprobando suscripciones remotas HTTPS"}
+{"id":"正在检查本机配置","text":"Comprobando la configuración local"}
+{"id":"正在测试常用站点…","text":"Probando sitios populares…"}
+{"id":"正在申请 VPN 权限","text":"Solicitando permiso para la VPN"}
+{"id":"正在等待下一次网络重试","text":"Esperando el siguiente intento de conexión"}
+{"id":"正在等待内核日志…","text":"Esperando el registro del motor…"}
+{"id":"正在读取 HTTPS 代理出口…","text":"Consultando la salida HTTPS del proxy…"}
+{"id":"正在读取内核连接…","text":"Consultando las conexiones del motor…"}
+{"id":"正在载入本地订阅","text":"Cargando suscripciones locales"}
+{"id":"正在载入该订阅，运行配置更新后请再次测速","text":"Cargando esta suscripción. Repite la prueba cuando se actualice la configuración activa"}
+{"id":"正在连接","text":"Conectando"}
+{"id":"正在连接…","text":"Conectando…"}
+{"id":"正在验证配置","text":"Validando la configuración"}
+{"id":"此操作无法撤销。","text":"Esta acción no se puede deshacer."}
+{"id":"此时尚未保存。确认后仅导入节点，原客户端的分流、DNS 和策略组不会迁移。","text":"Aún no se ha guardado nada. Al confirmar solo se importan los nodos, no las rutas, el DNS ni los grupos del cliente de origen."}
+{"id":"每个公开发行版应在同一 GitHub Release 附近提供对应源码、构建说明、校验和与第三方清单。","text":"Cada versión pública debe incluir el código fuente correspondiente, las instrucciones de compilación, las sumas de verificación y el inventario de componentes de terceros junto a la publicación en GitHub."}
+{"id":"每个应用都能选择不同订阅中的固定节点、自动策略、直连或阻止。点按一项可预览切换。","text":"Para cada aplicación puedes elegir un nodo fijo de cualquier suscripción, una estrategia automática, la conexión directa o el bloqueo. Toca una opción para ver cómo se aplicará."}
+{"id":"每个订阅维护自己的自动节点组，资源占用更低","text":"Mantener un grupo automático de nodos por suscripción con menor consumo de recursos"}
+{"id":"每天最多一次。GitHub 可看到连接 IP，不会收到节点、订阅或设备标识。","text":"Como máximo una vez al día. GitHub puede ver la dirección IP de tu conexión, pero no recibe detalles de los nodos ni de las suscripciones ni identificadores del dispositivo."}
+{"id":"每次最多选择 20 个订阅","text":"Selecciona hasta 20 suscripciones a la vez"}
+{"id":"永久删除","text":"Eliminar definitivamente"}
+{"id":"没有匹配的节点","text":"No hay nodos que coincidan"}
+{"id":"没有匹配的订阅","text":"No hay suscripciones que coincidan"}
+{"id":"没有匹配的设置","text":"No hay ajustes que coincidan"}
+{"id":"没有匹配的连接","text":"No hay conexiones que coincidan"}
+{"id":"没有取得相机预览，请重试","text":"No se pudo mostrar la vista previa de la cámara. Inténtalo de nuevo"}
+{"id":"没有可刷新的 HTTPS 远程订阅","text":"No hay suscripciones remotas HTTPS que actualizar"}
+{"id":"没有可回退的运行配置","text":"No hay ninguna configuración activa a la que volver"}
+{"id":"没有可打开网页的应用。","text":"Ninguna aplicación puede abrir esta página web."}
+{"id":"没有可检测的 DNS 端点","text":"No hay servidores DNS que probar"}
+{"id":"没有可添加的启动器应用","text":"No hay aplicaciones con icono de inicio que puedas añadir"}
+{"id":"没有可用的 Wi‑Fi 或移动数据网络","text":"No hay una conexión Wi‑Fi ni de datos móviles disponible"}
+{"id":"没有可用的底层网络","text":"No hay una conexión de red disponible"}
+{"id":"没有可用订阅，请先导入或选择直连","text":"No hay suscripciones utilizables. Importa una o elige la conexión directa"}
+{"id":"没有找到可导入的订阅","text":"No se encontraron suscripciones que se puedan importar"}
+{"id":"波动","text":"Variable según la conexión"}
+{"id":"注意","text":"Aviso"}
+{"id":"活跃连接","text":"Conexiones activas"}
+{"id":"浅色模式","text":"Modo claro"}
+{"id":"测速与可用性","text":"Pruebas y disponibilidad"}
+{"id":"测速中","text":"Probando"}
+{"id":"测速完成后无法读取节点状态","text":"No se pudo leer el estado del nodo al terminar la prueba"}
+{"id":"测速并排序","text":"Probar y ordenar"}
+{"id":"测量当前出口的短时下载吞吐，包含连接耗时，不代表线路峰值。","text":"Mide la velocidad de una descarga breve por la salida actual, incluido el tiempo de conexión. No mide la velocidad máxima de la línea."}
+{"id":"浏览器","text":"Navegador"}
+{"id":"浏览器可直接使用本机 127.0.0.1:7890；本机其他应用也能访问此端口","text":"Los navegadores pueden usar 127.0.0.1:7890 directamente. Otras aplicaciones de este teléfono también pueden acceder al puerto"}
+{"id":"浏览器外部复核","text":"Comprobar en un navegador externo"}
+{"id":"浏览器检测已中断，请重新检测","text":"La prueba del navegador se interrumpió. Vuelve a ejecutarla"}
+{"id":"浏览器检测无法调度，请重新检测","text":"No se pudo programar la prueba del navegador. Vuelve a ejecutarla"}
+{"id":"浏览器检测结果无法解析","text":"No se pudo interpretar el resultado de la prueba del navegador"}
+{"id":"浏览器检测超时，请重新检测","text":"Se agotó el tiempo de espera de la prueba del navegador. Vuelve a ejecutarla"}
+{"id":"浏览器身份表面","text":"Datos que identifican el navegador"}
+{"id":"浏览器隐私实验室","text":"Laboratorio de privacidad del navegador"}
+{"id":"浏览器隐私表面","text":"Datos de privacidad que expone el navegador"}
+{"id":"海外隐私导向解析；中国大陆网络可能较慢","text":"Servidor DNS extranjero centrado en la privacidad. Puede ser lento desde China continental"}
+{"id":"海外（Cloudflare / Quad9）","text":"Global (Cloudflare / Quad9) para todos los dominios"}
+{"id":"深松绿画布、薄荷高光与柔和对比","text":"Fondo verde pino oscuro, toques de menta y contraste suave"}
+{"id":"深海蓝","text":"Océano profundo"}
+{"id":"深色模式","text":"Modo oscuro"}
+{"id":"深靛蓝、雾青与低亮银灰，适合夜间阅读","text":"Índigo oscuro, verde azulado suave y gris plateado tenue para leer de noche"}
+{"id":"添加 HTTPS 地址的域名列表、IP 网段列表或经典规则，选择直连、代理或阻止。应用规则仍然优先。","text":"Añade una lista de dominios, rangos IP o reglas clásicas desde una dirección HTTPS y elige conexión directa, proxy o bloqueo. Las reglas de aplicación siguen teniendo prioridad."}
+{"id":"添加方式","text":"Añadir desde"}
+{"id":"添加规则","text":"Añadir regla"}
+{"id":"添加规则集","text":"Añadir conjunto de reglas"}
+{"id":"添加订阅","text":"Añadir suscripción"}
+{"id":"添加订阅链接、文件或二维码","text":"Añade un enlace de suscripción, un archivo o un código QR"}
+{"id":"添加订阅链接、文件或二维码后，即可在连接页选择出口并连接。","text":"Añade un enlace de suscripción, un archivo o un código QR. Elige una salida en la pestaña «Conectar» y conecta."}
+{"id":"清晰留白与冷暖中性灰，适合日常使用","text":"Fondos blancos y tonos grises neutros para el uso diario"}
+{"id":"清除","text":"Limpiar"}
+{"id":"清除搜索","text":"Borrar búsqueda"}
+{"id":"清除搜索和筛选","text":"Borrar búsqueda y filtros"}
+{"id":"清除记录","text":"Borrar registros"}
+{"id":"澄澈深蓝、海玻璃青与冷白层次","text":"Azul profundo, cian translúcido y capas de blanco frío"}
+{"id":"点击“运行完整检测”后读取当前代理出口；未连接 VPN 时不会伪造出口结果。","text":"Ejecuta la prueba completa para consultar la salida actual del proxy. Mientras la VPN esté desconectada no se presenta una salida supuesta."}
+{"id":"点击“连接”后才会开始。如果还没有授权，Weave 会先说明用途，再请求系统的 VPN 授权。","text":"No se inicia nada hasta que toques «Conectar». Si hace falta un permiso, Weave te explica para qué sirve antes de que el sistema pida autorización para la VPN."}
+{"id":"点击连接时，按需确认系统 VPN 授权。","text":"Toca «Conectar» y autoriza la VPN en el sistema si es necesario."}
+{"id":"点击选择默认节点","text":"Toca para elegir un nodo predeterminado"}
+{"id":"理解并继续","text":"Entendido, continuar"}
+{"id":"用户名","text":"Nombre de usuario"}
+{"id":"白绿","text":"Blanco y verde"}
+{"id":"直连","text":"Conexión directa"}
+{"id":"直连出口","text":"Salidas directas"}
+{"id":"直连应用绕过 VPN","text":"Las aplicaciones con conexión directa no pasan por la VPN"}
+{"id":"直连模式下不使用出口","text":"No se usa en el modo de conexión directa"}
+{"id":"直连模式下分流不生效","text":"Las reglas de aplicación están desactivadas en el modo de conexión directa"}
+{"id":"相机","text":"Cámara"}
+{"id":"相机扫码使用系统相机预览；二维码内容由随包 ZXing 本机识别，Weave 不把二维码内容发送到自己的服务器。","text":"Al escanear un QR se usa la cámara del sistema. ZXing lee el código en el dispositivo y Weave no envía su contenido a sus servidores."}
+{"id":"睡莲","text":"Nenúfares"}
+{"id":"短码不匹配：请让发送设备重新显示当前二维码和短码","text":"El código no coincide. Pide que vuelvan a mostrar el QR y el código vigentes en el dispositivo de origen"}
+{"id":"硬件提示","text":"Datos orientativos del hardware"}
+{"id":"确认前不会覆盖现有订阅；改名无法可靠确认时按新增和移除展示。","text":"No se sobrescribe nada antes de confirmar. Si no se puede comprobar un cambio de nombre, se muestra como una incorporación y una eliminación."}
+{"id":"确认后所选订阅一并加密保存；任一订阅出错时不会保存任何一个。","text":"Al confirmar, todas las suscripciones seleccionadas se guardan cifradas en una sola operación. Si falla una, no se guarda ninguna."}
+{"id":"确认导入节点","text":"Confirmar la importación de nodos"}
+{"id":"确认并选择文件","text":"Confirmar y elegir archivo"}
+{"id":"确认更新","text":"Confirmar actualización"}
+{"id":"确认短码","text":"Código de confirmación"}
+{"id":"离线策略包","text":"Paquetes de políticas sin conexión"}
+{"id":"私密网络","text":"Red privada"}
+{"id":"移除了超过一半节点","text":"Se eliminó más de la mitad de los nodos"}
+{"id":"移除节点","text":"Nodos eliminados"}
+{"id":"稳定","text":"Conexión estable"}
+{"id":"立即失效","text":"Caducar ahora"}
+{"id":"站点","text":"Sitios"}
+{"id":"端口","text":"Puerto"}
+{"id":"端口必须为 1–65535","text":"El puerto debe estar entre 1 y 65535"}
+{"id":"端点不可达","text":"No se puede acceder al destino"}
+{"id":"端点可达","text":"Destino accesible"}
+{"id":"第三方可见性","text":"Datos visibles para terceros"}
+{"id":"等待应用流量","text":"Esperando tráfico de aplicaciones"}
+{"id":"等待底层网络恢复","text":"Esperando a que se restablezca la red"}
+{"id":"等待测速","text":"Esperando la prueba"}
+{"id":"等待网络","text":"Esperando conexión de red"}
+{"id":"策略包 SHA-256 校验失败","text":"No se pudo verificar el SHA-256 del paquete de políticas"}
+{"id":"策略包 id 无效","text":"ID del paquete de políticas no válido"}
+{"id":"策略包不存在","text":"El paquete de políticas no existe"}
+{"id":"策略包不是有效 JSON","text":"El paquete de políticas no contiene JSON válido"}
+{"id":"策略包删除失败","text":"No se pudo eliminar el paquete de políticas"}
+{"id":"策略包名称无效","text":"Nombre del paquete de políticas no válido"}
+{"id":"策略包导入失败","text":"No se pudo importar el paquete de políticas"}
+{"id":"策略包已停用","text":"Paquete de políticas desactivado"}
+{"id":"策略包已删除","text":"Paquete de políticas eliminado"}
+{"id":"策略包已启用","text":"Paquete de políticas activado"}
+{"id":"策略包已导入","text":"Paquete de políticas importado"}
+{"id":"策略包必须为 1–512 KiB","text":"El paquete de políticas debe ocupar entre 1 y 512 KiB"}
+{"id":"策略包版本无效","text":"Versión del paquete de políticas no válida"}
+{"id":"策略包状态已变更","text":"Cambió el estado del paquete de políticas"}
+{"id":"策略包状态更新失败","text":"No se pudo actualizar el estado del paquete de políticas"}
+{"id":"策略包签名校验失败","text":"No se pudo verificar la firma del paquete de políticas"}
+{"id":"策略包缺少 rules","text":"Faltan las reglas del paquete de políticas"}
+{"id":"策略包缺少有效 SHA-256","text":"El paquete de políticas no contiene un SHA-256 válido"}
+{"id":"策略包说明过长","text":"La descripción del paquete de políticas es demasiado larga"}
+{"id":"策略组 ID 无效","text":"ID del grupo no válido"}
+{"id":"策略组 ID 重复","text":"ID de grupo duplicado"}
+{"id":"策略组引用的节点已不存在","text":"Uno de los nodos de este grupo ya no está disponible."}
+{"id":"策略组范围","text":"Alcance del grupo de estrategia"}
+{"id":"签名已验证","text":"Firma verificada"}
+{"id":"简体中文","text":"Chino simplificado"}
+{"id":"简体中文界面","text":"Interfaz en chino simplificado"}
+{"id":"粘贴收到的订阅链接","text":"Pega el enlace de suscripción que recibiste"}
+{"id":"粘贴链接或扫描二维码","text":"Pega un enlace o escanea un código QR"}
+{"id":"系统 HTTP 代理","text":"Proxy HTTP del sistema"}
+{"id":"系统 VPN 设置","text":"Ajustes de VPN del sistema"}
+{"id":"系统 VPN 路由尚未就绪，请关闭其他 VPN 后重新连接","text":"El enrutamiento de la VPN del sistema aún no está listo. Cierra las otras VPN activas y vuelve a conectar"}
+{"id":"系统已确认始终开启 VPN 和阻止无 VPN 连接","text":"Android confirma que la VPN permanente está activa y que las conexiones sin VPN están bloqueadas."}
+{"id":"系统或其他 VPN 已接管连接；请关闭其他 VPN 或代理应用后重试","text":"El sistema u otra VPN tomó el control de la conexión. Desactiva la otra VPN o aplicación de proxy y vuelve a intentarlo."}
+{"id":"系统拒绝保护 Mihomo 出站 socket","text":"El sistema no permitió proteger el socket de salida de Mihomo"}
+{"id":"系统拒绝建立 VPN","text":"El sistema no permitió establecer la VPN"}
+{"id":"系统拒绝建立 VPN TUN 接口","text":"El sistema no permitió establecer la interfaz TUN de la VPN"}
+{"id":"系统拒绝建立 VPN，请重新授权后再试","text":"El sistema no permitió establecer la VPN. Vuelve a conceder el permiso e inténtalo de nuevo"}
+{"id":"系统断网保护","text":"Bloqueo de conexiones sin VPN"}
+{"id":"系统断网保护尚未开启；请在系统 VPN 设置中开启","text":"El bloqueo de conexiones sin VPN está desactivado. Actívalo en los ajustes de VPN."}
+{"id":"系统相机 / ZXing","text":"Cámara del sistema / ZXing"}
+{"id":"系统级保护","text":"Protección del sistema"}
+{"id":"系统级保护 · 需同时开启 Always-on 与阻止无 VPN 连接","text":"Protección del sistema · Activa «VPN siempre activa» y «Bloquear conexiones sin VPN» a la vez"}
+{"id":"素纸","text":"Papel liso"}
+{"id":"繁體中文","text":"Chino tradicional"}
+{"id":"繁體中文介面","text":"Interfaz en chino tradicional"}
+{"id":"纯净白底、柔和青绿与清晰深色文字","text":"Fondos de blanco puro, toques de verde suave y texto oscuro bien definido"}
+{"id":"经典规则","text":"Reglas clásicas"}
+{"id":"结果仅代表检测当时的出口；切换节点或网络后请重测。刷新期间保留上次结果，不代表本次成功。","text":"Los resultados corresponden a la salida en el momento de la prueba. Si cambias de nodo o de red, repite la prueba. Los resultados anteriores se muestran mientras se actualizan, pero no indican una nueva comprobación satisfactoria."}
+{"id":"结果只在本机内存中展示，不上传检测报告；第三方地区、ASN、代理标签和浏览器指纹字段都可能存在误判。","text":"Los resultados solo se muestran en la memoria del dispositivo y no se suben informes. Los datos de región, ASN, indicadores de proxy y huella del navegador que aportan terceros pueden ser imprecisos."}
+{"id":"结果是当前网络到加密 DNS 服务端点的实测 RTT；不代表节点延迟，也不会伪造 65553ms 之类的无效值。","text":"El resultado indica el tiempo de ida y vuelta (RTT) desde esta red hasta el servidor DNS cifrado. No mide la latencia del nodo ni muestra valores inválidos como 65553 ms."}
+{"id":"统一解析","text":"Un solo servidor DNS"}
+{"id":"继续","text":"Reanudar"}
+{"id":"继续表示你理解上述数据路径；这不会替代 Android 随后显示的系统 VPN 授权。","text":"Continúa para confirmar que entiendes por dónde pasan los datos. Android te pedirá por separado el permiso de VPN del sistema."}
+{"id":"综合 IP 质量","text":"Calidad general de la IP"}
+{"id":"编辑策略组","text":"Editar grupo"}
+{"id":"编辑规则集","text":"Editar conjunto de reglas"}
+{"id":"罂粟田","text":"Campo de amapolas"}
+{"id":"网络","text":"Red"}
+{"id":"网络与安全","text":"Red y seguridad"}
+{"id":"网络与隐私检测","text":"Pruebas de red y privacidad"}
+{"id":"网络尚未就绪，请连接并等待恢复后重试","text":"La red no está lista. Conéctate y espera a que se restablezca antes de intentarlo de nuevo."}
+{"id":"网络已变化，请重新测速","text":"La red ha cambiado. Vuelve a medir la latencia."}
+{"id":"网络已恢复，代理已重新连接","text":"Red restablecida. El proxy se ha vuelto a conectar"}
+{"id":"网络已连接","text":"Red conectada"}
+{"id":"网络延迟","text":"Latencia de red"}
+{"id":"脱敏检测摘要","text":"Resumen de diagnóstico sin datos sensibles"}
+{"id":"腾讯 DNS","text":"DNS de Tencent"}
+{"id":"自动更新订阅","text":"Actualizar suscripciones automáticamente"}
+{"id":"自动检查更新","text":"Buscar automáticamente"}
+{"id":"自动节点策略","text":"Estrategia automática de nodos"}
+{"id":"自动选择","text":"Automático"}
+{"id":"自定义","text":"Personalizado"}
+{"id":"自定义 DNS","text":"DNS personalizado"}
+{"id":"自定义 DNS 不允许携带查询参数或片段","text":"La dirección DNS personalizada no puede contener parámetros de consulta ni fragmentos"}
+{"id":"自定义 DNS 不允许携带用户名或密码","text":"La dirección DNS personalizada no puede contener un nombre de usuario ni una contraseña"}
+{"id":"自定义 DNS 仅支持 HTTPS DoH 或 TLS DoT","text":"El DNS personalizado solo admite DoH por HTTPS o DoT por TLS"}
+{"id":"自定义 DNS 地址不能为空","text":"La dirección DNS personalizada no puede estar vacía"}
+{"id":"自定义 DNS 地址不能包含空格","text":"La dirección DNS personalizada no puede contener espacios"}
+{"id":"自定义 DNS 地址格式无效","text":"Formato de dirección DNS personalizada no válido"}
+{"id":"自定义 DNS 尚未填写","text":"No se ha indicado un DNS personalizado"}
+{"id":"自定义 DNS 端口无效","text":"Puerto del DNS personalizado no válido"}
+{"id":"自定义 DNS 缺少主机名","text":"Falta el nombre del servidor en la dirección DNS personalizada"}
+{"id":"自定义端点","text":"Servidor personalizado"}
+{"id":"自定义策略组","text":"Grupos personalizados"}
+{"id":"自定义策略组与链式代理","text":"Grupos personalizados y cadenas de proxy"}
+{"id":"自定义配置为空","text":"La configuración personalizada está vacía"}
+{"id":"自订导航","text":"Navegación personalizada"}
+{"id":"至少 8 个字符","text":"Al menos 8 caracteres"}
+{"id":"至少一个应用规则选择了显式直连","text":"Al menos una regla de aplicación selecciona explícitamente la conexión directa"}
+{"id":"艺术风","text":"Arte"}
+{"id":"节点","text":"Nodo"}
+{"id":"节点决定代理流量走哪条线路。选好后，随时可以更换。","text":"Elige una ruta para el tráfico que pasa por el proxy. Puedes cambiarla en cualquier momento."}
+{"id":"节点减少超过一半，已阻止覆盖并保留原订阅","text":"Desapareció más de la mitad de los nodos. Se bloqueó el reemplazo y se conservó la suscripción anterior."}
+{"id":"节点列表单独打开","text":"La lista se abre por separado"}
+{"id":"节点已导入","text":"Nodos importados"}
+{"id":"节点数量异常增长","text":"El número de nodos aumentó de forma inesperada"}
+{"id":"节点数量骤降","text":"El número de nodos cayó de forma brusca"}
+{"id":"节点检测失败，已保留上次结果","text":"Falló la prueba del nodo. Se conservó el resultado anterior"}
+{"id":"节点检测失败，请稍后重试","text":"Falló la prueba del nodo. Inténtalo más tarde"}
+{"id":"节点缺少名称或协议类型","text":"Falta el nombre del nodo o el tipo de protocolo"}
+{"id":"节点集合文件路径不安全","text":"La ruta del archivo de nodos no es segura"}
+{"id":"规则","text":"Regla"}
+{"id":"规则 ID 无效","text":"ID de regla no válido"}
+{"id":"规则 ID 重复","text":"ID de regla duplicado"}
+{"id":"规则优先级","text":"Prioridad de reglas"}
+{"id":"规则值不能包含换行或逗号","text":"Los valores de las reglas no pueden contener saltos de línea ni comas"}
+{"id":"规则值长度无效","text":"Longitud del valor de la regla no válida"}
+{"id":"规则删除失败","text":"No se pudo eliminar la regla"}
+{"id":"规则只在你手动添加或刷新时下载；每条都会先校验","text":"Las reglas solo se descargan al añadirlas o actualizarlas. Primero se valida cada entrada"}
+{"id":"规则只在本机保存和编译，不依赖远程规则服务器","text":"Las reglas se guardan y compilan en el dispositivo. No se necesita un servidor remoto de reglas."}
+{"id":"规则按列表从上到下匹配。域名和 CIDR 会在连接前编译为 Mihomo 规则，不解析、不上传输入内容。","text":"Las reglas se aplican de arriba abajo. Los dominios y los bloques CIDR se convierten en reglas de Mihomo antes de conectar. No se resuelven ni se suben los datos introducidos."}
+{"id":"规则无效","text":"Regla no válida"}
+{"id":"规则更新失败","text":"No se pudo actualizar la regla"}
+{"id":"规则模式 · 高级规则暂停 · 沿用加密 DNS 与双栈保护","text":"Modo de reglas · Reglas avanzadas en pausa · DNS cifrado y protección de doble pila activos"}
+{"id":"规则模式下选为直连的应用不进入隧道，更省电；Always-on 阻断时可能无法联网","text":"En el modo de reglas, las aplicaciones con conexión directa no pasan por el túnel para ahorrar batería. Si se bloquean las conexiones sin VPN, estas aplicaciones pueden quedarse sin acceso."}
+{"id":"规则模式下，至少一个应用选择了直连；匹配的连接不经过代理节点","text":"En el modo de reglas, al menos una aplicación usa la conexión directa. Las conexiones que coinciden con esa regla no pasan por un nodo de proxy"}
+{"id":"规则类型","text":"Tipo de regla"}
+{"id":"规则集 YAML 格式无效","text":"El YAML del conjunto de reglas no es válido"}
+{"id":"规则集写入结果尚未确认，旧数据已保留；请重新加载核验","text":"No se pudo confirmar que se guardara el conjunto de reglas. Se conservaron los datos anteriores. Vuelve a cargarlo para comprobar su estado"}
+{"id":"规则集包含无法校验的条目，已拒绝导入","text":"Se rechazó el conjunto de reglas porque contiene entradas que no se pueden validar"}
+{"id":"规则集地址必须使用 HTTPS","text":"La dirección del conjunto de reglas debe usar HTTPS"}
+{"id":"规则集已不存在","text":"El conjunto de reglas ya no existe"}
+{"id":"规则集已被修改或删除，请重新加载后再试","text":"El conjunto de reglas cambió o se eliminó. Vuelve a cargarlo e inténtalo de nuevo"}
+{"id":"规则集无法读取或保存；原数据已保留，请重试或从备份恢复","text":"No se pudieron leer o guardar los conjuntos de reglas. Se conservaron los datos originales. Inténtalo de nuevo o restaura una copia de seguridad"}
+{"id":"规则集更新失败","text":"No se pudo actualizar el conjunto de reglas"}
+{"id":"规则集标识无效","text":"Identificador del conjunto de reglas no válido"}
+{"id":"规则集没有有效条目","text":"El conjunto de reglas no contiene entradas válidas"}
+{"id":"规则集缺少 payload 列表","text":"Falta la lista payload del conjunto de reglas"}
+{"id":"规则集读取失败，原数据已保留","text":"No se pudieron leer los conjuntos de reglas. Se conservaron los datos originales."}
+{"id":"解析协议","text":"Protocolo de resolución"}
+{"id":"解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验","text":"Las consultas iniciales para localizar el servidor usan DNS sin cifrar. Para saber si hay fugas, haz una prueba independiente."}
+{"id":"解析器未将该协议列入常规审计白名单","text":"El analizador no incluyó este protocolo en la lista habitual de protocolos permitidos."}
+{"id":"解析成功不代表出口可达；连接后再进行检测。","text":"Leer la configuración no prueba que el destino sea accesible. Prueba la salida tras conectarte."}
+{"id":"解析策略","text":"Estrategia de resolución"}
+{"id":"解析粘贴内容","text":"Previsualizar el contenido pegado"}
+{"id":"解析预览","text":"Vista previa de la importación"}
+{"id":"解释这条连接","text":"Explicar esta conexión"}
+{"id":"解除安全模式","text":"Salir del modo seguro"}
+{"id":"订阅","text":"Suscripciones"}
+{"id":"订阅、规则集和策略包按标识合并；应用分流、策略组、本地规则和设置会被替换。","text":"Se combinan las suscripciones, los conjuntos y los paquetes de reglas que tienen el mismo identificador. Se reemplazan las rutas de aplicaciones, los grupos, las reglas locales y los ajustes."}
+{"id":"订阅不存在","text":"La suscripción no existe"}
+{"id":"订阅与数据","text":"Suscripciones y datos"}
+{"id":"订阅中没有可用节点","text":"La suscripción no tiene nodos utilizables"}
+{"id":"订阅主机名无效","text":"Nombre de host de la suscripción no válido"}
+{"id":"订阅仍在读取","text":"Aún se están cargando las suscripciones"}
+{"id":"订阅修改失败","text":"No se pudo editar la suscripción"}
+{"id":"订阅修改已保存。请重新打开应用以刷新详情，无需再次保存。","text":"Se guardaron los cambios. Vuelve a abrir la aplicación para ver los detalles actualizados; no hace falta guardar otra vez."}
+{"id":"订阅内容不存在，请重新导入","text":"Falta el contenido de la suscripción. Vuelve a importarla."}
+{"id":"订阅内容不是有效 UTF-8","text":"El contenido de la suscripción no está codificado en UTF-8 válido"}
+{"id":"订阅内容为空","text":"El contenido de la suscripción está vacío"}
+{"id":"订阅内容超过大小限制","text":"El contenido de la suscripción supera el tamaño permitido"}
+{"id":"订阅删除失败","text":"No se pudo eliminar la suscripción"}
+{"id":"订阅刷新完成","text":"Se completó la actualización de la suscripción"}
+{"id":"订阅包含暂不支持的节点协议，未导入任何节点","text":"La suscripción incluye un protocolo de nodo incompatible. No se importó ningún nodo."}
+{"id":"订阅压缩格式不受支持","text":"Formato de compresión de la suscripción no compatible"}
+{"id":"订阅只接受 HTTPS 或你主动选择的本地文件；DNS 使用 DoH/DoT，应用自发的 53、853 和已知公共 DoH 旁路会被拒绝。","text":"Puedes usar una suscripción HTTPS o elegir un archivo local. El DNS usa DoH/DoT y bloquea los intentos de omisión de las aplicaciones a través de los puertos 53 y 853 o de servicios públicos DoH conocidos."}
+{"id":"订阅名称","text":"Nombre de la suscripción"}
+{"id":"订阅名称保存失败","text":"No se pudo guardar el nombre de la suscripción."}
+{"id":"订阅名称已更新","text":"Se cambió el nombre de la suscripción"}
+{"id":"订阅地址不能包含片段","text":"La URL de la suscripción no puede contener un fragmento"}
+{"id":"订阅地址仅在本机加密保存","text":"Las URL de las suscripciones se guardan cifradas y solo en este dispositivo"}
+{"id":"订阅地址只在本机加密保存；诊断包默认移除 URL、凭据、节点地址与访问域名。","text":"Las URL de suscripción se cifran en el dispositivo. De forma predeterminada, los paquetes de diagnóstico excluyen las URL, las credenciales, las direcciones de los nodos y los dominios visitados."}
+{"id":"订阅地址和正文使用 Android Keystore AES-256-GCM 加密；敏感文件不参与系统备份。","text":"Las URL y el contenido de las suscripciones se cifran con AES-256-GCM y Android Keystore. Los archivos sensibles no forman parte de la copia de seguridad del sistema."}
+{"id":"订阅地址必须使用 HTTPS","text":"La URL de la suscripción debe usar HTTPS"}
+{"id":"订阅地址格式无效","text":"Formato de URL de suscripción no válido"}
+{"id":"订阅地址缺少有效主机名","text":"La URL de la suscripción no tiene un nombre de host válido"}
+{"id":"订阅地址返回的是网页，不是节点配置；请复制完整的 Clash 订阅链接","text":"La URL de la suscripción devolvió una página web, no una configuración de nodos. Copia la URL completa de la suscripción de Clash."}
+{"id":"订阅安全审计","text":"Revisión de seguridad de la suscripción"}
+{"id":"订阅安全审计通过","text":"La suscripción superó la revisión de seguridad"}
+{"id":"订阅导入失败","text":"No se pudo importar la suscripción"}
+{"id":"订阅已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。","text":"Se guardó la suscripción, pero no se pudo recargar la configuración de la VPN. Vuelve a conectarte para aplicar los cambios."}
+{"id":"订阅已保存，节点列表刷新失败，请重新打开应用","text":"Se guardó la suscripción, pero no se pudo actualizar la lista de nodos. Vuelve a abrir la aplicación."}
+{"id":"订阅已准备好","text":"Tu suscripción está lista"}
+{"id":"订阅已准备好，请确认更新","text":"La suscripción está lista. Confirma la actualización."}
+{"id":"订阅已删除","text":"Se eliminó la suscripción"}
+{"id":"订阅已加密保存，可在订阅详情中核对并选择出口。","text":"La suscripción se guardó cifrada. Revísala y elige una salida en los detalles."}
+{"id":"订阅已变化，请重新预览","text":"La suscripción cambió. Revísala de nuevo."}
+{"id":"订阅已安全更新","text":"Se actualizó la suscripción sin problemas"}
+{"id":"订阅已导入","text":"Se importó la suscripción"}
+{"id":"订阅已载入","text":"Se cargaron las suscripciones"}
+{"id":"订阅引用的节点集合过多","text":"La suscripción hace referencia a demasiadas colecciones de nodos"}
+{"id":"订阅数量无效","text":"Número de suscripciones no válido"}
+{"id":"订阅文件格式无效","text":"Formato de archivo de suscripción no válido"}
+{"id":"订阅文本不是有效 UTF-8","text":"El texto de la suscripción no está codificado en UTF-8 válido"}
+{"id":"订阅既不是配置，也不是有效的 Base64 节点列表","text":"La suscripción no es una configuración ni una lista de nodos válida en Base64"}
+{"id":"订阅更新预览","text":"Vista previa de la actualización"}
+{"id":"订阅服务器解析到了本机或私有网络地址","text":"El servidor de suscripciones se resolvió como una dirección local o de red privada"}
+{"id":"订阅来源主机发生变化","text":"Cambió el host de origen de la suscripción"}
+{"id":"订阅格式发生变化","text":"Cambió el formato de la suscripción"}
+{"id":"订阅由你提供，支持链接、二维码或文件。","text":"Importa tu suscripción desde un enlace, un código QR o un archivo."}
+{"id":"订阅索引无法完整读取，已停止同步","text":"No se pudo leer todo el índice de suscripciones. Se detuvo la sincronización."}
+{"id":"订阅索引无法完整读取，已停止备份","text":"No se pudo leer todo el índice de suscripciones. Se detuvo la copia de seguridad."}
+{"id":"订阅索引缺失，已保留加密正文；请检查备份","text":"Falta el índice de suscripciones. Se conservó el contenido cifrado. Revisa tu copia de seguridad."}
+{"id":"订阅节点参数未通过内核校验，请更新订阅或检查协议、端口及认证字段；原订阅未删除","text":"El motor rechazó los parámetros de un nodo. Actualiza la suscripción o revisa el protocolo, el puerto y los datos de autenticación. No se eliminó la suscripción original."}
+{"id":"订阅节点有变化，请在详情中预览后更新","text":"Los nodos cambiaron. Revisa la actualización en los detalles de la suscripción."}
+{"id":"订阅节点未成功载入，请重新选择出口或更新订阅","text":"No se pudieron cargar los nodos de la suscripción. Elige otra salida o actualiza la suscripción."}
+{"id":"订阅节点结构无法读取；原订阅已保留，请更新或重新导入这份订阅","text":"No se pudo leer la estructura de nodos. Se conservó la suscripción original. Actualízala o vuelve a importarla."}
+{"id":"订阅节点集合格式无效","text":"Formato de colección de nodos no válido"}
+{"id":"订阅规范化前后节点不一致，已停止保存","text":"No coinciden los nodos tras la validación. No se guardó nada."}
+{"id":"订阅详情","text":"Detalles de la suscripción"}
+{"id":"订阅读取失败，请重新打开应用","text":"No se pudieron leer las suscripciones. Vuelve a abrir la aplicación."}
+{"id":"订阅连接不是 HTTPS","text":"La conexión de la suscripción no usa HTTPS"}
+{"id":"订阅重定向次数过多","text":"Demasiadas redirecciones en la suscripción"}
+{"id":"订阅重定向缺少目标地址","text":"Una redirección de la suscripción no tiene URL de destino"}
+{"id":"订阅链接或节点文本","text":"Enlace de suscripción o texto de nodos"}
+{"id":"记录已开启；访问目标应用后返回并刷新","text":"El registro está activo. Usa la aplicación que quieres observar; después vuelve y actualiza."}
+{"id":"设置","text":"Configuración"}
+{"id":"证据状态","text":"Estado de la comprobación"}
+{"id":"识别依据为应用包名或名称，不代表安全认证；其他设备的兼容配置也可导入。","text":"La detección se basa en el identificador de paquete o el nombre de la aplicación. No es una certificación de seguridad. También puedes importar archivos compatibles de otros dispositivos."}
+{"id":"识别图片","text":"Leer código de una imagen"}
+{"id":"诊断","text":"Diagnóstico"}
+{"id":"诊断摘要已复制","text":"Se copió el resumen de diagnóstico"}
+{"id":"试试其他名称，或清除搜索和筛选","text":"Prueba con otro nombre o borra la búsqueda y los filtros"}
+{"id":"该 V2Ray 传输方式暂不支持，请导出 Clash YAML 或节点链接","text":"Este transporte de V2Ray no es compatible. Exporta una configuración de Clash en YAML o los enlaces de los nodos."}
+{"id":"该 sing-box 传输方式暂不支持，请导出 Clash YAML 或节点链接","text":"Este transporte de sing-box no es compatible. Exporta una configuración de Clash en YAML o los enlaces de los nodos."}
+{"id":"该订阅未被当前运行配置加载，请先把它设为默认出口或应用出口","text":"Esta suscripción no está activa. Úsala como salida predeterminada o como salida de una aplicación."}
+{"id":"该订阅未被当前运行配置加载；设为出口后可检测","text":"Esta suscripción no está activa. Selecciónala como salida para probarla."}
+{"id":"语言","text":"Idioma"}
+{"id":"请先核对异常节点数量变化","text":"Antes de seguir, revisa el cambio inusual en el número de nodos."}
+{"id":"请先选择要分享的订阅","text":"Selecciona las suscripciones que quieres compartir"}
+{"id":"请勿把用户名或密码写入订阅地址","text":"No incluyas el usuario ni la contraseña en la URL de la suscripción"}
+{"id":"请在 Android VPN 设置中同时开启 Always-on 和“阻止无 VPN 连接”；应用不能读取或代替系统开关","text":"En los ajustes de VPN de Android, activa «VPN siempre activa» y «Bloquear conexiones sin VPN». La aplicación no puede leer ni cambiar esos ajustes."}
+{"id":"请在 Android VPN 设置中开启 Always-on 与“阻止无 VPN 连接”；Weave 不伪造系统开关状态。","text":"Activa «VPN siempre activa» y «Bloquear conexiones sin VPN» en los ajustes de VPN de Android. Weave no da por hecho que estén activados."}
+{"id":"请填写策略组名称","text":"Introduce un nombre para el grupo"}
+{"id":"请填写规则集名称","text":"Introduce un nombre para el conjunto de reglas"}
+{"id":"请检查出口或网络","text":"Comprueba la salida o la conexión de red"}
+{"id":"请求失败","text":"No se pudo completar la solicitud"}
+{"id":"请至少选择一个节点","text":"Selecciona al menos un nodo"}
+{"id":"请输入发送设备显示的 6 位短码","text":"Introduce el código de 6 dígitos que aparece en el dispositivo que envía los datos"}
+{"id":"请输入域名","text":"Introduce un dominio"}
+{"id":"请选择 1–64 个订阅","text":"Selecciona de 1 a 64 suscripciones"}
+{"id":"请选择 CMFA 的配置目录","text":"Elige la carpeta de configuración de CMFA"}
+{"id":"请选择 Karing 官方备份文件","text":"Elige una copia de seguridad oficial de Karing"}
+{"id":"请选择有效的订阅，最多 20 个","text":"Selecciona hasta 20 suscripciones válidas"}
+{"id":"读取备份","text":"Abrir copia de seguridad"}
+{"id":"读取实际命中","text":"Leer coincidencias reales"}
+{"id":"调整底部导航的真实顺序，也可隐藏分流或订阅。连接与设置是安全入口，始终保留。","text":"Cambia el orden de la barra inferior y oculta Enrutamiento o Suscripciones si quieres. Conectar y Configuración siempre estarán disponibles."}
+{"id":"负载均衡","text":"Equilibrio de carga"}
+{"id":"责任边界","text":"Límites de responsabilidad"}
+{"id":"质量矩阵","text":"Tabla de calidad"}
+{"id":"超时","text":"Tiempo de espera agotado"}
+{"id":"跟随系统","text":"Usar idioma del sistema"}
+{"id":"跟随默认出口","text":"Usar la salida predeterminada"}
+{"id":"跨订阅挑选节点，可经入口节点二跳转发","text":"Combina nodos de varias suscripciones. Puedes pasar por un nodo de entrada para usar dos saltos."}
+{"id":"跨订阅组合节点；设置入口节点后成为链式代理","text":"Combina nodos de distintas suscripciones. Añade un nodo de entrada para encadenar los proxies."}
+{"id":"跨订阅自动","text":"Entre suscripciones"}
+{"id":"路由与规则","text":"Enrutamiento y reglas"}
+{"id":"路由优先级","text":"Prioridad de enrutamiento"}
+{"id":"路由解释","text":"Explicación del enrutamiento"}
+{"id":"跳过","text":"Omitir"}
+{"id":"边缘出口","text":"Salida perimetral"}
+{"id":"运行 WebRTC 与浏览器身份检测","text":"Probar WebRTC y la identidad del navegador"}
+{"id":"运行完整检测","text":"Ejecutar prueba completa"}
+{"id":"运行完整检测后测试 X、TikTok、YouTube、Google、GPT、Claude、Netflix、Facebook 和 Disney+ 的当前出口连通性。","text":"Ejecuta la prueba completa para comprobar si puedes llegar desde la salida actual a X, TikTok, YouTube, Google, GPT, Claude, Netflix, Facebook y Disney+."}
+{"id":"运行时","text":"Entorno de ejecución"}
+{"id":"运行模式","text":"Modo de enrutamiento"}
+{"id":"运行状态可恢复","text":"Se puede recuperar el estado de ejecución"}
+{"id":"运行状态异常；不要把当前连接视为受保护","text":"El estado de ejecución es anómalo. No des por protegida la conexión actual."}
+{"id":"运行规则拒绝 IPv6；仍建议在真实网络中复测","text":"Las reglas activas rechazan IPv6. Haz también una prueba en una red real."}
+{"id":"返回","text":"Atrás"}
+{"id":"还没有本地规则。你可以先添加广告域名、家庭过滤域名或需要直连的企业网段。","text":"Aún no hay reglas locales. Añade un dominio publicitario, del filtro familiar o un rango CIDR de empresa al que quieras conectarte directamente."}
+{"id":"还没有自定义策略组","text":"Aún no hay grupos personalizados"}
+{"id":"还没有规则集","text":"Aún no hay conjuntos de reglas"}
+{"id":"还没有订阅","text":"Aún no hay suscripciones"}
+{"id":"还没有选择节点","text":"Aún no has elegido un nodo"}
+{"id":"这不是有效的 Weave 备份","text":"No es una copia de seguridad válida de Weave"}
+{"id":"这不是有效的 Weave 局域网链接","text":"No es un enlace válido de Weave para la red local"}
+{"id":"这些字段组合后可能用于跨站指纹识别；本页只在本机展示，不保存唯一标识。","text":"Estos datos, en conjunto, pueden identificar el navegador en distintos sitios. Esta página solo los muestra en el dispositivo y no guarda un identificador único."}
+{"id":"这是显式直连，代理节点不会看到该请求","text":"Esta conexión es directa por configuración. Ningún nodo proxy verá esta solicitud."}
+{"id":"这次没有连上","text":"No se pudo establecer la conexión"}
+{"id":"远程来源","text":"Remoto"}
+{"id":"远程规则集","text":"Conjuntos de reglas remotos"}
+{"id":"远程规则集无法校验，已停止应用配置；请重新下载、停用损坏规则或从备份恢复","text":"No se pudieron verificar los conjuntos de reglas remotos. No se aplicó la configuración. Descárgalos de nuevo, desactiva los conjuntos dañados o restaura una copia de seguridad."}
+{"id":"远程订阅","text":"suscripciones remotas"}
+{"id":"连接","text":"Conectar"}
+{"id":"连接 VPN 后可检测当前运行配置中的节点","text":"Conecta la VPN para probar los nodos de la configuración activa"}
+{"id":"连接 VPN 后才能检测代理出口","text":"Conecta la VPN antes de probar la salida del proxy"}
+{"id":"连接 VPN 后才能测试常用站点","text":"Conecta la VPN antes de probar los sitios habituales"}
+{"id":"连接 VPN 后才能通过当前出口测试节点","text":"Conecta la VPN antes de probar los nodos con la salida actual"}
+{"id":"连接 VPN 后点击“检测”，开始读取当前代理出口。","text":"Conecta la VPN y pulsa Probar para ver la salida actual del proxy."}
+{"id":"连接与隐私","text":"Conexión y privacidad"}
+{"id":"连接后可查看当前活跃连接。","text":"Conéctate para ver las conexiones activas."}
+{"id":"连接后可读取系统断网保护状态；旧版系统需在 VPN 设置中确认","text":"Conéctate para ver el estado de la protección del sistema. En versiones anteriores de Android, debes consultar los ajustes de VPN."}
+{"id":"连接后显示","text":"Se muestra al conectar"}
+{"id":"连接后测速","text":"Probar después de conectar"}
+{"id":"连接安全","text":"Conexión protegida"}
+{"id":"连接操作","text":"Acciones de conexión"}
+{"id":"连接未建立","text":"No se pudo conectar"}
+{"id":"连接未能建立。可直接重试，或更换出口后再连接。","text":"No se pudo establecer la conexión. Reintenta o elige otra salida y vuelve a conectar."}
+{"id":"连接状态","text":"Estado de la conexión"}
+{"id":"连接被拒绝","text":"Conexión rechazada"}
+{"id":"连接超时","text":"Se agotó el tiempo de conexión"}
+{"id":"连接进阶","text":"Más opciones de conexión"}
+{"id":"连续 3 轮探测，按中位延迟、抖动与丢包综合排序","text":"Tres rondas de pruebas, con resultados ordenados por mediana de latencia, variación y pérdida de paquetes"}
+{"id":"连通性未检测","text":"Aún no se comprobó el acceso a Internet"}
+{"id":"选一条代理线路，之后随时可以更换。","text":"Elige la ruta del proxy. Puedes cambiarla cuando quieras."}
+{"id":"选为直连的应用不进入隧道；Always-on 阻断时可能无法联网","text":"Las aplicaciones en modo Directo no pasan por el túnel. Si bloqueas las conexiones sin una VPN siempre activa, pueden perder el acceso a Internet."}
+{"id":"选好节点或直接返回，都会回到这里。","text":"Elige un nodo o vuelve atrás. Regresarás a esta pantalla."}
+{"id":"选择 Karing 备份文件","text":"Elegir archivo de copia de seguridad de Karing"}
+{"id":"选择一个节点","text":"Elige un nodo"}
+{"id":"选择入口节点","text":"Elegir nodo de entrada"}
+{"id":"选择出口","text":"Elegir salida"}
+{"id":"选择协议","text":"Elegir protocolo"}
+{"id":"选择已导出的文件","text":"Elegir un archivo exportado"}
+{"id":"选择应用","text":"Elegir una aplicación"}
+{"id":"选择文件","text":"Elegir archivo"}
+{"id":"选择文件替换","text":"Elegir un archivo de reemplazo"}
+{"id":"选择本地订阅文件","text":"Elige un archivo de suscripción de tu dispositivo"}
+{"id":"选择节点","text":"Elegir nodo"}
+{"id":"选择要同步的订阅；同一订阅会先经过安全审计，再原位更新，不会重复堆叠副本。","text":"Elige las suscripciones que quieres sincronizar. Se revisa y actualiza cada origen sin crear copias."}
+{"id":"选择要导入的订阅","text":"Elige las suscripciones que quieres importar"}
+{"id":"选择解析策略","text":"Elegir estrategia de resolución"}
+{"id":"选择订阅","text":"Elegir suscripción"}
+{"id":"选择默认出口","text":"Elegir la salida predeterminada"}
+{"id":"通常是 Wi‑Fi；避免消耗移动数据","text":"Normalmente, una red Wi‑Fi. Así ahorras datos móviles."}
+{"id":"通知","text":"Notificaciones"}
+{"id":"通过 HTTPS 加密解析，兼容性更好","text":"Resolución cifrada por HTTPS, con amplia compatibilidad"}
+{"id":"通过 TLS 加密解析，协议边界更清晰","text":"Resolución cifrada por TLS, separada del tráfico web"}
+{"id":"通过一致性哈希把不同连接分配到多个可用节点","text":"Reparte las conexiones entre los nodos disponibles mediante hash coherente"}
+{"id":"通过当前 VPN 出口发送轻量 HTTPS 探测，不下载网页内容；Netflix、Facebook、Disney+ 是入口响应证据，不等于账号或内容已解锁。","text":"Envía solicitudes HTTPS pequeñas por la salida actual de la VPN, sin descargar el contenido de las páginas. Las respuestas de Netflix, Facebook y Disney+ solo indican que el punto de entrada responde; no demuestran acceso a una cuenta o al contenido."}
+{"id":"遥测","text":"Telemetría"}
+{"id":"部分界面可能没有更新；请完全关闭应用后重新打开","text":"Puede que algunas pantallas no se hayan actualizado. Cierra la aplicación por completo y vuelve a abrirla."}
+{"id":"配置出口","text":"Salida configurada"}
+{"id":"配置只在应用私有目录中短期解密，断开或失败后清理。应用不启用外部控制端口。","text":"La configuración se descifra brevemente en la carpeta privada de la aplicación. Se elimina si falla la conexión o al desconectar. No se habilita ningún puerto de control externo."}
+{"id":"配置在校验后发生变化，已拒绝建立 TUN","text":"La configuración cambió después de la validación. Se rechazó la creación de la interfaz TUN."}
+{"id":"配置读取或恢复未完成。原数据和恢复记录已保留，应用不会重置配置。请检查可用存储空间后重试；若持续失败，请保留应用数据以便修复。","text":"No se pudo leer ni recuperar la configuración. Se conservaron los datos y los registros de recuperación; no se restablecerán los ajustes. Comprueba el espacio disponible y vuelve a intentarlo. Si el problema continúa, conserva los datos de la aplicación para poder repararlos."}
+{"id":"重复项不会被静默合并","text":"No se combinan los duplicados sin avisarte"}
+{"id":"重定向不代表最终站点可达","text":"Una redirección no confirma que el destino final sea accesible"}
+{"id":"重定向或编辑后的来源与旧版本不同","text":"El origen tras la redirección o la edición es distinto del anterior"}
+{"id":"重新检测","text":"Volver a probar"}
+{"id":"重新检测客户端","text":"Volver a buscar aplicaciones compatibles"}
+{"id":"重新选择内容","text":"Elegir otro contenido"}
+{"id":"重新选择来源","text":"Elegir otro origen"}
+{"id":"重试","text":"Reintentar"}
+{"id":"重试连接","text":"Volver a intentar"}
+{"id":"链式","text":"En cadena"}
+{"id":"链式代理","text":"Cadena de proxies"}
+{"id":"链接","text":"Enlace"}
+{"id":"阻止","text":"Bloquear"}
+{"id":"阻止 UDP STUN","text":"Bloquear UDP STUN"}
+{"id":"阻止联网","text":"Bloquear el acceso a la red"}
+{"id":"阿里 DNS","text":"DNS de Ali"}
+{"id":"阿里 DNS + 腾讯 DNS 双上游，不主动过滤内容","text":"Dos servidores DNS, de Ali y Tencent, sin filtrado activo de contenido"}
+{"id":"降低 WebRTC 暴露风险；可能影响音视频通话","text":"Reduce la exposición de direcciones por WebRTC. Puede afectar a las llamadas de voz o vídeo."}
+{"id":"随包 Geo 数据校验失败","text":"No se pudieron verificar los datos geográficos incluidos"}
+{"id":"随时可以更换","text":"Puedes cambiarlo cuando quieras"}
+{"id":"隐式直连","text":"Acceso directo implícito"}
+{"id":"隐私与出口检查","text":"Pruebas de privacidad y salida"}
+{"id":"隐私信号","text":"Indicadores de privacidad"}
+{"id":"隐私导向解析；不主动过滤广告内容","text":"Servidor de resolución orientado a la privacidad, sin filtrado activo de anuncios"}
+{"id":"隐私提示","text":"Aviso de privacidad"}
+{"id":"隐私观测","text":"Observatorio de privacidad"}
+{"id":"隐藏 IP 地址","text":"Ocultar direcciones IP"}
+{"id":"隐藏订阅地址","text":"Ocultar URL de suscripción"}
+{"id":"隧道已建立","text":"Se estableció el túnel"}
+{"id":"隧道状态不等于出口可达；可在网络与隐私检测中验证。","text":"Abrir el túnel no demuestra que el destino sea accesible. Compruébalo en Red y privacidad."}
+{"id":"集合节点","text":"Nodos del proveedor"}
+{"id":"雾蓝、海玻璃与一笔暖橙","text":"Azul bruma, vidrio marino y un toque de naranjado cálido"}
+{"id":"需同时开启 Always-on 与阻止无 VPN 连接","text":"Activa «VPN siempre activa» y «Bloquear conexiones sin VPN»"}
+{"id":"需复核","text":"Requiere revisión"}
+{"id":"需确认更新","text":"Revisar actualización"}
+{"id":"需要处理","text":"Requiere atención"}
+{"id":"需要相机权限才能扫描二维码","text":"Se necesita permiso de cámara para escanear el código QR"}
+{"id":"青绿、薰衣草与水面灰蓝","text":"Verde cardenillo, lavanda y gris azulado de agua"}
+{"id":"靛紫、雾青与黄昏粉棕","text":"Añil, verde azulado brumoso y rosa amarronado de atardecer"}
+{"id":"预览已失效，请重新获取","text":"La vista previa caducó. Vuelve a obtenerla."}
+{"id":"预览脱敏摘要","text":"Vista previa del resumen sin datos sensibles"}
+{"id":"高级","text":"Avanzado"}
+{"id":"高级路由","text":"Enrutamiento avanzado"}
+{"id":"高级选项默认收起，展开即可查看全部设置","text":"Las opciones avanzadas están contraídas. Abre cada grupo para ver todos los ajustes."}
+{"id":"黑白留白、平整卡片，无玻璃高光与投影","text":"Blanco y negro, tarjetas planas, sin reflejos ni sombras"}
+{"id":"默认","text":"Predeterminado"}
+{"id":"默认不允许访问本机或私有网络订阅","text":"El acceso a suscripciones locales o de una red privada está desactivado por defecto"}
+{"id":"默认使用 APK 内固定并校验哈希的 GeoIP / GeoSite 数据；关闭后恢复全量代理，不静默联网更新。","text":"Usa los datos GeoIP y GeoSite incluidos en la APK, con su hash comprobado. Si desactivas esta opción, todo el tráfico vuelve a pasar por el proxy. Los datos nunca se actualizan por la red sin avisar."}
+{"id":"默认关闭","text":"Desactivado por defecto"}
+{"id":"默认出口","text":"Salida predeterminada"}
+{"id":"默认出口不能阻止所有联网","text":"La salida predeterminada no puede bloquear todo el acceso a la red"}
+{"id":"默认出口为显式直连","text":"La salida predeterminada está configurada como directa"}
+{"id":"默认出口将切换到其他订阅；没有其他订阅时保持断开，避免静默直连。","text":"La salida predeterminada cambiará a otra suscripción. Si no hay ninguna disponible, Weave seguirá desconectado para evitar usar la conexión directa sin avisar."}
+{"id":"默认出口将失效，需要重新选择。","text":"La salida predeterminada dejará de ser válida. Elige otra."}
+{"id":"默认出口或应用分流若在使用它，将改为阻止联网，直到你重新选择出口。","text":"Si la salida predeterminada o la ruta de una aplicación la usan, ese tráfico quedará bloqueado hasta que elijas otra salida."}
+{"id":"默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先","text":"Activado por defecto: conexión directa para el tráfico de China continental sin regla de aplicación. Las reglas de aplicaciones tienen prioridad."}
+{"id":"鼠尾草、奶油纸与柔珊瑚","text":"Verde salvia, papel crema y coral suave"}
+{"id":"从加密订阅文件导入","text":"Importar desde un archivo cifrado de suscripción"}
+{"id":"保存为加密订阅文件","text":"Guardar como archivo cifrado de suscripción"}
+{"id":"加密订阅文件已保存。请单独传递密码。","text":"Se ha guardado el archivo cifrado de suscripción. Comparte la contraseña por separado."}
+{"id":"只传订阅和节点，不会覆盖已有订阅、分流或设置。","text":"Solo se transfieren las suscripciones y los nodos. No se sobrescriben las suscripciones existentes, las reglas de enrutamiento ni los ajustes."}
+{"id":"文件包含已有订阅，未导入任何内容。","text":"El archivo contiene una suscripción que ya existe. No se ha importado nada."}
+{"id":"无法打开订阅文件，请核对密码和文件。","text":"No se pudo abrir el archivo de suscripción. Comprueba el archivo y la contraseña."}
+{"id":"未取得完整的第三方安全标签","text":"El servicio de terceros no devolvió todas las etiquetas de seguridad"}
+{"id":"未能导出，请检查所选位置和可用空间。","text":"No se pudo exportar. Comprueba la ubicación seleccionada y el espacio disponible."}
+{"id":"未能添加，请重新打开文件预览。","text":"No se ha añadido nada. Vuelve a abrir el archivo para revisar su contenido."}
+{"id":"确认导入","text":"Confirmar importación"}
+{"id":"离线订阅文件不能下载节点集合","text":"Un archivo de suscripción sin conexión no puede descargar grupos de nodos"}
+{"id":"订阅互传","text":"Transferir suscripciones"}
+{"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","text":"{message} [{code}]"}
+{"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","text":"Protección frente al tráfico DNS fuera del túnel"}
+{"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","text":"{transport} · {profile} · {explanation}"}
+{"id":"dynamic:legacy:^(.+) · (.+)；这是配置证据，不是外部泄漏测试$#1","text":"{transport} · {profile}; este resultado se basa en la configuración, no en una prueba externa de fugas"}
+{"id":"dynamic:legacy:^(.+) · (\\d+) → (\\d+) 节点$#1","text":"{summary} · Nodos: {oldCount} → {newCount}"}
+{"id":"dynamic:legacy:^(.+) · 中位 (\\d+)ms · P95 (\\d+)ms · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$#1","text":"{protocol} · Mediana: {median} ms · P95: {p95} ms · Variación: {jitter} · Pérdida: {loss}% · {successful}/{total}"}
+{"id":"dynamic:legacy:^(.+) · 延迟— · P95— · 抖(\\d+|—) · 丢(\\d+)% · (\\d+)/(\\d+)$#1","text":"{protocol} · Latencia: — · P95: — · Variación: {jitter} · Pérdida: {loss}% · {successful}/{total}"}
+{"id":"dynamic:legacy:^(.+) 加密解析 · (.+)$#1","text":"Resolución cifrada"}
+{"id":"dynamic:legacy:^(.+) 指向的节点已不存在，请重新选择$#1","text":"Ya no existe el nodo al que apunta {owner}. Elige otro."}
+{"id":"dynamic:legacy:^(.+) 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML$#1","text":"Mihomo no puede usar la suscripción a la que apunta {owner}. Actualmente solo se admite Clash YAML."}
+{"id":"dynamic:legacy:^(.+) 没有指定节点$#1","text":"{owner}: no hay ningún nodo seleccionado"}
+{"id":"dynamic:legacy:^(.+) 没有指定订阅$#1","text":"{owner}: no hay ninguna suscripción seleccionada"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#1","text":"UUID"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#2","text":"Configuración de V2Ray"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#3","text":"Método de cifrado o contraseña"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#4","text":"Contraseña"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#5","text":"Lista de servidores"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#6","text":"Dirección del servidor"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#7","text":"Puerto"}
+{"id":"dynamic:legacy:^(.+) 缺少 ?(UUID|V2Ray settings|加密方式或密码|密码|服务器列表|服务器地址|端口)$#8","text":"{owner}: falta el campo «{localizedField}»"}
+{"id":"dynamic:legacy:^(.+)，正在安全应用$#1","text":"{localizedPrefix}; aplicando los cambios de forma segura"}
+{"id":"dynamic:legacy:^(.+)，正在安全更新运行配置$#1","text":"{localizedPrefix}; actualizando la configuración de ejecución de forma segura"}
+{"id":"dynamic:legacy:^(.+)：(.+)$#1","text":": "}
+{"id":"dynamic:legacy:^(V2Ray|sing-box) (.+) 出站暂不支持安全转换$#1","text":"Aún no se pueden convertir de forma segura las salidas {protocol} de {family}"}
+{"id":"dynamic:legacy:^(\\d+) GB 已用$#1","text":"Datos usados: {amount} GB"}
+{"id":"dynamic:legacy:^(\\d+) ms · 丢(\\d+)%$#1","text":"{latency} ms · Pérdida: {loss}%"}
+{"id":"dynamic:legacy:^(\\d+) ms · 抖(\\d+)$#1","text":"{latency} ms · Variación: {jitter}"}
+{"id":"dynamic:legacy:^(\\d+) · (稳定|一般|波动|未完成)$#compose","text":"{score} · {label}"}
+{"id":"dynamic:legacy:^(\\d+) 个节点 · 本地加密保存$#1","text":"Nodos cifrados en el dispositivo: {count}"}
+{"id":"dynamic:legacy:^(\\d+) 个节点$#1","text":"Nodos: {count}"}
+{"id":"dynamic:legacy:^(\\d+) 项已从本地配置确认 · (\\d+) 项需要外部验证$#1","text":"Confirmado según la configuración local: {verified} · Requiere verificación externa: {external}"}
+{"id":"dynamic:legacy:^(\\d+) 项本机状态已确认 · (\\d+) 项已配置 · (\\d+) 项待核验$#1","text":"Estados locales confirmados: {confirmed} · Configurados: {configured} · Pendientes de verificación: {pending}"}
+{"id":"dynamic:legacy:^(\\d+) 项高级规则已暂停 · 切换标准模式可恢复$#1","text":"Reglas avanzadas en pausa: {count}. Cambia al modo Estándar para restaurarlas."}
+{"id":"dynamic:legacy:^(\\d+)/(\\d+) 个上游可达$#1","text":"Servidores DNS accesibles: {available}/{total}"}
+{"id":"dynamic:legacy:^(\\d+)/(\\d+) 个端点可达 · 中位 (.+) ms$#1","text":"Servidores accesibles: {reachable}/{total} · Mediana: {median} ms"}
+{"id":"dynamic:legacy:^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点 (\\d+)$#1","text":"Nodo {scheme} {index}"}
+{"id":"dynamic:legacy:^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点$#1","text":"Nodo {scheme}"}
+{"id":"dynamic:legacy:^(ss|ssr|vmess|vless|trojan|hysteria2?|tuic|wireguard|socks5?|http|shadowtls) 节点地址格式无效$#1","text":"El formato de la dirección del nodo {scheme} no es válido"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#1","text":"{englishKind}: tamaño superior al límite de {size} {unit}"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#englishKind:else","text":"Contenido pegado"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#englishKind:传输内容","text":"Contenido de la transferencia"}
+{"id":"dynamic:legacy:^(传输内容|订阅内容|粘贴内容)超过 (\\d+) (MiB|KiB) 限制$#englishKind:订阅内容","text":"Contenido de la suscripción"}
+{"id":"dynamic:legacy:^(极简风|艺术风) · (.+)$#compose","text":"{paletteGroup} · {palette}"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#1","text":"Vista previa de la selección ({count})"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#2","text":"Importar selección ({count})"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#3","text":"Suscripciones por importar: {count}"}
+{"id":"dynamic:legacy:^(预览所选|确认导入|将导入|已导入) (\\d+) 个订阅$#4","text":"Suscripciones importadas: {count}"}
+{"id":"dynamic:legacy:^ASN  (.+) · 未知运营商$#compose","text":"ASN {asn} · {carrier}"}
+{"id":"dynamic:legacy:^HTTPS (\\d+) · (端点可达|服务端错误)$#compose","text":"HTTPS {code} · {status}"}
+{"id":"dynamic:legacy:^Mihomo TUN 启动失败，错误码 (\\d+)$#1","text":"No se pudo iniciar la interfaz TUN de Mihomo (error {code})"}
+{"id":"dynamic:legacy:^Mihomo 原生库复制不完整：(.*)$#1","text":"La copia de la biblioteca nativa de Mihomo está incompleta: {name}"}
+{"id":"dynamic:legacy:^STUN 端口 (\\d+) 已按规则阻断$#1","text":"El puerto STUN {port} está bloqueado por una regla"}
+{"id":"dynamic:legacy:^v(.+) · (\\d+) 条 · (.+)$#1","text":"v{version} · Reglas: {count} · {integrity}"}
+{"id":"dynamic:legacy:^· (.+)：(.+)$#1","text":": "}
+{"id":"dynamic:legacy:^· (\\d+) 个同名同协议节点未自动删除$#1","text":" · Nodos con el mismo nombre y protocolo conservados: {count}"}
+{"id":"dynamic:legacy:^「(.+)」不是远程 HTTPS 订阅，已跳过自动刷新$#1","text":"«{name}» no es una suscripción remota por HTTPS. Se ha omitido la actualización automática."}
+{"id":"dynamic:legacy:^中位 (\\d+)ms$#1","text":"Mediana: {latency} ms"}
+{"id":"dynamic:legacy:^从 (\\d+) 个节点中自动选择$#1","text":"Elegir automáticamente (nodos disponibles: {count})"}
+{"id":"dynamic:legacy:^例如 (.+)$#1","text":"P. ej., {example}"}
+{"id":"dynamic:legacy:^共 (\\d+) 个节点$#1","text":"Total de nodos: {count}"}
+{"id":"dynamic:legacy:^删除后，(.+) 将改用默认出口。$#1","text":"Tras eliminar la regla, {app} usará la salida predeterminada."}
+{"id":"dynamic:legacy:^发现未支持的节点格式：(.*)$#1","text":"Formato de nodo no compatible: {value}"}
+{"id":"dynamic:legacy:^可达 (\\d+)/(\\d+) 项 · (\\d+) ms$#1","text":"Sitios accesibles: {available}/{total} · {elapsed} ms"}
+{"id":"dynamic:legacy:^完成 (\\d+)/(\\d+) 项 · (\\d+) ms$#1","text":"Comprobaciones completadas: {completed}/{total} · {elapsed} ms"}
+{"id":"dynamic:legacy:^审计提示：(.*)$#1","text":"Nota de auditoría: {details}"}
+{"id":"dynamic:legacy:^审计阻止：(.*)$#1","text":"Bloqueo de auditoría: {details}"}
+{"id":"dynamic:legacy:^导出所选 (\\d+) 个订阅$#1","text":"Exportar selección ({count})"}
+{"id":"dynamic:legacy:^将永久删除「(.+)」、加密订阅地址和 (\\d+) 个节点。$#1","text":"Esta acción elimina de forma permanente «{name}», la URL cifrada de la suscripción y todos sus nodos ({count})."}
+{"id":"dynamic:legacy:^已删除订阅「(.+)」$#1","text":"Suscripción «{name}» eliminada"}
+{"id":"dynamic:legacy:^已刷新 (\\d+) 个远程订阅$#1","text":"Suscripciones remotas actualizadas: {count}"}
+{"id":"dynamic:legacy:^已安全同步 (\\d+) 个订阅；同源订阅已原位更新$#1","text":"Suscripciones sincronizadas correctamente: {count}. Las fuentes coincidentes se actualizaron sin crear duplicados."}
+{"id":"dynamic:legacy:^已安全导入「(.+)」$#1","text":"«{name}» se ha importado de forma segura"}
+{"id":"dynamic:legacy:^已完成 (\\d+) 个，(\\d+) 个失败$#1","text":"Correctos: {completed} · Fallidos: {failed}"}
+{"id":"dynamic:legacy:^已导入策略包「(.+)」$#1","text":"Se ha importado el paquete de políticas «{name}»"}
+{"id":"dynamic:legacy:^已连接 · (\\d+) 个订阅$#1","text":"Conectado · Suscripciones: {count}"}
+{"id":"dynamic:legacy:^已选 (\\d+)/(\\d+)$#1","text":"Selección: {selected}/{total}"}
+{"id":"dynamic:legacy:^应用规则  (\\d+)$#1","text":"Reglas por aplicación: {count}"}
+{"id":"dynamic:legacy:^应用规则 · (.+)$#compose","text":"{prefix} · {app}"}
+{"id":"dynamic:legacy:^引用它的 (\\d+) 条应用规则也会删除，这些应用随后使用默认出口。$#1","text":"También se eliminarán las reglas por aplicación que apuntan a este elemento ({count}). Esas aplicaciones usarán la salida predeterminada."}
+{"id":"dynamic:legacy:^新增 (\\d+) · 移除 (\\d+) · 保留 (\\d+)$#1","text":"Nuevos: {added} · Eliminados: {removed} · Conservados: {kept}"}
+{"id":"dynamic:legacy:^无法写入订阅 (.+) 的运行时副本$#1","text":"No se pudo guardar la copia de ejecución de la suscripción {name}"}
+{"id":"dynamic:legacy:^暂不支持将 (.+) URI 转换为 Mihomo$#1","text":"Aún no se pueden convertir URI de {scheme} al formato de Mihomo"}
+{"id":"dynamic:legacy:^最多保存 (\\d+) 条本地规则$#1","text":"Puedes guardar hasta {max} reglas locales"}
+{"id":"dynamic:legacy:^最近一次：可用 (\\d+)/(\\d+) · 中位 (\\d+) ms · P95 (\\d+) ms · 平均丢包 (\\d+)%$#1","text":"Última prueba: {available}/{total} disponibles · Mediana: {median} ms · P95: {p95} ms · Pérdida media: {loss}%"}
+{"id":"dynamic:legacy:^最近可用快照：(.*)$#1","text":"Última instantánea utilizable: {snapshot}"}
+{"id":"dynamic:legacy:^最近失败：(.*)$#1","text":"Último fallo: {failure}"}
+{"id":"dynamic:legacy:^有 (\\d+) 项本地配置需要注意；未知项必须外部复核$#1","text":"Ajustes locales por revisar: {count}. Los estados desconocidos requieren verificación externa."}
+{"id":"dynamic:legacy:^未取得 IPv4 公网地址 · (.*)$#1","text":"No se obtuvo ninguna dirección IPv4 pública · {detail}"}
+{"id":"dynamic:legacy:^本地规则 · (.+)$#compose","text":"{prefix} · {localizedSuffix}"}
+{"id":"dynamic:legacy:^来源：(.*)$#1","text":"Origen: {source}"}
+{"id":"dynamic:legacy:^检测到 (.*)；与“仅 IPv4”设置不一致$#1","text":"Se ha detectado {address}, lo que no coincide con el ajuste «Solo IPv4»"}
+{"id":"dynamic:legacy:^检测到 (\\d+) 个兼容客户端 · 由你确认后选择导出文件$#1","text":"Clientes compatibles detectados: {count}. Confirma y elige un archivo exportado."}
+{"id":"dynamic:legacy:^正在刷新 (.+)$#1","text":"Actualizando {name}"}
+{"id":"dynamic:legacy:^正在恢复代理连接（第 (\\d+) 次）$#1","text":"Restableciendo la conexión con el proxy (intento {count})"}
+{"id":"dynamic:legacy:^添加 (.+)$#1","text":"Añadir {app}"}
+{"id":"dynamic:legacy:^生成时间：(.*)$#1","text":"Fecha de generación: {time}"}
+{"id":"dynamic:legacy:^确认短码：(.*)$#1","text":"Código de confirmación: {code}"}
+{"id":"dynamic:legacy:^端点不可达：(.*)$#1","text":"Servidor inaccesible: {detail}"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#1","text":"Regla {index}{englishReason}"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:CIDR 无效","text":"CIDR no válido"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:else","text":"regla no válida"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:域名无效","text":"dominio no válido"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则不是对象","text":"la regla no es un objeto"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则值包含非法分隔符","text":"el valor de la regla contiene un separador no válido"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则值无效","text":"el valor de la regla no es válido"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则动作不支持","text":"acción de la regla no compatible"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:规则类型不支持","text":"tipo de regla no compatible"}
+{"id":"dynamic:legacy:^第 (\\d+) 条(.+)$#englishReason:进程名无效","text":"nombre de proceso no válido"}
+{"id":"dynamic:legacy:^第三方信息服务标记为 (.*)；这不是恶意判定$#1","text":"Un servicio de terceros lo clasifica como {labels}. Esta clasificación no indica que sea malicioso."}
+{"id":"dynamic:legacy:^策略包规则数量必须为 1–(\\d+)$#1","text":"Los paquetes de políticas deben tener entre 1 y {max} reglas"}
+{"id":"dynamic:legacy:^策略包超过 (\\d+) KiB 限制$#1","text":"El paquete de políticas supera el límite de {size} KiB"}
+{"id":"dynamic:legacy:^节点  (\\d+)$#1","text":"Nodos: {count}"}
+{"id":"dynamic:legacy:^解锁入口 (\\d+)/(\\d+)$#1","text":"Puntos de acceso para desbloqueo: {available}/{total}"}
+{"id":"dynamic:legacy:^订阅文件已安全替换 · (.*)$#1","text":"El archivo de suscripción se ha sustituido de forma segura · {detail}"}
+{"id":"dynamic:legacy:^订阅服务器返回 HTTP (\\d+)$#1","text":"El servidor de suscripciones devolvió el estado HTTP {status}"}
+{"id":"dynamic:legacy:^请选择 1–(\\d+) 个订阅$#1","text":"Selecciona entre 1 y {max} suscripciones"}
+{"id":"dynamic:legacy:^边缘节点  (.+)$#1","text":"Servidor perimetral: {edge}"}
+{"id":"dynamic:legacy:^远程订阅已安全更新 · (.*)$#1","text":"La suscripción remota se ha actualizado de forma segura · {detail}"}
+{"id":"dynamic:legacy:^连续失败：(\\d+) 次$#1","text":"Fallos consecutivos: {count}"}
+{"id":"dynamic:security-block-details","text":"{securityBlock} · {details}"}
+{"id":"dynamic:v2:^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用$","text":"{first} · Compilación {second} disponible"}
+{"id":"dynamic:v2:^${RELEASE_VERSION_CAPTURE} · Build ${RELEASE_BUILD_CAPTURE} 可用（上次检查）$","text":"{first} · Compilación {second} disponible (última comprobación)"}
+{"id":"dynamic:v2:^(\\d+) 个策略包$","text":"Paquetes de políticas: {first}"}
+{"id":"dynamic:v2:^(\\d+) 个策略组$","text":"Grupos: {first}"}
+{"id":"dynamic:v2:^(\\d+) 个规则集$","text":"Conjuntos de reglas: {first}"}
+{"id":"dynamic:v2:^(\\d+) 个订阅$","text":"Suscripciones: {first}"}
+{"id":"dynamic:v2:^(\\d+) 分钟前更新$","text":"Última actualización: hace {first} min"}
+{"id":"dynamic:v2:^(\\d+) 天前更新$","text":"Última actualización: hace {first} d"}
+{"id":"dynamic:v2:^(\\d+) 小时$","text":"{first} h"}
+{"id":"dynamic:v2:^(\\d+) 小时前更新$","text":"Última actualización: hace {first} h"}
+{"id":"dynamic:v2:^(\\d+) 条$","text":"Entradas: {first}"}
+{"id":"dynamic:v2:^(\\d+) 条应用分流$","text":"Reglas por aplicación: {first}"}
+{"id":"dynamic:v2:^(\\d+) 条本地规则$","text":"Reglas locales: {first}"}
+{"id":"dynamic:v2:^Weave ${RELEASE_VERSION_CAPTURE} 可用，可在设置中查看。$","text":"Weave {first} está disponible. Consulta los ajustes."}
+{"id":"dynamic:v2:^另有 (\\d+) 个$","text":"{first} más"}
+{"id":"dynamic:v2:^所有规则集合计超过 (\\d+) 条上限$","text":"Todos los conjuntos de reglas combinados superan el límite de {first} entradas"}
+{"id":"dynamic:v2:^显示 (\\d+) / (\\d+) 个订阅$","text":"Suscripciones en pantalla: {first} de {second}"}
+{"id":"dynamic:v2:^最多保存 (\\d+) 个策略组$","text":"Puedes guardar hasta {first} grupos"}
+{"id":"dynamic:v2:^最多添加 (\\d+) 个规则集$","text":"Puedes añadir hasta {first} conjuntos de reglas"}
+{"id":"dynamic:v2:^有 (\\d+) 个规则集更新失败，已保留旧版本$","text":"Conjuntos de reglas sin actualizar: {first}. Se conservan las versiones anteriores."}
+{"id":"dynamic:v2:^查看 v${RELEASE_VERSION_CAPTURE} 发布说明$","text":"Ver las notas de la versión v{first}"}
+{"id":"dynamic:v2:^检测到 (\\d+) 个兼容客户端$","text":"Clientes compatibles detectados: {first}"}
+{"id":"dynamic:v2:^每 (\\d+) 小时$","text":"Cada {first} h"}
+{"id":"dynamic:v2:^每个策略组最多 (\\d+) 个节点$","text":"Cada grupo puede contener hasta {first} nodos"}
+{"id":"dynamic:v2:^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$","text":"No hay ninguna versión compatible posterior a la compilación actual ({first})."}
+{"id":"dynamic:v2:^规则集条目超过 (\\d+) 条上限$","text":"El conjunto de reglas supera el límite de {first} entradas"}

@@ -14,10 +14,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
-data class DownloadMeasurement(val bytes: Long, val elapsedMillis: Long, val measuredAt: Long) {
-    val megabitsPerSecond: Double get() = bytes * 8.0 / (elapsedMillis.coerceAtLeast(1) * 1_000.0)
-}
-
 /** Explicit, capped sample through the app's current VPN route, never a maximum-speed claim. */
 class DownloadProbe internal constructor(
     private val callFactory: () -> Call.Factory,
@@ -43,9 +39,13 @@ class DownloadProbe internal constructor(
                         }
 
                         override fun onResponse(call: Call, response: Response) {
+                            val headersAt = System.nanoTime()
                             val measurement = try {
                                 response.use {
                                     check(it.code == 200) { "下载测速端点未响应" }
+                                    check(it.header("Content-Encoding").let { encoding ->
+                                        encoding == null || encoding.equals("identity", ignoreCase = true)
+                                    }) { "下载测速响应已压缩" }
                                     val input = checkNotNull(it.body) { "下载测速未收到数据" }.byteStream()
                                     val buffer = ByteArray(16 * 1024)
                                     var total = 0L
@@ -56,10 +56,11 @@ class DownloadProbe internal constructor(
                                         total += count
                                     }
                                     checkDeadline(deadlineStart)
-                                    check(total > 0) { "下载测速未收到数据" }
+                                    check(total == MAX_BYTES) { "下载测速响应不完整" }
                                     DownloadMeasurement(
                                         total,
-                                        ((System.nanoTime() - start) / 1_000_000L).coerceAtLeast(1),
+                                        System.nanoTime() - start,
+                                        headersAt - start,
                                         System.currentTimeMillis(),
                                     )
                                 }

@@ -1,5 +1,7 @@
 package io.weave.client.ui
 
+import androidx.compose.ui.res.stringResource
+import io.weave.client.R
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -26,7 +28,6 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,16 +68,31 @@ import io.weave.client.core.ipquality.IpQualityState
 @Composable
 private fun DiagnosticMeasurementTime(epochMillis: Long) {
     val language = LocalWeaveLanguage.current
-    val time = remember(epochMillis, language) {
-        java.text.DateFormat.getDateTimeInstance(
-            java.text.DateFormat.SHORT, java.text.DateFormat.MEDIUM,
-            java.util.Locale.forLanguageTag(language.localeTag),
-        ).format(java.util.Date(epochMillis))
+    val packaged = LocalReleasedAppCopy.current
+    val time = remember(epochMillis, language, packaged) {
+        val tag = packaged?.renderer?.languageTag ?: language.localeTag
+        ReleaseMeasurementText.timestamp(epochMillis, java.util.Locale.forLanguageTag(tag))
     }
     Text(
-        localizeWeaveText("检测时间", language) + " · " + time,
+        resolveAppOwnedCopy("检测时间", language, staged = null, released = packaged) + " · " + time,
         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/** Visible measurement only; exports keep the original machine-readable summary. */
+@Composable
+internal fun DiagnosticDownloadReading(megabitsPerSecond: Double, kibibytes: Long, elapsedMillis: Long) {
+    val packaged = LocalReleasedAppCopy.current
+    val rtl = LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val symbols = remember(packaged) {
+        packaged?.let { java.text.DecimalFormatSymbols.getInstance(java.util.Locale.forLanguageTag(it.renderer.languageTag)) }
+    }
+    val display = remember(megabitsPerSecond, kibibytes, elapsedMillis, symbols, rtl) {
+        ReleaseMeasurementText.reading(
+            ReleaseMeasurementText.canonicalDownload(megabitsPerSecond, kibibytes, elapsedMillis), symbols, rtl,
+        )
+    }
+    Text(display)
 }
 
 /**
@@ -103,6 +120,9 @@ internal fun NetworkPrivacyCenterDialog(
 ) {
     val context = LocalContext.current
     val language = LocalWeaveLanguage.current
+    val packaged = LocalReleasedAppCopy.current
+    fun measurementCopy(source: String): String =
+        resolveAppOwnedCopy(source, language, staged = null, released = packaged)
     // Give even a retiring callback its own state delegate, never the new request's view.
     var webView by remember(browserProbeRequest) { mutableStateOf<WebView?>(null) }
     var summaryPreview by remember { mutableStateOf<String?>(null) }
@@ -111,7 +131,7 @@ internal fun NetworkPrivacyCenterDialog(
     val browserRunning = browserProbeRequest != null && browserResult == null && browserError == null
     val running = ipQualityState.running || endpointState.running || browserRunning || downloadState.running
 
-    fun l(source: String): String = localizeWeaveText(source, language)
+    fun l(source: String): String = resolveAppOwnedCopy(source, language, staged = null, released = packaged)
     fun openExternal(url: String) {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
     }
@@ -124,7 +144,7 @@ internal fun NetworkPrivacyCenterDialog(
     }
 
     summaryPreview?.let { snapshot ->
-        AlertDialog(
+        WeaveDialog(
             onDismissRequest = { summaryPreview = null },
             title = { Text(l("脱敏检测摘要")) },
             text = {
@@ -147,7 +167,7 @@ internal fun NetworkPrivacyCenterDialog(
         )
     }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Security, contentDescription = null) },
         title = {
@@ -205,6 +225,8 @@ internal fun NetworkPrivacyCenterDialog(
                     }
                 }
                 item {
+                    Text(stringResource(R.string.net_active_disclosure),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(
                         onClick = onRunFullCheck,
                         enabled = !running,
@@ -244,15 +266,19 @@ internal fun NetworkPrivacyCenterDialog(
                 }
                 item {
                     TextButton(onClick = onDownloadProbe, enabled = !running, modifier = Modifier.fillMaxWidth()) {
-                        Text(l("下载测速（最多 1 MiB）"))
+                        Text(measurementCopy("下载测速（最多 1 MiB）"))
                     }
-                    Text(l("测量当前出口的短时下载吞吐，包含连接耗时，不代表线路峰值。"),
+                    Text(stringResource(R.string.net_download_scope),
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     downloadState.measurement?.let { measured ->
-                        Text(String.format(java.util.Locale.ROOT, "%.2f Mbps · %d KiB · %d ms",
-                            measured.megabitsPerSecond, measured.bytes / 1024, measured.elapsedMillis))
+                        DiagnosticDownloadReading(
+                            measured.megabitsPerSecond, measured.bytes / 1024, measured.elapsedMillis,
+                        )
+                        Text(stringResource(R.string.net_download_phases, measured.headersMillis, measured.bodyMillis),
+                            style = MaterialTheme.typography.bodySmall)
+                        DiagnosticMeasurementTime(measured.measuredAt)
                     }
-                    downloadState.error?.let { Text(l(it), color = MaterialTheme.colorScheme.error) }
+                    downloadState.error?.let { Text(measurementCopy(it), color = MaterialTheme.colorScheme.error) }
                 }
                 if (browserRunning) {
                     item {
@@ -278,6 +304,7 @@ internal fun NetworkPrivacyCenterDialog(
                 }
 
                 item { DiagnosticsSectionTitle(l("本地配置证据"), Icons.Rounded.Lock) }
+                item { AndroidLinkEvidenceRow(report.generatedAtEpochMillis, ipQualityState.report?.generatedAtEpochMillis) }
                 items(
                     items = report.observations,
                     // Prefix section keys: PrivacyObservatory and IpQualityProbe both use
@@ -298,7 +325,7 @@ internal fun NetworkPrivacyCenterDialog(
                 if (ipQualityState.running && ipQualityState.report == null) {
                     item {
                         DiagnosticProgress(
-                            label = l("正在读取 HTTPS 代理出口…"),
+                            label = stringResource(R.string.net_reading_exit),
                         )
                     }
                 }
@@ -325,7 +352,7 @@ internal fun NetworkPrivacyCenterDialog(
                 } else if (!ipQualityState.running) {
                     item {
                         Text(
-                            l("点击“运行完整检测”后读取当前代理出口；未连接 VPN 时不会伪造出口结果。"),
+                            stringResource(R.string.net_run_exit),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp,
                             lineHeight = 17.sp,
@@ -336,7 +363,7 @@ internal fun NetworkPrivacyCenterDialog(
                 item { DiagnosticsSectionTitle(l("常用站点与解锁入口"), Icons.Rounded.Language) }
                 item {
                     Text(
-                        l("通过当前 VPN 出口发送轻量 HTTPS 探测，不下载网页内容；Netflix、Facebook、Disney+ 是入口响应证据，不等于账号或内容已解锁。"),
+                        stringResource(R.string.net_route_scope),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 17.sp,
@@ -451,16 +478,17 @@ private fun DiagnosticsSummary(
     browserResult: BrowserPrivacyResult?,
 ) {
     val language = LocalWeaveLanguage.current
+    val packaged = LocalReleasedAppCopy.current
+    fun copy(source: String): String = resolveAppOwnedCopy(source, language, staged = null, released = packaged)
     val localLabel = "${report.verifiedCount}/${report.observations.size}"
     val ipLabel = when {
         ipQuality == null -> "—"
-        ipQuality.successfulLatencyCount == 0 -> localizeWeaveText("注意", language)
-        else -> "${ipQuality.successfulLatencyCount}/${ipQuality.latency.size}"
+        else -> "${listOfNotNull(ipQuality.ipv4, ipQuality.ipv6).size}/2"
     }
     val browserLabel = when {
         browserResult == null -> "—"
         else -> if (browserResult.candidates.isEmpty()) {
-            localizeWeaveText("已完成", language)
+            copy("已完成")
         } else {
             "${browserResult.candidates.size} ICE"
         }
@@ -478,7 +506,7 @@ private fun DiagnosticsSummary(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                localizeWeaveText("证据状态", language),
+                copy("证据状态"),
                 fontWeight = FontWeight.SemiBold,
             )
             Row(
@@ -487,35 +515,34 @@ private fun DiagnosticsSummary(
             ) {
                 DiagnosticMetric(
                     modifier = Modifier.weight(1f),
-                    label = localizeWeaveText("本地策略", language),
+                    label = copy("本地策略"),
                     value = localLabel,
                 )
                 DiagnosticMetric(
                     modifier = Modifier.weight(1f),
-                    label = localizeWeaveText("IP 出口", language),
+                    label = copy("IP 出口"),
                     value = ipLabel,
                 )
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DiagnosticMetric(
                     modifier = Modifier.weight(1f),
-                    label = localizeWeaveText("浏览器", language),
+                    label = copy("浏览器"),
                     value = browserLabel,
                 )
                 DiagnosticMetric(
                     modifier = Modifier.weight(1f),
-                    label = localizeWeaveText("站点", language),
+                    label = copy("站点"),
                     value = endpointLabel,
                 )
             }
             Text(
-                localizeWeaveText(
+                copy(
                     if (report.attentionCount > 0) {
                         "有 ${report.attentionCount} 项本地配置需要注意；未知项必须外部复核"
                     } else {
                         "本地配置未发现注意项；这不是对外部网络的绝对安全承诺"
                     },
-                    language,
                 ),
                 color = if (report.attentionCount > 0) {
                     MaterialTheme.colorScheme.error
@@ -622,14 +649,23 @@ private fun NetworkLatencySummary(report: IpQualityReport) {
     val language = LocalWeaveLanguage.current
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
-            "${localizeWeaveText("HTTPS 延迟", language)} · ${localizeWeaveText("中位", language)} ${report.medianLatencyMs?.let { "$it ms" } ?: "—"}",
+            localizeWeaveText("HTTPS 延迟", language),
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp,
         )
         report.latency.forEach { latency -> NetworkLatencyRow(latency) }
-        Text(probeResultText(report.latencyAttempts, report.latencySuccesses, language), fontSize = 12.sp)
         Text(
-            localizeWeaveText("HTTP 探测结果，不等同于 ICMP/UDP 丢包率；少量样本仅供参考。", language),
+            probeResultText(
+                report.latencyAttempts,
+                report.latencySuccesses,
+                language,
+                staged = LocalStagedWeaveLocale.current,
+                released = LocalReleasedAppCopy.current,
+            ),
+            fontSize = 12.sp,
+        )
+        Text(
+            stringResource(R.string.net_latency_scope),
             fontSize = 10.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -642,14 +678,23 @@ private fun NetworkLatencyRow(latency: IpQualityLatency) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(latency.provider, modifier = Modifier.weight(1f), fontSize = 12.sp)
         Text(
-            latency.latencyMs?.let { "$it ms" } ?: localizeWeaveText("失败", language),
+            latency.latencyMs?.let { "P50 $it ms" } ?: localizeWeaveText("失败", language),
             color = if (latency.latencyMs != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
             fontSize = 11.sp,
         )
     }
-    Text(latency.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
     Text(
-        probeResultText(latency.attemptedSamples, latency.successfulSamples, language),
+        "P95 ${latency.p95Ms?.let { "$it ms" } ?: "—"} · ${localizeWeaveText("抖动", language)} ${latency.jitterMs?.let { "$it ms" } ?: "—"}",
+        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp,
+    )
+    Text(
+        probeResultText(
+            latency.attemptedSamples,
+            latency.successfulSamples,
+            language,
+            staged = LocalStagedWeaveLocale.current,
+            released = LocalReleasedAppCopy.current,
+        ),
         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp,
     )
 }

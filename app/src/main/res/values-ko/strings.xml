@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">프록시 연결</string>
+    <string name="vpn_channel_description">Weave의 프록시 연결 상태를 표시합니다</string>
+    <string name="updates_channel_name">구독 업데이트</string>
+    <string name="updates_channel_description">예약된 구독 업데이트 결과를 표시합니다</string>
+    <string name="action_disconnect">연결 해제</string>
+    <string name="action_connect">연결</string>
+    <string name="notification_speed">↑ %1$s/초 · ↓ %2$s/초</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">연결됨</string>
+    <string name="tile_disconnected">꺼짐</string>
+    <string name="tile_connecting">연결 중…</string>
+    <string name="tile_needs_app">Weave를 열어 VPN 연결을 허용하세요</string>
+    <string name="shortcut_connect_short">연결</string>
+    <string name="shortcut_connect_long">Weave 연결</string>
+    <string name="shortcut_disconnect_short">연결 해제</string>
+    <string name="shortcut_disconnect_long">Weave 연결 해제</string>
+    <string name="shortcut_import_short">가져오기</string>
+    <string name="shortcut_import_long">구독 가져오기</string>
+    <string name="update_applied_title">구독 업데이트 완료: %1$s</string>
+    <string name="update_applied_body">추가: %1$d개 · 삭제: %2$d개 · 유지: %3$d개</string>
+    <string name="update_review_title">구독 검토 필요: %1$s</string>
+    <string name="update_review_body">경로에서 사용하는 노드가 변경되었거나 안전 점검을 통과하지 못했습니다. Weave에서 변경 내용을 확인하세요.</string>
+    <string name="update_failed_title">구독 업데이트 실패</string>
+    <string name="notification_control_title">연결 알림</string>
+    <string name="notification_control_enabled">알림 창에서 연결 상태를 확인하고 연결을 해제할 수 있습니다.</string>
+    <string name="notification_control_disabled">알림이 꺼져 있습니다. 터널은 작동할 수 있지만 연결 상태와 연결 해제 버튼이 보이지 않을 수 있습니다.</string>
+    <string name="notification_control_action">알림 관리</string>
+    <string name="action_choose_exit">출구 선택</string>
+    <string name="widget_description">연결 상태를 확인하고 한 번의 탭으로 연결하거나 해제합니다</string>
+    <plurals name="update_failed_body">
+        <item quantity="other">구독 %1$d개를 업데이트하지 못했습니다. 이전 버전을 유지합니다.</item>
+    </plurals>
+    <string name="app_picker_title">앱 선택</string>
+    <string name="app_picker_search">앱 이름 또는 패키지 이름으로 검색</string>
+    <string name="app_picker_empty">일치하는 런처 앱이 없습니다</string>
+    <string name="app_picker_add">%1$s 추가</string>
+    <string name="app_picker_close">닫기</string>
+</resources>

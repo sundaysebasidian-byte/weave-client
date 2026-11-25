@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // New install identity: never presented as an in-place update to io.weave.client.
-        versionCode = 111
-        versionName = "0.4.0-rc5"
+        versionCode = 112
+        versionName = "0.4.0-rc6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -82,6 +82,8 @@ android {
     }
 
     sourceSets.getByName("test").resources.srcDir(rootProject.file("tests/fixtures"))
+    // Preview fixtures only: unfinished app-local catalogs are never shipped in a production APK.
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("translations/android"))
     if (isolatedDeviceTest) {
         // Separate UID, preferences and Keystore from the owner's installed client.
         sourceSets.getByName("debug").res.srcDir("src/deviceTest/res")
@@ -162,6 +164,8 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.5")
     // A validated DNS implementation supplies the exact addresses used by the HTTPS socket.
     implementation("com.squareup.okhttp3:okhttp:5.5.1")
+    // Verify APK bytes independently; PackageManager archive parsing does not verify them.
+    implementation("com.android.tools.build:apksig:9.2.0")
 
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

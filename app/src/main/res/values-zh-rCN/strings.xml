@@ -23,11 +23,18 @@
     <string name="update_review_title">「%1$s」需要预览</string>
     <string name="update_review_body">本次更新会影响已固定的出口或未通过安全审计，请打开 Weave 预览后再更新。</string>
     <string name="update_failed_title">订阅刷新失败</string>
-    <string name="update_failed_body">%1$d 个订阅未能刷新，已保留原版本。</string>
     <string name="notification_control_title">连接通知</string>
     <string name="notification_control_enabled">在通知栏显示连接状态与断开操作。</string>
     <string name="notification_control_disabled">通知已关闭。隧道仍可运行，但通知栏可能无法显示状态和断开操作。</string>
     <string name="notification_control_action">管理通知</string>
     <string name="action_choose_exit">切换出口</string>
     <string name="widget_description">连接状态与一键开关</string>
+    <plurals name="update_failed_body">
+        <item quantity="other">%1$d 个订阅未能刷新，已保留原版本。</item>
+    </plurals>
+    <string name="app_picker_title">选择应用</string>
+    <string name="app_picker_search">搜索应用或包名</string>
+    <string name="app_picker_empty">没有匹配的启动器应用</string>
+    <string name="app_picker_add">添加 %1$s</string>
+    <string name="app_picker_close">关闭</string>
 </resources>

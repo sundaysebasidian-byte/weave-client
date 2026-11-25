@@ -7,6 +7,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import io.weave.client.data.crossProcessPreferences
+import io.weave.client.transfer.SubscriptionFileCodec
+import io.weave.client.transfer.SubscriptionFiles
+import io.weave.client.data.ProfileStorage
 import io.weave.client.transfer.TransferSubscription
 import java.io.File
 import java.net.InetAddress
@@ -227,6 +230,63 @@ class SubscriptionTransferIntegrationTest {
         assertEquals(listOf(f.old), f.store.list())
         assertEquals(payload(), f.store.readPayload(f.old.id))
     }
+
+    @Test fun selectedFilePreviewCanBeDiscardedAndConfirmedImportAddsOnlyNewNodes() = isolated { f -> runBlocking {
+        val id = UUID.randomUUID().toString()
+        val item = TransferSubscription("Offline import", "inline://pasted-payload", payload(1085), id)
+        val key = "test fixture password".toCharArray()
+        val items = SubscriptionFileCodec.decrypt(SubscriptionFileCodec.encrypt(listOf(item), key), key)
+        val settings = f.context.crossProcessPreferences("runtime_settings_v1")
+        val routes = f.context.crossProcessPreferences("app_routes_v1")
+        settings.edit().putBoolean("fixture", true).commit()
+        routes.edit().putString("fixture", "unchanged").commit()
+        val oldSettings = settings.all
+        val oldRoutes = routes.all
+        val oldNodes = f.store.get(f.old.id)
+        // Dropping this plan simulates dismissing the preview without a positive confirmation.
+        f.repository.prepareSubscriptionFile(items)
+        assertEquals(listOf(f.old), f.store.list())
+        val files = SubscriptionFiles(f.context, f.repository)
+        val preview = SubscriptionFiles.Preview(ProfileStorage.restoreEpoch(f.context), f.repository.prepareSubscriptionFile(items))
+        assertEquals(1, preview.subscriptions)
+        assertEquals(1, preview.nodes)
+        files.add(preview)
+        val saved = f.store.get(id)!!
+        assertEquals(1, saved.nodeCount)
+        assertEquals(item.source, f.store.readUrl(id))
+        assertEquals(oldNodes, f.store.get(f.old.id))
+        assertEquals(oldSettings, settings.all)
+        assertEquals(oldRoutes, routes.all)
+        assertTrue(runCatching { f.repository.prepareSubscriptionFile(items) }.exceptionOrNull() is ExistingFileSubscription)
+        val otherLocalId = UUID.randomUUID().toString()
+        val otherLocal = f.repository.prepareSubscriptionFile(listOf(item.copy(id = otherLocalId, payload = payload(1086))))
+        assertEquals(listOf(otherLocalId), otherLocal.snapshot.ids)
+        val sameRemote = TransferSubscription(f.old.name, "https://fixture.invalid/subscription", payload(), UUID.randomUUID().toString())
+        assertTrue(runCatching { f.repository.prepareSubscriptionFile(listOf(sameRemote)) }.exceptionOrNull() is ExistingFileSubscription)
+        assertEquals(2, f.store.list().size)
+    } }
+
+    @Test fun selectedFileOpenedBeforeRestoreCannotPublishIntoRestoredProfile() = isolated { f -> runBlocking {
+        val item = f.items().last().copy(id = UUID.randomUUID().toString())
+        val preview = SubscriptionFiles.Preview(ProfileStorage.restoreEpoch(f.context),
+            f.repository.prepareSubscriptionFile(listOf(item)))
+        // Even an otherwise identical restore advances the owner epoch.
+        ProfileStorage.restore(f.context, ProfileStorage.fingerprint(f.context)) { Unit }
+        assertTrue(runCatching { SubscriptionFiles(f.context, f.repository).add(preview) }.isFailure)
+        assertEquals(listOf(f.old), f.store.list())
+    } }
+
+    @Test fun selectedFileCannotFetchProvidersDuringPreviewOrOverwriteConcurrentAdds() = isolated { f -> runBlocking {
+        var contacted = false
+        f.beforeResponse = { contacted = true }
+        val item = f.items().last().copy(id = UUID.randomUUID().toString())
+        assertTrue(runCatching { f.repository.prepareSubscriptionFile(listOf(item.copy(payload = providerPayload))) }.isFailure)
+        assertFalse(contacted)
+        val plan = f.repository.prepareSubscriptionFile(listOf(item))
+        val edit = f.store.rename(f.old.id, "Local edit")
+        assertTrue(runCatching { f.repository.commitTransfer(plan, coroutineContext) }.isFailure)
+        assertEquals(listOf(edit), f.store.list())
+    } }
 
     private companion object {
         fun payload(port: Int = 1080) = "proxies: [{name: Synthetic, type: socks5, server: example.test, port: $port}]"

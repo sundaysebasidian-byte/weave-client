@@ -18,6 +18,12 @@ import io.weave.client.domain.StrategyScope
 import io.weave.client.domain.WeavePalette
 import io.weave.client.domain.WeaveLanguage
 
+internal sealed interface StoredReleaseAppCopySelection {
+    data object Absent : StoredReleaseAppCopySelection
+    data object Unsupported : StoredReleaseAppCopySelection
+    data class Selected(val canonicalTag: String) : StoredReleaseAppCopySelection
+}
+
 class RuntimeSettingsStore(context: Context) {
     private val appContext = context.applicationContext
     private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
@@ -29,6 +35,13 @@ class RuntimeSettingsStore(context: Context) {
 
     fun setRoutingMode(mode: RoutingMode) {
         preferences.edit(commit = true) { putString(KEY_ROUTING_MODE, mode.name) }
+    }
+
+    internal fun setRoutingPreset(mode: RoutingMode, domesticDirect: Boolean) {
+        preferences.edit(commit = true) {
+            putString(KEY_ROUTING_MODE, mode.name)
+            putBoolean(KEY_DOMESTIC_DIRECT, domesticDirect)
+        }
     }
 
     // Opaque subscription/node IDs only; no node names, hosts or credentials.
@@ -128,6 +141,18 @@ class RuntimeSettingsStore(context: Context) {
     /** Null means the UI follows the system language. */
     fun explicitLanguage(): WeaveLanguage? = preferences.getString(KEY_LANGUAGE, null)
         ?.let { stored -> WeaveLanguage.entries.firstOrNull { it.name == stored } }
+
+    /** Read-only release-app copy record; not used by the current startup/picker path. */
+    internal fun releaseAppCopySelection(): StoredReleaseAppCopySelection {
+        val selected = ReleaseAppCopySelection.read(preferences.all)
+        return when (selected.state) {
+            ReleaseAppCopySelection.State.ABSENT -> StoredReleaseAppCopySelection.Absent
+            ReleaseAppCopySelection.State.UNSUPPORTED -> StoredReleaseAppCopySelection.Unsupported
+            ReleaseAppCopySelection.State.SELECTED -> StoredReleaseAppCopySelection.Selected(
+                checkNotNull(selected.canonicalTag),
+            )
+        }
+    }
 
     fun isLocaleMigrated(): Boolean = preferences.getBoolean(KEY_LOCALE_MIGRATED, false)
 

@@ -12,7 +12,30 @@ import java.io.File
 class SettingsProbeService : Service() {
     private val messenger = Messenger(Handler(Looper.getMainLooper()) { message ->
         val request = message.data
-        if (request.getString("operation")?.startsWith("profile_") == true) {
+        val operation = request.getString("operation")
+        if (packageName.endsWith(".acceptance") && operation in setOf(
+                "locale_preview_write_kill", "locale_preview_read", "locale_preview_clear",
+            )
+        ) {
+            val preview = getSharedPreferences("qa_locale_preview_process_not_product", MODE_PRIVATE)
+            when (operation) {
+                "locale_preview_write_kill" -> {
+                    val tag = requireNotNull(request.getString("tag"))
+                    require(tag in setOf("ar-EG", "es-MX", "ko-KR"))
+                    check(preview.edit().putString("fixture_pick", tag).commit())
+                }
+                "locale_preview_clear" -> check(preview.edit().clear().commit())
+            }
+            message.replyTo.send(Message.obtain().apply {
+                data = Bundle().apply {
+                    putInt("pid", Process.myPid())
+                    putString("tag", preview.getString("fixture_pick", null))
+                }
+            })
+            if (operation == "locale_preview_write_kill") Process.killProcess(Process.myPid())
+            return@Handler true
+        }
+        if (operation?.startsWith("profile_") == true) {
             fun reply(phase: String) = message.replyTo.send(Message.obtain().apply {
                 data = Bundle().apply { putInt("pid", Process.myPid()); putString("phase", phase) }
             })
@@ -26,6 +49,15 @@ class SettingsProbeService : Service() {
                     override fun getNoBackupFilesDir(): File = root
                     override fun getApplicationInfo() = android.content.pm.ApplicationInfo(this@SettingsProbeService.applicationInfo)
                         .apply { dataDir = root.absolutePath }
+                }
+                if (request.getString("operation") == "profile_group_kill") {
+                    ProfileStorage.editGroupProfile(isolated, ProfileStorage.restoreEpoch(isolated)) {
+                        CustomProxyGroupStore(isolated).save(emptyList())
+                        AppRouteStore(isolated).save(emptyList())
+                        reply("mutated")
+                        Process.killProcess(Process.myPid())
+                        error("Isolated process was not terminated")
+                    }
                 }
                 ProfileStorage.restore(isolated, ProfileStorage.fingerprint(isolated)) {
                     RuntimeSettingsStore(isolated).setRoutingMode(io.weave.client.domain.RoutingMode.DIRECT)

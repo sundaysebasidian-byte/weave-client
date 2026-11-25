@@ -21,7 +21,7 @@ internal fun ConnectionActionsDialog(
     state: ConnectionState, onDismiss: () -> Unit, onChooseExit: () -> Unit,
     onDiagnostics: () -> Unit, onConnections: () -> Unit, onLogs: () -> Unit, onRecovery: () -> Unit,
 ) {
-    AlertDialog(onDismissRequest = onDismiss,
+    WeaveDialog(onDismissRequest = onDismiss,
         title = { Text("连接操作") },
         text = {
             // Each row opens the same real feature as before; enabled rules are unchanged.

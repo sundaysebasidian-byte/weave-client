@@ -15,7 +15,9 @@ final class AppPickerFilter {
         Set<String> routed = new HashSet<>();
         for (R route : routes) routed.add(routePackage.apply(route));
 
-        List<A> result = new ArrayList<>();
+        // Usually each distinct route removes one installed app. This is only a
+        // capacity hint: stale routes and repeated launcher rows still work.
+        List<A> result = new ArrayList<>(Math.max(0, apps.size() - routed.size()));
         for (A app : apps) {
             if (!routed.contains(appPackage.apply(app))) result.add(app);
         }

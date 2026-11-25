@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.weave.client.ui.finishSubscriptionWrite
 import io.weave.client.security.AndroidKeystoreSecretBox
 import io.weave.client.security.SecretBox
 import io.weave.client.data.crossProcessPreferences
@@ -44,6 +45,50 @@ class SubscriptionStoreIntegrationTest {
             assertEquals(1, repository.loadNodes(record.id).size)
             assertEquals(repository.loadNodes(record.id), SubscriptionRepository(context).loadNodes(record.id))
         }
+    }
+
+    @Test fun postCommitReadFailuresAllowReadOnlyRecoveryOfImportAndRename() = isolated { context ->
+        val repository = SubscriptionRepository(context)
+        val store = SubscriptionSecretStore(context)
+        var id: String? = null
+        runBlocking {
+            finishSubscriptionWrite(
+                save = { repository.importText("First", "socks5://127.0.0.1:1080#Fixture") },
+                refresh = { throw java.io.IOException("node list unavailable") },
+                onSaved = { subscription, fresh -> assertFalse(fresh); id = subscription.id },
+                onNotSaved = { fail("confirmed import reported as failed: $it") },
+            )
+            val committedId = requireNotNull(id)
+            val payload = store.readPayload(committedId)
+            finishSubscriptionWrite(
+                save = { repository.rename(committedId, "Second") },
+                refresh = { throw java.io.IOException("editor unavailable") },
+                onSaved = { subscription, fresh -> assertFalse(fresh); assertEquals("Second", subscription.name) },
+                onNotSaved = { fail("confirmed rename reported as failed: $it") },
+            )
+            val reopened = SubscriptionRepository(context)
+            assertEquals(listOf(committedId), reopened.loadMetadata().map { it.id })
+            assertEquals("Second", reopened.loadEditor(committedId).name)
+            assertEquals(payload, SubscriptionSecretStore(context).readPayload(committedId))
+            assertEquals(1, reopened.loadNodes(committedId).size)
+        }
+    }
+
+    @Test fun cancellationBeforeStoreCommitLeavesImportAndRenameUnchanged() = isolated { context ->
+        val store = SubscriptionSecretStore(context)
+        val body = "proxies: [{name: Fixture, type: socks5, server: 127.0.0.1, port: 1080}]"
+        val parsed = SubscriptionPayloadParser().parse(body)
+        val cancelled = kotlinx.coroutines.Job().apply { cancel() }
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            store.save("Unused", "inline://fixture", body, parsed, coroutine = cancelled)
+        }
+        assertTrue(store.list().isEmpty())
+        val original = store.save("Kept", "inline://fixture", body, parsed)
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            store.rename(original.id, "Not committed", cancelled)
+        }
+        assertEquals("Kept", SubscriptionSecretStore(context).get(original.id)?.name)
+        assertEquals(body, store.readPayload(original.id))
     }
 
     @Test fun reviewedUpdateCannotOverwriteANewerSavedPayload() = isolated { context ->

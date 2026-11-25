@@ -94,6 +94,26 @@ class NativeTransferFeedbackTest(private val width: Int, private val scale: Floa
         assertEquals(0, imports)
         assertEquals(0, stopped)
     }
+    @Test fun fileTransferUsesOnlyCheckedItemsAndNeverStartsALanSession() {
+        var selection: Set<String>? = null
+        val subscriptions = listOf(Subscription("fixture-a", "Fixture A", 1), Subscription("fixture-b", "Fixture B", 1))
+        compose.setContent { CompositionLocalProvider(LocalWeaveLanguage provides language) { WeaveTheme {
+            LanTransferDialog(LanTransferState(), subscriptions, {}, { fail("No listener") }, {}, { _, _, _ -> fail("No download") }, {},
+                fileDialog = { ids, close ->
+                    androidx.compose.runtime.SideEffect { selection = ids }
+                    androidx.compose.material3.TextButton(onClick = close) { Text("取消") }
+                })
+        } } }
+        scrollToTag("subscription-file").assertIsNotEnabled()
+        scrollToText("Fixture B").performClick()
+        scrollToTag("subscription-file").performClick()
+        compose.runOnIdle { assertEquals(setOf("fixture-b"), selection) }
+        compose.onNodeWithText(localizeWeaveText("取消", language)).performClick()
+        scrollToTag("lan-transfer-tab-import").performClick()
+        scrollToTag("subscription-file").performClick()
+        compose.runOnIdle { assertEquals(emptySet<String>(), selection) }
+    }
+
     @Test fun incomingTransferRequiresIndependentConfirmationCode() {
         var imported: Pair<String, String>? = null
         var submittedRevision: Long? = null

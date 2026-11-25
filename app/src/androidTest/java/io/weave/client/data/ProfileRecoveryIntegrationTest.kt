@@ -134,6 +134,44 @@ class ProfileRecoveryIntegrationTest {
         assertEquals(before, ProfileStorage.fingerprint(f.context))
     }
 
+    @Test fun groupJournalCopiesOnlyGroupsAndRoutesAndRollsBothBack() = isolated { f ->
+        val before = ProfileStorage.fingerprint(f.context)
+        val fail = runCatching {
+            ProfileStorage.editGroupProfile(f.context, ProfileStorage.restoreEpoch(f.context)) {
+                val journal = File(f.root, "profile-restore.active")
+                val metadata = org.json.JSONObject(File(journal, "manifest.json").readText())
+                assertEquals(2, metadata.getInt("version"))
+                assertEquals("groups-and-routes", metadata.getString("scope"))
+                val files = metadata.getJSONArray("files")
+                assertEquals(1, files.length())
+                assertEquals("data/custom-proxy-groups.enc", files.getJSONObject(0).getString("path"))
+                assertEquals(File(f.root, "custom-proxy-groups.enc").length(), File(journal, "0.bin").length())
+                f.groups.save(emptyList())
+                // This file did not exist before. Rollback must remove it even though it has no copy.
+                AppRouteStore(f.context).save(emptyList())
+                check(File(f.root, "shared_prefs/app_routes_v1.xml").isFile)
+                throw java.io.IOException("Synthetic failure following actual group and route writes")
+            }
+        }.exceptionOrNull()
+        assertTrue(fail is java.io.IOException)
+        assertEquals(before, ProfileStorage.fingerprint(f.context))
+        assertFalse(File(f.root, "shared_prefs/app_routes_v1.xml").exists())
+        assertFalse(File(f.root, "profile-restore.active").exists())
+    }
+
+    @Test fun processDeathInScopedGroupWriteDoesNotTouchOtherProfileCategories() = isolated { f ->
+        val before = ProfileStorage.fingerprint(f.context)
+        withRemote(f, "profile_group_kill") { replies ->
+            assertEquals("mutated", next(replies).getString("phase"))
+            assertEquals(1, f.groups.list().size)
+            assertEquals(before, ProfileStorage.fingerprint(f.context))
+            assertEquals(RoutingMode.RULE, f.settings.routingMode())
+            assertEquals(1, f.rules.list().size)
+            assertEquals(1, f.store.list().size)
+            assertFalse(File(f.root, "shared_prefs/app_routes_v1.xml").exists())
+        }
+    }
+
     private fun next(replies: BlockingQueue<Bundle>) = checkNotNull(replies.poll(15, TimeUnit.SECONDS)) { "Profile probe did not reply" }
 
     private fun withRemote(f: Fixture, operation: String, block: (BlockingQueue<Bundle>) -> Unit) {
@@ -152,7 +190,7 @@ class ProfileRecoveryIntegrationTest {
                 data = Bundle().apply { putString("operation", operation); putString("directory", f.root.name) }
                 replyTo = Messenger(Handler(Looper.getMainLooper()) { message -> replies.offer(message.data); true })
             })
-            if (operation == "profile_kill") assertTrue(disconnected.await(15, TimeUnit.SECONDS))
+            if (operation.endsWith("_kill")) assertTrue(disconnected.await(15, TimeUnit.SECONDS))
             block(replies)
         } finally { app.unbindService(connection) }
     }

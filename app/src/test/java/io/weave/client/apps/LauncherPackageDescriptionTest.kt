@@ -8,6 +8,29 @@ import org.junit.Test
 class LauncherPackageDescriptionTest {
     private data class Launcher(val name: String?, val label: String)
 
+    private fun mergeFixtures(launchable: List<InstalledApp>, known: List<InstalledApp>): List<InstalledApp> {
+        val byName = known.associateBy { it.packageName }
+        return sortDistinctLauncherAndKnownApps(launchable, byName.keys, byName::get)
+    }
+
+    @Test fun onlyKnownPackagesWithoutLauncherRowsGetAnExactLookup() {
+        val visible = InstalledApp("known.visible", "Visible launcher", "VL", 42, true)
+        val ordinary = InstalledApp("ordinary.launcher", "Ordinary", "O", 4)
+        val hidden = InstalledApp("known.hidden", "Hidden application", "HA", 0, true)
+        val queries = mutableListOf<String>()
+        val rows = sortDistinctLauncherAndKnownApps(
+            listOf(visible, ordinary),
+            linkedSetOf(visible.packageName, "not.visible", hidden.packageName, "not.installed"),
+        ) { name ->
+            queries += name
+            hidden.takeIf { it.packageName == name }
+        }
+
+        assertEquals(listOf("not.visible", "known.hidden", "not.installed"), queries)
+        assertEquals(listOf(hidden, ordinary, visible), rows)
+        assertSame(visible, rows.last())
+    }
+
     @Test fun `only the first activity per package is described`() {
         val rows = listOf(
             Launcher("weave", "Self"),
@@ -41,7 +64,7 @@ class LauncherPackageDescriptionTest {
         val selected = describeDistinctLauncherPackages(rows, "weave", Launcher::name) { row, name ->
             InstalledApp(name, row.label, "", 0)
         }
-        val actual = sortDistinctLauncherAndKnownApps(selected, known)
+        val actual = mergeFixtures(selected, known)
         assertEquals(listOf("three", "one", "two", "four", "hidden"), actual.map { it.packageName })
         assertEquals(baseline, actual)
     }
@@ -63,7 +86,7 @@ class LauncherPackageDescriptionTest {
             }
 
             val before = (selected + known).distinctBy { it.packageName }.sortedWith(order)
-            val after = sortDistinctLauncherAndKnownApps(selected, known)
+            val after = mergeFixtures(selected, known)
             assertEquals(before, after)
             before.indices.forEach { assertSame(before[it], after[it]) }
         }
@@ -80,13 +103,13 @@ class LauncherPackageDescriptionTest {
             listOf(b) to listOf(a),
         )) {
             val before = (launcher + known).distinctBy { it.packageName }.sortedWith(order)
-            val after = sortDistinctLauncherAndKnownApps(launcher, known)
+            val after = mergeFixtures(launcher, known)
             assertEquals(before.javaClass, after.javaClass)
         }
 
         val launcher = mutableListOf(b)
         val known = mutableListOf(a)
-        val result = sortDistinctLauncherAndKnownApps(launcher, known) as MutableList<InstalledApp>
+        val result = mergeFixtures(launcher, known) as MutableList<InstalledApp>
         assertSame(a, result.set(0, b))
         result[1] = a
         result.sortWith(order)

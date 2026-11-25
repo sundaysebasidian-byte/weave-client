@@ -2,13 +2,13 @@
 
 **简体中文（主要阅读版本）** · [English](PRIVACY.md)
 
-原文最后更新：2026-10-04 · 中文翻译：2026-10-06
+更新于：2026-11-23
 
 本说明介绍本仓库中以本地处理为优先的 Android 客户端。分发者若修改 Weave、加入分析功能或运营托管服务，必须为该构建发布准确的隐私说明。
 
 ## 分发边界
 
-公开仓库采用 `local-open-source` 模式。Weave 不运营账号、托管控制平台、代理中继、节点市场、订阅服务、广告、分析、崩溃报告或应用内远程更新器。GitHub Release 是维护者发布的静态源码和构建产物，不是 Weave 后台或远程配置通道。
+公开仓库采用 `local-open-source` 模式。Weave 不运营账号、托管控制平台、代理中继、节点市场、订阅服务、广告、分析或崩溃报告。GitHub Release 是维护者发布的静态源码和构建产物，不是 Weave 后台或远程配置通道。Weave 不会自行安装更新。
 
 这一边界不代表所有流量都留在设备上。用户选择的订阅、代理、DNS 解析器、IP 质量服务、目标服务或局域网对端，可能接收完成请求所需的数据。当前端点清单见 [`docs/NETWORK_ENDPOINT_INVENTORY.md`](docs/NETWORK_ENDPOINT_INVENTORY.md)。本说明是技术描述，不是法律结论，也不承诺任何分发方式可以豁免当地规则。
 
@@ -20,6 +20,12 @@ Weave 不运营账号、分析、广告、崩溃报告或流量日志服务。�
 
 为实现分流，Android VPN 进程可以访问数据包元数据、DNS 请求、连接对应的本地 UID／应用包名，以及命中的代理规则。Weave 不会将这些信息上传到 Weave 服务器。
 
+## Weave Next 应用更新
+
+Weave Next 的 Android ARM64 官方构建默认在打开应用时查询 GitHub 公开发布渠道，每 24 小时最多自动检查一次。可在 **设置 → 关于 → 应用更新** 关闭自动检查，仍可手动检查。开关和检查时间保存在本机。GitHub 及其发布附件主机可以看到请求的网络出口 IP 和常规 HTTP 信息；Weave 不发送订阅、分流规则、设备标识或诊断报告，也不会把这些请求发给 Weave 服务器。
+
+只有你点击「下载并验证」才会下载 APK。验证通过的文件先保存在 Weave 的私有缓存，需要你通过 Android 文件选择器保存。Weave 不申请安装来源权限；请从「文件」打开已保存的 APK，再按 Android 提示确认更新。如果在系统文件选择器中选了云盘文件夹，云盘服务商可能保存该文件。
+
 ## 用户选择的网络服务方
 
 使用相关功能时，Weave 会连接本项目之外的服务方：
@@ -29,8 +35,9 @@ Weave 不运营账号、分析、广告、崩溃报告或流量日志服务。�
 - 用户配置所选择的代理服务器和目标服务。
 - 已配置的 DoH 或 DoT 解析器，以及用于解析加密 DNS 服务器域名的明文引导 DNS。默认引导服务器为 `223.5.5.5` 和 `119.29.29.29`，备选为 `1.1.1.1` 和 `9.9.9.9`。引导查询可能向本地网络暴露解析器域名；使用加密 DNS 不代表每个 DNS 请求都经过代理，也不代表不存在泄漏可能。
 - 用于 Mihomo 节点健康检查的 `www.gstatic.com/generate_204`。VPN 运行期间，处于活动状态的自动组可能按配置的 45 秒或 60 秒间隔探测；用户主动触发的健康检查也可能发送请求。
-- 公共 HTTPS IP 质量端点（`api4.ipify.org`、`api6.ipify.org`、`ipwho.is`、`www.cloudflare.com/cdn-cgi/trace`、`cp.cloudflare.com/generate_204` 和 `www.gstatic.com/generate_204`），仅在用户点击“IP 质量检测”时访问。这些端点可以看到请求当前使用的代理出口，并可能返回 IP、地区、ASN 和安全标签等元数据。Weave 将报告保存在内存中，不发送到 Weave 服务。
-- 常用网站可达性端点（`x.com`、`www.tiktok.com`、`www.youtube.com`、`www.google.com/generate_204`、`chatgpt.com` 和 `claude.ai`），仅在 VPN 已连接、用户运行完整的“网络与隐私检测”时访问。Weave 发送带字节范围的小型 HTTPS `GET` 请求，只记录状态和往返时间，不读取或保留页面内容。网站仍能看到所选代理出口；401／403／429 表示服务已响应，但可能仍需登录、地区访问权限或解除限流。
+- 公共 HTTPS IP 质量端点（`api4.ipify.org`、`api6.ipify.org`、`ipwho.is`、`www.cloudflare.com/cdn-cgi/trace`、`cp.cloudflare.com/generate_204` 和 `www.gstatic.com/generate_204`），仅在用户点击“IP 质量检测”时访问。这些端点可以看到各自请求使用的出口（可能直连），并可能返回 IP、地区、ASN 和安全标签等元数据。Weave 将报告保存在内存中，不发送到 Weave 服务。
+- 常用网站可达性端点（`x.com`、`www.tiktok.com`、`www.youtube.com`、`www.google.com/generate_204`、`chatgpt.com`、`claude.ai`、`www.netflix.com`、`www.facebook.com` 和 `www.disneyplus.com`），仅在 VPN 已连接、用户运行完整的“网络与隐私检测”时访问。Weave 发送带字节范围的小型 HTTPS `GET` 请求，只记录状态和往返时间，不读取或保留页面内容。网站仍能看到该请求的出口；401／403／429 表示服务已响应，但可能仍需登录、地区访问权限或解除限流。
+- 下载测速端点（`speed.cloudflare.com`），只在单独点击下载测速后访问一次，最多读取 1 MiB 正文，总时限 8 秒。端点可以看到该请求的出口 IP。应用不保存正文或测速历史。
 - Google 公共 STUN 端点（`stun.l.google.com:19302`），仅在用户打开浏览器隐私实验室并运行测试时，进行一次 WebRTC ICE 探测。该端点可以看到请求的网络出口。ICE 候选项和浏览器环境字段保留在内存中，Weave 不上传这些信息。
 - 独立诊断页面（`dnsleaktest.com` 和 `browserleaks.com`），仅在用户点击相应检测项后打开。页面在受限的应用内 WebView 中运行，遵循各自的隐私实践，可以看到当前出口 IP 及完成 DNS／浏览器测试所需的数据。Weave 不抓取或存储其结果。结果描述的是该 WebView，不代表 Chrome 或其他应用。
 
@@ -42,8 +49,8 @@ Weave 不运营账号、分析、广告、崩溃报告或流量日志服务。�
 
 ## 权限
 
-- `INTERNET`：发送用户请求的流量。
-- `ACCESS_NETWORK_STATE`：处理网络中断以及 Wi-Fi／移动网络切换。
+- `INTERNET`：发送应用网络请求，包括说明中列出的 GitHub 公开版本检查。
+- `ACCESS_NETWORK_STATE`：处理网络中断以及 Wi-Fi／移动网络切换。诊断页也在本地读取应用默认网络的快照：是否有 VPN 类型、本地 IPv4／IPv6 地址，以及已配置的 DNS 服务器数量。这项查看不发包，不保留原始地址。
 - `FOREGROUND_SERVICE` 及其特殊用途子类型：支持正在运行的 VPN 服务。
 - `FOREGROUND_SERVICE_SPECIAL_USE`：让运行中的 VPN 保持可见和稳定。
 - `POST_NOTIFICATIONS`：在相应 Android 版本要求时显示 VPN 状态。

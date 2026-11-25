@@ -42,6 +42,17 @@ data class LanTransferLink(
         return "%06d".format(Locale.ROOT, number % 1_000_000)
     }
 
+    /** Check before consuming the single-use LAN response. */
+    fun requireConfirmation(input: String) {
+        val code = input.trim()
+        check(Regex("[0-9]{6}").matches(code)) {
+            "请输入发送设备显示的 6 位短码"
+        }
+        check(code == confirmationCode()) {
+            "短码不匹配：请让发送设备重新显示当前二维码和短码"
+        }
+    }
+
     companion object {
         fun parse(raw: String): LanTransferLink {
             val value = raw.trim()

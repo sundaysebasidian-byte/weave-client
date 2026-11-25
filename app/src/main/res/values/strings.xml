@@ -24,11 +24,19 @@
     <string name="update_review_title">%1$s needs review</string>
     <string name="update_review_body">The update changes nodes that routes depend on or failed the safety audit. Open Weave to preview it.</string>
     <string name="update_failed_title">Subscription refresh failed</string>
-    <string name="update_failed_body">%1$d subscription(s) could not be refreshed. The previous versions are kept.</string>
     <string name="notification_control_title">Connection notification</string>
     <string name="notification_control_enabled">Shown in the notification drawer, with a disconnect action.</string>
     <string name="notification_control_disabled">Notifications are off. The tunnel can run, but its status and disconnect action may be hidden.</string>
     <string name="notification_control_action">Manage notifications</string>
     <string name="action_choose_exit">Choose exit</string>
     <string name="widget_description">Connection status with a one-tap switch</string>
+    <plurals name="update_failed_body">
+        <item quantity="one">%1$d subscription could not be refreshed. Its previous version was kept.</item>
+        <item quantity="other">%1$d subscriptions could not be refreshed. Their previous versions were kept.</item>
+    </plurals>
+    <string name="app_picker_title">Choose an app</string>
+    <string name="app_picker_search">Search by app or package name</string>
+    <string name="app_picker_empty">No matching launcher apps</string>
+    <string name="app_picker_add">Add %1$s</string>
+    <string name="app_picker_close">Close</string>
 </resources>

@@ -45,9 +45,18 @@ object LocalRouteRuleValidator {
     fun normalize(rule: LocalRouteRule): LocalRouteRule {
         val id = rule.id.trim()
         require(UUID_REGEX.matches(id)) { "规则 ID 无效" }
-        val value = rule.value.trim().lowercase()
+        val input = rule.value.trim().lowercase()
+        // Older versions accepted signs, leading zeroes and Unicode decimal digits. Keep the
+        // same numerical meaning for saved profiles but never pass those spellings to the core.
+        val value = if (rule.type == LocalRuleType.IP_CIDR && parseIpv4Cidr(input) == null) {
+            canonicalLegacyIpv4(input) ?: input
+        } else input
         validate(rule.type, value)
-        return rule.copy(id = id, value = value)
+        val canonical = when (rule.type) {
+            LocalRuleType.DOMAIN, LocalRuleType.DOMAIN_SUFFIX -> value.removePrefix(".")
+            else -> value
+        }
+        return rule.copy(id = id, value = canonical)
     }
 
     fun validate(type: LocalRuleType, value: String) {
@@ -65,18 +74,50 @@ object LocalRouteRuleValidator {
         }
     }
 
-    internal fun parseIpv4Cidr(value: String): Ipv4Cidr? {
-        val parts = value.split('/')
+    private fun canonicalLegacyIpv4(text: String): String? {
+        val parts = text.split('/')
         if (parts.size != 2) return null
-        val prefix = parts[1].toIntOrNull() ?: return null
-        if (prefix !in 0..32) return null
+        val prefix = parts[1].toIntOrNull()?.takeIf { it in 0..32 } ?: return null
         val octets = parts[0].split('.')
         if (octets.size != 4) return null
-        val numbers = octets.map { it.toIntOrNull() ?: return null }
-        if (numbers.any { it !in 0..255 }) return null
-        val address = numbers.fold(0) { result, octet -> (result shl 8) or octet }
+        return octets.map { it.toIntOrNull()?.takeIf { n -> n in 0..255 } ?: return null }
+            .joinToString(".", postfix = "/$prefix")
+    }
+
+    internal fun parseIpv4Cidr(value: String): Ipv4Cidr? {
+        val slash = value.indexOf('/')
+        if (slash < 0) return null
+        val prefix = decimal(value, slash + 1, value.length, 32) ?: return null
+        val address = parseIpv4Address(value, slash) ?: return null
         val mask = if (prefix == 0) 0 else -1 shl (32 - prefix)
         return Ipv4Cidr(address and mask, mask)
+    }
+
+    // Accept only portable dotted decimal, without signs, Unicode digits or octal ambiguity.
+    internal fun parseIpv4Address(text: String, end: Int): Int? {
+        var address = 0
+        var start = 0
+        repeat(4) { index ->
+            var next = start
+            while (next < end && text[next] != '.') next++
+            if ((index == 3) != (next == end)) return null
+            val byte = decimal(text, start, next, 255) ?: return null
+            address = (address shl 8) or byte
+            start = next + 1
+        }
+        return address
+    }
+
+    private fun decimal(text: String, start: Int, end: Int, max: Int): Int? {
+        if (start >= end || (end - start > 1 && text[start] == '0')) return null
+        var result = 0
+        for (index in start until end) {
+            val digit = text[index] - '0'
+            if (digit !in 0..9) return null
+            result = result * 10 + digit
+            if (result > max) return null
+        }
+        return result
     }
 
     internal fun parseIpv6Cidr(value: String): Ipv6Cidr? {
@@ -114,6 +155,8 @@ object LocalRuleMatcher {
     fun firstMatch(host: String, ip: String?, rules: List<LocalRouteRule>): LocalRouteRule? {
         val normalizedHost = host.trim().trimEnd('.').lowercase()
         val normalizedIp = ip?.trim().orEmpty()
+        var ipv4Checked = false
+        var ipv4: Int? = null
         return rules.asSequence()
             .filter { it.enabled }
             .mapNotNull { rule ->
@@ -122,19 +165,21 @@ object LocalRuleMatcher {
                     LocalRuleType.DOMAIN_SUFFIX -> normalizedHost == rule.value ||
                         normalizedHost.endsWith(".${rule.value}")
                     LocalRuleType.DOMAIN_KEYWORD -> normalizedHost.contains(rule.value)
-                    LocalRuleType.IP_CIDR -> normalizedIpMatches(normalizedIp, rule.value)
+                    LocalRuleType.IP_CIDR -> {
+                        if (!ipv4Checked) {
+                            ipv4Checked = true
+                            val end = normalizedIp.indexOf('/').let { if (it < 0) normalizedIp.length else it }
+                            ipv4 = LocalRouteRuleValidator.parseIpv4Address(normalizedIp, end)
+                        }
+                        val host = ipv4
+                        val cidr = if (host != null) LocalRouteRuleValidator.parseIpv4Cidr(rule.value) else null
+                        host != null && cidr != null && host and cidr.mask == cidr.network
+                    }
                     LocalRuleType.IP_CIDR6 -> normalizedIpv6Matches(normalizedIp, rule.value)
                 }
                 rule.takeIf { matches }
             }
             .firstOrNull()
-    }
-
-    private fun normalizedIpMatches(ip: String, cidr: String): Boolean {
-        val address = ip.substringBefore('/').takeIf { it.matches(Regex("[0-9.]+")) } ?: return false
-        val parsed = LocalRouteRuleValidator.parseIpv4Cidr(cidr) ?: return false
-        val host = LocalRouteRuleValidator.parseIpv4Cidr("$address/32")?.network ?: return false
-        return host and parsed.mask == parsed.network
     }
 
     private fun normalizedIpv6Matches(ip: String, cidr: String): Boolean {
@@ -199,6 +244,16 @@ class LocalRouteRuleStore(
     fun list(): List<LocalRouteRule> = io.weave.client.data.ProfileStorage.access(appContext) {
         runCatching { snapshot() }.getOrDefault(emptyList())
     }
+
+    internal fun edit(transform: (List<LocalRouteRule>) -> List<LocalRouteRule>): List<LocalRouteRule> =
+        io.weave.client.data.ProfileStorage.access(appContext) {
+            val current = try {
+                snapshot()
+            } catch (error: Exception) {
+                throw IllegalStateException("规则更新失败", error)
+            }
+            transform(current).also(::save)
+        }
 
     fun save(rules: List<LocalRouteRule>): Unit = io.weave.client.data.ProfileStorage.access(appContext) {
         require(rules.size <= LocalRouteRuleValidator.MAX_RULES) {
