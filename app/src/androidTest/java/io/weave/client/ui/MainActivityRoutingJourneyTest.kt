@@ -91,7 +91,16 @@ class MainActivityRoutingJourneyTest {
         }
     }
 
-    @Test fun notificationEntryAndDialPersistTheUserChoicesAcrossActivityRecreation() {
+    @Test fun notificationEntryAndDialPersistTheUserChoicesAcrossActivityRecreation() =
+        verifyRouteJourney(useSystemBack = false)
+
+    @Test fun systemBackReturnsFromTheFocusedProviderWindow() {
+        val arguments = InstrumentationRegistry.getArguments()
+        assumeTrue(arguments.getString("isolatedSystemBackTest") == "true")
+        verifyRouteJourney(useSystemBack = true)
+    }
+
+    private fun verifyRouteJourney(useSystemBack: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         assumeTrue(InstrumentationRegistry.getArguments().getString("isolatedRoutingTest") == "true")
         requireEmulator()
@@ -119,15 +128,18 @@ class MainActivityRoutingJourneyTest {
                 compose.waitUntil(30_000) { runCatching { provider.assertIsDisplayed() }.isSuccess }
                 compose.onNodeWithText(original.name).performClick()
                 node.assertIsDisplayed()
-                // Use the emulator's documented shell input and actual focused Android window.
-                val automation = instrumentation.uiAutomation
-                compose.waitUntil(15_000) { automation.rootInActiveWindow?.packageName == context.packageName }
-                shell("input keyevent KEYCODE_BACK")
+                if (useSystemBack) {
+                    val automation = instrumentation.uiAutomation
+                    compose.waitUntil(15_000) { automation.rootInActiveWindow?.packageName == context.packageName }
+                    shell("input keyevent KEYCODE_BACK")
+                } else {
+                    compose.onNodeWithText(localizeWeaveText("更换订阅", settings.language())).performClick()
+                }
                 try {
                     compose.waitUntil(20_000) { runCatching { provider.assertIsDisplayed() }.isSuccess }
                 } catch (timeout: ComposeTimeoutException) {
                     val modalNode = compose.onAllNodes(hasText("QA node") and hasAnyAncestor(isDialog())).fetchSemanticsNodes()
-                    throw AssertionError("Android Back did not return to the provider overview. Detail row present: ${modalNode.isNotEmpty()}", timeout)
+                    throw AssertionError("Picker navigation did not reveal the overview. Detail row present: ${modalNode.isNotEmpty()}", timeout)
                 }
                 provider.performClick()
                 node.performClick()

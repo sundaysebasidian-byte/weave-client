@@ -66,7 +66,13 @@ fi
 grep -E '^Time:|^OK \(' "$results/instrumentation.txt"
 
 # Run these separately so product flows and the storage/recovery tests each retain a receipt.
-routing_classes=io.weave.client.ui.PrimaryFlowRegressionTest,io.weave.client.ui.MainActivityRoutingJourneyTest,io.weave.client.ui.WeaveAdaptiveControlsTest,io.weave.client.ui.ProductFlowVisualTest#bodySwipeStepsAndDockFollowsTheFingerWithoutCommittingCancelledDrags
+# The stock Intel emulator can return no active accessibility window. Exercise the visible
+# chooser control here; the focused physical Back case is a separate opt-in device test.
+routing_classes=io.weave.client.ui.PrimaryFlowRegressionTest
+routing_classes+=,io.weave.client.ui.MainActivityRoutingJourneyTest#addingAnApplicationWaitsForAnExplicitRoutingPolicy
+routing_classes+=,io.weave.client.ui.MainActivityRoutingJourneyTest#notificationEntryAndDialPersistTheUserChoicesAcrossActivityRecreation
+routing_classes+=,io.weave.client.ui.WeaveAdaptiveControlsTest
+routing_classes+=,io.weave.client.ui.ProductFlowVisualTest#bodySwipeStepsAndDockFollowsTheFingerWithoutCommittingCancelledDrags
 "${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
   "$component" > "$results/routing-instrumentation.txt" 2>&1
 grep -Fx 'OK (9 tests)' "$results/routing-instrumentation.txt"
