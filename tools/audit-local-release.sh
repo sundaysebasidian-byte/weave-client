@@ -22,7 +22,8 @@ if [[ -f "$manifest" ]]; then
   else
     fail "VPN service must not be exported"
   fi
-  if rg -q 'QUERY_ALL_PACKAGES|REQUEST_INSTALL_PACKAGES|SYSTEM_ALERT_WINDOW|READ_CALL_LOG|READ_SMS' "$manifest"; then
+  # REQUEST_INSTALL_PACKAGES is allowed: the updater hands a verified APK to Android's installer.
+  if rg -q 'QUERY_ALL_PACKAGES|SYSTEM_ALERT_WINDOW|READ_CALL_LOG|READ_SMS' "$manifest"; then
     fail "manifest contains a high-risk or broad-discovery permission"
   else
     pass "no broad package-discovery or unrelated high-risk permission"

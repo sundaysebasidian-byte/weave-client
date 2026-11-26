@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Hands a verified Weave update to Android's installer; Android confirms every install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Keeps the optional scheduled subscription refresh across reboots (JobInfo.setPersisted). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature
@@ -148,6 +150,9 @@
             android:name=".subscription.SubscriptionUpdateJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver
+            android:name=".ui.update.NextInstallReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

@@ -125,6 +125,37 @@ internal class NextUpdateController(
         }
     }
 
+    /** Hands the verified APK to Android's installer, which asks the person to confirm. */
+    fun install() {
+        val apk = temp
+        val candidate = release
+        if (apk == null || candidate == null) {
+            status = "RETRY_DOWNLOAD"
+            return
+        }
+        if (busy || !staged) return
+        NextInstallResults.clear()
+        runOperation {
+            status = "INSTALLING"
+            try {
+                NextApkTransfer.install(context, candidate, apk)
+            } catch (_: IOException) { status = "INSTALL_FAILED" }
+              catch (_: SecurityException) { status = "INSTALL_FAILED" }
+        }
+    }
+
+    /** Android's answer to a committed session; a success replaces this process. */
+    fun installResult(code: Int) {
+        if (code != android.content.pm.PackageInstaller.STATUS_SUCCESS && status == "INSTALLING") {
+            status = "INSTALL_FAILED"
+        }
+    }
+
+    /** Android has not yet allowed Weave to install apps. */
+    fun installPermissionNeeded() {
+        if (staged) status = "INSTALL_PERMISSION"
+    }
+
     fun save(destination: Uri) {
         val apk = temp
         val candidate = release

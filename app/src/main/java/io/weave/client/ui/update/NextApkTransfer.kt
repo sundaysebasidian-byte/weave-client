@@ -1,8 +1,11 @@
 package io.weave.client.ui.update
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -111,8 +114,8 @@ internal object NextApkTransfer {
         }
 
     /**
-     * Copies only to a new document selected with ACTION_CREATE_DOCUMENT. Android installs it
-     * from Files afterward; Weave never grants itself install-source access.
+     * Copies only to a new document selected with ACTION_CREATE_DOCUMENT, for people who would
+     * rather install the APK from Files themselves.
      */
     suspend fun save(context: Context, release: NextRelease, apk: File, destination: Uri) =
         withContext(Dispatchers.IO) {
@@ -133,6 +136,44 @@ internal object NextApkTransfer {
             resolver.openInputStream(destination)?.use { copyAndVerify(it, null, release) }
                 ?: throw NextApkFailure()
         }
+
+    /**
+     * Hands a verified update to Android's package installer. Android shows its own confirmation
+     * for every install; the result arrives at [NextInstallReceiver]. The archive is checked again
+     * right before its bytes enter the session.
+     */
+    suspend fun install(context: Context, release: NextRelease, apk: File) = withContext(Dispatchers.IO) {
+        if (installedOfficialBuild(context)?.let { release.upgrades(BuildConfig.VERSION_NAME, it) } != true) {
+            throw NextApkFailure()
+        }
+        verifyArchive(context, release, apk)
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(applicationId)
+            setSize(release.size)
+            if (Build.VERSION.SDK_INT >= 33) setPackageSource(PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
+        }
+        val id = installer.createSession(params)
+        try {
+            installer.openSession(id).use { session ->
+                apk.inputStream().use { input ->
+                    session.openWrite("weave-next.apk", 0, release.size).use { output ->
+                        copyAndVerify(input, output, release)
+                        session.fsync(output)
+                    }
+                }
+                val result = Intent(context, NextInstallReceiver::class.java).setPackage(context.packageName)
+                // The installer fills in the status extras, so the intent must stay mutable; it is
+                // explicit and the receiver is not exported.
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                session.commit(PendingIntent.getBroadcast(context, id, result, flags).intentSender)
+            }
+        } catch (failure: Exception) {
+            runCatching { installer.abandonSession(id) }
+            throw failure
+        }
+    }
 
     internal fun allowedAssetRedirect(url: HttpUrl): Boolean =
         url.isHttps && url.host == "release-assets.githubusercontent.com" && url.port == 443 &&

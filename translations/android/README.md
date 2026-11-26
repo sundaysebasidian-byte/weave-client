@@ -9,7 +9,8 @@ Translation state must not be inferred from the native resource folders.
   Chinese runtime key. Check this file against the real Kotlin catalog with
   `ComposeStaticLocaleInventoryTest`.
 - `source-rc6-delta.jsonl`: 12 keys from the expanded RC6 transfer/network and
-  confirmation work. Kept separate so ongoing assignments keep exact key order.
+  confirmation work, then 5 RC7 in-app update install keys. Kept separate so
+  ongoing assignments keep exact key order.
 - `source-dynamic.jsonl`: 146 runtime templates, fragments, separators and
   compositions. Regex IDs include branch position, so review only that pattern
   family if the Kotlin branch structure changes. Existing precedence is untouched.
