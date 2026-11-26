@@ -9,6 +9,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.weave.client.core.diagnostics.CoreLogLine
 import io.weave.client.ui.theme.WeaveTheme
@@ -31,6 +33,36 @@ class LogTailScrollTest {
         val lines = Channel<CoreLogLine>(Channel.UNLIMITED)
         val closed = AtomicBoolean(false)
         fun emit(message: String) = lines.trySend(CoreLogLine("info", message)).getOrThrow()
+    }
+
+    @Test fun draggingRetainsTheViewportAndJumpResumesTailFollowing() {
+        val streams = LinkedBlockingQueue<Stream>()
+        compose.setContent {
+            WeaveTheme {
+                LogsScreen(onDismiss = {}) { _, publish ->
+                    withContext(Dispatchers.Default) {
+                        val stream = Stream()
+                        streams.add(stream)
+                        for (line in stream.lines) publish(line)
+                    }
+                }
+            }
+        }
+        compose.waitUntil("Log producer starts", 10_000) { streams.isNotEmpty() }
+        val stream = streams.remove()
+        for (index in 1..100) stream.emit("line-$index")
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithText("INFO  line-100").fetchSemanticsNodes().isNotEmpty()
+        }
+        val list = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+        list.performTouchInput { swipeDown() }
+        compose.onNodeWithText("跳到最新日志").assertIsDisplayed()
+        stream.emit("latest message")
+        compose.onNodeWithText("跳到最新日志").performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithText("INFO  latest message").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("INFO  latest message").assertIsDisplayed()
     }
 
     @Test fun repeatedTailAtCapacityFollowsAgainAndClearedPausedRowsStayGone() {

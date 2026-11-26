@@ -15,3 +15,10 @@
 {"id":"请在系统设置中允许 Weave 安装应用，然后返回点「安装更新」。","en":"Allow Weave to install apps in system settings, then come back and tap Install update."}
 {"id":"正在打开系统安装确认。","en":"Opening Android’s install confirmation."}
 {"id":"安装未完成。可以重试，或保存安装包后手动安装。","en":"The update was not installed. Try again, or save the APK and install it yourself."}
+{"id":"活动连接会立即断开。","en":"Active connections will close immediately."}
+{"id":"没有匹配的规则","en":"No matching rules"}
+{"id":"连接列表已暂停","en":"Connection list paused"}
+{"id":"断开全部连接？","en":"Close all connections?"}
+{"id":"断开连接失败","en":"Could not close the connection"}
+{"id":"跳到最新日志","en":"Jump to latest logs"}
+{"id":"已复制脱敏日志","en":"Redacted logs copied"}

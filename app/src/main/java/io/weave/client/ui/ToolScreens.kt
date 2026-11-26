@@ -6,7 +6,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import android.widget.Toast
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -49,35 +54,48 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.diagnostics.CoreConnection
+import io.weave.client.core.diagnostics.CoreConnectionsSnapshot
 import io.weave.client.core.diagnostics.CoreLogLine
 import io.weave.client.core.diagnostics.LogRedactor
 import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.domain.TrafficFormat
 import io.weave.client.subscription.ExternalImport
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableLongStateOf
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.buffer
@@ -239,21 +257,61 @@ internal fun LanProxySharingDialog(
 @Composable
 internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val api = remember { CoreApi(context.applicationContext) }
+    val api = remember(context.applicationContext) { CoreApi(context.applicationContext) }
+    ConnectionsScreen(onDismiss, { api.connections(latestFirst = true) }, api::close, api::closeAll)
+}
+
+@Composable
+internal fun ConnectionsScreen(
+    onDismiss: () -> Unit,
+    read: suspend () -> CoreConnectionsSnapshot,
+    close: suspend (String) -> Boolean,
+    closeAll: suspend () -> Boolean,
+) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     var connections by remember { mutableStateOf<List<CoreConnection>>(emptyList()) }
     var totals by remember { mutableStateOf(0L to 0L) }
     var error by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var confirmCloseAll by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    var closeFailed by remember { mutableStateOf(false) }
+    var readRevision by remember { mutableLongStateOf(0L) }
+    val keyboard = LocalSoftwareKeyboardController.current
     // Until the first core answer arrives the list is unknown, not empty.
     var loaded by remember { mutableStateOf(false) }
-    val labels = remember { mutableStateMapOf<Int, String>() }
+    var labels by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
     val displayReads = remember { ConnectionDisplayReads() }
-    LaunchedEffect(paused) {
-        while (!paused) {
+    val reading = !paused && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    fun refresh() {
+        paused = false
+        readRevision++
+    }
+    fun closeConnections(id: String? = null) {
+        if (closing) return
+        closing = true
+        closeFailed = false
+        scope.launch {
+            try {
+                val succeeded = if (id == null) closeAll() else close(id)
+                closeFailed = !succeeded
+                displayReads.disconnected(succeeded) {
+                    connections = if (id == null) emptyList() else connections.filterNot { it.id == id }
+                    loaded = true
+                    error = false
+                }
+            } finally {
+                closing = false
+            }
+        }
+    }
+    LaunchedEffect(reading, readRevision) {
+        while (reading) {
             displayReads.read(
-                load = { api.connections(latestFirst = true) },
+                load = read,
                 publishSnapshot = { result ->
                     result.onSuccess { snapshot ->
                         connections = snapshot.connections
@@ -266,32 +324,32 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
                         appLabel(context, uid)
                     }
                 },
-                publishLabels = { labels.putAll(it) },
+                publishLabels = { added ->
+                    if (added.isNotEmpty()) {
+                        labels = if (labels.size + added.size <= 512) labels + added
+                        else labels.filterKeys(connections.mapTo(HashSet()) { it.uid }::contains) + added
+                    }
+                },
                 markLoaded = { loaded = true },
             )
             delay(2_000)
         }
     }
-    val visible = remember(connections, query, labels.size) {
-        filterConnectionRows(connections, query, labels)
+    val visible = remember(connections, query, labels) { filterConnectionRows(connections, query, labels) }
+    val subtitle = remember(totals, connections.size, visible.size) {
+        val count = if (visible.size == connections.size) "${connections.size}" else "${visible.size}/${connections.size}"
+        "↑ ${TrafficFormat.bytes(totals.first)} · ↓ ${TrafficFormat.bytes(totals.second)} · $count"
     }
     WeaveToolScreen(
         title = "实时连接",
-        subtitle = "↑ ${TrafficFormat.bytes(totals.first)} · ↓ ${TrafficFormat.bytes(totals.second)} · ${connections.size}",
+        subtitle = subtitle,
         onDismiss = onDismiss,
         secure = true,
         actions = {
             IconButton(onClick = { paused = !paused }) {
                 Icon(if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, localizedContentDescription(if (paused) "继续" else "暂停"))
             }
-            IconButton(onClick = {
-                scope.launch {
-                    displayReads.disconnected(api.closeAll()) {
-                        connections = emptyList()
-                        loaded = true
-                    }
-                }
-            }, enabled = connections.isNotEmpty()) {
+            IconButton(onClick = { confirmCloseAll = true }, enabled = connections.isNotEmpty() && !closing) {
                 Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("断开全部"))
             }
         },
@@ -300,17 +358,29 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             value = query,
             onValueChange = { query = it.take(100) },
             label = { Text("按应用、域名或规则筛选") },
+            trailingIcon = {
+                if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
+                    Icon(Icons.Rounded.Close, localizedContentDescription("清除"))
+                }
+            },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         )
+        if (closeFailed) {
+            WeaveNotice(Icons.Rounded.Warning, "断开连接失败", WeaveStatusTone.CRITICAL,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        }
+        if (paused && loaded) {
+            Text("连接列表已暂停",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (error && connections.isNotEmpty()) {
-            // Keep the last real rows visible but say plainly that they are no longer refreshing.
-            WeaveNotice(
-                icon = Icons.Rounded.Warning,
-                message = "无法读取内核连接；请确认 VPN 已连接。",
-                tone = WeaveStatusTone.CRITICAL,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
+            WeaveStateBlock(title = "无法读取内核连接；请确认 VPN 已连接。", icon = Icons.Rounded.Warning,
+                tone = WeaveStatusTone.CRITICAL, actionLabel = "重试", onAction = ::refresh)
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -320,16 +390,25 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
             if (visible.isEmpty()) {
                 item(key = "state", contentType = "state") {
                     when {
-                        error -> WeaveStateBlock(
+                        error && connections.isEmpty() -> WeaveStateBlock(
                             title = "无法读取内核连接；请确认 VPN 已连接。",
                             icon = Icons.Rounded.Warning,
                             tone = WeaveStatusTone.CRITICAL,
+                            actionLabel = "重试",
+                            onAction = ::refresh,
                         )
                         // Never claim "no connections" before the core has answered once.
-                        !loaded -> WeaveStateBlock(title = "正在读取内核连接…", loading = !paused)
+                        !loaded -> WeaveStateBlock(
+                            title = if (paused) "连接列表已暂停" else "正在读取内核连接…",
+                            loading = reading,
+                            actionLabel = "继续".takeIf { paused },
+                            onAction = ::refresh,
+                        )
                         connections.isNotEmpty() -> WeaveStateBlock(
                             title = "没有匹配的连接",
                             icon = Icons.Rounded.FilterList,
+                            actionLabel = "清除",
+                            onAction = { query = "" },
                         )
                         else -> WeaveStateBlock(title = "当前没有活动连接", icon = Icons.Rounded.SyncAlt)
                     }
@@ -339,22 +418,30 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
                 ConnectionRow(
                     connection = connection,
                     appName = connectionAppLabel(connection, labels[connection.uid]),
-                    onClose = {
-                        scope.launch {
-                            displayReads.disconnected(api.close(connection.id)) {
-                                connections = connections.filterNot { it.id == connection.id }
-                                loaded = true
-                            }
-                        }
-                    },
+                    closeEnabled = !closing,
+                    onClose = { closeConnections(connection.id) },
                 )
             }
         }
     }
+    if (confirmCloseAll) {
+        WeaveDialog(
+            onDismissRequest = { confirmCloseAll = false },
+            title = { Text("断开全部连接？") },
+            text = { Text("活动连接会立即断开。") },
+            confirmButton = { TextButton(onClick = {
+                confirmCloseAll = false
+                closeConnections()
+            }) { Text("断开全部") } },
+            dismissButton = { TextButton(onClick = { confirmCloseAll = false }) { Text("取消") } },
+        )
+    }
 }
 
 @Composable
-internal fun ConnectionRow(connection: CoreConnection, appName: String, onClose: () -> Unit) {
+internal fun ConnectionRow(
+    connection: CoreConnection, appName: String, closeEnabled: Boolean = true, onClose: () -> Unit,
+) {
     LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
         BoxWithConstraints(
             Modifier.fillMaxWidth().padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
@@ -365,16 +452,17 @@ internal fun ConnectionRow(connection: CoreConnection, appName: String, onClose:
                 textDirection = TextDirection.Ltr,
             )
             val measurer = rememberTextMeasurer()
-            val titleWidth = measurer.measure(
-                connection.destination, style = titleStyle, softWrap = false, maxLines = 1,
-            ).size.width
+            val destination = connection.destination.ifBlank { localizedContentDescription("未知") }
+            val titleWidth = remember(measurer, destination, titleStyle) {
+                measurer.measure(destination, style = titleStyle, softWrap = false, maxLines = 1).size.width
+            }
             val closeWidth = with(LocalDensity.current) { closeSize.roundToPx() }
             val fit = ConnectionEndpointFit.choose(titleWidth, constraints.maxWidth, closeWidth)
             val title: @Composable () -> Unit = {
                 // Keep IP punctuation and ports together and leave the literal value available to semantics.
                 val content: @Composable (Modifier) -> Unit = { modifier ->
                     androidx.compose.material3.Text(
-                        connection.destination, modifier = modifier, style = titleStyle,
+                        destination, modifier = modifier, style = titleStyle,
                         softWrap = false, maxLines = 1,
                     )
                 }
@@ -388,7 +476,7 @@ internal fun ConnectionRow(connection: CoreConnection, appName: String, onClose:
                 }
             }
             val close: @Composable () -> Unit = {
-                IconButton(onClick = onClose, modifier = Modifier.size(closeSize)) {
+                IconButton(onClick = onClose, enabled = closeEnabled, modifier = Modifier.size(closeSize)) {
                     Icon(Icons.Rounded.Close, localizedContentDescription("断开连接"))
                 }
             }
@@ -419,7 +507,7 @@ internal fun ConnectionRow(connection: CoreConnection, appName: String, onClose:
 @Composable
 private fun ConnectionRowDetails(connection: CoreConnection, appName: String) {
     Text(
-        "$appName · ${connection.network.uppercase()}",
+        if (connection.network.isBlank()) appName else "$appName · ${connection.network.uppercase()}",
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 12.sp,
         maxLines = 1,
@@ -427,7 +515,7 @@ private fun ConnectionRowDetails(connection: CoreConnection, appName: String) {
         translate = false,
     )
     Text(
-        ConnectionRowLabel.format(connection.rule, connection.chain),
+        remember(connection.rule, connection.chain) { ConnectionRowLabel.format(connection.rule, connection.chain) },
         color = MaterialTheme.colorScheme.secondary,
         fontSize = 11.sp,
         maxLines = 2,
@@ -435,9 +523,11 @@ private fun ConnectionRowDetails(connection: CoreConnection, appName: String) {
         translate = false,
     )
     Text(
-        ConnectionTrafficLabel.format(
-            TrafficFormat.bytes(connection.uploadBytes), TrafficFormat.bytes(connection.downloadBytes),
-        ),
+        remember(connection.uploadBytes, connection.downloadBytes) {
+            ConnectionTrafficLabel.format(
+                TrafficFormat.bytes(connection.uploadBytes), TrafficFormat.bytes(connection.downloadBytes),
+            )
+        },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 11.sp,
         style = MaterialTheme.typography.bodySmall.merge(TabularNumbers).copy(textDirection = TextDirection.Ltr),
@@ -468,17 +558,24 @@ internal fun LogsScreen(
     streamLogs: suspend (String, (CoreLogLine) -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
-    val lines = remember { mutableStateListOf<CoreLogLine>() }
-    var appendedLines by remember { mutableLongStateOf(0L) }
-    var level by remember { mutableStateOf("info") }
+    val lines = remember { mutableStateListOf<VisibleLogLine>() }
+    val scope = rememberCoroutineScope()
+    val language = LocalWeaveLanguage.current
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    var nextLineId by remember { mutableLongStateOf(0L) }
+    var level by rememberSaveable { mutableStateOf("info") }
+    var copying by remember { mutableStateOf(false) }
+    var followsTail by remember { mutableStateOf(true) }
     var running by remember { mutableStateOf(true) }
     var redacted by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     var collectionEpoch by remember { mutableLongStateOf(0L) }
     val listState = rememberLazyListState()
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(dragged) { if (dragged) followsTail = false }
     val collectionLevel = level
     val requestedEpoch = collectionEpoch
-    val shouldCollect = running
+    val shouldCollect = running && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     LaunchedEffect(collectionLevel, shouldCollect, requestedEpoch) {
         val stillCurrent = { running && collectionEpoch == requestedEpoch }
         if (!shouldCollect || !stillCurrent()) return@LaunchedEffect
@@ -492,20 +589,20 @@ internal fun LogsScreen(
                             throw kotlinx.coroutines.CancellationException("Log collection ended")
                         }
                     }
-                }.buffer(16).collectCurrentLogLines(stillCurrent) { line ->
-                    lines.add(line)
-                    if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
-                    appendedLines++
+                }.buffer(64).collectCurrentLogBatches(stillCurrent) { batch ->
+                    Snapshot.withMutableSnapshot {
+                        lines.addAll(batch.map { VisibleLogLine(nextLineId++, it) })
+                        if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
+                    }
                 }
             },
             stillCurrent = stillCurrent,
             onStopped = { error = true; running = false },
         )
     }
-    // Equal messages still advance the tail when the retained size is already fixed at 500.
-    // Jump to the latest frame's tail instead of restarting an animation for every arrival.
-    LaunchedEffect(appendedLines, lines.isEmpty()) {
-        if (lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
+    // Sequence keys keep repeated messages distinct when the bounded window rotates.
+    LaunchedEffect(lines.lastOrNull()?.id, followsTail) {
+        if (followsTail && lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
     }
     WeaveToolScreen(
         title = "内核日志",
@@ -517,11 +614,25 @@ internal fun LogsScreen(
                 Icon(if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, localizedContentDescription(if (running) "暂停" else "继续"))
             }
             IconButton(onClick = {
-                copyRedacted(context, lines.joinToString("\n") { "[${it.level}] ${LogRedactor.redact(it.message)}" })
-            }, enabled = lines.isNotEmpty()) {
+                val retained = lines.toList()
+                copying = true
+                scope.launch {
+                    try {
+                        val text = withContext(Dispatchers.Default) {
+                            retained.joinToString("\n") { row ->
+                                "[${row.line.level}] ${LogRedactor.redact(row.line.message)}"
+                            }
+                        }
+                        val status = if (copyRedacted(context, text)) "已复制脱敏日志" else "无法写入剪贴板，请重试"
+                        Toast.makeText(context, localizeWeaveText(status, language), Toast.LENGTH_SHORT).show()
+                    } finally {
+                        copying = false
+                    }
+                }
+            }, enabled = lines.isNotEmpty() && !copying) {
                 Icon(Icons.Rounded.ContentCopy, localizedContentDescription("复制脱敏日志"))
             }
-            IconButton(onClick = { lines.clear() }) { Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("清除")) }
+            IconButton(onClick = { lines.clear() }, enabled = lines.isNotEmpty()) { Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("清除")) }
         },
     ) {
         // Level chips wrap instead of overflowing at narrow widths or large font scales.
@@ -535,6 +646,8 @@ internal fun LogsScreen(
                     onClick = {
                         if (level != option) {
                             collectionEpoch++
+                            lines.clear()
+                            followsTail = true
                             level = option
                             if (error) running = true
                         }
@@ -544,24 +657,38 @@ internal fun LogsScreen(
             }
         }
         Row(
-            Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget).padding(horizontal = 20.dp),
+            Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget)
+                .toggleable(redacted, role = Role.Switch, onValueChange = { redacted = it })
+                .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("隐藏 IP 地址", modifier = Modifier.weight(1f), fontSize = 13.sp)
-            Switch(checked = redacted, onCheckedChange = { redacted = it })
+            Switch(checked = redacted, onCheckedChange = null)
+        }
+        if (!followsTail && lines.isNotEmpty()) {
+            TextButton(onClick = { followsTail = true }, modifier = Modifier.padding(horizontal = 20.dp)) {
+                Text("跳到最新日志")
+            }
         }
         if (error) {
             WeaveNotice(
                 icon = Icons.Rounded.Warning,
                 message = "无法读取内核日志；请确认 VPN 已连接。",
                 tone = WeaveStatusTone.CRITICAL,
+                actionLabel = "重试",
+                onAction = { collectionEpoch++; running = true },
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
+        } else if (!running && lines.isNotEmpty()) {
+            Text("日志已暂停",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else if (lines.isEmpty()) {
             WeaveStateBlock(
                 title = if (running) "正在等待内核日志…" else "日志已暂停",
                 icon = Icons.Rounded.Info,
-                loading = running,
+                loading = shouldCollect,
             )
         }
         LazyColumn(
@@ -569,10 +696,13 @@ internal fun LogsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         ) {
-            items(lines.size) { index ->
-                val line = lines[index]
+            items(lines, key = { it.id }, contentType = { "log-line" }) { row ->
+                val line = row.line
+                val label = remember(line, redacted) {
+                    "${line.level.uppercase().take(4)}  ${if (redacted) LogRedactor.redact(line.message) else line.message}"
+                }
                 Text(
-                    "${line.level.uppercase().take(4)}  ${if (redacted) LogRedactor.redact(line.message) else line.message}",
+                    label,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
@@ -589,13 +719,15 @@ internal fun LogsScreen(
     }
 }
 
+private data class VisibleLogLine(val id: Long, val line: CoreLogLine)
+
 private const val MAX_LOG_LINES = 500
 
-internal fun copyRedacted(context: Context, text: String) {
-    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+private fun copyRedacted(context: Context, text: String): Boolean {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return false
     val clip = ClipData.newPlainText("Weave", text)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
     }
-    runCatching { clipboard.setPrimaryClip(clip) }
+    return runCatching { clipboard.setPrimaryClip(clip) }.isSuccess
 }

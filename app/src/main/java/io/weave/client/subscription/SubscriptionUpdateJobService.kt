@@ -18,8 +18,13 @@ import io.weave.client.WeaveLocales
 import io.weave.client.core.vpn.WeaveVpnService
 import io.weave.client.core.ipc.CoreClient
 import io.weave.client.data.AppRouteStore
+import io.weave.client.data.ProfileStorage
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.RouteKind
+import io.weave.client.domain.RouteTarget
+import io.weave.client.routing.CustomProxyGroup
+import io.weave.client.routing.CustomProxyGroupStore
+import io.weave.client.routing.NodeRef
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +33,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -64,30 +71,40 @@ object SubscriptionUpdateScheduler {
 }
 
 class SubscriptionUpdateJobService : JobService() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var running: Job? = null
+    private var jobRevision = 0L
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(WeaveLocales.wrap(newBase))
     }
 
     override fun onStartJob(params: JobParameters): Boolean {
+        running?.cancel()
+        val revision = ++jobRevision
         running = scope.launch {
             try {
-                SubscriptionAutoUpdater(this@SubscriptionUpdateJobService).run()
+                withContext(Dispatchers.IO) {
+                    SubscriptionAutoUpdater(this@SubscriptionUpdateJobService).run()
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 // Never log the exception message: it can contain a subscription host.
                 Log.w(LOG_TAG, "Scheduled refresh failed: ${error.javaClass.simpleName}")
             }
-            jobFinished(params, false)
+            if (revision == jobRevision) {
+                running = null
+                jobFinished(params, false)
+            }
         }
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
+        jobRevision++
         running?.cancel()
+        running = null
         return true
     }
 
@@ -104,16 +121,33 @@ class SubscriptionUpdateJobService : JobService() {
 /** One unattended pass over due subscriptions. */
 internal class SubscriptionAutoUpdater(private val context: Context) {
     private val settings = RuntimeSettingsStore(context)
-    private val repository = SubscriptionRepository(context)
+    private val repository by lazy { SubscriptionRepository(context) }
+    private val notificationManager by lazy {
+        context.getSystemService(NotificationManager::class.java)
+            ?.takeIf { it.areNotificationsEnabled() }
+            ?.also { manager ->
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, context.getString(R.string.updates_channel_name),
+                        NotificationManager.IMPORTANCE_LOW).apply {
+                        description = context.getString(R.string.updates_channel_description)
+                    },
+                )
+            }
+    }
+    private val openAppIntent by lazy {
+        PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
 
     suspend fun run() {
         val hours = settings.networkPreferences().subscriptionAutoUpdateHours
         if (hours <= 0) return
         val now = System.currentTimeMillis()
+        val intervalMillis = TimeUnit.HOURS.toMillis(hours.toLong()) - EARLY_TOLERANCE_MS
         val due = repository.loadMetadata().filter { subscription ->
-            subscription.remote &&
-                (subscription.updatedAtMillis == null ||
-                    now - subscription.updatedAtMillis >= TimeUnit.HOURS.toMillis(hours.toLong()) - EARLY_TOLERANCE_MS)
+            subscription.remote && isScheduledRefreshDue(now, subscription.updatedAtMillis, intervalMillis)
         }
         if (due.isEmpty()) return
 
@@ -133,79 +167,72 @@ internal class SubscriptionAutoUpdater(private val context: Context) {
         val pinned = pinnedNodeIds()
         var failed = 0
         var applied = false
-        due.forEach { subscription ->
-            val outcome = runCatching {
-                repository.autoRefreshRemote(subscription.id, pinned[subscription.id].orEmpty())
-            }.onFailure { if (it is CancellationException) throw it }.getOrNull()
-            when (outcome) {
-                is AutoRefreshOutcome.Updated -> {
-                    applied = true
-                    if (outcome.diff.added > 0 || outcome.diff.removed > 0) {
-                        notify(
-                            subscription.id.hashCode(),
-                            context.getString(R.string.update_applied_title, outcome.name),
-                            context.getString(
-                                R.string.update_applied_body,
-                                outcome.diff.added,
-                                outcome.diff.removed,
-                                outcome.diff.unchanged,
-                            ),
-                        )
+        try {
+            due.forEach { subscription ->
+                currentCoroutineContext().ensureActive()
+                val outcome = runCatching {
+                    repository.autoRefreshRemote(subscription.id, pinned[subscription.id].orEmpty())
+                }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+                when (outcome) {
+                    is AutoRefreshOutcome.Updated -> {
+                        applied = true
+                        if (outcome.diff.added > 0 || outcome.diff.removed > 0) {
+                            notify(
+                                subscription.id.hashCode(),
+                                context.getString(R.string.update_applied_title, outcome.name),
+                                context.getString(
+                                    R.string.update_applied_body,
+                                    outcome.diff.added,
+                                    outcome.diff.removed,
+                                    outcome.diff.unchanged,
+                                ),
+                            )
+                        }
                     }
+                    is AutoRefreshOutcome.NeedsReview -> notify(
+                        subscription.id.hashCode(),
+                        context.getString(R.string.update_review_title, outcome.name),
+                        context.getString(R.string.update_review_body),
+                    )
+                    null -> failed++
                 }
-                is AutoRefreshOutcome.NeedsReview -> notify(
-                    subscription.id.hashCode(),
-                    context.getString(R.string.update_review_title, outcome.name),
-                    context.getString(R.string.update_review_body),
-                )
-                null -> failed++
             }
+            if (failed > 0) {
+                notify(
+                    FAILURE_NOTIFICATION_ID,
+                    context.getString(R.string.update_failed_title),
+                    context.resources.getQuantityString(R.plurals.update_failed_body, failed, failed),
+                )
+            }
+        } finally {
+            if (applied) WeaveVpnService.reloadIfRunning(context)
         }
-        if (failed > 0) {
-            notify(
-                FAILURE_NOTIFICATION_ID,
-                context.getString(R.string.update_failed_title),
-                context.resources.getQuantityString(R.plurals.update_failed_body, failed, failed),
-            )
-        }
-        if (applied) WeaveVpnService.reloadIfRunning(context)
     }
 
-    /** Node IDs referenced by fixed app routes or the fixed default exit, per subscription. */
-    private fun pinnedNodeIds(): Map<String, Set<String>> {
-        val targets = AppRouteStore(context).load().map { it.target } + listOfNotNull(settings.defaultRouteTarget())
-        return targets
-            .filter { it.kind == RouteKind.FIXED && it.subscriptionId != null && it.nodeId != null }
-            .groupBy({ it.subscriptionId!! }, { it.nodeId!! })
-            .mapValues { it.value.toSet() }
+    private fun pinnedNodeIds(): Map<String, Set<String>> = ProfileStorage.access(context) {
+        scheduledRefreshPins(
+            AppRouteStore(context).snapshot().map { it.target }, settings.defaultRouteTarget(),
+            CustomProxyGroupStore(context).snapshot(),
+        )
     }
 
     private fun notify(id: Int, title: String, body: String) {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                context.getString(R.string.updates_channel_name),
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply { description = context.getString(R.string.updates_channel_description) },
-        )
-        val open = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        manager.notify(
-            id,
-            NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_weave)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                .setAutoCancel(true)
-                .setContentIntent(open)
-                .build(),
-        )
+        try {
+            val manager = notificationManager ?: return
+            manager.notify(
+                id,
+                NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_stat_weave)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                    .setAutoCancel(true)
+                    .setContentIntent(openAppIntent)
+                    .build(),
+            )
+        } catch (_: SecurityException) {
+            // Notification permission can be revoked during a long refresh batch.
+        }
     }
 
     private companion object {
@@ -214,4 +241,31 @@ internal class SubscriptionAutoUpdater(private val context: Context) {
         // JobScheduler may run a periodic job slightly early inside its flex window.
         val EARLY_TOLERANCE_MS = TimeUnit.MINUTES.toMillis(30)
     }
+}
+
+internal fun isScheduledRefreshDue(now: Long, updatedAt: Long?, interval: Long): Boolean =
+    now > 0 && (updatedAt == null || updatedAt > now || updatedAt <= now - interval)
+
+internal fun scheduledRefreshPins(
+    appTargets: List<RouteTarget>,
+    defaultTarget: RouteTarget?,
+    groups: List<CustomProxyGroup>,
+): Map<String, Set<String>> {
+    val pins = LinkedHashMap<String, MutableSet<String>>()
+    fun add(subscriptionId: String, nodeId: String) {
+        pins.getOrPut(subscriptionId) { linkedSetOf() }.add(nodeId)
+    }
+    fun addFixed(target: RouteTarget) {
+        if (target.kind == RouteKind.FIXED && target.subscriptionId != null && target.nodeId != null) {
+            add(target.subscriptionId, target.nodeId)
+        }
+    }
+    fun addRef(ref: NodeRef) = add(ref.subscriptionId, ref.nodeId)
+    appTargets.forEach(::addFixed)
+    defaultTarget?.let(::addFixed)
+    for (group in groups) {
+        group.members.forEach(::addRef)
+        group.entry?.let(::addRef)
+    }
+    return pins
 }

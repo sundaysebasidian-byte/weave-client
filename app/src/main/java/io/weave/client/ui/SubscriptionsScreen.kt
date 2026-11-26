@@ -227,10 +227,16 @@ internal fun SubscriptionsScreen(
         ?: SubscriptionSourceFilter.ALL
     val visible = remember(subscriptions, query, source) { filterSubscriptions(subscriptions, query, source) }
     val filtering = query.isNotBlank() || source != SubscriptionSourceFilter.ALL
-    val now = rememberListClock(nowMillis)
+    val hasRemote = remember(subscriptions) { subscriptions.any { it.remote } }
+    val hasTimeLabels = remember(visible) {
+        visible.any { it.updatedAtMillis != null || it.quota?.expireAtMillis != null }
+    }
+    val now = rememberListClock(nowMillis, hasTimeLabels)
+    val visibleNodes = remember(visible) { visible.sumOf { it.nodeCount.toLong() } }
     val refreshResultsById = remember(refreshState.results) {
         indexSubscriptionRefreshResults(refreshState.results)
     }
+    val hasOutcomes = refreshResultsById.values.any { !it.succeeded }
     // The migration hint names a count only; detected package names stay on the device. Without
     // a detection the row title is self-explanatory, so there is no subtitle.
     val migrationSubtitle = if (migrationClients.isNotEmpty()) {
@@ -253,13 +259,14 @@ internal fun SubscriptionsScreen(
         item(key = "header") {
             SubscriptionsHeader(
                 empty = empty,
+                hasRemote = hasRemote,
                 refreshing = refreshState.running,
                 onRefresh = onRefresh,
                 onAdd = onAdd,
             )
         }
 
-        if (refreshState.running || refreshState.message != null || refreshState.failedIds.isNotEmpty()) {
+        if (refreshState.running || refreshState.message != null || hasOutcomes) {
             item(key = "refresh-status") {
                 RefreshStatus(refreshState = refreshState, onRetry = onRefresh, onRetryFailed = onRetryFailed)
             }
@@ -285,7 +292,7 @@ internal fun SubscriptionsScreen(
                     Text(
                         text = listOf(
                             if (filtering) "显示 ${visible.size} / ${subscriptions.size} 个订阅" else "${subscriptions.size} 个订阅",
-                            "共 ${visible.sumOf { it.nodeCount }} 个节点",
+                            "共 $visibleNodes 个节点",
                         ).joinToString(" · ") { localizeWeaveText(it, language) },
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
@@ -374,6 +381,7 @@ internal fun SubscriptionsScreen(
 @Composable
 private fun SubscriptionsHeader(
     empty: Boolean,
+    hasRemote: Boolean,
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onAdd: () -> Unit,
@@ -387,7 +395,7 @@ private fun SubscriptionsHeader(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (!empty) {
+            if (hasRemote || refreshing) {
                 IconButton(
                     onClick = onRefresh,
                     enabled = !refreshing,
@@ -1003,11 +1011,11 @@ private val SUBSCRIPTION_FILTERS = listOf(
  * and `repeatOnLifecycle` cancels the loop when the screen stops, so nothing polls in the background.
  */
 @Composable
-private fun rememberListClock(fixedMillis: Long?): Long {
+private fun rememberListClock(fixedMillis: Long?, hasTimeLabels: Boolean): Long {
     val owner = LocalLifecycleOwner.current
     var current by remember { mutableLongStateOf(fixedMillis ?: System.currentTimeMillis()) }
-    LaunchedEffect(owner, fixedMillis) {
-        if (fixedMillis != null) return@LaunchedEffect
+    LaunchedEffect(owner, fixedMillis, hasTimeLabels) {
+        if (fixedMillis != null || !hasTimeLabels) return@LaunchedEffect
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 current = System.currentTimeMillis()

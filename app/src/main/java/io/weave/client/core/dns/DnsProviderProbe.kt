@@ -7,12 +7,14 @@ import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.NetworkPreferences
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URI
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 data class DnsProbeResult(
@@ -43,28 +45,34 @@ class DnsProviderProbe(
             ),
         )
         require(endpoints.isNotEmpty()) { "没有可检测的 DNS 端点" }
-        val samples = endpoints.map { endpoint -> probeEndpoint(profile, endpoint) }
-        val successful = samples.filter { it.available }
-        val best = successful.minByOrNull { it.latencyMs ?: Int.MAX_VALUE }
-            ?: samples.first()
+        var first: EndpointSample? = null
+        var fastest: EndpointSample? = null
+        var availableCount = 0
+        for (endpoint in endpoints) {
+            ensureActive()
+            val sample = probeEndpoint(endpoint)
+            if (first == null) first = sample
+            if (sample.available) {
+                availableCount++
+                if (fastest == null || (sample.latencyMs ?: Int.MAX_VALUE) < (fastest.latencyMs ?: Int.MAX_VALUE)) {
+                    fastest = sample
+                }
+            }
+        }
+        val best = fastest ?: checkNotNull(first)
         DnsProbeResult(
             profile = profile,
             transport = preferences.dnsTransport,
             endpoint = best.endpoint,
-            latencyMs = successful.minOfOrNull { it.latencyMs ?: Int.MAX_VALUE },
-            available = successful.isNotEmpty(),
-            detail = if (successful.isNotEmpty()) {
-                if (samples.size == 1) best.detail else "${successful.size}/${samples.size} 个上游可达"
-            } else {
-                best.detail
-            },
+            latencyMs = fastest?.latencyMs,
+            available = fastest != null,
+            detail = if (availableCount > 0 && endpoints.size > 1) {
+                "$availableCount/${endpoints.size} 个上游可达"
+            } else best.detail,
         )
     }
 
-    private fun probeEndpoint(
-        profile: DnsProfile,
-        endpoint: String,
-    ): EndpointSample {
+    private fun probeEndpoint(endpoint: String): EndpointSample {
         val started = SystemClock.elapsedRealtime()
         return runCatching {
             val uri = URI(endpoint)
@@ -86,7 +94,6 @@ class DnsProviderProbe(
                     try {
                         val code = connection.responseCode
                         EndpointSample(
-                            profile = profile,
                             endpoint = endpoint,
                             latencyMs = latency(),
                             available = code in 200..499,
@@ -103,28 +110,25 @@ class DnsProviderProbe(
                 "tls" -> {
                     val host = requireNotNull(uri.host) { "DoT 缺少主机名" }
                     val port = uri.port.takeIf { it > 0 } ?: DOT_PORT
-                    val socket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
-                        .createSocket() as SSLSocket
-                    try {
-                        socket.soTimeout = timeoutMs
-                        socket.connect(InetSocketAddress(host, port), timeoutMs)
-                        socket.startHandshake()
-                        EndpointSample(
-                            profile = profile,
-                            endpoint = endpoint,
-                            latencyMs = latency(),
-                            available = true,
-                            detail = "TLS 握手成功 · 端点可达",
-                        )
-                    } finally {
-                        socket.close()
+                    Socket().use { connection ->
+                        connection.soTimeout = timeoutMs
+                        connection.connect(InetSocketAddress(host, port), timeoutMs)
+                        val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+                        (factory.createSocket(connection, host, port, true) as SSLSocket).use { socket ->
+                            socket.soTimeout = timeoutMs
+                            socket.sslParameters = socket.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
+                            socket.startHandshake()
+                        }
                     }
+                    EndpointSample(
+                        endpoint = endpoint, latencyMs = latency(), available = true,
+                        detail = "TLS 握手成功 · 端点可达",
+                    )
                 }
                 else -> error("不支持的 DNS 协议")
             }
         }.getOrElse { error ->
             EndpointSample(
-                profile = profile,
                 endpoint = endpoint,
                 latencyMs = null,
                 available = false,
@@ -142,7 +146,6 @@ class DnsProviderProbe(
     }
 
     private data class EndpointSample(
-        val profile: DnsProfile,
         val endpoint: String,
         val latencyMs: Int?,
         val available: Boolean,

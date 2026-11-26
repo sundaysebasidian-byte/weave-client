@@ -5,6 +5,8 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import androidx.compose.runtime.Immutable
 import java.io.IOException
+import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -34,8 +36,19 @@ data class CoreConnectionsSnapshot(
     val downloadTotal: Long,
 )
 
-internal fun List<CoreConnection>.latestFirst(): List<CoreConnection> =
-    sortedByDescending { it.startedAtInstant }
+internal fun List<CoreConnection>.latestFirst(): List<CoreConnection> {
+    val rows = iterator()
+    if (!rows.hasNext()) return this
+    var previous = rows.next().startedAtInstant
+    while (rows.hasNext()) {
+        val current = rows.next().startedAtInstant
+        if (current != null && (previous == null || current > previous)) {
+            return sortedByDescending { it.startedAtInstant }
+        }
+        previous = current
+    }
+    return this
+}
 
 internal fun connectionRuleLabel(rule: String, payload: String): String {
     val limit = 160
@@ -63,16 +76,27 @@ class CoreApi(private val context: Context) {
     suspend fun connections(latestFirst: Boolean = false): CoreConnectionsSnapshot = withContext(Dispatchers.IO) {
         val body = request("GET", "/connections", MAX_RESPONSE_BYTES)
         val snapshot = parseConnections(JSONObject(body))
-        if (latestFirst) snapshot.copy(connections = snapshot.connections.latestFirst()) else snapshot
+        if (!latestFirst) return@withContext snapshot
+        val ordered = snapshot.connections.latestFirst()
+        if (ordered === snapshot.connections) snapshot else snapshot.copy(connections = ordered)
     }
 
     suspend fun close(id: String): Boolean = withContext(Dispatchers.IO) {
         require(ID.matches(id)) { "invalid connection id" }
-        runCatching { request("DELETE", "/connections/$id", 16 * 1024) }.isSuccess
+        closePath("/connections/$id")
     }
 
     suspend fun closeAll(): Boolean = withContext(Dispatchers.IO) {
-        runCatching { request("DELETE", "/connections", 16 * 1024) }.isSuccess
+        closePath("/connections")
+    }
+
+    private suspend fun closePath(path: String): Boolean = try {
+        request("DELETE", path, 16 * 1024)
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
     }
 
     /**
@@ -81,17 +105,17 @@ class CoreApi(private val context: Context) {
      */
     suspend fun streamLogs(level: String, onLine: (CoreLogLine) -> Unit) {
         require(level in LEVELS) { "invalid level" }
-        val socket = LocalSocket()
         withContext(Dispatchers.IO) {
             suspendCancellableCoroutine { continuation ->
+                val socket = LocalSocket()
                 continuation.invokeOnCancellation { runCatching { socket.close() } }
+                if (!continuation.isActive) return@suspendCancellableCoroutine
                 val result = runCatching {
-                    socket.connect(LocalSocketAddress(PrivateCoreConnections.socketPath(context), LocalSocketAddress.Namespace.FILESYSTEM))
+                    connectControllerSocket(socket, context, 3_000)
                     socket.outputStream.write(
                         "GET /logs?level=$level HTTP/1.0\r\nHost: localhost\r\n\r\n".toByteArray(Charsets.US_ASCII),
                     )
                     socket.outputStream.flush()
-                    socket.soTimeout = 3_000
                     val reader = socket.inputStream.reader(Charsets.UTF_8)
                     val logLines = BoundedLogLineReader(reader, MAX_LOG_LINE)
                     logLines.readHttpHeaders()
@@ -100,7 +124,9 @@ class CoreApi(private val context: Context) {
                         val line = logLines.readLine() ?: break
                         if (line.isEmpty()) continue
                         val event = runCatching { JSONObject(line) }.getOrNull() ?: continue
-                        onLine(CoreLogLine(event.optString("type"), event.optString("payload")))
+                        val levelName = event.text("type")
+                        val payload = event.text("payload")
+                        if (levelName.isNotBlank() && payload.isNotEmpty()) onLine(CoreLogLine(levelName, payload))
                     }
                 }
                 runCatching { socket.close() }
@@ -111,22 +137,23 @@ class CoreApi(private val context: Context) {
         }
     }
 
-    private fun request(method: String, path: String, limit: Int): String = LocalSocket().use { socket ->
-        socket.connect(LocalSocketAddress(PrivateCoreConnections.socketPath(context), LocalSocketAddress.Namespace.FILESYSTEM))
-        socket.soTimeout = 3_000
-        // HTTP/1.0 asks Go net/http for a close-delimited, non-chunked response.
-        socket.outputStream.write(
-            "$method $path HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII),
-        )
-        socket.outputStream.flush()
-        val response = BoundedCoreResponse.readUtf8(socket.inputStream, limit)
-        val statusLine = response.substringBefore("\r\n")
-        val code = BoundedLogLineReader.httpStatus(statusLine)
-        if (code !in 200..299) throw IOException("HTTP $code")
-        val separator = response.indexOf("\r\n\r\n")
-        if (separator !in 0..16_384) throw IOException("bad response headers")
-        response.substring(separator + 4)
-    }
+    private suspend fun request(method: String, path: String, limit: Int): String =
+        suspendCancellableCoroutine { continuation ->
+            val socket = LocalSocket()
+            continuation.invokeOnCancellation { runCatching { socket.close() } }
+            if (!continuation.isActive) return@suspendCancellableCoroutine
+            val result = runCatching {
+                socket.use {
+                    connectControllerSocket(socket, context, 3_000)
+                    socket.outputStream.write(
+                        "$method $path HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII),
+                    )
+                    socket.outputStream.flush()
+                    readControllerResponse(socket.inputStream, limit)
+                }
+            }
+            continuation.resumeWith(result)
+        }
 
     companion object {
         private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -136,30 +163,60 @@ class CoreApi(private val context: Context) {
 
         internal fun parseConnections(json: JSONObject): CoreConnectionsSnapshot {
             val array = json.optJSONArray("connections")
+            val seen = HashSet<String>()
             val connections = (0 until minOf(array?.length() ?: 0, MAX_CONNECTIONS)).mapNotNull { index ->
                 val value = array?.optJSONObject(index) ?: return@mapNotNull null
-                val id = value.optString("id").takeIf(ID::matches) ?: return@mapNotNull null
+                val id = value.text("id")
+                if (!ID.matches(id) || !seen.add(id)) return@mapNotNull null
                 val metadata = value.optJSONObject("metadata")
                 val chains = value.optJSONArray("chains")
-                val host = metadata?.optString("host")?.ifBlank { metadata.optString("destinationIP") }.orEmpty()
-                val port = metadata?.optString("destinationPort").orEmpty()
+                val host = metadata?.text("host")?.ifBlank { metadata.text("destinationIP") }.orEmpty()
+                val port = when (val raw = metadata?.opt("destinationPort")) {
+                    is String -> raw
+                    is Number -> raw.toString()
+                    else -> ""
+                }
                 CoreConnection(
                     id = id,
                     uid = metadata?.optInt("uid", -1) ?: -1,
-                    process = metadata?.optString("process").orEmpty().take(120),
-                    network = metadata?.optString("network").orEmpty().take(16),
+                    process = metadata?.text("process").orEmpty().take(120),
+                    network = metadata?.text("network").orEmpty().take(16),
                     destination = (if (port.isBlank() || host.isBlank()) host else ConnectionEndpoint.withPort(host, port)).take(260),
-                    rule = connectionRuleLabel(value.optString("rule"), value.optString("rulePayload")),
-                    chain = (0 until minOf(chains?.length() ?: 0, 12)).map { chains!!.optString(it).take(160) },
-                    uploadBytes = value.optLong("upload"),
-                    downloadBytes = value.optLong("download"),
-                    startedAt = value.optString("start").take(40),
+                    rule = connectionRuleLabel(value.text("rule"), value.text("rulePayload")),
+                    chain = chains.summary(),
+                    uploadBytes = value.optLong("upload").coerceAtLeast(0),
+                    downloadBytes = value.optLong("download").coerceAtLeast(0),
+                    startedAt = value.text("start").take(40),
                 )
             }
-            return CoreConnectionsSnapshot(connections, json.optLong("uploadTotal"), json.optLong("downloadTotal"))
+            return CoreConnectionsSnapshot(connections, json.optLong("uploadTotal").coerceAtLeast(0),
+                json.optLong("downloadTotal").coerceAtLeast(0))
         }
 
         private const val MAX_CONNECTIONS = 500
+    }
+}
+
+internal fun connectControllerSocket(socket: LocalSocket, context: Context, timeoutMillis: Int) {
+    socket.connect(LocalSocketAddress(PrivateCoreConnections.socketPath(context), LocalSocketAddress.Namespace.FILESYSTEM))
+    socket.soTimeout = timeoutMillis
+}
+
+internal fun readControllerResponse(input: InputStream, limit: Int, success: IntRange = 200..299): String {
+    val response = BoundedCoreResponse.readUtf8(input, limit)
+    val separator = response.indexOf("\r\n\r\n")
+    if (separator !in 0..16_384) throw IOException("bad response headers")
+    val status = BoundedLogLineReader.httpStatus(response.substringBefore("\r\n"))
+    if (status !in success) throw IOException("HTTP $status")
+    return response.substring(separator + 4)
+}
+
+internal fun JSONObject.text(key: String): String = (opt(key) as? String).orEmpty()
+
+internal fun org.json.JSONArray?.summary(): List<String> {
+    if (this == null) return emptyList()
+    return (0 until minOf(length(), 12)).mapNotNull { index ->
+        (opt(index) as? String)?.take(160)?.takeIf(String::isNotBlank)
     }
 }
 
@@ -168,12 +225,20 @@ object LogRedactor {
     private val IPV4 = Regex("""\b(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}\b""")
     // Includes compressed forms ("2001:db8::1"); a timestamp glued to a letter is not matched.
     private val IPV6 = Regex("""(?<![\w:])(?=[0-9a-fA-F:]*[0-9a-fA-F])(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(?![\w:])""")
-    private val URL_QUERY = Regex("""(https?://[^\s?#]+)[?#]\S*""")
+    private val URL_QUERY = Regex("""(?i)(https?://[^\s?#]+)[?#]\S*""")
     private val CREDENTIAL = Regex("""(?i)(password|passwd|token|uuid|secret|key)=\S+""")
 
-    fun redact(value: String): String = value
-        .replace(URL_QUERY, "$1?…")
-        .replace(CREDENTIAL, "$1=[redacted]")
-        .replace(IPV4, "$1.$2.x.x")
-        .replace(IPV6, "[ipv6]")
+    private val URL_USER_INFO = Regex("""(?i)(https?://)[^\s/@?#]+@""")
+    private val AUTHORIZATION = Regex("""(?i)(authorization\s*:\s*(?:bearer|basic)\s+)\S+""")
+
+    fun redact(value: String): String {
+        if (':' !in value && '=' !in value && '.' !in value) return value
+        return value
+            .replace(URL_USER_INFO, "$1")
+            .replace(URL_QUERY, "$1?…")
+            .replace(AUTHORIZATION, "$1[redacted]")
+            .replace(CREDENTIAL, "$1=[redacted]")
+            .replace(IPV4, "$1.$2.x.x")
+            .replace(IPV6, "[ipv6]")
+    }
 }

@@ -19,12 +19,16 @@ final class BoundedCoreResponse {
     }
 
     private static ByteArrayOutputStream read(InputStream input, int limit) throws IOException {
+        if (limit < 0) throw new IllegalArgumentException("Negative response limit");
+        int bufferSize = Math.min(8192, Math.max(1, limit));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[bufferSize];
         while (true) {
-            int count = input.read(buffer);
+            int remaining = limit - output.size();
+            int readSize = remaining < buffer.length ? remaining + 1 : buffer.length;
+            int count = readSize == buffer.length ? input.read(buffer) : input.read(buffer, 0, readSize);
             if (count < 0) return output;
-            if (output.size() + count > limit) throw new IllegalStateException("Local response too large");
+            if (count > remaining) throw new IllegalStateException("Local response too large");
             output.write(buffer, 0, count);
         }
     }

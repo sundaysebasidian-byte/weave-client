@@ -1,10 +1,11 @@
 package io.weave.client.ui
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.produceIn
 
 internal suspend fun watchCoreLogCollection(
     collect: suspend () -> Unit,
@@ -23,11 +24,28 @@ internal suspend fun watchCoreLogCollection(
 }
 
 /** Main-owned row publication uses the same live ownership check as the terminal state. */
-internal suspend fun <T> Flow<T>.collectCurrentLogLines(
+internal suspend fun <T : Any> Flow<T>.collectCurrentLogBatches(
     stillCurrent: () -> Boolean,
-    onLine: (T) -> Unit,
-) {
-    collect { line ->
-        if (stillCurrent()) onLine(line)
+    onBatch: (List<T>) -> Unit,
+) = coroutineScope {
+    val incoming = produceIn(this)
+    try {
+        while (stillCurrent()) {
+            val first = incoming.receiveCatching()
+            val row = first.getOrNull()
+            if (row == null) {
+                first.exceptionOrNull()?.let { throw it }
+                break
+            }
+            if (!stillCurrent()) break
+            val batch = ArrayList<T>(32)
+            batch.add(row)
+            while (batch.size < 32) {
+                batch.add(incoming.tryReceive().getOrNull() ?: break)
+            }
+            onBatch(batch)
+        }
+    } finally {
+        incoming.cancel()
     }
 }

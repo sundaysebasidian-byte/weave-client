@@ -18,7 +18,7 @@ object SubscriptionDeletionReconciler {
         val remainingDefault = if (
             defaultTarget?.subscriptionId == deletedSubscriptionId
         ) {
-            remainingSubscriptions.firstOrNull()?.let { subscription ->
+            remainingSubscriptions.firstOrNull { it.hasRuntimePayload }?.let { subscription ->
                 RouteTarget(
                     kind = RouteKind.AUTO,
                     label = "自动选择",

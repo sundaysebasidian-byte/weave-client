@@ -54,6 +54,15 @@ class SubscriptionDeletionReconcilerTest {
         assertEquals(retainedDefault, result.defaultTarget)
     }
 
+    @Test fun `skip replacement subscriptions whose runtime file is missing`() {
+        val incomplete = retainedSubscription.copy(id = "incomplete", hasRuntimePayload = false)
+        val result = SubscriptionDeletionReconciler.reconcile(deletedSubscription, emptyList(),
+            autoTarget(deletedSubscription), listOf(incomplete, retainedSubscription))
+        assertEquals(autoTarget(retainedSubscription.id), result.defaultTarget)
+        assertNull(SubscriptionDeletionReconciler.reconcile(deletedSubscription, emptyList(),
+            autoTarget(deletedSubscription), listOf(incomplete)).defaultTarget)
+    }
+
     private fun route(packageName: String, subscriptionId: String) = AppRoute(
         packageName = packageName,
         appName = packageName,

@@ -61,7 +61,7 @@ object RouteLens {
     ): RouteLensResult {
         val rulesActive = mode == RoutingMode.RULE
         val safetyRule = leadingMatch(query, preferences)
-        val appRoute = routes.firstOrNull { rulesActive && it.packageName == query.packageName }
+        val appRoute = if (rulesActive) routes.firstOrNull { it.packageName == query.packageName } else null
         val localRule = if (appRoute != null || safetyRule != null) null else LocalRuleMatcher.firstMatch(
             host = query.domain,
             ip = query.ip,

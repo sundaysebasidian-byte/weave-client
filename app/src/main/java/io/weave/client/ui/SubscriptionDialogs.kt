@@ -873,23 +873,18 @@ internal fun SubscriptionManagerDialog(
     var revealSourceUrl by remember(subscription.id) { mutableStateOf(false) }
     var nodeQuery by rememberSaveable(subscription.id) { mutableStateOf("") }
     var confirmingDelete by remember(subscription.id) { mutableStateOf(false) }
-    val filteredNodes = remember(nodes, nodeQuery) {
-        val term = nodeQuery.trim()
-        if (term.isEmpty()) {
-            nodes
-        } else {
-            nodes.filter {
-                it.name.contains(term, ignoreCase = true) ||
-                    it.protocol.contains(term, ignoreCase = true)
-            }
-        }
-    }
     val healthByName = remember(health.nodes) {
         NodeHealthIndex(health.nodes)
     }
-    val orderedNodes = remember(filteredNodes, healthByName) {
-        orderRoutePickerNodes(filteredNodes, emptySet(), favoritesOnly = false, query = "") {
+    val rankedNodes = remember(nodes, healthByName) {
+        orderRoutePickerNodes(nodes, emptySet(), favoritesOnly = false, query = "") {
             healthByName[it]?.qualityScoreMs
+        }
+    }
+    val orderedNodes = remember(rankedNodes, nodeQuery) {
+        val term = nodeQuery.trim()
+        if (term.isEmpty()) rankedNodes else rankedNodes.filter {
+            it.name.contains(term, ignoreCase = true) || it.protocol.contains(term, ignoreCase = true)
         }
     }
     val qualityRows = remember(health.nodes) { QualityMatrixBuilder.previewRows(health.nodes) }
@@ -1228,6 +1223,11 @@ internal fun SubscriptionManagerDialog(
                                     value = nodeQuery,
                                     onValueChange = { nodeQuery = it.take(120) },
                                     label = { Text("搜索节点或协议") },
+                                    trailingIcon = {
+                                        if (nodeQuery.isNotEmpty()) TextButton(onClick = { nodeQuery = "" }) {
+                                            Text("清除搜索")
+                                        }
+                                    },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
@@ -1236,7 +1236,7 @@ internal fun SubscriptionManagerDialog(
                     }
                 }
                 if (!state.loading) {
-                    if (filteredNodes.isEmpty()) {
+                    if (orderedNodes.isEmpty()) {
                         item(key = "empty", contentType = "subscription-empty") {
                             Text(
                                 "没有匹配的节点",

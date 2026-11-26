@@ -21,6 +21,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
@@ -179,6 +180,16 @@ class RoutesScreenUiTest {
             assertTrue(last.packageName in entered)
             assertEquals(listOf(last.packageName), clicked)
         }
+    }
+
+    @Test fun searchFindsAppsInsideFoldedGroupsByPackage() {
+        showViewport(routeRows = { routes }, onClick = {})
+        val list = compose.onNodeWithTag("routes-list")
+        list.performScrollToKey("route-search")
+        compose.onNodeWithTag("routes-search").performTextInput("COM.TENCENT")
+        list.performScrollToKey(routeItemKey("com.tencent.mm"))
+        compose.onNodeWithText("微信").assertIsDisplayed()
+        compose.onNodeWithText("支付宝").assertDoesNotExist()
     }
 
     private fun rows(kind: RouteKind): List<AppRoute> = List(512) { index ->

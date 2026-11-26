@@ -62,6 +62,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Block
@@ -212,11 +213,15 @@ internal fun RoutesScreen(
     domesticDirect: Boolean = true,
     onModeSelected: (RoutingMode) -> Unit = {},
 ) {
-    val proxied = remember(routes) { routes.filter { it.target.kind.isProxied() } }
-    val direct = remember(routes) { routes.filter { it.target.kind == RouteKind.DIRECT } }
-    val blocked = remember(routes) { routes.filter { it.target.kind == RouteKind.BLOCK } }
+    var routeQuery by rememberSaveable { mutableStateOf("") }
+    val searching = routeQuery.isNotBlank()
+    val groups = remember(routes) { groupRoutes(routes) }
+    val visible = remember(groups, routeQuery) { groups.find(routeQuery) }
+    val (proxied, direct, blocked) = visible
     var directOpen by rememberSaveable { mutableStateOf(false) }
     var blockedOpen by rememberSaveable { mutableStateOf(false) }
+    val showDirect = directOpen || searching
+    val showBlocked = blockedOpen || searching
     // App rules only apply in rule mode; elsewhere they stay visible but recede.
     val rulesApply = routingMode == RoutingMode.RULE
     val listAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -243,14 +248,35 @@ internal fun RoutesScreen(
             )
         }
         item(key = "counts") {
-            RouteCounts(proxied.size, direct.size, blocked.size)
+            RouteCounts(visible.proxied.size, visible.direct.size, visible.blocked.size)
+        }
+        if (routes.isNotEmpty() || searching) {
+            item(key = "route-search") {
+                OutlinedTextField(
+                    value = routeQuery,
+                    onValueChange = { routeQuery = it.take(100) },
+                    label = { Text("搜索应用或包名") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = WeaveUiTokens.screenHorizontal)
+                        .testTag("routes-search"),
+                    trailingIcon = {
+                        if (routeQuery.isNotEmpty()) IconButton(onClick = { routeQuery = "" }) {
+                            Icon(Icons.Rounded.Close, localizedContentDescription("清除搜索"))
+                        }
+                    },
+                )
+            }
         }
         if (!rulesApply) {
             item(key = "mode-notice") {
                 ModeNotice(routingMode = routingMode, onBackToRules = { onModeSelected(RoutingMode.RULE) })
             }
         }
-        if (routes.isEmpty()) {
+        if (searching && visible.isEmpty) {
+            item(key = "routes-no-match") {
+                WeaveStateBlock(title = "没有匹配的规则", actionLabel = "清除搜索", onAction = { routeQuery = "" })
+            }
+        } else if (routes.isEmpty()) {
             item(key = "empty") {
                 RouteGroupPanel(modifier = Modifier.padding(top = 24.dp)) {
                     RouteActionRow(icon = Icons.Rounded.Add, label = "添加规则", onClick = onAdd)
@@ -277,16 +303,16 @@ internal fun RoutesScreen(
             item(key = "routes:direct") {
                 RoutePanelPiece(
                     first = true,
-                    last = !directOpen && blocked.isEmpty(),
+                    last = !showDirect && blocked.isEmpty(),
                     panelAlpha = listAlpha,
                     topSpacing = 12.dp,
                 ) {
-                    CollapsedGroup("直连", RouteDot.DIRECT, direct, directOpen) {
+                    CollapsedGroup("直连", RouteDot.DIRECT, direct, showDirect, expandable = !searching) {
                         directOpen = !directOpen
                     }
                 }
             }
-            if (directOpen) {
+            if (showDirect) {
                 itemsIndexed(
                     items = direct,
                     key = { _, route -> routeItemKey(route.packageName) },
@@ -302,16 +328,16 @@ internal fun RoutesScreen(
             item(key = "routes:block") {
                 RoutePanelPiece(
                     first = direct.isEmpty(),
-                    last = !blockedOpen,
+                    last = !showBlocked,
                     panelAlpha = listAlpha,
                     topSpacing = if (direct.isEmpty()) 12.dp else 0.dp,
                 ) {
-                    CollapsedGroup("阻止", RouteDot.BLOCK, blocked, blockedOpen) {
+                    CollapsedGroup("阻止", RouteDot.BLOCK, blocked, showBlocked, expandable = !searching) {
                         blockedOpen = !blockedOpen
                     }
                 }
             }
-            if (blockedOpen) {
+            if (showBlocked) {
                 itemsIndexed(
                     items = blocked,
                     key = { _, route -> routeItemKey(route.packageName) },
@@ -325,9 +351,6 @@ internal fun RoutesScreen(
         }
     }
 }
-
-private fun RouteKind.isProxied(): Boolean =
-    this == RouteKind.AUTO || this == RouteKind.FIXED || this == RouteKind.GROUP
 
 private enum class RouteDot { PROXY, DIRECT, BLOCK }
 
@@ -673,18 +696,21 @@ private fun CollapsedGroup(
     dot: RouteDot,
     routes: List<AppRoute>,
     open: Boolean,
+    expandable: Boolean,
     onToggle: () -> Unit,
 ) {
     val chevron = disclosureRotation(open)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onToggle)
+            .then(if (expandable) Modifier.clickable(role = Role.Button, onClick = onToggle) else Modifier)
             .heightIn(min = WeaveUiTokens.rowMinHeight)
             .padding(horizontal = 14.dp)
             .testTag("routes-group-${dot.name.lowercase()}")
             .semantics {
-                if (open) collapse { onToggle(); true } else expand { onToggle(); true }
+                if (expandable) {
+                    if (open) collapse { onToggle(); true } else expand { onToggle(); true }
+                }
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -696,7 +722,8 @@ private fun CollapsedGroup(
                 modifier = Modifier.clearAndSetSemantics {},
                 horizontalArrangement = Arrangement.spacedBy((-9).dp),
             ) {
-                routes.take(4).forEach { route ->
+                for (index in 0 until minOf(4, routes.size)) {
+                    val route = routes[index]
                     val badge = appBadgeColors(route.tint)
                     val icon = rememberAppIcon(route.packageName, 22.dp)
                     Box(
@@ -723,12 +750,14 @@ private fun CollapsedGroup(
                 modifier = Modifier.padding(start = 2.dp, end = 4.dp),
             )
         }
-        Icon(
-            Icons.Rounded.KeyboardArrowDown,
-            null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = chevron },
-        )
+        if (expandable) {
+            Icon(
+                Icons.Rounded.KeyboardArrowDown,
+                null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = chevron },
+            )
+        }
     }
 }
 
