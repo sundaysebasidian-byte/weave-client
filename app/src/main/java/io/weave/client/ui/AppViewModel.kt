@@ -40,7 +40,6 @@ import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.hasLiveSubscriptionExit
-import io.weave.client.domain.initialAppRouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.StrategyScope
 import io.weave.client.domain.Subscription
@@ -223,7 +222,23 @@ data class DownloadProbeState(
     val error: String? = null,
 )
 
-class AppViewModel(application: Application) : AndroidViewModel(application) {
+internal data class StartupProfile(
+    val routes: List<AppRoute>,
+    val settings: io.weave.client.data.UiSettingsSnapshot,
+    val recovery: io.weave.client.data.RecoveryState,
+) {
+    companion object {
+        fun read(application: Application): StartupProfile = io.weave.client.data.ProfileStorage.access(application) {
+            StartupProfile(
+                routes = AppRouteStore(application).load(),
+                settings = RuntimeSettingsStore(application).uiSnapshot(),
+                recovery = RecoveryVault(application).snapshot(),
+            )
+        }
+    }
+}
+
+class AppViewModel internal constructor(application: Application, initialProfile: StartupProfile) : AndroidViewModel(application) {
     private val subscriptionRepository by lazy { SubscriptionRepository(application) }
     private val installedAppRepository = InstalledAppRepository(application)
     private val routeStore = AppRouteStore(application)
@@ -233,6 +248,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Serialize the foreground application's disk writes and state publication; ProfileStorage
     // owns the real cross-process lock and rejects older owners under the transaction.
     private val profileOwner = Mutex()
+    private var routingSave: Job? = null
+    private var routingWrite = 0L
+    private var routingNeedsReload = false
     private val mutableGroupProfileEpoch = MutableStateFlow<String?>(null)
     internal val groupProfileEpoch = mutableGroupProfileEpoch.asStateFlow()
     private val profileEpoch get() = mutableGroupProfileEpoch.value
@@ -242,35 +260,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val dnsProviderProbe by lazy { DnsProviderProbe() }
     private val qrCodeImageReader = QrCodeImageReader(application)
     private val lanTransferServer = OneTimeLanTransferServer()
-    private val initialSubscriptions = emptyList<Subscription>()
-    private val initialNodes = emptyList<ProxyNode>()
-    private val storedRoutes = routeStore.load()
-    private val initialRoutes: List<AppRoute> = storedRoutes
-    private val storedDefaultTarget = settingsStore.defaultRouteTarget()
-    private val initialDefaultTarget: RouteTarget? = storedDefaultTarget
-    private val initialNetworkPreferences = settingsStore.networkPreferences()
-    private val storedRoutingMode = settingsStore.routingMode()
-    private val initialRoutingMode = storedRoutingMode
 
     private val mutableDashboard = MutableStateFlow(
         DashboardState(
-            routingMode = initialRoutingMode,
-            defaultRouteTarget = initialDefaultTarget,
+            routingMode = initialProfile.settings.routing.mode,
+            defaultRouteTarget = initialProfile.settings.routing.defaultTarget,
         ),
     )
     val dashboard = mutableDashboard.asStateFlow()
 
     private val mutableRoutes = MutableStateFlow<List<AppRoute>>(
-        initialRoutes,
+        initialProfile.routes,
     )
     val routes = mutableRoutes.asStateFlow()
 
-    private val mutableNetworkPreferences = MutableStateFlow(initialNetworkPreferences)
+    private val mutableNetworkPreferences = MutableStateFlow(initialProfile.settings.routing.network)
     val networkPreferences = mutableNetworkPreferences.asStateFlow()
 
-    private val mutableLanguage = MutableStateFlow(settingsStore.language())
+    private val mutableLanguage = MutableStateFlow(initialProfile.settings.explicitLanguage ?: WeaveLanguage.fromSystem())
     val language = mutableLanguage.asStateFlow()
-    private val mutableLanguageFollowsSystem = MutableStateFlow(settingsStore.explicitLanguage() == null)
+    private val mutableLanguageFollowsSystem = MutableStateFlow(initialProfile.settings.explicitLanguage == null)
     val languageFollowsSystem = mutableLanguageFollowsSystem.asStateFlow()
 
     private val mutableExternalRequest = MutableStateFlow<ExternalRequest?>(null)
@@ -296,13 +305,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val mutableInstalledApps = MutableStateFlow<List<InstalledApp>>(emptyList())
     val installedApps = mutableInstalledApps.asStateFlow()
+    private val mutableInstalledAppsStatus = MutableStateFlow(InstalledAppsStatus.IDLE)
+    internal val installedAppsStatus = mutableInstalledAppsStatus.asStateFlow()
 
-    private val mutableSubscriptions = MutableStateFlow(
-        initialSubscriptions,
-    )
+    private val mutableSubscriptions = MutableStateFlow<List<Subscription>>(emptyList())
     val subscriptions = mutableSubscriptions.asStateFlow()
 
-    private val mutableNodes = MutableStateFlow(initialNodes)
+    private val mutableNodes = MutableStateFlow<List<ProxyNode>>(emptyList())
     val nodes = mutableNodes.asStateFlow()
 
     private val mutableImportState = MutableStateFlow(SubscriptionImportState())
@@ -352,6 +361,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val mutableLanTransferState = MutableStateFlow(LanTransferState())
+    private var lanExportJob: Job? = null
     private var lanScanRevision = 0L
     val lanTransferState = mutableLanTransferState.asStateFlow()
 
@@ -372,8 +382,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableDnsProbeState = MutableStateFlow(DnsProbeState())
     val dnsProbeState = mutableDnsProbeState.asStateFlow()
 
-    private val mutableRecoveryState = MutableStateFlow(recoveryVault.snapshot())
+    private val mutableRecoveryState = MutableStateFlow(initialProfile.recovery)
     val recoveryState = mutableRecoveryState.asStateFlow()
+    private var recoveryRead: Job? = null
     // The UI lifecycle explicitly enables this while the home screen is resumed. Starting
     // disabled prevents a connected service from being polled during ViewModel construction.
     private val mutableDashboardVisible = MutableStateFlow(false)
@@ -382,6 +393,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope,
         read = { withContext(Dispatchers.IO) { installedAppRepository.listLaunchableApps() } },
         publish = { mutableInstalledApps.value = it },
+        publishStatus = { mutableInstalledAppsStatus.value = it },
     )
     private var installedAppsReleaseJob: Job? = null
     private var privacyProbeJob: Job? = null
@@ -400,7 +412,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val healthCache = object : LinkedHashMap<String, SubscriptionHealthState>(8, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SubscriptionHealthState>?) = size > 8
     }
-    private val mutableFavoriteNodes = MutableStateFlow(settingsStore.favoriteNodeIds())
+    private val mutableFavoriteNodes = MutableStateFlow(initialProfile.settings.favorites)
     val favoriteNodes = mutableFavoriteNodes.asStateFlow()
     private val startupJob: Job
     private val readiness = kotlinx.coroutines.CompletableDeferred<Unit>()
@@ -414,7 +426,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun awaitReady() {
         readiness.await()
-        CoreClient.awaitConnected()
+        awaitRoutingSave()
+        CoreClient.awaitConnectedIfAttached()
+    }
+
+    internal suspend fun awaitRoutingSave() {
+        var pending = routingSave
+        while (pending != null) {
+            pending.join()
+            if (pending === routingSave) return
+            pending = routingSave
+        }
     }
 
     private val mutableTrafficHistory = MutableStateFlow<List<Long>>(emptyList())
@@ -442,9 +464,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             var previousRevision = VpnRuntimeState.snapshot.value.revision
+            var previousState = VpnRuntimeState.snapshot.value.state
             var previousMessage = VpnRuntimeState.snapshot.value.message
             VpnRuntimeState.snapshot.collect { runtime ->
-                if (runtime.state != ConnectionState.CONNECTED || runtime.revision != previousRevision) {
+                val changed = runtime.revision != previousRevision || runtime.state != previousState
+                if (changed) {
                     passiveHealthReadGeneration++
                     subscriptionHealthJob?.cancel()
                     subscriptionHealthJob = null
@@ -460,6 +484,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     mutableDownloadState.value = DownloadProbeState()
                 }
                 previousRevision = runtime.revision
+                previousState = runtime.state
                 // Every snapshot carries the last message, including path-only updates and the
                 // replay sent when the UI rebinds; announce it only when it is actually new.
                 val newMessage = runtime.message?.takeIf { !runtime.replayed && it != previousMessage }
@@ -471,7 +496,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         statusMessage = newMessage ?: it.statusMessage,
                     )
                 }
-                mutableRecoveryState.value = recoveryVault.snapshot()
+                if (changed || newMessage != null) refreshRecoveryState()
             }
         }
         viewModelScope.launch {
@@ -539,8 +564,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleFavoriteNode(node: ProxyNode) {
         val key = "${node.subscriptionId}/${node.id}"
-        mutableFavoriteNodes.update { if (key in it) it - key else it + key }
-        settingsStore.setFavoriteNodeIds(mutableFavoriteNodes.value)
+        val epoch = profileEpoch ?: return
+        viewModelScope.launch {
+            profileOwner.withLock {
+                val current = mutableFavoriteNodes.value
+                if (key !in current && current.size >= io.weave.client.data.MAX_FAVORITE_NODES) {
+                    mutableDashboard.update { it.copy(statusMessage = "收藏已达到上限") }
+                    return@withLock
+                }
+                val next = if (key in current) current - key else current + key
+                probeSafely {
+                    withContext(Dispatchers.IO) {
+                        io.weave.client.data.ProfileStorage.withCurrentEpoch(getApplication(), epoch) {
+                            settingsStore.setFavoriteNodeIds(next)
+                        }
+                    }
+                }.onSuccess { mutableFavoriteNodes.value = next }
+                    .onFailure { mutableDashboard.update { it.copy(statusMessage = "无法保存收藏") } }
+            }
+        }
     }
 
     fun ensureInstalledAppsLoaded(forceRefresh: Boolean = false) {
@@ -573,10 +615,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectMode(mode: RoutingMode) {
-        if (mutableDashboard.value.routingMode == mode) return
-        mutableDashboard.update { it.copy(routingMode = mode) }
-        settingsStore.setRoutingMode(mode)
-        reloadIfConnected("正在安全应用新的运行模式")
+        saveRouting(mode, null, "正在安全应用新的运行模式")
     }
 
     fun dismissMessage() {
@@ -601,7 +640,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshRecoveryState() {
-        mutableRecoveryState.value = recoveryVault.snapshot()
+        recoveryRead?.cancel()
+        recoveryRead = viewModelScope.launch {
+            withContext(Dispatchers.IO) { probeSafely { recoveryVault.snapshot() } }
+                .onSuccess { mutableRecoveryState.value = it }
+        }
     }
 
     fun clearRecoverySafeMode() {
@@ -612,7 +655,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setRouteTarget(epoch: String, packageName: String, target: RouteTarget, onComplete: (Result<Unit>) -> Unit) =
         changeAppRoutes(epoch, "正在安全应用新的应用分流", onComplete) { profile ->
-            if (!target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes) ||
+            if (profile.routes.none { it.packageName == packageName } ||
+                !target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes) ||
                 (target.kind == RouteKind.GROUP && profile.groups.none { it.id == target.groupId })
             ) throw StaleProfileEditor()
             profile.routes.map { if (it.packageName == packageName) it.copy(target = target) else it }
@@ -731,20 +775,57 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setDomesticDirect(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.domesticDirect == enabled) return
-        settingsStore.setDomesticDirect(enabled)
-        mutableNetworkPreferences.update { it.copy(domesticDirect = enabled) }
-        reloadIfConnected(
+        saveRouting(
+            null, enabled,
             if (enabled) "正在启用国内域名与 IP 直连" else "正在关闭国内智能直连",
         )
     }
 
     fun applyRoutingPreset(domesticDirect: Boolean) {
         val mode = if (domesticDirect) RoutingMode.RULE else RoutingMode.GLOBAL
-        settingsStore.setRoutingPreset(mode, domesticDirect)
-        mutableNetworkPreferences.update { it.copy(domesticDirect = domesticDirect) }
-        mutableDashboard.update { it.copy(routingMode = mode) }
-        reloadIfConnected("正在安全应用新的运行模式")
+        saveRouting(mode, domesticDirect, "正在安全应用新的运行模式")
+    }
+
+    private fun saveRouting(mode: RoutingMode?, domestic: Boolean?, message: String) {
+        val previous = routingSave?.takeIf { it.isActive }
+        val revision = ++routingWrite
+        routingSave = viewModelScope.launch {
+            previous?.join()
+            profileOwner.withLock {
+                val modeChanged = mode != null && mutableDashboard.value.routingMode != mode
+                val domesticChanged = domestic != null && mutableNetworkPreferences.value.domesticDirect != domestic
+                val saved = if (modeChanged || domesticChanged) {
+                    withContext(Dispatchers.IO) {
+                        probeSafely {
+                            if (mode != null && domestic != null) settingsStore.setRoutingPreset(mode, domestic)
+                            else if (mode != null) settingsStore.setRoutingMode(mode)
+                            else if (domestic != null) settingsStore.setDomesticDirect(domestic)
+                        }
+                    }
+                } else Result.success(Unit)
+                saved.onSuccess {
+                    routingNeedsReload = routingNeedsReload || modeChanged || domesticChanged
+                    if (domestic != null) mutableNetworkPreferences.update { it.copy(domesticDirect = domestic) }
+                    if (mode != null) mutableDashboard.update { it.copy(routingMode = mode) }
+                }.onFailure {
+                    mutableDashboard.update { it.copy(statusMessage = "分流设置未能保存") }
+                }
+                if (revision == routingWrite && routingNeedsReload) {
+                    routingNeedsReload = false
+                    runCatching {
+                        when (VpnRuntimeState.snapshot.value.state) {
+                            ConnectionState.CONNECTED, ConnectionState.CONNECTING -> {
+                                WeaveVpnService.reload(getApplication())
+                                if (saved.isSuccess) mutableDashboard.update { it.copy(statusMessage = message) }
+                            }
+                            else -> Unit
+                        }
+                    }.onFailure {
+                        mutableDashboard.update { it.copy(statusMessage = "已保存，请重新连接以应用分流设置") }
+                    }
+                }
+            }
+        }
     }
 
     fun setWeavePalette(palette: WeavePalette) {
@@ -819,19 +900,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addAppRoute(epoch: String, packageName: String, onComplete: (Result<Unit>) -> Unit) {
-        val app = mutableInstalledApps.value.firstOrNull { it.packageName == packageName }
-        if (app == null) {
-            onComplete(Result.failure(StaleProfileEditor()))
-            return
-        }
+    fun addAppRoute(epoch: String, app: InstalledApp, target: RouteTarget, onComplete: (Result<Unit>) -> Unit) {
         changeAppRoutes(epoch, "正在安全应用新的应用分流", onComplete) { profile ->
-            if (profile.routes.any { it.packageName == packageName }) return@changeAppRoutes profile.routes
+            if (profile.routes.any { it.packageName == app.packageName } ||
+                !target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes) ||
+                (target.kind == RouteKind.GROUP && profile.groups.none { it.id == target.groupId })
+            ) throw StaleProfileEditor()
             profile.routes + AppRoute(
                 packageName = app.packageName,
                 appName = app.label,
                 monogram = app.monogram,
-                target = initialAppRouteTarget(profile.subscriptions),
+                target = target,
                 tint = app.tint,
             )
         }
@@ -1224,13 +1303,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (mutableLanTransferState.value.running) return
         val selection = selectedIds.toSet()
         mutableLanTransferState.value = LanTransferState(running = true)
-        viewModelScope.launch {
+        lanExportJob = viewModelScope.launch {
             startupJob.join()
             runCatching {
                 withContext(Dispatchers.IO) {
+                    val owner = currentCoroutineContext()
                     val items = subscriptionRepository.exportForLanTransfer(selection)
                     val plaintext = LanTransferCodec.encode(items)
-                    lanTransferServer.start(plaintext) to items.map { it.name }
+                    try {
+                        owner.ensureActive()
+                        lanTransferServer.start(plaintext, ensureActive = owner::ensureActive) to items.map { it.name }
+                    } finally {
+                        plaintext.fill(0)
+                    }
                 }
             }.onSuccess { (link, names) ->
                 mutableLanTransferState.value = LanTransferState(
@@ -1240,9 +1325,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     message = "一次性链接将在 5 分钟或导入一次后失效",
                 )
             }.onFailure { error ->
-                // Cancellation after background generation must not leave a share listener alive.
-                lanTransferServer.stop()
                 if (error is CancellationException) throw error
+                lanTransferServer.stop()
                 mutableLanTransferState.value = LanTransferState(
                     error = error.message ?: "无法启动局域网导出",
                 )
@@ -1251,28 +1335,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopLanExport() {
+        lanExportJob?.cancel()
+        lanExportJob = null
         lanTransferServer.stop()
         mutableLanTransferState.value = LanTransferState()
+    }
+
+    internal fun closeLanExportIfOpen() {
+        if (lanExportJob?.isActive == true || mutableLanTransferState.value.exportLink.isNotBlank()) stopLanExport()
     }
 
     fun importLanTransfer(rawLink: String, confirmationCode: String, observedScanRevision: Long = 0L) {
         val current = mutableLanTransferState.value
         if (current.running || !canSubmitLanImport(observedScanRevision, current.pendingLinkRevision)) return
+        closeLanExportIfOpen()
         mutableLanTransferState.value = LanTransferState(running = true)
         viewModelScope.launch {
-            runCatching {
+            probeSafely {
                 val link = LanTransferLink.parse(rawLink)
                 link.requireConfirmation(confirmationCode)
-                val packet = LanTransferClient.fetch(link)
-                val plaintext = LanTransferCodec.open(packet, link.key)
-                val items = LanTransferCodec.decode(plaintext)
+                val items = withContext(Dispatchers.IO) {
+                    val plaintext = LanTransferCodec.open(LanTransferClient.fetch(link), link.key)
+                    try {
+                        LanTransferCodec.decode(plaintext)
+                    } finally {
+                        plaintext.fill(0)
+                    }
+                }
                 subscriptionRepository.importFromLanTransfer(items)
             }.onSuccess { imported ->
-                refreshSubscriptionsAndReferences(imported.mapTo(linkedSetOf()) { it.id })
+                val refreshed = probeSafely { refreshSubscriptionsAndReferences(imported.mapTo(linkedSetOf()) { it.id }) }
                 mutableLanTransferState.value = LanTransferState(
                     message = "已安全同步 ${imported.size} 个订阅；同源订阅已原位更新",
+                    error = if (refreshed.isFailure) "订阅读取失败，请重新打开应用" else null,
                 )
-                reloadIfConnected("局域网订阅已导入，正在安全更新运行配置")
+                if (refreshed.isSuccess) reloadIfConnected("局域网订阅已导入，正在安全更新运行配置")
             }.onFailure { error ->
                 mutableLanTransferState.value = LanTransferState(
                     error = error.message ?: "局域网导入失败",
@@ -1283,6 +1380,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun importLanTransferQr(rawLink: String) {
         if (mutableLanTransferState.value.running) return
+        closeLanExportIfOpen()
         mutableLanTransferState.value = LanTransferState(running = true)
         viewModelScope.launch {
             runCatching {
@@ -1350,6 +1448,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             message = "正在检查 HTTPS 远程订阅",
         )
         viewModelScope.launch {
+            val committed = linkedSetOf<String>()
             try {
                 val remoteIds = withContext(Dispatchers.IO) {
                     subscriptionRepository.loadRemoteIds()
@@ -1369,7 +1468,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val finalProgress = SubscriptionRefreshBatch.run(
                     targets = targets,
                     refresh = { subscriptionRepository.refreshRemote(it) },
-                    onUpdated = { refreshSubscriptionsAndReferences(it) },
+                    onUpdated = { committed.add(it) },
                     onProgress = { current, finished ->
                         mutableSubscriptionRefreshState.update {
                             it.copy(
@@ -1382,6 +1481,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     },
                 )
+                if (committed.isNotEmpty()) {
+                    refreshSubscriptionsAndReferences(committed)
+                }
                 val completed = finalProgress.completed
                 val failed = finalProgress.failed
                 val needsReview = finalProgress.reviewCount > 0
@@ -1710,7 +1812,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableSubscriptions.value = profile.subscriptions
         mutableNodes.value = profile.nodes
         mutableRoutes.value = profile.routes
-        mutableDashboard.update { it.copy(defaultRouteTarget = profile.defaultTarget) }
+        val hasUsableSubscription = profile.subscriptions.any { it.hasRuntimePayload }
+        mutableDashboard.update { it.copy(defaultRouteTarget = profile.defaultTarget, hasUsableSubscription = hasUsableSubscription) }
     }
 
     private fun changeAppRoutes(
@@ -1836,12 +1939,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Re-reads every local store after a restore. */
     private suspend fun reloadLocalState() {
-        val profile = withContext(Dispatchers.IO) { groupProfile.read() }
+        val (profile, settings) = withContext(Dispatchers.IO) {
+            io.weave.client.data.ProfileStorage.access(getApplication()) {
+                groupProfile.read() to settingsStore.uiSnapshot()
+            }
+        }
         publishGroupProfile(profile)
-        mutableNetworkPreferences.value = settingsStore.networkPreferences()
-        mutableFavoriteNodes.value = settingsStore.favoriteNodeIds()
-        mutableDashboard.update { it.copy(routingMode = settingsStore.routingMode()) }
-        io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication())
+        mutableNetworkPreferences.value = settings.routing.network
+        mutableFavoriteNodes.value = settings.favorites
+        mutableDashboard.update { it.copy(routingMode = settings.routing.mode) }
+        withContext(Dispatchers.IO) { io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication()) }
     }
 
     override fun onCleared() {

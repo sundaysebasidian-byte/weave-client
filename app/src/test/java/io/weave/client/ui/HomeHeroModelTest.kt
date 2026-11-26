@@ -134,14 +134,23 @@ class HomeHeroModelTest {
     }
 
     @Test
-    fun `an error offers retry unless the saved exit is gone`() {
+    fun `an error offers retry or opens the chooser if the saved exit is gone`() {
         val failed = heroModel(state(ConnectionState.ERROR))
         assertEquals(HeroHeadline.FAILED, failed.headline)
         assertEquals(HeroAction.RETRY, failed.action)
         assertTrue(failed.actionEnabled)
         assertEquals(WeaveStatusTone.CRITICAL, failed.tone)
 
-        assertFalse(heroModel(state(ConnectionState.ERROR, target = invalid)).actionEnabled)
+        val unavailable = heroModel(state(ConnectionState.ERROR, target = invalid))
+        assertEquals(HeroAction.CHOOSE_EXIT, unavailable.action)
+        assertTrue(unavailable.actionEnabled)
+    }
+
+    @Test fun `empty startup offers import and direct mode can still connect`() {
+        val fresh = state(target = null).copy(hasUsableSubscription = false)
+        assertEquals(HeroAction.IMPORT, heroModel(fresh).action)
+        assertEquals(HeroAction.CONNECT, heroModel(fresh.copy(routingMode = RoutingMode.DIRECT)).action)
+        assertEquals(HeroAction.CONNECT, heroModel(fresh.copy(hasUsableSubscription = true)).action)
     }
 
     @Test
@@ -166,7 +175,7 @@ class HomeHeroModelTest {
     @Test
     fun `error fallback suggests only available actions`() {
         val invalidExit = state(ConnectionState.ERROR, target = invalid, message = "  ")
-        assertFalse(heroModel(invalidExit).actionEnabled)
+        assertEquals(HeroAction.CHOOSE_EXIT, heroModel(invalidExit).action)
         assertEquals(INVALID_EXIT_LABEL, heroIssue(invalidExit)?.message)
         assertTrue(heroIssue(invalidExit)!!.offersExitChange)
 
@@ -187,12 +196,14 @@ class HomeHeroModelTest {
         // One action per state, and every label is a stable source string with translations.
         val labels = ConnectionState.entries.flatMap { connection ->
             listOf(true, false).flatMap { core ->
-                listOf(auto, invalid, null).map { target ->
-                    heroModel(state(connection, core = core, target = target)).actionLabel
+                listOf(auto, invalid, null).flatMap { target ->
+                    listOf(true, false).map { hasProvider ->
+                        heroModel(state(connection, core = core, target = target).copy(hasUsableSubscription = hasProvider)).actionLabel
+                    }
                 }
             }
         }.toSet()
-        assertEquals(setOf("连接", "断开", "正在连接", "重试连接", "选择出口"), labels)
+        assertEquals(setOf("连接", "断开", "正在连接", "重试连接", "选择出口", "添加订阅"), labels)
     }
 
     @Test

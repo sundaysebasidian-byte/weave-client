@@ -296,4 +296,5 @@ data class DashboardState(
     val coreAvailable: Boolean = false,
     val statusMessage: String? = null,
     val networkPathStatus: NetworkPathStatus = NetworkPathStatus.INACTIVE,
+    val hasUsableSubscription: Boolean? = null,
 )

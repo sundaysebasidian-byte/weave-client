@@ -22,3 +22,9 @@
 {"id":"断开连接失败","en":"Could not close the connection"}
 {"id":"跳到最新日志","en":"Jump to latest logs"}
 {"id":"已复制脱敏日志","en":"Redacted logs copied"}
+{"id":"策略组","en":"Groups"}
+{"id":"分流设置未能保存","en":"Routing settings could not be saved"}
+{"id":"已保存，请重新连接以应用分流设置","en":"Saved. Reconnect to apply routing settings"}
+{"id":"无法读取应用列表","en":"Could not load apps"}
+{"id":"收藏已达到上限","en":"Favorites are full"}
+{"id":"无法保存收藏","en":"Could not save favorites"}

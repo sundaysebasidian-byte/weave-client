@@ -1,12 +1,14 @@
 package io.weave.client.core.engine
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Immutable
 import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.core.bridge.NativeTunCallback
 import io.weave.client.core.vpn.RuntimeFailure
 import io.weave.client.core.vpn.RuntimeFailureException
+import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
 import java.io.File
 import java.nio.file.Files
@@ -362,7 +364,9 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         return null
     }
 
-    fun queryRuntime(): EngineRuntimeSnapshot? = runCatching {
+    private data class LiveExit(val name: String, val protocol: String, val delay: Int?)
+
+    private fun readLiveExit(): LiveExit? {
         val defaultGroup = queryGroupJson(DEFAULT_GROUP)
             ?: return null
         val defaultSelection = defaultGroup.optString("now")
@@ -373,15 +377,34 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             ?.takeIf(String::isNotBlank)
             ?: defaultSelection
         val selectedMetadata = proxyMetadata(nestedGroup, selectedName)
-        val traffic = NativeBridge.queryTraffic(total = false)
-        EngineRuntimeSnapshot(
-            nodeName = selectedName.replaceFirst(NODE_PREFIX, ""),
+        return LiveExit(
+            name = selectedName.replaceFirst(NODE_PREFIX, ""),
             protocol = selectedMetadata?.optString("type")
                 ?.takeIf(String::isNotBlank)
                 ?: "Mihomo",
-            latencyMs = LatencySamplePolicy.sanitize(
+            delay = LatencySamplePolicy.sanitize(
                 selectedMetadata?.optInt("delay", 0),
             ),
+        )
+    }
+
+    fun queryRuntime(): EngineRuntimeSnapshot? = runCatching {
+        val owner = VpnRuntimeState.snapshot.value
+        val exit = if (owner.state == ConnectionState.CONNECTED) {
+            LIVE_EXIT_CACHE.get(owner.revision, ::readLiveExit)
+        } else {
+            LIVE_EXIT_CACHE.clear()
+            readLiveExit()
+        } ?: return null
+        val traffic = NativeBridge.queryTraffic(total = false)
+        val current = VpnRuntimeState.snapshot.value
+        if (owner.state == ConnectionState.CONNECTED &&
+            (current.state != ConnectionState.CONNECTED || current.revision != owner.revision)
+        ) return null
+        EngineRuntimeSnapshot(
+            nodeName = exit.name,
+            protocol = exit.protocol,
+            latencyMs = exit.delay,
             uploadBytesPerSecond = traffic.getOrElse(0) { 0L },
             downloadBytesPerSecond = traffic.getOrElse(1) { 0L },
             attributedAppConnections = ATTRIBUTION_MATCHES.get(),
@@ -522,6 +545,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         val ATTRIBUTION_QUERIES = AtomicLong()
         val ATTRIBUTION_MATCHES = AtomicLong()
         val CORE_LIFECYCLE_MUTEX = Mutex()
+        val LIVE_EXIT_CACHE = LiveExitCache<LiveExit>(SystemClock::elapsedRealtime, maxAgeMs = 2_500)
 
         fun digest(value: String): ByteArray =
             MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))

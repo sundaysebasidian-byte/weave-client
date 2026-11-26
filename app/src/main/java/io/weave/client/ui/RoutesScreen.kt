@@ -212,6 +212,8 @@ internal fun RoutesScreen(
     routingMode: RoutingMode = RoutingMode.RULE,
     domesticDirect: Boolean = true,
     onModeSelected: (RoutingMode) -> Unit = {},
+    defaultTarget: RouteTarget? = null,
+    onDefaultTarget: (() -> Unit)? = null,
 ) {
     var routeQuery by rememberSaveable { mutableStateOf("") }
     val searching = routeQuery.isNotBlank()
@@ -246,6 +248,31 @@ internal fun RoutesScreen(
                 onRouteLens = onRouteLens,
                 onAdd = onAdd,
             )
+        }
+        if (!searching && onDefaultTarget != null) {
+            item(key = "default-exit") {
+                RouteGroupPanel {
+                    val language = LocalWeaveLanguage.current
+                    val label = defaultTarget?.label.orEmpty()
+                    val supporting = when {
+                        routingMode == RoutingMode.DIRECT -> localizeWeaveText("直连模式下不使用出口", language)
+                        label.isBlank() -> localizeWeaveText("尚未选择出口", language)
+                        defaultTarget?.kind == RouteKind.AUTO || defaultTarget?.kind == RouteKind.DIRECT ||
+                            label == "出口已失效，请重新选择" -> localizeWeaveText(label, language)
+                        else -> label
+                    }
+                    WeaveChoiceRow(
+                        title = "默认出口",
+                        supporting = supporting,
+                        translateSupporting = false,
+                        selected = false,
+                        icon = Icons.Rounded.Route,
+                        role = Role.Button,
+                        onClick = onDefaultTarget,
+                        modifier = Modifier.testTag("routes-default-exit"),
+                    )
+                }
+            }
         }
         item(key = "counts") {
             RouteCounts(visible.proxied.size, visible.direct.size, visible.blocked.size)

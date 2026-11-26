@@ -12,6 +12,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
+import javax.crypto.CipherOutputStream
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
@@ -58,20 +59,6 @@ object BackupCodec {
             if (size > MAX_EXPANDED_BYTES - total) throw BackupException("备份内容过大")
             total += size
         }
-        // Bound compressed bytes too: incompressible input plus ZIP metadata must still fit
-        // inside the envelope accepted by decrypt. Do not materialize each UTF-8 entry again.
-        val zip = BoundedOutput(MAX_BACKUP_BYTES - HEADER_BYTES - 16).also { output ->
-            ZipOutputStream(output).use { stream ->
-                val writer = OutputStreamWriter(stream, Charsets.UTF_8.newEncoder()
-                    .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT))
-                entries.toSortedMap().forEach { (name, value) ->
-                    stream.putNextEntry(ZipEntry(name).apply { time = 0L })
-                    writer.write(value)
-                    writer.flush()
-                    stream.closeEntry()
-                }
-            }
-        }.toByteArray()
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
         val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val header = ByteBuffer.allocate(HEADER_BYTES)
@@ -80,7 +67,21 @@ object BackupCodec {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt, iterations), GCMParameterSpec(128, iv))
         cipher.updateAAD(header)
-        return header + cipher.doFinal(zip)
+        // Keep only the bounded ciphertext in our output buffer. ZIP bytes flow into AES-GCM
+        // as they are produced, including the directory written when the ZIP stream closes.
+        val output = BoundedOutput(MAX_BACKUP_BYTES)
+        output.write(header)
+        ZipOutputStream(CipherOutputStream(output, cipher)).use { stream ->
+            val writer = OutputStreamWriter(stream, Charsets.UTF_8.newEncoder()
+                .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT))
+            entries.toSortedMap().forEach { (name, value) ->
+                stream.putNextEntry(ZipEntry(name).apply { time = 0L })
+                writer.write(value)
+                writer.flush()
+                stream.closeEntry()
+            }
+        }
+        return output.toByteArray()
     }
 
     fun decrypt(data: ByteArray, passphrase: CharArray): Map<String, String> {
@@ -102,7 +103,11 @@ object BackupCodec {
         } catch (_: AEADBadTagException) {
             throw BackupException("密码错误或备份已损坏")
         }
-        return decodeArchive(zip)
+        return try {
+            decodeArchive(zip)
+        } finally {
+            zip.fill(0)
+        }
     }
 
     private fun decodeArchive(zip: ByteArray): Map<String, String> = try {

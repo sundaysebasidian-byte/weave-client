@@ -2,6 +2,7 @@ package io.weave.client.ui
 
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -28,7 +29,8 @@ class ProductFlowVisualTest {
         compose.onNodeWithText("Weave").assertIsDisplayed()
     }
 
-    @Test fun dockSwipesOneTabAtATimeAndDoesNotWrap() {
+    @Test fun bodySwipeStepsAndDockFollowsTheFingerWithoutCommittingCancelledDrags() {
+        compose.waitUntil(20_000) { compose.onAllNodesWithTag("navigation-tab-HOME").fetchSemanticsNodes().isNotEmpty() }
         val dock = compose.onNodeWithTag("navigation-dock")
         val body = compose.onNodeWithTag("navigation-content")
         compose.onNodeWithTag("navigation-tab-HOME").performClick().assertIsSelected()
@@ -39,12 +41,15 @@ class ProductFlowVisualTest {
         compose.onNodeWithTag("navigation-tab-ROUTES").assertIsSelected()
         body.performTouchInput { swipeUp() }
         compose.onNodeWithTag("navigation-tab-ROUTES").assertIsSelected()
-        compose.onNodeWithTag("navigation-tab-HOME").performClick()
-        for (name in listOf("ROUTES", "SUBSCRIPTIONS", "SETTINGS", "SETTINGS")) {
-            dock.performTouchInput { swipeLeft() }
-            compose.onNodeWithTag("navigation-tab-$name").assertIsSelected()
+        dock.performTouchInput { swipe(Offset(width * .38f, centerY), Offset(width * .88f, centerY)) }
+        compose.onNodeWithTag("navigation-tab-SETTINGS").assertIsSelected()
+        dock.performTouchInput {
+            down(Offset(width * .88f, centerY))
+            moveTo(Offset(width * .15f, centerY))
+            cancel()
         }
-        dock.performTouchInput { swipeRight() }
+        compose.onNodeWithTag("navigation-tab-SETTINGS").assertIsSelected()
+        dock.performTouchInput { swipe(Offset(width * .88f, centerY), Offset(width * .62f, centerY)) }
         compose.onNodeWithTag("navigation-tab-SUBSCRIPTIONS").assertIsSelected()
         compose.onNodeWithTag("navigation-tab-HOME").performClick().assertIsSelected()
     }

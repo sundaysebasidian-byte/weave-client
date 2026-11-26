@@ -64,3 +64,24 @@ if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' "$resul
   exit 1
 fi
 grep -E '^Time:|^OK \(' "$results/instrumentation.txt"
+
+# Run these separately so product flows and the storage/recovery tests each retain a receipt.
+# The stock Intel emulator can return no active accessibility window. Exercise the visible
+# chooser control here; the focused physical Back case is a separate opt-in device test.
+routing_classes=io.weave.client.ui.PrimaryFlowRegressionTest
+routing_classes+=,io.weave.client.ui.MainActivityRoutingJourneyTest#addingAnApplicationWaitsForAnExplicitRoutingPolicy
+routing_classes+=,io.weave.client.ui.MainActivityRoutingJourneyTest#notificationEntryAndDialPersistTheUserChoicesAcrossActivityRecreation
+routing_classes+=,io.weave.client.ui.WeaveAdaptiveControlsTest
+routing_classes+=,io.weave.client.ui.ProductFlowVisualTest#bodySwipeStepsAndDockFollowsTheFingerWithoutCommittingCancelledDrags
+"${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
+  "$component" > "$results/routing-instrumentation.txt" 2>&1
+grep -Fx 'OK (9 tests)' "$results/routing-instrumentation.txt"
+awk '
+  /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
+  /^INSTRUMENTATION_STATUS_CODE: 0\r?$/ { passed++ }
+  /^INSTRUMENTATION_STATUS_CODE: -[0-9]+\r?$/ { unsuccessful++ }
+  END {
+    printf "Routing journeys: %d started, %d passed, %d unsuccessful\n", started, passed, unsuccessful
+    exit !(started == 9 && passed == 9 && unsuccessful == 0)
+  }
+' "$results/routing-instrumentation.txt"

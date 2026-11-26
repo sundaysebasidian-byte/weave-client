@@ -33,37 +33,45 @@ class NativeNodeLayoutMatrixTest(private val width: Int, private val scale: Floa
         }
     }
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private fun shell(command: String) {
+    private fun shell(command: String): String =
         instrumentation.uiAutomation.executeShellCommand(command).use { descriptor ->
-            android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() }
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText().trim() }
         }
-    }
     @get:Rule(order = 0) val display = TestRule { base, _ -> object : Statement() {
         override fun evaluate() {
             assertTrue("Refuse display changes on a real phone", Build.HARDWARE == "ranchu" && Build.MODEL.startsWith("sdk_gphone"))
-            shell("wm size ${width}x1080")
-            shell("settings put system font_scale $scale")
-            val deadline = System.currentTimeMillis() + 10_000
-            do {
-                instrumentation.waitForIdleSync()
+            val previousSize = Regex("Override size: (\\d+x\\d+)").find(shell("wm size"))?.groupValues?.get(1)
+            val previousFont = shell("settings get system font_scale").toFloatOrNull()
+            try {
+                shell("wm size ${width}x1080")
+                shell("settings put system font_scale $scale")
+                val deadline = System.currentTimeMillis() + 10_000
+                do {
+                    instrumentation.waitForIdleSync()
+                    val config = instrumentation.targetContext.resources.configuration
+                    if (config.screenWidthDp == width && kotlin.math.abs(config.fontScale - scale) < 0.01f) break
+                    Thread.sleep(50)
+                } while (System.currentTimeMillis() < deadline)
                 val config = instrumentation.targetContext.resources.configuration
-                if (config.screenWidthDp == width && kotlin.math.abs(config.fontScale - scale) < 0.01f) break
-                Thread.sleep(50)
-            } while (System.currentTimeMillis() < deadline)
-            val config = instrumentation.targetContext.resources.configuration
-            assertEquals("Actual Android viewport", width, config.screenWidthDp)
-            assertEquals("Actual Android font scale", scale, config.fontScale, 0.01f)
-            try { base.evaluate() } finally {
-                shell("settings put system font_scale 1.0")
-                shell("wm size 480x1080")
+                assertEquals("Actual Android viewport", width, config.screenWidthDp)
+                assertEquals("Actual Android font scale", scale, config.fontScale, 0.01f)
+                base.evaluate()
+            } finally {
+                if (previousFont == null) shell("settings delete system font_scale")
+                else shell("settings put system font_scale $previousFont")
+                shell("wm size ${previousSize ?: "reset"}")
             }
         }
     } }
     @get:Rule(order = 1) val compose = createComposeRule()
     private val node = ProxyNode("fixture", "hysteria2", "", "fixture-sub", "hysteria2", null)
     private val health = NodeHealthSnapshot(node.name, node.protocol, null, samples = 3, successfulSamples = 0)
-    private fun layout(tag: String): TextLayoutResult {
-        val node = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
+    private fun layout(tag: String): TextLayoutResult = layout(
+        compose.onNodeWithTag(tag, useUnmergedTree = true),
+    )
+
+    private fun layout(text: SemanticsNodeInteraction): TextLayoutResult {
+        val node = text.fetchSemanticsNode()
         val values = mutableListOf<TextLayoutResult>()
         node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(values)
         return values.single()
@@ -115,8 +123,13 @@ class NativeNodeLayoutMatrixTest(private val width: Int, private val scale: Floa
             width == 320 && scale == 2f && language == WeaveLanguage.GERMAN) {
             compose.runOnIdle { showDialog.value = true }
             compose.waitForIdle()
+            compose.onNodeWithText("Fixture subscription").performClick()
             compose.onNode(hasScrollAction(), useUnmergedTree = true).performScrollToNode(hasTestTag("picker-name-fixture"))
             compose.onNodeWithTag("picker-name-fixture", useUnmergedTree = true).assertIsDisplayed()
+            val status = compose.onAllNodesWithText(localizeWeaveText("超时", language), useUnmergedTree = true).onFirst()
+            val statusLayout = layout(status)
+            assertEquals("Probe status must remain a whole word in the actual dialog", 1, statusLayout.lineCount)
+            assertAllGlyphsVisible(statusLayout)
             capture(if (language == WeaveLanguage.ENGLISH) "after-default-exit-english.png" else "after-default-exit-german-large.png")
         }
     }
