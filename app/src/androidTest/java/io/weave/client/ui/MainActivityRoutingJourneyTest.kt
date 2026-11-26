@@ -3,6 +3,7 @@ package io.weave.client.ui
 import android.content.Intent
 import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -39,12 +40,12 @@ class MainActivityRoutingJourneyTest {
     private val payload = "proxies: [{name: 'QA node', type: http, server: 127.0.0.1, port: 8080}]"
 
     private fun requireEmulator() {
-        val test = InstrumentationRegistry.getInstrumentation()
-        val qemu = ParcelFileDescriptor.AutoCloseInputStream(
-            test.uiAutomation.executeShellCommand("getprop ro.kernel.qemu"),
-        ).bufferedReader().use { it.readText().trim() }
-        check(qemu == "1") { "Routing fixtures require an Android emulator" }
+        check(shell("getprop ro.kernel.qemu") == "1") { "Routing fixtures require an Android emulator" }
     }
+
+    private fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
+    ).bufferedReader().use { it.readText().trim() }
 
     @Test fun addingAnApplicationWaitsForAnExplicitRoutingPolicy() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -114,9 +115,22 @@ class MainActivityRoutingJourneyTest {
             val intent = Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_CHOOSE_EXIT)
             ActivityScenario.launch<MainActivity>(intent).use { scenario ->
                 val provider = compose.onNodeWithText(another.name)
+                val node = compose.onNode(hasText("QA node") and hasAnyAncestor(isDialog()))
                 compose.waitUntil(30_000) { runCatching { provider.assertIsDisplayed() }.isSuccess }
+                compose.onNodeWithText(original.name).performClick()
+                node.assertIsDisplayed()
+                // Use the emulator's documented shell input and actual focused Android window.
+                val automation = instrumentation.uiAutomation
+                compose.waitUntil(15_000) { automation.rootInActiveWindow?.packageName == context.packageName }
+                shell("input keyevent KEYCODE_BACK")
+                try {
+                    compose.waitUntil(20_000) { runCatching { provider.assertIsDisplayed() }.isSuccess }
+                } catch (timeout: ComposeTimeoutException) {
+                    val modalNode = compose.onAllNodes(hasText("QA node") and hasAnyAncestor(isDialog())).fetchSemanticsNodes()
+                    throw AssertionError("Android Back did not return to the provider overview. Detail row present: ${modalNode.isNotEmpty()}", timeout)
+                }
                 provider.performClick()
-                compose.onNode(hasText("QA node") and hasAnyAncestor(isDialog())).performClick()
+                node.performClick()
                 compose.waitUntil(10_000) {
                     settings.defaultRouteTarget()?.let {
                         it.kind == RouteKind.FIXED && it.subscriptionId == another.id && it.nodeId == another.nodes.single().id

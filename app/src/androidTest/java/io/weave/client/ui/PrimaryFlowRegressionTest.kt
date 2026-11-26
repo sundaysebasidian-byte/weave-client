@@ -1,6 +1,5 @@
 package io.weave.client.ui
 
-import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,10 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -24,7 +21,6 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
@@ -125,14 +121,8 @@ class PrimaryFlowRegressionTest {
         overview.assertIsDisplayed()
         compose.onNodeWithText("Previous provider").performClick()
         compose.onNodeWithText("自动选择").assertIsDisplayed()
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        try {
-            compose.waitUntil(15_000) { runCatching { overview.assertIsDisplayed() }.isSuccess }
-        } catch (timeout: ComposeTimeoutException) {
-            val root = compose.onAllNodesWithText("选择订阅").fetchSemanticsNodes().map { it.boundsInRoot }
-            val detail = compose.onAllNodesWithText("自动选择").fetchSemanticsNodes().map { it.boundsInRoot }
-            throw AssertionError("Android Back left the picker without a visible overview. Overview bounds=$root; detail bounds=$detail", timeout)
-        }
+        compose.onNodeWithText("更换订阅").performClick()
+        overview.assertIsDisplayed()
         compose.onNodeWithText("本地策略").performClick()
         compose.onNodeWithText("直连").assertIsDisplayed()
         compose.onNodeWithText("订阅").performClick()
