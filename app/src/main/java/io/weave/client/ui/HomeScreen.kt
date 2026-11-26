@@ -642,7 +642,9 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
     val target = state.defaultRouteTarget
     val node = state.activeNode?.takeIf { connected }
     val needsChoice = readiness == ExitReadiness.MISSING || readiness == ExitReadiness.INVALID
+    val emptyLibrary = readiness == ExitReadiness.MISSING && state.hasUsableSubscription == false
     val title = when {
+        emptyLibrary -> localizeWeaveText("选择出口", language)
         readiness == ExitReadiness.MISSING -> localizeWeaveText("尚未选择出口", language)
         readiness == ExitReadiness.NOT_USED -> localizeWeaveText(RoutingMode.DIRECT.label, language)
         node != null -> NodeDisplayName.core(node.name)
@@ -651,9 +653,8 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
     val latency = node?.latencyMs?.takeIf { it in 1..10_000 }
     // Facts only: how the exit was chosen, the protocol and measured latency.
     val meta = when (readiness) {
-        ExitReadiness.MISSING -> localizeWeaveText(
-            if (state.hasUsableSubscription == false) "还没有订阅" else "未选择时自动使用第一个可用订阅", language,
-        )
+        ExitReadiness.MISSING -> if (emptyLibrary) ""
+        else localizeWeaveText("未选择时自动使用第一个可用订阅", language)
         ExitReadiness.INVALID -> localizeWeaveText(HeroDetail.EXIT_INVALID.source, language)
         ExitReadiness.NOT_USED -> localizeWeaveText("直连模式下不使用出口", language)
         ExitReadiness.READY -> listOfNotNull(
@@ -699,7 +700,7 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
+                maxLines = if (emptyLibrary) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
                 translate = false,
             )

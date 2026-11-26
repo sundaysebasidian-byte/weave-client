@@ -66,8 +66,12 @@ class NativeNodeLayoutMatrixTest(private val width: Int, private val scale: Floa
     @get:Rule(order = 1) val compose = createComposeRule()
     private val node = ProxyNode("fixture", "hysteria2", "", "fixture-sub", "hysteria2", null)
     private val health = NodeHealthSnapshot(node.name, node.protocol, null, samples = 3, successfulSamples = 0)
-    private fun layout(tag: String): TextLayoutResult {
-        val node = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
+    private fun layout(tag: String): TextLayoutResult = layout(
+        compose.onNodeWithTag(tag, useUnmergedTree = true),
+    )
+
+    private fun layout(text: SemanticsNodeInteraction): TextLayoutResult {
+        val node = text.fetchSemanticsNode()
         val values = mutableListOf<TextLayoutResult>()
         node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(values)
         return values.single()
@@ -122,6 +126,10 @@ class NativeNodeLayoutMatrixTest(private val width: Int, private val scale: Floa
             compose.onNodeWithText("Fixture subscription").performClick()
             compose.onNode(hasScrollAction(), useUnmergedTree = true).performScrollToNode(hasTestTag("picker-name-fixture"))
             compose.onNodeWithTag("picker-name-fixture", useUnmergedTree = true).assertIsDisplayed()
+            val status = compose.onAllNodesWithText(localizeWeaveText("超时", language), useUnmergedTree = true).onFirst()
+            val statusLayout = layout(status)
+            assertEquals("Probe status must remain a whole word in the actual dialog", 1, statusLayout.lineCount)
+            assertAllGlyphsVisible(statusLayout)
             capture(if (language == WeaveLanguage.ENGLISH) "after-default-exit-english.png" else "after-default-exit-german-large.png")
         }
     }

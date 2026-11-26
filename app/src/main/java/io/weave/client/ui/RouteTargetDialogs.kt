@@ -856,13 +856,21 @@ internal fun NodeHealthEvidence(
  */
 @Composable
 private fun NodeStatusLabel(status: String, tone: WeaveStatusTone, modifier: Modifier) {
-    if (tone == WeaveStatusTone.NEUTRAL) {
+    val colors = MaterialTheme.colorScheme
+    val textColor = when (tone) {
+        WeaveStatusTone.NEUTRAL -> colors.onSurfaceVariant
+        WeaveStatusTone.CRITICAL -> colors.error
+        else -> colors.onSurface
+    }
+    if (tone == WeaveStatusTone.NEUTRAL || LocalDensity.current.fontScale >= 1.5f) {
         Text(
             status,
             translate = false,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
             fontSize = 11.sp,
             lineHeight = 16.sp,
+            fontWeight = if (tone == WeaveStatusTone.NEUTRAL) FontWeight.Normal else FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
             modifier = modifier,
         )
         return
@@ -879,7 +887,7 @@ private fun NodeStatusLabel(status: String, tone: WeaveStatusTone, modifier: Mod
         Text(
             status,
             translate = false,
-            color = if (tone == WeaveStatusTone.CRITICAL) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            color = textColor,
             fontSize = 11.sp,
             lineHeight = 16.sp,
             fontWeight = FontWeight.SemiBold,
