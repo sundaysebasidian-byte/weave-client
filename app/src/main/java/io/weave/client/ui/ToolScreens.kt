@@ -7,6 +7,8 @@ import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,17 +37,18 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -57,9 +60,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.weave.client.core.diagnostics.CoreApi
@@ -80,6 +88,7 @@ import kotlinx.coroutines.launch
 internal fun ExternalImportDialog(
     value: ExternalImport,
     running: Boolean,
+    blockedByOtherImport: Boolean,
     error: String?,
     onDismiss: () -> Unit,
     onConfirm: (name: String) -> Unit,
@@ -90,7 +99,7 @@ internal fun ExternalImportDialog(
         is ExternalImport.Inline -> ""
     }
     var name by remember(value) { mutableStateOf(suggested) }
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = { if (!running) onDismiss() },
         title = { Text("导入外部订阅？", fontWeight = FontWeight.Bold) },
         text = {
@@ -124,7 +133,7 @@ internal fun ExternalImportDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(name) }, enabled = !running) {
+            Button(onClick = { onConfirm(name) }, enabled = !running && !blockedByOtherImport) {
                 if (running) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
@@ -145,7 +154,7 @@ internal fun SubscriptionAutoUpdateDialog(
 ) {
     var selectedHours by remember { mutableStateOf(hours) }
     var unmetered by remember { mutableStateOf(unmeteredOnly) }
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text("自动更新订阅", fontWeight = FontWeight.Bold) },
         text = {
@@ -188,7 +197,7 @@ internal fun LanProxySharingDialog(
     onDismiss: () -> Unit,
 ) {
     LaunchedEffect(enabled) { if (enabled && credentials == null) onReveal() }
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text("局域网代理共享", fontWeight = FontWeight.Bold) },
         text = {
@@ -345,44 +354,95 @@ internal fun ConnectionsScreen(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ConnectionRow(connection: CoreConnection, appName: String, onClose: () -> Unit) {
+internal fun ConnectionRow(connection: CoreConnection, appName: String, onClose: () -> Unit) {
     LiquidGlassPanel(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    connection.destination,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    translate = false,
-                )
-                Text(
-                    "$appName · ${connection.network.uppercase()}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    translate = false,
-                )
-                Text(
-                    ConnectionRowLabel.format(connection.rule, connection.chain),
-                    color = MaterialTheme.colorScheme.secondary,
-                    fontSize = 11.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    translate = false,
-                )
-                Text(
-                    "↑ ${TrafficFormat.bytes(connection.uploadBytes)} · ↓ ${TrafficFormat.bytes(connection.downloadBytes)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    style = MaterialTheme.typography.bodySmall.merge(TabularNumbers),
-                    translate = false,
-                )
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+        ) {
+            val closeSize = 48.dp
+            val titleStyle = LocalTextStyle.current.copy(
+                fontWeight = FontWeight.SemiBold,
+                textDirection = TextDirection.Ltr,
+            )
+            val measurer = rememberTextMeasurer()
+            val titleWidth = measurer.measure(
+                connection.destination, style = titleStyle, softWrap = false, maxLines = 1,
+            ).size.width
+            val closeWidth = with(LocalDensity.current) { closeSize.roundToPx() }
+            val fit = ConnectionEndpointFit.choose(titleWidth, constraints.maxWidth, closeWidth)
+            val title: @Composable () -> Unit = {
+                // Keep IP punctuation and ports together and leave the literal value available to semantics.
+                val content: @Composable (Modifier) -> Unit = { modifier ->
+                    androidx.compose.material3.Text(
+                        connection.destination, modifier = modifier, style = titleStyle,
+                        softWrap = false, maxLines = 1,
+                    )
+                }
+                if (fit == ConnectionEndpointFit.SCROLL) {
+                    // Start at the address prefix even when the surrounding screen is RTL.
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        content(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()))
+                    }
+                } else {
+                    content(Modifier)
+                }
             }
-            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, localizedContentDescription("断开连接")) }
+            val close: @Composable () -> Unit = {
+                IconButton(onClick = onClose, modifier = Modifier.size(closeSize)) {
+                    Icon(Icons.Rounded.Close, localizedContentDescription("断开连接"))
+                }
+            }
+
+            if (fit == ConnectionEndpointFit.INLINE) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        title()
+                        ConnectionRowDetails(connection, appName)
+                    }
+                    close()
+                }
+            } else {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    title()
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            ConnectionRowDetails(connection, appName)
+                        }
+                        close()
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun ConnectionRowDetails(connection: CoreConnection, appName: String) {
+    Text(
+        "$appName · ${connection.network.uppercase()}",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 12.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        translate = false,
+    )
+    Text(
+        ConnectionRowLabel.format(connection.rule, connection.chain),
+        color = MaterialTheme.colorScheme.secondary,
+        fontSize = 11.sp,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        translate = false,
+    )
+    Text(
+        ConnectionTrafficLabel.format(
+            TrafficFormat.bytes(connection.uploadBytes), TrafficFormat.bytes(connection.downloadBytes),
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 11.sp,
+        style = MaterialTheme.typography.bodySmall.merge(TabularNumbers).copy(textDirection = TextDirection.Ltr),
+        translate = false,
+    )
 }
 
 private fun appLabel(context: Context, uid: Int): String = runCatching {
@@ -394,12 +454,22 @@ private fun appLabel(context: Context, uid: Int): String = runCatching {
 /**
  * Temporary core log viewer. Nothing is written to disk; copying always uses the redacted form.
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun LogsScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val api = remember { CoreApi(context.applicationContext) }
+    LogsScreen(onDismiss, api::streamLogs)
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun LogsScreen(
+    onDismiss: () -> Unit,
+    streamLogs: suspend (String, (CoreLogLine) -> Unit) -> Unit,
+) {
+    val context = LocalContext.current
     val lines = remember { mutableStateListOf<CoreLogLine>() }
+    var appendedLines by remember { mutableLongStateOf(0L) }
     var level by remember { mutableStateOf("info") }
     var running by remember { mutableStateOf(true) }
     var redacted by remember { mutableStateOf(true) }
@@ -417,7 +487,7 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
             collect = {
                 // The socket callback runs on IO. Keep the buffer bounded and apply rows on Main.
                 channelFlow {
-                    api.streamLogs(collectionLevel) { line ->
+                    streamLogs(collectionLevel) { line ->
                         if (trySendBlocking(line).isClosed) {
                             throw kotlinx.coroutines.CancellationException("Log collection ended")
                         }
@@ -425,13 +495,18 @@ internal fun LogsScreen(onDismiss: () -> Unit) {
                 }.buffer(16).collectCurrentLogLines(stillCurrent) { line ->
                     lines.add(line)
                     if (lines.size > MAX_LOG_LINES) lines.removeRange(0, lines.size - MAX_LOG_LINES)
+                    appendedLines++
                 }
             },
             stillCurrent = stillCurrent,
             onStopped = { error = true; running = false },
         )
     }
-    LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
+    // Equal messages still advance the tail when the retained size is already fixed at 500.
+    // Jump to the latest frame's tail instead of restarting an animation for every arrival.
+    LaunchedEffect(appendedLines, lines.isEmpty()) {
+        if (lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
+    }
     WeaveToolScreen(
         title = "内核日志",
         subtitle = "只在内存中保留最近 $MAX_LOG_LINES 行；关闭后清除",

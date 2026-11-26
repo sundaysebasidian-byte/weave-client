@@ -6,6 +6,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import android.graphics.Bitmap
+import android.view.KeyEvent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -93,7 +94,7 @@ class ProductExperienceUiTest {
         }
         compose.onNodeWithText(label("添加订阅")).performClick()
         compose.onNodeWithText(label("从其他客户端迁移")).performScrollTo().performClick()
-        compose.onNodeWithText(label("局域网互传")).performScrollTo().performClick()
+        compose.onNodeWithText(label("订阅互传")).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, added); assertEquals(1, migrated); assertEquals(1, transferred) }
     }
 
@@ -163,19 +164,65 @@ class ProductExperienceUiTest {
         compose.runOnIdle { assertEquals(1, cancelled) }
     }
 
+    @Test fun androidBackRetiresDnsChildPanelWithoutClosingSettingsOrCancellingProbe() {
+        var cancelled = 0
+        val probe = mutableStateOf(DnsProbeState())
+        compose.setContent {
+            settings(
+                probeState = probe.value,
+                onProbe = { probe.value = DnsProbeState(running = true) },
+                onCancel = { cancelled++ },
+            )
+        }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        fun pressAndroidBack() {
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            compose.waitForIdle()
+        }
+        fun openChild(entry: String) {
+            compose.onNodeWithText(label(entry)).performScrollTo().performClick()
+            compose.onNodeWithText(label("返回")).assertIsDisplayed()
+        }
+
+        scrollSettings("DNS").performClick()
+        for (entry in listOf(DnsProfile.CUSTOM.label, "解析协议", "解析策略", "测速与可用性")) {
+            openChild(entry)
+            if (entry == "测速与可用性") {
+                compose.onNodeWithText(label("检测全部 DNS")).performScrollTo().performClick()
+                compose.onNodeWithText(label("检测中…")).assertIsDisplayed()
+            }
+            pressAndroidBack()
+            compose.onNodeWithText(label("取消")).assertIsDisplayed()
+            compose.runOnIdle { assertEquals(0, cancelled) }
+        }
+
+        openChild("测速与可用性")
+        compose.onNodeWithText(label("检测中…")).assertIsDisplayed()
+        compose.onNodeWithText(label("返回")).performClick()
+        compose.onNodeWithText(label("取消")).assertIsDisplayed()
+        pressAndroidBack()
+        compose.onNodeWithText(label("取消")).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(1, cancelled) }
+        scrollSettings("DNS").assertIsDisplayed()
+    }
+
     private fun scrollSettings(source: String): SemanticsNodeInteraction {
         compose.onNodeWithTag("settings-list").performScrollToNode(hasText(label(source)))
         return compose.onNodeWithText(label(source))
     }
 
     @androidx.compose.runtime.Composable
-    private fun settings(onCancel: () -> Unit = {}) {
+    private fun settings(
+        probeState: DnsProbeState = DnsProbeState(),
+        onProbe: () -> Unit = {},
+        onCancel: () -> Unit = {},
+    ) {
         CompositionLocalProvider(LocalWeaveLanguage provides WeaveLanguage.ENGLISH) {
             WeaveTheme {
-                SettingsScreen(NetworkPreferences(), WeaveLanguage.ENGLISH, DnsProbeState(), PaddingValues(0.dp),
+                SettingsScreen(NetworkPreferences(), WeaveLanguage.ENGLISH, probeState, PaddingValues(0.dp),
                     onOpenVpnSettings = {}, onAutomaticStrategySelected = {}, onStrategyScopeSelected = {},
                     onDnsTransportSelected = {}, onDnsProfileSelected = {}, onDnsRoutingModeSelected = {},
-                    onCustomDnsEndpointSaved = { true }, onProbeDnsProviders = {}, onIpv6ModeSelected = {},
+                    onCustomDnsEndpointSaved = { true }, onProbeDnsProviders = onProbe, onIpv6ModeSelected = {},
                     onBlockUdpStunChanged = {}, onDomesticDirectChanged = {}, onPaletteSelected = {},
                     onLanguageSelected = {}, onShowVpnDisclosure = {}, onOpenPrivacyObservatory = {},
                     onOpenRecoveryCenter = {}, onOpenPolicyPacks = {}, onOpenLocalRouteRules = {},

@@ -2,7 +2,7 @@
 
 **[简体中文（主要阅读版本）](PRIVACY.zh-CN.md)** · English
 
-Last updated: 2026-10-04
+Last updated: 2026-11-23
 
 This notice describes the local-first Android client in this repository. A
 distributor that changes Weave, adds analytics, or operates a hosted service
@@ -12,9 +12,9 @@ must publish an accurate notice for that build.
 
 The public repository follows the `local-open-source` profile. Weave does not
 operate accounts, a hosted control plane, proxy relays, a node marketplace, a
-subscription service, advertising, analytics, crash reporting, or an in-app
-remote updater. GitHub releases are static source and build artifacts published
-by a maintainer; they are not a Weave backend or a remote configuration channel.
+subscription service, advertising, analytics, or crash reporting. GitHub releases are
+static source and build artifacts published by a maintainer; they are not a Weave
+backend or a remote configuration channel. Weave does not silently install updates.
 
 This boundary does not mean that all traffic stays on the device. A user-selected
 subscription, proxy, DNS resolver, IP-quality service, destination, or LAN peer
@@ -42,6 +42,22 @@ requests, the local UID/package attribution of a connection, and the proxy rule
 that matched it. Weave does not upload that information to a Weave
 server.
 
+## Weave Next app updates
+
+Official Android ARM64 builds of Weave Next check the public GitHub release channel
+when opened, at most once per 24 hours by default. Turn this off in **Settings →
+About → App updates**. You can still check manually. The setting and check time
+are stored on the device. Requests to GitHub and its release asset host reveal
+the request’s network exit IP and ordinary HTTP metadata, not subscriptions,
+routing rules, device identifiers, or diagnostic reports. No Weave server receives
+these requests.
+
+An APK is downloaded only when you select **Download and verify**. The verified
+file stays in Weave’s private cache until you save it through Android’s file picker.
+Weave requests no install-source permission. Open the saved APK in Files and
+confirm the installation with Android. If you choose a cloud-backed folder in the
+system picker, that provider may store the file.
+
 ## Network parties selected by the user
 
 When used, Weave connects to parties outside this project:
@@ -62,14 +78,16 @@ When used, Weave connects to parties outside this project:
 - public HTTPS IP-quality endpoints (`api4.ipify.org`, `api6.ipify.org`, `ipwho.is`,
   `www.cloudflare.com/cdn-cgi/trace`, `cp.cloudflare.com/generate_204`, and
   `www.gstatic.com/generate_204`) only when the user taps “IP 质量检测”. These endpoints see the
-  request's current proxy exit and may return IP, region, ASN and security-label metadata. Weave
+  network exit used for each request (possibly direct) and may return IP, region, ASN and security-label metadata. Weave
   keeps the report in memory and does not send it to a Weave service;
 - common-site reachability endpoints (`x.com`, `www.tiktok.com`, `www.youtube.com`,
-  `www.google.com/generate_204`, `chatgpt.com` and `claude.ai`) only when the user runs the full
+  `www.google.com/generate_204`, `chatgpt.com`, `claude.ai`, `www.netflix.com`,
+  `www.facebook.com` and `www.disneyplus.com`) only when the user runs the full
   “网络与隐私检测” while the VPN is connected. Weave sends a small HTTPS `GET` with a byte-range,
   records only status and round-trip time, and does not read or retain page content. A site can
-  still see the selected proxy exit, and a 401/403/429 means the service responded but may require
+  still see the exit for its request, and a 401/403/429 means the service responded but may require
   login, region access or rate-limit clearance;
+- a separate, user-triggered download from `speed.cloudflare.com` (one sample of up to 1 MiB, with an eight-second deadline). The endpoint sees the exit IP. No body or throughput history is saved;
 - Google's public STUN endpoint (`stun.l.google.com:19302`) for one WebRTC ICE probe only when the
   user opens the browser privacy lab and runs the test. The endpoint can see the request's network
   exit. ICE candidates and browser-surface fields remain in memory and are not uploaded by Weave;
@@ -92,8 +110,8 @@ who obtains the complete QR code or link before expiry can import its contents.
 
 ## Permissions
 
-- `INTERNET` sends traffic requested by the user.
-- `ACCESS_NETWORK_STATE` handles network loss and Wi-Fi/mobile transitions.
+- `INTERNET` sends app traffic, including the documented public GitHub release check.
+- `ACCESS_NETWORK_STATE` handles network loss and Wi-Fi/mobile transitions. The diagnostics screen also reads a local snapshot of the app’s default network: whether Android reports a VPN transport, local IPv4/IPv6 addresses, and the number of configured DNS servers. This sends no packets and retains no raw addresses.
 - `FOREGROUND_SERVICE` and its special-use subtype support the active VPN service.
 - `FOREGROUND_SERVICE_SPECIAL_USE` keeps an active VPN visible and stable.
 - `POST_NOTIFICATIONS` displays VPN state where the Android version requires it.

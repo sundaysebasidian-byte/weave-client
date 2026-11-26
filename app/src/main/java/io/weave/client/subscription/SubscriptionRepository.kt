@@ -16,6 +16,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
+internal class ExistingFileSubscription : IllegalStateException()
+
 internal class PreparedTransfer(val snapshot: SubscriptionTransferSnapshot, val entries: List<NewSubscriptionBatchEntry>)
 
 class SubscriptionRepository(
@@ -183,7 +185,7 @@ class SubscriptionRepository(
         }
         val saved = store.saveReviewed(pending.preview.subscriptionId, pending.revision, pending.name,
             pending.source, pending.prepared.first, pending.prepared.second, pending.prepared.counts,
-            pending.fetched?.remoteMetadata ?: SubscriptionRemoteMetadata(null, null))
+            pending.fetched?.remoteMetadata ?: SubscriptionRemoteMetadata(null, null), currentCoroutineContext())
         synchronized(reviewGate) { if (pendingUpdate === pending) pendingUpdate = null }
         SubscriptionUpdate(toDomain(saved), pending.diff, pending.preview.audit)
     }
@@ -232,12 +234,11 @@ class SubscriptionRepository(
 
     suspend fun rename(subscriptionId: String, name: String): Subscription =
         withContext(Dispatchers.IO) {
-            toDomain(store.rename(subscriptionId, name))
+            toDomain(store.rename(subscriptionId, name, currentCoroutineContext()))
         }
 
-    suspend fun delete(subscriptionId: String) = withContext(Dispatchers.IO) {
-        store.delete(subscriptionId)
-    }
+    /** Caller owns the IO dispatcher and, when updating routes/groups, the profile transaction. */
+    internal fun deleteLocal(subscriptionId: String) = store.delete(subscriptionId)
 
     suspend fun exportForLanTransfer(selectedIds: Set<String>): List<TransferSubscription> =
         withContext(Dispatchers.IO) { store.exportForTransfer(selectedIds) }
@@ -245,6 +246,20 @@ class SubscriptionRepository(
     suspend fun importFromLanTransfer(items: List<TransferSubscription>): List<Subscription> = withContext(Dispatchers.IO) {
         commitTransfer(prepareTransfer(items), currentCoroutineContext())
     }
+
+    internal suspend fun prepareSubscriptionFile(items: List<TransferSubscription>): PreparedTransfer {
+        val snapshot = store.captureTransfer(items, selectedFile = true)
+        if (snapshot.previous.any { it != null }) throw ExistingFileSubscription()
+        val entries = items.map { item ->
+            val prepared = preparation.prepareOffline(item.payload)
+            require(prepared.second.nodeCount > 0)
+            NewSubscriptionBatchEntry(item.name, item.source, prepared.first, prepared.second, prepared.counts)
+        }
+        return PreparedTransfer(snapshot, entries)
+    }
+
+    /** Caller holds the profile lock for the selected epoch. */
+    internal fun exportFileSelection(ids: Set<String>) = store.exportForTransfer(ids)
 
     internal fun exportAllForBackup(): List<TransferSubscription> =
         store.exportAllForBackup()
@@ -429,6 +444,7 @@ class SubscriptionRepository(
                 id = subscriptionId ?: java.util.UUID.randomUUID().toString(),
                 counts = prepared.counts,
                 remoteMetadata = remoteMetadata,
+                coroutine = currentCoroutineContext(),
             ),
         )
     }
@@ -479,6 +495,7 @@ class SubscriptionRepository(
 
     private fun toDomain(record: StoredSubscription) = Subscription(
         id = record.id,
+        hasRuntimePayload = record.hasPayload,
         name = record.name,
         nodeCount = record.nodeCount,
         quota = record.usage?.let { usage ->

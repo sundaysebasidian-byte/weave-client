@@ -5,9 +5,25 @@ They install alongside each other. A Weave Next APK must never be advertised as 
 in-place update to the legacy app. Keep the legacy release assets available and put
 any migration notice on the release page, not in an update APK or legacy asset slot.
 
-Route updates only to an exact package match. A matching package also must use the
-correct pinned signing certificate and a higher version code. No automatic Android
-application updater is enabled in this source revision.
+## Updating an existing Weave Next installation
+
+On a supported official Android ARM64 build with the update feature, open
+**Settings → About → App updates**. Automatic checks run when you open the app at
+most once every 24 hours and can be switched off. Manual checks remain available.
+Only matching public GitHub releases are offered. Before export, Weave checks that
+the APK targets `io.weave.client.next` and ARM64, has a higher build number, and
+is signed by the expected production certificate matching the installed app.
+The release size and digest are checked too; the digest does not replace the
+signature check.
+
+Tap **Download and verify**, then **Save APK**. Choose a local folder such as
+Downloads, open the saved file from Android’s Files app, and confirm the system
+update. Android may require you to allow the particular Files app to install an APK;
+Weave does not request install-source permission. Canceling the Android prompt
+does not replace the installed app. Successful in-place updates to Weave Next
+do not require importing a legacy backup.
+
+## Moving data from the legacy app
 
 Keep the old app installed. In old Weave, export a password-protected backup via the
 app's backup screen. Open Weave Next and restore through the system file picker,

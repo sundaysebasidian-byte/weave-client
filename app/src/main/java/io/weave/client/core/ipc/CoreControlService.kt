@@ -43,9 +43,16 @@ class CoreControlService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = messenger.binder
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        clients.clear()
+        AppConnectionTrace.stop()
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         scope.cancel()
         clients.clear()
+        AppConnectionTrace.stop()
         super.onDestroy()
     }
 
@@ -59,12 +66,19 @@ class CoreControlService : Service() {
                 if (clients.none { it.binder == client.binder }) clients += client
                 send(client, CoreIpc.MSG_STATE, stateBundle())
             }
-            CoreIpc.MSG_UNREGISTER -> replyTo?.let { client -> clients.removeAll { it.binder == client.binder } }
+            CoreIpc.MSG_UNREGISTER -> replyTo?.let { client ->
+                val removed = clients.removeAll { it.binder == client.binder }
+                if (removed && clients.isEmpty()) AppConnectionTrace.stop()
+            }
             CoreIpc.MSG_CONFIRM_REACHABLE -> VpnRuntimeState.confirmReachable(data.getLong(CoreIpc.KEY_REVISION))
-            CoreIpc.MSG_TRACE_START -> AppConnectionTrace.start()
-            CoreIpc.MSG_TRACE_STOP -> AppConnectionTrace.stop()
-            CoreIpc.MSG_TRACE_CLEAR -> AppConnectionTrace.clear()
-            CoreIpc.MSG_TRACE_SNAPSHOT -> reply(replyTo, requestId) { CoreIpc.encodeTrace(AppConnectionTrace.snapshot()) }
+            // A queued command from a detached window must not affect the next binding.
+            CoreIpc.MSG_TRACE_START -> if (isRegistered(replyTo)) AppConnectionTrace.start() else Unit
+            CoreIpc.MSG_TRACE_STOP -> if (isRegistered(replyTo)) AppConnectionTrace.stop() else Unit
+            CoreIpc.MSG_TRACE_CLEAR -> if (isRegistered(replyTo)) AppConnectionTrace.clear() else Unit
+            CoreIpc.MSG_TRACE_SNAPSHOT -> if (isRegistered(replyTo)) {
+                val entries = AppConnectionTrace.snapshot()
+                reply(replyTo, requestId) { CoreIpc.encodeTrace(entries) }
+            } else Unit
             CoreIpc.MSG_QUERY_RUNTIME -> reply(replyTo, requestId) {
                 CoreIpc.encodeRuntime(engine.queryRuntime()).apply {
                     putLockdown(SystemVpnProtection.lockdownEnabled())
@@ -78,6 +92,9 @@ class CoreControlService : Service() {
             }
         }
     }
+
+    private fun isRegistered(client: Messenger?): Boolean =
+        client != null && clients.any { it.binder == client.binder }
 
     private fun Bundle.subscriptionId(): String =
         requireNotNull(getString(CoreIpc.KEY_SUBSCRIPTION_ID)) { "missing subscription" }
@@ -101,6 +118,7 @@ class CoreControlService : Service() {
         CoreIpc.encodeState(VpnRuntimeState.snapshot.value, SystemVpnProtection.lockdownEnabled())
 
     private fun broadcastState() {
+        if (clients.isEmpty()) return
         val bundle = stateBundle()
         clients.forEach { client ->
             if (!send(client, CoreIpc.MSG_STATE, bundle)) clients.remove(client)

@@ -2,20 +2,20 @@
 
 ## Supported versions
 
-Weave currently publishes prereleases. The latest public Android candidate is
-[0.4.0-rc4 / Build 110](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/v0.4.0-rc4),
-not a stable release. Its exact source is under the matching tag. `main` now
-integrates the RC4 code and tests; later main builds do not inherit the published
-binary's verification. Security fixes target the latest published
-prerelease. Older APKs and unofficial builds are not supported.
+Weave currently publishes prereleases. The public Weave Next Android candidate is
+[0.4.0-rc5 / Build 111](https://github.com/sundaysebasidian-byte/weave-client/releases/tag/weave-next-v0.4.0-rc5),
+not a stable release. Its exact source is under the matching tag. Later source
+builds do not inherit the published binary’s verification. Security fixes target
+the latest published prerelease; older APKs and unofficial builds are not supported.
 
 ## Distribution boundary
 
 The public build is intended to remain a local client: no Weave account,
 hosted control plane, proxy relay, telemetry, crash-reporting service, bundled
-node credentials, or in-app remote updater is part of this repository. A user
-may still deliberately connect to a subscription, proxy, DNS, IP-quality, or
-LAN endpoint; those third parties are outside Weave's trust boundary. See the
+node credentials, or silent app installation. Weave Next can check the public
+GitHub release channel and verify a user-requested APK; Android handles installation
+after the user opens the file. GitHub, as well as subscription, proxy, DNS,
+IP-quality, and LAN endpoints, is outside Weave's service boundary. See the
 [local-open-source release profile](docs/LOCAL_ONLY_RELEASE_PROFILE.md) and the
 [network endpoint inventory](docs/NETWORK_ENDPOINT_INVENTORY.md) before auditing
 a release. This statement describes engineering scope and is not a legal or

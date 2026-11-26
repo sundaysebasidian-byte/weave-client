@@ -374,7 +374,7 @@ private fun RoutesHeader(
                 onClick = onAdd,
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 "分流",
@@ -404,12 +404,26 @@ private fun PresetPill(routingMode: RoutingMode, domesticDirect: Boolean, onPres
         routingMode == RoutingMode.GLOBAL -> "全部代理"
         else -> routingMode.label
     }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Reading order of the two presets; a horizontal swipe on the pill flips between them.
+    val presetIndex = when {
+        mainland -> 0
+        routingMode == RoutingMode.GLOBAL -> 1
+        else -> -1
+    }
     Box {
         Row(
             modifier = Modifier
                 .padding(bottom = 4.dp)
                 .heightIn(min = WeaveUiTokens.minTouchTarget)
                 .clip(RoundedCornerShape(50))
+                .weaveSwipe(threshold = 28.dp) { step ->
+                    val target = if (presetIndex < 0) (if (step > 0) 1 else 0) else presetIndex + step
+                    if (target in 0..1 && target != presetIndex) {
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+                        onPreset(target == 0)
+                    }
+                }
                 .clickable(role = Role.Button) { open = true }
                 .testTag("routes-preset"),
             verticalAlignment = Alignment.CenterVertically,
@@ -422,7 +436,13 @@ private fun PresetPill(routingMode: RoutingMode, domesticDirect: Boolean, onPres
                     .padding(start = 14.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = scheme.onPrimaryContainer, maxLines = 1)
+                androidx.compose.animation.AnimatedContent(
+                    targetState = label,
+                    transitionSpec = { WeaveMotion.statusEnter togetherWith WeaveMotion.statusExit },
+                    label = "routes-preset-label",
+                ) { shown ->
+                    Text(shown, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = scheme.onPrimaryContainer, maxLines = 1)
+                }
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Rounded.KeyboardArrowDown, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
             }
@@ -630,6 +650,7 @@ private fun CollapsedGroup(
     open: Boolean,
     onToggle: () -> Unit,
 ) {
+    val chevron = disclosureRotation(open)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -660,7 +681,7 @@ private fun CollapsedGroup(
                             .background(badge.background),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(route.monogram.take(1), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                        Text(RouteBadgeMonogram.first(route.monogram), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
                     }
                 }
             }
@@ -676,7 +697,7 @@ private fun CollapsedGroup(
             Icons.Rounded.KeyboardArrowDown,
             null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = if (open) 180f else 0f },
+            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = chevron },
         )
     }
 }

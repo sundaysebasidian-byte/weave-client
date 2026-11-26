@@ -9,7 +9,7 @@
         <intent
             android:action="io.weave.client.action.CONNECT"
             android:targetClass="io.weave.client.MainActivity"
-            android:targetPackage="io.weave.client" />
+            android:targetPackage="io.weave.client.next" />
     </shortcut>
     <shortcut
         android:shortcutId="disconnect"
@@ -20,7 +20,7 @@
         <intent
             android:action="io.weave.client.action.DISCONNECT"
             android:targetClass="io.weave.client.MainActivity"
-            android:targetPackage="io.weave.client" />
+            android:targetPackage="io.weave.client.next" />
     </shortcut>
     <shortcut
         android:shortcutId="import"
@@ -31,6 +31,6 @@
         <intent
             android:action="io.weave.client.action.IMPORT"
             android:targetClass="io.weave.client.MainActivity"
-            android:targetPackage="io.weave.client" />
+            android:targetPackage="io.weave.client.next" />
     </shortcut>
 </shortcuts>

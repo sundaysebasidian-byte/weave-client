@@ -8,7 +8,7 @@ swiftc -module-cache-path "$brand_work_dir/swift-cache" "$brand_root/macos/Tools
 "$brand_work_dir/export" "$brand_source" "$brand_work_dir/master.png" alpha
 cp "$brand_work_dir/master.png" "$brand_root/macos/Resources/WeaveIcon-1024.png"
 sips -z 512 512 "$brand_work_dir/master.png" --out "$brand_work_dir/icon-512.png" >/dev/null
-cwebp -quiet -lossless "$brand_work_dir/icon-512.png" -o "$brand_root/docs/images/weave-icon.webp"
+cwebp -quiet -lossless -m 6 -q 100 -exact "$brand_work_dir/icon-512.png" -o "$brand_root/docs/images/weave-icon.webp"
 cp "$brand_root/docs/images/weave-icon.webp" "$brand_root/app/src/main/res/drawable-nodpi/ic_launcher_art.webp"
 sips -z 256 256 "$brand_work_dir/master.png" --out "$brand_root/windows/src/Weave.Windows/Assets/Weave.png" >/dev/null
 "$brand_work_dir/export" "$brand_source" "$brand_root/ios/WeaveIOS/Resources/Assets.xcassets/AppIcon.appiconset/WeaveIcon-1024.png" opaque

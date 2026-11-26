@@ -8,7 +8,7 @@ class DistributionProfileTest {
     @Test
     fun `public build keeps hosted service and telemetry disabled`() {
         assertFalse(DistributionProfile.HOSTED_WEAVE_SERVICE)
-        assertFalse(DistributionProfile.REMOTE_APP_UPDATES)
+        assertFalse(DistributionProfile.SILENT_APP_INSTALLS)
         assertFalse(DistributionProfile.TELEMETRY)
         assertFalse(DistributionProfile.CRASH_REPORTING)
         assertFalse(DistributionProfile.BUNDLED_PROXY_CREDENTIALS)

@@ -94,7 +94,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -115,6 +114,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -242,9 +243,11 @@ internal fun SettingsScreen(
     onOpenQuickStart: () -> Unit = {},
     quickStartReducedMotion: Boolean = false,
     onQuickStartMotionChanged: (Boolean) -> Unit = {},
+    onOpenAppUpdates: () -> Unit = {},
 ) {
     var showPalette by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
+    val packagedLanguages = LocalPackagedLanguagePicker.current
     var showAutomaticStrategy by remember { mutableStateOf(false) }
     var showStrategyScope by remember { mutableStateOf(false) }
     var showDnsSettings by remember { mutableStateOf(false) }
@@ -288,7 +291,7 @@ internal fun SettingsScreen(
                 LinkEntry(
                     Icons.Rounded.Language,
                     "语言",
-                    if (languageFollowsSystem) {
+                    packagedLanguages?.selected?.nativeLabel ?: if (languageFollowsSystem) {
                         localizeWeaveText("跟随系统", language) + " · " + language.nativeLabel
                     } else {
                         language.nativeLabel
@@ -305,7 +308,7 @@ internal fun SettingsScreen(
                     "DNS",
                     listOf(
                         preferences.dnsProfile.label,
-                        preferences.dnsTransport.label,
+                        preferences.effectiveDnsTransport.label,
                         preferences.dnsRoutingMode.label,
                     ).joinToString(" · ") { localizeWeaveText(it, language) },
                 ) { showDnsSettings = true },
@@ -345,7 +348,7 @@ internal fun SettingsScreen(
                     },
                 ) { showAutoUpdate = true },
                 LinkEntry(Icons.Rounded.Lock, "备份与恢复", null, onOpenBackup),
-                LinkEntry(Icons.Rounded.SyncAlt, "局域网互传", null, onOpenLanTransfer),
+                LinkEntry(Icons.Rounded.SyncAlt, "订阅互传", null, onOpenLanTransfer),
             ),
         ),
         // Advanced settings: collapsed by default, but every entry stays one tap away and a
@@ -415,6 +418,7 @@ internal fun SettingsScreen(
             key = "about",
             title = "关于",
             entries = listOf(
+                LinkEntry(Icons.Rounded.CloudDownload, "应用更新", null, onOpenAppUpdates),
                 LinkEntry(Icons.Rounded.Policy, "Weave ${BuildConfig.VERSION_NAME}", "开源许可与第三方组件") {
                     showOpenSourceDetails = true
                 },
@@ -539,6 +543,36 @@ internal fun SettingsScreen(
         )
     }
     if (showLanguage) {
+        val picker = packagedLanguages
+        // The ordinary choices render immediately. This read belongs only to the open dialog.
+        val verifiedChoices by produceState<List<PackagedAppLocale>?>(null, picker) {
+            value = null
+            value = picker?.loadChoices?.invoke().orEmpty()
+        }
+        val deferredLoading by produceState(false, picker != null && verifiedChoices == null) {
+            value = false
+            if (picker != null && verifiedChoices == null) {
+                delay(160)
+                value = true
+            }
+        }
+        var failed by remember { mutableStateOf(false) }
+        var pending by remember { mutableStateOf<PackagedLanguageTap?>(null) }
+        fun submit(tap: PackagedLanguageTap) {
+            if (!showLanguage || pending != null || picker == null) return
+            failed = false
+            when (picker.applyTap(tap)) {
+                PackagedLanguageTapResult.APPLIED -> showLanguage = false
+                PackagedLanguageTapResult.NOT_APPLIED -> failed = true
+                PackagedLanguageTapResult.UNCONFIRMED -> pending = tap
+            }
+        }
+        LaunchedEffect(pending, picker) {
+            val tap = pending ?: return@LaunchedEffect
+            delay(200)
+            // Read only. Never send a second platform write for an unconfirmed tap.
+            if (picker?.reconcile?.invoke(tap) == true) showLanguage = false
+        }
         SettingChoiceDialog<WeaveLanguage?>(
             title = "语言",
             options = listOf(null) + WeaveLanguage.entries,
@@ -547,8 +581,33 @@ internal fun SettingsScreen(
             description = { it?.description ?: "使用手机的系统语言；也可在系统“应用语言”中单独设置" },
             onDismiss = { showLanguage = false },
             onSelect = {
-                onLanguageSelected(it)
-                showLanguage = false
+                if (picker?.selected == null) {
+                    onLanguageSelected(it)
+                    showLanguage = false
+                } else {
+                    submit(PackagedLanguageTap.Legacy(it))
+                }
+            },
+            showSelected = picker?.selected == null,
+            choicesEnabled = pending == null,
+            extraChoices = {
+                if (deferredLoading) {
+                    CircularProgressIndicator(modifier = Modifier.padding(8.dp).size(16.dp), strokeWidth = 2.dp)
+                }
+                verifiedChoices.orEmpty().forEach { option ->
+                    WeaveChoiceRow(
+                        title = option.nativeLabel,
+                        translateTitle = false,
+                        selected = option.tag == picker?.selected?.tag,
+                        enabled = pending == null,
+                        modifier = Modifier.padding(vertical = 1.dp),
+                        onClick = { submit(PackagedLanguageTap.Regional(option)) },
+                    )
+                }
+                when {
+                    pending != null -> Text("未知", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    failed -> Text("请求失败", color = MaterialTheme.colorScheme.error)
+                }
             },
         )
     }
@@ -639,7 +698,7 @@ internal fun SettingsScreen(
                 "AndroidX" to "Apache-2.0。用于 Android UI、生命周期和系统兼容。",
                 "系统相机 / ZXing" to "相机扫码使用系统相机预览；二维码内容由随包 ZXing 本机识别，Weave 不把二维码内容发送到自己的服务器。",
                 "对应源码" to "每个公开发行版应在同一 GitHub Release 附近提供对应源码、构建说明、校验和与第三方清单。",
-                "发行配置" to "本仓库使用 local-open-source 配置：没有 Weave 云端控制、节点中继、内置凭据或应用远程更新；主动选择的第三方端点仍按隐私说明工作。",
+                "发行配置" to "本仓库采用 local-open-source 配置。官方 Android ARM64 版可查询 GitHub；可在应用更新中关闭自动检查。安装包仅在你点击后下载，安装须由你在 Android 中确认。",
             ),
             onDismiss = { showOpenSourceDetails = false },
         )
@@ -1068,8 +1127,11 @@ private fun <T> SettingChoiceDialog(
     description: (T) -> String,
     onDismiss: () -> Unit,
     onSelect: (T) -> Unit,
+    showSelected: Boolean = true,
+    choicesEnabled: Boolean = true,
+    extraChoices: @Composable () -> Unit = {},
 ) {
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
@@ -1084,7 +1146,8 @@ private fun <T> SettingChoiceDialog(
                     WeaveChoiceRow(
                         title = label(option),
                         supporting = description(option),
-                        selected = option == selected,
+                        selected = showSelected && option == selected,
+                        enabled = choicesEnabled,
                         onClick = { onSelect(option) },
                         modifier = Modifier.padding(vertical = 1.dp),
                         trailing = if (option is WeavePalette) {
@@ -1094,6 +1157,7 @@ private fun <T> SettingChoiceDialog(
                         },
                     )
                 }
+                extraChoices()
             }
         },
         confirmButton = {},
@@ -1109,9 +1173,9 @@ private fun AppearanceChoiceDialog(
     onDismiss: () -> Unit,
     onSelect: (WeavePalette) -> Unit,
 ) {
-    val minimal = WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.MINIMAL }
-    val art = WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.ART }
-    AlertDialog(
+    val minimal = MinimalPalettes
+    val art = ArtPalettes
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text("外观", fontWeight = FontWeight.Bold) },
         text = {
@@ -1249,3 +1313,6 @@ private fun PaletteSwatch(palette: WeavePalette) {
         }
     }
 }
+
+private val MinimalPalettes: List<WeavePalette> by lazy { WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.MINIMAL } }
+private val ArtPalettes: List<WeavePalette> by lazy { WeavePalette.entries.filter { it.group == WeaveAppearanceGroup.ART } }

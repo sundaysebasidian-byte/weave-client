@@ -77,6 +77,21 @@ class DownloadProbeTest {
         }
     }
 
+    @Test
+    fun shortOrContentEncodedResponsesAreNotSpeedSamples() {
+        for (encoded in listOf(false, true)) {
+            val body = Body(if (encoded) DownloadProbe.MAX_BYTES else 127)
+            val factory = Factory { call, callback ->
+                val fixture = response(call, 200, body)
+                callback.onResponse(call, if (!encoded) fixture else fixture.newBuilder().header("Content-Encoding", "gzip").build())
+            }
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { DownloadProbe({ factory }, 8_000).run() }
+            }
+            assertEquals(0L, body.closed.count)
+        }
+    }
+
     private class Factory(private val reply: (FakeCall, Callback) -> Unit) : Call.Factory {
         val enqueued = CountDownLatch(1)
         val cancelled = CountDownLatch(1)

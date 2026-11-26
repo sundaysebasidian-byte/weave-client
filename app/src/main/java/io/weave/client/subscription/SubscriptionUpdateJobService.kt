@@ -165,7 +165,7 @@ internal class SubscriptionAutoUpdater(private val context: Context) {
             notify(
                 FAILURE_NOTIFICATION_ID,
                 context.getString(R.string.update_failed_title),
-                context.getString(R.string.update_failed_body, failed),
+                context.resources.getQuantityString(R.plurals.update_failed_body, failed, failed),
             )
         }
         if (applied) WeaveVpnService.reloadIfRunning(context)

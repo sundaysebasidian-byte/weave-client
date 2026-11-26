@@ -120,7 +120,11 @@ enum class WeaveLanguage(
 
     companion object {
         /** Best match for the device locale; unsupported languages use English. */
-        fun fromSystem(locale: java.util.Locale = java.util.Locale.getDefault()): WeaveLanguage {
+        fun fromSystem(locale: java.util.Locale = java.util.Locale.getDefault()): WeaveLanguage =
+            matchSystem(locale) ?: ENGLISH
+
+        /** An explicit per-app selection must not be mistaken for this app's display fallback. */
+        internal fun matchSystem(locale: java.util.Locale): WeaveLanguage? {
             val language = locale.language.lowercase()
             if (language == "zh") {
                 val script = locale.script.lowercase()
@@ -131,7 +135,7 @@ enum class WeaveLanguage(
                     SIMPLIFIED_CHINESE
                 }
             }
-            return entries.firstOrNull { it.localeTag == language } ?: ENGLISH
+            return entries.firstOrNull { it.localeTag == language }
         }
     }
 }
@@ -182,7 +186,12 @@ data class NetworkPreferences(
     val systemHttpProxy: Boolean = false,
     /** Lets other LAN/hotspot devices use the authenticated mixed proxy. */
     val lanSharing: Boolean = false,
-)
+) {
+    val effectiveDnsTransport: DnsTransport
+        get() = if (dnsProfile == DnsProfile.CUSTOM && customDnsEndpoint.isNotBlank()) {
+            if (customDnsEndpoint.trimStart().startsWith("tls://")) DnsTransport.DOT else DnsTransport.DOH
+        } else dnsTransport
+}
 
 /** Plain-DNS resolvers used only to resolve the encrypted DNS hostnames themselves. */
 enum class BootstrapDns(val label: String, val servers: List<String>) {
@@ -220,6 +229,7 @@ data class Subscription(
     val updatedAtMillis: Long? = null,
     val remote: Boolean = false,
     val enabled: Boolean = true,
+    val hasRuntimePayload: Boolean = true,
 )
 
 @Immutable

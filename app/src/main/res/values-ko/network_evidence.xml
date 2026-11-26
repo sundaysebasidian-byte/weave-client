@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="net_active_disclosure">검사를 실행하면 ipify, ipwho.is, Cloudflare, Google(STUN 포함) 및 아래 사이트에 요청을 보냅니다. 각 서비스는 해당 요청의 외부 IP 주소를 볼 수 있습니다.</string>
+    <string name="net_link_snapshot">Android에서 확인한 기본 네트워크</string>
+    <string name="net_seen">확인됨</string>
+    <string name="net_not_seen">확인되지 않음</string>
+    <string name="net_dns_count">설정된 DNS 서버: %1$s</string>
+    <string name="net_link_scope">VPN은 네트워크 연결 방식을 나타내고, IPv4와 IPv6는 로컬 주소를 나타냅니다. 이 정보만으로 요청이 어떤 DNS 해석기나 프록시를 사용했는지는 알 수 없습니다.</string>
+    <string name="net_download_scope">이 앱의 경로를 통해 Cloudflare에서 HTTPS로 한 번 다운로드합니다. 연결 시간도 포함되며 회선의 최고 속도를 측정하는 것은 아닙니다.</string>
+    <string name="net_download_phases">응답 헤더까지: %1$d ms · 본문 읽기: %2$d ms</string>
+    <string name="net_latency_scope">사이트마다 204 응답을 요청하는 HTTPS 요청을 3회 보냅니다. 표본이 3개일 때 P95는 성공한 요청 중 가장 오래 걸린 값입니다. 지터는 연속으로 성공한 요청 사이의 지연 변화량 평균입니다. 요청 실패는 패킷 손실과 다릅니다.</string>
+    <string name="net_reading_exit">HTTPS 요청의 외부 IP 확인 중…</string>
+    <string name="net_run_exit">연결된 상태에서 검사하면 테스트 사이트가 확인한 외부 IP를 볼 수 있습니다.</string>
+    <string name="net_route_scope">HTTPS 검사는 이 앱의 라우팅 규칙을 따르며 직접 연결을 사용할 수도 있습니다. 사이트에서 응답해도 콘텐츠나 계정에 접근할 수 있다는 뜻은 아닙니다.</string>
+</resources>

@@ -86,7 +86,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -226,9 +225,13 @@ internal fun HeaderActionButton(
     contentDescription: String,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(WeaveUiTokens.headerActionSize),
+        modifier = Modifier
+            .size(WeaveUiTokens.headerActionSize)
+            .pressScale(interactionSource, pressedScale = 0.9f),
+        interactionSource = interactionSource,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = CircleShape,
@@ -439,7 +442,7 @@ internal fun InformationDialog(
     sections: List<Pair<String, String>>,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

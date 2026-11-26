@@ -77,6 +77,39 @@ class RouteReferenceSanitizerTest {
         assertEquals(blocked, RouteReferenceSanitizer.routes(blocked, listOf(subscription), listOf(node)))
     }
 
+    @Test
+    fun `indexes only eligible fixed keys and stops after first matches`() {
+        val other = subscription.copy(id = "other")
+        val raw = listOf(
+            node.copy(name = "First"),
+            node.copy(name = "Duplicate"),
+            node.copy(subscriptionId = other.id, name = "Other subscription"),
+            node.copy(subscriptionId = "deleted", name = "Never read"),
+        )
+        var reads = 0
+        val tracked = object : AbstractList<ProxyNode>() {
+            override val size = raw.size
+            override fun get(index: Int): ProxyNode = raw[index].also { reads++ }
+        }
+        val first = RouteTarget(RouteKind.FIXED, "旧", subscription.id, node.id)
+        val second = first.copy(subscriptionId = other.id)
+        val unavailable = first.copy(subscriptionId = "deleted")
+        val result = RouteReferenceSanitizer.routes(
+            listOf(route("one.app", first), route("one.app", second), route("two.app", second),
+                route("three.app", unavailable)),
+            listOf(subscription, other),
+            tracked,
+        )
+        assertEquals(listOf("one.app", "two.app", "three.app"), result.map { it.packageName })
+        assertEquals(listOf("First", "Other subscription"), result.take(2).map { it.target.label })
+        assertEquals(RouteKind.BLOCK, result.last().target.kind)
+        assertEquals(3, reads)
+
+        reads = 0
+        RouteReferenceSanitizer.routes(listOf(route("one.app", unavailable)), listOf(subscription), tracked)
+        assertEquals(0, reads)
+    }
+
     private fun route(packageName: String, target: RouteTarget) = AppRoute(
         packageName = packageName,
         appName = packageName,

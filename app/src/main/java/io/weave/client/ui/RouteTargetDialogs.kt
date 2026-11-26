@@ -90,7 +90,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -110,12 +109,12 @@ import androidx.compose.material3.Text as MaterialText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
@@ -130,6 +129,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,6 +141,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.content.ContextCompat
+import io.weave.client.R
 import io.weave.client.BuildConfig
 import io.weave.client.apps.InstalledApp
 import io.weave.client.core.diagnostics.LensState
@@ -194,6 +195,7 @@ internal fun AppPickerDialog(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
+    val icons = rememberPickerIcons()
     var query by remember { mutableStateOf("") }
     val filtered = remember(apps, query) {
         val term = query.trim()
@@ -207,21 +209,22 @@ internal fun AppPickerDialog(
         }
     }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择应用", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.app_picker_title), fontWeight = FontWeight.Bold, translate = false) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("搜索应用或包名") },
+                    label = { Text(stringResource(R.string.app_picker_search), translate = false) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (filtered.isEmpty()) {
                     Text(
-                        "没有可添加的启动器应用",
+                        stringResource(R.string.app_picker_empty),
+                        translate = false,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 20.dp),
                     )
@@ -236,7 +239,6 @@ internal fun AppPickerDialog(
                             key = { it.packageName },
                             contentType = { "installed-app" },
                         ) { app ->
-                            val badge = appBadgeColors(app.tint)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -244,21 +246,7 @@ internal fun AppPickerDialog(
                                     .padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(13.dp))
-                                        .background(badge.background),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        app.monogram,
-                                        color = badge.content,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 13.sp,
-                                        translate = false,
-                                    )
-                                }
+                                PickerAppIcon(app, icons)
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -272,12 +260,13 @@ internal fun AppPickerDialog(
                                         fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
+                                        style = androidx.compose.material3.LocalTextStyle.current.copy(textDirection = TextDirection.Ltr),
                                         translate = false,
                                     )
                                 }
                                 Icon(
                                     Icons.Rounded.Add,
-                                    contentDescription = localizedContentDescription("添加 ${app.label}"),
+                                    contentDescription = stringResource(R.string.app_picker_add, app.label),
                                 )
                             }
                         }
@@ -287,7 +276,7 @@ internal fun AppPickerDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.app_picker_close), translate = false) }
         },
     )
 }
@@ -296,7 +285,7 @@ internal fun AppPickerDialog(
 internal fun RouteTargetDialog(
     favorites: Set<String>,
     onFavorite: (ProxyNode) -> Unit,
-    onSubscriptionSelected: (String) -> Unit,
+    onSubscriptionSelected: (String?) -> Unit,
     route: AppRoute,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
@@ -311,7 +300,7 @@ internal fun RouteTargetDialog(
     var confirmingDelete by remember(route.packageName) { mutableStateOf(false) }
 
     if (confirmingDelete) {
-        AlertDialog(
+        WeaveDialog(
             onDismissRequest = { confirmingDelete = false },
             title = { Text("删除分流规则？", fontWeight = FontWeight.Bold) },
             text = {
@@ -355,7 +344,7 @@ internal fun RouteTargetDialog(
 internal fun DefaultRouteTargetDialog(
     favorites: Set<String>,
     onFavorite: (ProxyNode) -> Unit,
-    onSubscriptionSelected: (String) -> Unit,
+    onSubscriptionSelected: (String?) -> Unit,
     selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
@@ -389,7 +378,7 @@ internal fun DefaultRouteTargetDialog(
 private fun ConditionalTargetDialog(
     favorites: Set<String>,
     onFavorite: (ProxyNode) -> Unit,
-    onSubscriptionSelected: (String) -> Unit,
+    onSubscriptionSelected: (String?) -> Unit,
     title: String,
     selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
@@ -407,8 +396,9 @@ private fun ConditionalTargetDialog(
     var selectedSubscriptionId by rememberSaveable(title) { mutableStateOf(selectedTarget?.subscriptionId) }
     var nodeSearch by rememberSaveable(selectedSubscriptionId) { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(selectedSubscriptionId) {
+    DisposableEffect(selectedSubscriptionId) {
         selectedSubscriptionId?.let(onSubscriptionSelected)
+        onDispose { onSubscriptionSelected(null) }
     }
     val selectedSubscription = subscriptions.firstOrNull {
         it.id == selectedSubscriptionId
@@ -428,7 +418,7 @@ private fun ConditionalTargetDialog(
         }
     }
 
-    AlertDialog(
+    WeaveDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
@@ -758,7 +748,11 @@ internal fun NodeHealthEvidence(
     protocolModifier: Modifier = Modifier,
 ) {
     val language = LocalWeaveLanguage.current
-    val text = remember(health, checked, language) { nodeProbeResultText(health, checked, language) }
+    val staged = LocalStagedWeaveLocale.current
+    val released = LocalReleasedAppCopy.current
+    val text = remember(health, checked, language, staged, released) {
+        nodeProbeResultText(health, checked, language, staged, released)
+    }
     val tone = nodeHealthTone(health, checked)
     val status = text.substringBefore('\n')
     val detail = text.substringAfter('\n', missingDelimiterValue = "")

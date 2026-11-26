@@ -43,7 +43,7 @@ internal class KaringBackupSource {
             val group = value as? Map<*, *> ?: throw SubscriptionImportException("订阅文件格式无效")
             val groupId = group["groupid"] as? String ?: throw SubscriptionImportException("订阅文件格式无效")
             require(groupId.isNotBlank() && groupIds.add(groupId)) { "订阅文件格式无效" }
-            val name = (group["remark"] as? String)?.trim()?.take(80)?.takeIf { it.isNotEmpty() } ?: "Imported subscription"
+            val name = (group["remark"] as? String)?.trim()?.let(LocalSubscriptionNameLimit::truncate)?.takeIf { it.isNotEmpty() } ?: "Imported subscription"
             val servers = group["servers"] as? List<*> ?: throw SubscriptionImportException("订阅文件格式无效")
             require(servers.size <= 5000 && servers.all { it is Map<*, *> }) { "订阅文件格式无效" }
             val supported = servers.isNotEmpty() && servers.all { safeNode(it as Map<*, *>) }

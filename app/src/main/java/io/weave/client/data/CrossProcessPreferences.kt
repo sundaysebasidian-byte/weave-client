@@ -107,9 +107,11 @@ private class TransactionalPreferences(context: Context, name: String) : SharedP
         }
     }
 
-    override fun getAll(): MutableMap<String, *> = snapshot.mapValues { (_, value) ->
-        if (value is Set<*>) value.toSet() else value
-    }.toMutableMap()
+    override fun getAll(): MutableMap<String, *> = snapshot.let { current ->
+        current.mapValuesTo(LinkedHashMap(current.size + current.size / 3 + 1)) { (_, value) ->
+            if (value is Set<*>) value.toSet() else value
+        }
+    }
     override fun contains(key: String) = snapshot.containsKey(key)
     override fun getString(key: String, defValue: String?) = snapshot[key]?.let { it as String } ?: defValue
     @Suppress("UNCHECKED_CAST")
@@ -138,9 +140,18 @@ private class TransactionalPreferences(context: Context, name: String) : SharedP
         override fun clear(): SharedPreferences.Editor { clear = true; return this }
         override fun commit(): Boolean = transaction {
             val current = if (clear) linkedMapOf() else read()
-            changed.forEach { (key, value) -> if (value == null) current.remove(key) else current[key] = value }
-            write(current)
-            snapshot = current.toMap()
+            var dirty = clear
+            for ((key, value) in changed) {
+                if (value == null) {
+                    if (current.remove(key) != null) dirty = true
+                } else if (current.put(key, value) != value) {
+                    dirty = true
+                }
+            }
+            // AtomicFile.openRead has already recovered or cleaned interrupted prior writes.
+            // Unchanged values do not need serialization, disk sync or a replacement inode.
+            if (dirty || !file.isFile) write(current)
+            snapshot = current
             changed.clear()
             clear = false
             true

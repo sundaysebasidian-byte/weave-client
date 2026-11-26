@@ -1,0 +1,284 @@
+name: RC6 7dd6 unsigned ARM64 package
+
+on: [create]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.repository == 'sundaysebasidian-byte/weave-client' && github.event_name == 'create' && github.ref == 'refs/heads/qa/rc6-unsigned-arm64-7dd6c595' && github.ref_name == 'qa/rc6-unsigned-arm64-7dd6c595' && github.ref_type == 'branch' && github.event.ref_type == 'branch' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check the exact case-sensitive branch creation
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = create
+          test "$GITHUB_REPOSITORY" = sundaysebasidian-byte/weave-client
+          test "$GITHUB_REF" = refs/heads/qa/rc6-unsigned-arm64-7dd6c595
+          test "$GITHUB_REF_NAME" = qa/rc6-unsigned-arm64-7dd6c595
+          test "$GITHUB_REF_TYPE" = branch
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          assert event["ref_type"] == "branch"
+          assert event["ref"] in {os.environ["GITHUB_REF_NAME"], os.environ["GITHUB_REF"]}
+          assert event["repository"]["full_name"] == os.environ["GITHUB_REPOSITORY"]
+          PY
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          lfs: false
+          submodules: false
+
+      - name: Verify the exact product tree and overlay
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --quiet HEAD --
+          GIT_INDEX_FILE="$RUNNER_TEMP/weave-product-index" git read-tree HEAD
+          GIT_INDEX_FILE="$RUNNER_TEMP/weave-product-index" git update-index --force-remove -- \
+            .github/workflows/rc6-arm64-release-7dd6.yml
+          test "$(GIT_INDEX_FILE="$RUNNER_TEMP/weave-product-index" git write-tree)" = 8d6b0fdf06d2eaac1e7575cddadf476912d40fbd
+          GIT_INDEX_FILE="$RUNNER_TEMP/weave-product-index" git update-index --force-remove -- \
+            app/src/release/assets/weave-locales/ar-EG.jsonl \
+            app/src/release/assets/weave-locales/es-MX.jsonl \
+            app/src/release/assets/weave-locales/ko-KR.jsonl \
+            app/src/release/res/xml/locales_config.xml
+          test "$(GIT_INDEX_FILE="$RUNNER_TEMP/weave-product-index" git write-tree)" = 9ba1845e85339e384afe60b64f6f749a6f5234ea
+          sha256sum --check --strict <<'SUMS'
+          4fad154c1dc209d70cee487c18c1d36e44aa1349733e190154df6e4a02e09e42  app/src/main/java/io/weave/client/ui/NetworkPrivacyCenter.kt
+          ccdeb7e101120f78db3bb538b58cb109189e5b7c9af61fafc00d9a030b4b3108  app/src/main/java/io/weave/client/ui/SubscriptionDialogs.kt
+          5b98aae3a54986e2622be3f43a3c36c19764bc21fb9ccb707b68075557b90d3b  app/src/main/java/io/weave/client/ui/RouteTargetDialogs.kt
+          a28ab6f86fc64105e74e69e53b1872a91604b01539cc844fcf7d1a7232b393f4  app/src/main/java/io/weave/client/ui/ProbeResultText.kt
+          8e80224de928138d659e6ae62fbd93be5e414e09cc0147b930a5b5c6cc523771  app/src/release/assets/weave-locales/ar-EG.jsonl
+          8e1638542f1e6d29b357d7e943ae55a4578ea10c935df49957d88327d1b1f561  app/src/release/assets/weave-locales/es-MX.jsonl
+          044ea82dcb785fe9fa770b1de0e77a30323bc5d5516323f9b255b03b87fc72fc  app/src/release/assets/weave-locales/ko-KR.jsonl
+          82baa258f577ffb53d6df71228eae099d76977f4e6eeb9e7045378999c78ac3a  app/src/release/res/xml/locales_config.xml
+          8e80224de928138d659e6ae62fbd93be5e414e09cc0147b930a5b5c6cc523771  translations/android/ar.jsonl
+          55243ef57851f12b070ad14f7f5bb8302daceeebc5bce5ece5fa6edb23e1145c  gradle/wrapper/gradle-wrapper.jar
+          1961acce13869e8d2423daec5cb1e4449ba42bd056c6a496f67199fe885fe399  app/gradle.lockfile
+          5d54d1f4459bf351b40274a38752015664ad77c3992a45799b85cafcd33e1f1f  settings.gradle.kts
+          SUMS
+          grep -Fx 'distributionSha256Sum=2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb' gradle/wrapper/gradle-wrapper.properties
+          grep -Fx 'distributionUrl=https\://services.gradle.org/distributions/gradle-9.4.1-bin.zip' gradle/wrapper/gradle-wrapper.properties
+          bash tools/verify-android-core-hashes.sh
+
+      - name: Install the exact build toolchain
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          jdk="$RUNNER_TEMP/weave-temurin17"
+          mkdir "$jdk"
+          archive="$RUNNER_TEMP/weave-temurin17.tar.gz"
+          curl --fail --silent --show-error --location --retry 2 --max-time 240 \
+            --proto '=https' --proto-redir '=https' --output "$archive" \
+            'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21.1%2B2/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21.1_2.tar.gz'
+          printf '0b0ac5eab6db6abaec68c9913bcddb31321e5da411c45073d520d9c125e6f7b4  %s\n' "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" --strip-components=1 -C "$jdk"
+          "$jdk/bin/java" -version
+          export JAVA_HOME="$jdk"
+          export PATH="$jdk/bin:$PATH"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is required}}"
+          sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" --sdk_root="$sdk" \
+            'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
+          grep -Eq '^Pkg.Revision *= *29[.]0[.]14206865$' "$sdk/ndk/29.0.14206865/source.properties"
+          grep -Eq '^Pkg.Revision *= *3[.]31[.]6$' "$sdk/cmake/3.31.6/source.properties"
+          grep -Eq '^Pkg.Revision *= *36[.]0[.]0$' "$sdk/build-tools/36.0.0/source.properties"
+          printf 'JAVA_HOME=%s\nANDROID_HOME=%s\nANDROID_SDK_ROOT=%s\n' "$jdk" "$sdk" "$sdk" >> "$GITHUB_ENV"
+          printf '%s\n' "$jdk/bin" >> "$GITHUB_PATH"
+
+      - name: Build the unsigned ARM64 release variant
+        run: |
+          set -euo pipefail
+          if compgen -e | grep -Ei '^(WEAVE_RELEASE_|ORG_GRADLE_PROJECT_(weaveRelease|weaveDeviceTest))'; then
+            echo 'Unexpected release-signing or device-test input'; exit 1
+          fi
+          export GRADLE_USER_HOME="$RUNNER_TEMP/weave-gradle"
+          mkdir "$GRADLE_USER_HOME" "$RUNNER_TEMP/weave-java-home"
+          init="$RUNNER_TEMP/weave-arm64-release.init.gradle"
+          cat > "$init" <<'GRADLE'
+          allprojects { p ->
+              p.pluginManager.withPlugin("com.android.application") {
+                  assert p.path == ':app'
+                  p.extensions.getByName("androidComponents").finalizeDsl { android ->
+                      assert android.signingConfigs.findByName("release") == null
+                      def release = android.buildTypes.getByName("release")
+                      assert release.signingConfig == null && !release.debuggable
+                      assert release.minifyEnabled && release.shrinkResources
+                      def abi = android.splits.abi
+                      assert abi.enable && !abi.universalApk
+                      assert abi.applicableFilters.toSet() == (["arm64-v8a"] as Set)
+                      assert android.defaultConfig.ndk.abiFilters.isEmpty()
+                      println("WEAVE unsigned ARM64 release DSL verified")
+                  }
+              }
+          }
+          GRADLE
+          ./gradlew --no-daemon --no-configuration-cache --no-build-cache --max-workers=2 --console=plain \
+            -Duser.home="$RUNNER_TEMP/weave-java-home" \
+            -PweaveArm64Only=true -Pkotlin.compiler.execution.strategy=in-process \
+            --init-script "$init" :app:assembleRelease | tee "$RUNNER_TEMP/weave-package-build.log"
+          log="$RUNNER_TEMP/weave-package-build.log"
+          grep -Fx 'WEAVE unsigned ARM64 release DSL verified' "$log"
+          grep -E '^BUILD SUCCESSFUL in ' "$log"
+          for task in minifyReleaseWithR8 convertShrunkResourcesToBinaryRelease optimizeReleaseResources lintVitalRelease packageRelease; do
+            grep -Fx "> Task :app:$task" "$log"
+          done
+          if grep -E '^> Task :app:(validateSigningRelease|[^ ]*AndroidTest)( |$)|^> Task :app:.*\[(armeabi-v7a|x86|x86_64)\]' "$log"; then
+            echo 'Unexpected signing, test or non-ARM64 build task'; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/weave-java-home/.android/debug.keystore"
+
+      - name: Verify the unsigned APK and produce a package receipt
+        run: |
+          set -euo pipefail
+          unset PYTHONOPTIMIZE
+          build_tools="$ANDROID_HOME/build-tools/36.0.0"
+          export WEAVE_AAPT2="$build_tools/aapt2"
+          export WEAVE_OUTPUT="$RUNNER_TEMP/weave-rc6-unsigned-arm64"
+          apk='app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk'
+          "$build_tools/zipalign" -c -P 16 4 "$apk"
+          if "$build_tools/apksigner" verify "$apk" > "$RUNNER_TEMP/weave-signature-check.txt" 2>&1; then
+            echo 'APK is signed'; exit 1
+          fi
+          grep -F 'DOES NOT VERIFY' "$RUNNER_TEMP/weave-signature-check.txt"
+          grep -F 'Missing META-INF/MANIFEST.MF' "$RUNNER_TEMP/weave-signature-check.txt"
+          source_core='app/src/main/jniLibs/arm64-v8a/libclash.so'
+          staged_core="$RUNNER_TEMP/weave-expected-libclash.so"
+          printf '81fecea7c8bfe1d6aab9aba50bc9ddfcbe5f31d7088c92659a3051bb598947a1  %s\n' "$source_core" | sha256sum --check --strict
+          "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded -o "$staged_core" "$source_core"
+          printf 'd98ef51225c40b89e2ddc8eecb0677c677b80ae7298eee08859b9392d136f6df  %s\n' "$staged_core" | sha256sum --check --strict
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import shutil
+          import subprocess
+          import zipfile
+          from pathlib import Path
+
+          def sha(data):
+              return hashlib.sha256(data).hexdigest()
+
+          def dump(*args):
+              return subprocess.check_output([os.environ["WEAVE_AAPT2"], "dump", *args], text=True)
+
+          root = Path("app/build/outputs/apk")
+          apk = root / "release/app-arm64-v8a-release-unsigned.apk"
+          assert list(root.rglob("*.apk")) == [apk], "Expected exactly one release ARM64 APK"
+          metadata = json.loads(apk.with_name("output-metadata.json").read_text())
+          assert metadata["applicationId"] == "io.weave.client.next" and metadata["variantName"] == "release"
+          element, = metadata["elements"]
+          assert element["filters"] == [{"filterType": "ABI", "value": "arm64-v8a"}]
+          assert (element["versionCode"], element["versionName"], element["outputFile"]) == (112, "0.4.0-rc6", apk.name)
+
+          badging = dump("badging", str(apk))
+          assert re.search(r"(?m)^package: name='io\.weave\.client\.next' versionCode='112' versionName='0\.4\.0-rc6' ", badging)
+          assert re.search(r"(?m)^native-code: 'arm64-v8a'$", badging)
+          assert not re.search(r"(?m)^application-debuggable", badging)
+          assert re.search(r"(?m)^minSdkVersion:'26'$", badging)
+          assert re.search(r"(?m)^targetSdkVersion:'36'$", badging)
+
+          manifest = dump("xmltree", "--file", "AndroidManifest.xml", str(apk))
+          assert not any(x in manifest for x in (".acceptance", "SettingsProbeService", "KaringBackupFixtureReceiver"))
+          assert not re.search(r"(?m)^\s*E:\s+instrumentation\b", manifest)
+          for attr in ("allowBackup", "usesCleartextTraffic"):
+              assert re.search(rf"(?m)^\s*A:\s+\S*{attr}\(0x[0-9a-fA-F]+\)=false$", manifest)
+          resource_id, = re.findall(r"(?m)^\s*A:\s+\S*localeConfig(?:\(0x[0-9a-fA-F]+\))?\s*=\s*@(?:0x)?([0-9a-fA-F]{8})\b", manifest)
+          resources = dump("resources", str(apk))
+          header = re.search(rf"(?im)^\s*resource\s+0x{resource_id}\s+(?:[\w.]+:)?xml/locales_config\b[^\n]*", resources)
+          assert header, "The manifest must reference the compiled locales_config"
+          section = re.split(r"(?m)^\s*(?:resource|type|Package)\b", resources[header.end():], maxsplit=1)[0]
+          locale_path, = set(re.findall(r"\(file\)\s+([^\s]+)", section))
+          locale_xml = dump("xmltree", "--file", locale_path, str(apk))
+          assert re.search(r"(?m)^\s*E:\s+locale-config\s", locale_xml)
+          locales = re.findall(r'(?m)^\s*A:\s+\S*name(?:\(0x[0-9a-fA-F]+\))?\s*=\s*"([^"]+)"', locale_xml)
+          assert len(re.findall(r"(?m)^\s*E:\s+locale\s", locale_xml)) == len(locales)
+          assert locales == ["zh-CN", "zh-TW", "en", "ja", "fr", "de", "ar-EG", "es-MX", "ko-KR"]
+
+          catalogs = {
+              "ar-EG": (189607, "8e80224de928138d659e6ae62fbd93be5e414e09cc0147b930a5b5c6cc523771"),
+              "es-MX": (165589, "8e1638542f1e6d29b357d7e943ae55a4578ea10c935df49957d88327d1b1f561"),
+              "ko-KR": (173111, "044ea82dcb785fe9fa770b1de0e77a30323bc5d5516323f9b255b03b87fc72fc"),
+          }
+          with zipfile.ZipFile(apk) as archive:
+              paths = archive.namelist()
+              assert len(paths) == len(set(paths)) and archive.testzip() is None
+              assert not any(re.fullmatch(r"META-INF/(?:MANIFEST\.MF|[^/]+\.(?:RSA|DSA|EC|SF))", p, re.I) for p in paths)
+              assert not any(re.search(r"(?:^|/)(?:google-services\.json|[^/]+\.(?:jks|keystore|p12|pfx|pem|key))$", p, re.I) for p in paths)
+              with apk.open("rb") as handle:
+                  assert archive.start_dir >= 16
+                  handle.seek(archive.start_dir - 16)
+                  assert handle.read(16) != b"APK Sig Block 42"
+              assert "assets/ar.jsonl" not in paths
+              assert all(b"WeaveKnotModeVisualFixtureTest" not in archive.read(n) for n in paths if re.fullmatch(r"classes\d*\.dex", n))
+              assets = {p for p in paths if p.startswith("assets/weave-locales/")}
+              assert assets == {f"assets/weave-locales/{tag}.jsonl" for tag in catalogs}
+              for tag, expected in catalogs.items():
+                  data = archive.read(f"assets/weave-locales/{tag}.jsonl")
+                  assert (len(data), sha(data)) == expected
+              native = {}
+              libs = sorted(p for p in paths if p.startswith("lib/"))
+              assert libs == ["lib/arm64-v8a/" + name for name in (
+                  "libandroidx.graphics.path.so", "libbridge.so", "libclash.so",
+                  "libimage_processing_util_jni.so", "libsurface_util_jni.so",
+              )]
+              for p in libs:
+                  data = archive.read(p)
+                  assert data.startswith(b"\x7fELF\x02\x01") and data[18:20] == b"\xb7\x00"
+                  native[Path(p).name] = sha(data)
+              assert native["libclash.so"] == "d98ef51225c40b89e2ddc8eecb0677c677b80ae7298eee08859b9392d136f6df"
+
+          out = Path(os.environ["WEAVE_OUTPUT"])
+          out.mkdir()
+          shutil.copyfile(apk, out / apk.name)
+          receipt = {
+              "state": "unsigned CI package, not a release",
+              "gitCommit": os.environ["GITHUB_SHA"],
+              "canonicalProductTree": "9ba1845e85339e384afe60b64f6f749a6f5234ea",
+              "releasedSourceTree": "8d6b0fdf06d2eaac1e7575cddadf476912d40fbd",
+              "applicationId": "io.weave.client.next",
+              "versionCode": 112,
+              "versionName": "0.4.0-rc6",
+              "abi": "arm64-v8a",
+              "minSdk": 26,
+              "targetSdk": 36,
+              "apk": {"name": apk.name, "bytes": apk.stat().st_size, "sha256": sha(apk.read_bytes())},
+              "compiledLocaleTags": locales,
+              "catalogs": {tag: {"bytes": size, "sha256": checksum} for tag, (size, checksum) in catalogs.items()},
+              "nativeElfSha256": native,
+              "unstrippedCoreSha256": "81fecea7c8bfe1d6aab9aba50bc9ddfcbe5f31d7088c92659a3051bb598947a1",
+              "minifyShrinkLintVitalPassed": True,
+              "zipAligned": True,
+              "signed": False,
+              "debuggable": False,
+          }
+          (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload only the unsigned APK and sanitized receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Weave-RC6-unsigned-ARM64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/weave-rc6-unsigned-arm64/app-arm64-v8a-release-unsigned.apk
+            ${{ runner.temp }}/weave-rc6-unsigned-arm64/receipt.json
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
