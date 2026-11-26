@@ -194,6 +194,7 @@ import java.util.Date
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 
@@ -253,18 +254,31 @@ private fun WeaveNavigationDock(
                 // Sliding a finger along the dock moves the pill and the pages with it; lifting the
                 // finger settles on the tab underneath. Vertical movement is left alone.
                 .pointerInput(destinations, rtl) {
+                    val count = destinations.size
+                    if (count == 0) return@pointerInput
                     val pad = DockPadding.toPx()
                     val gap = DockGap.toPx()
                     val slop = viewConfiguration.touchSlop
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        val origin = destinations.indexOf(currentSelected).coerceAtLeast(0).toFloat()
+                        val item = (size.width - pad * 2 - gap * (count - 1)) / count
+                        fun slot(physicalX: Float): Float {
+                            val x = if (rtl) size.width - physicalX else physicalX
+                            return ((x - pad - item / 2f) / (item + gap)).coerceIn(0f, (count - 1).toFloat())
+                        }
                         var locked = false
-                        var last = destinations.indexOf(currentSelected).coerceAtLeast(0).toFloat()
+                        var committed: Float? = null
+                        var last = origin
                         try {
                             while (true) {
-                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) {
-                                    if (locked) change.consume()
+                                val change = awaitPointerEvent().changes.singleOrNull() ?: break
+                                if (change.id != down.id || change.isConsumed) break
+                                if (change.changedToUp()) {
+                                    if (locked) {
+                                        committed = slot(change.position.x)
+                                        change.consume()
+                                    }
                                     break
                                 }
                                 val delta = change.position - down.position
@@ -278,11 +292,7 @@ private fun WeaveNavigationDock(
                                     }
                                 }
                                 change.consume()
-                                val count = destinations.size
-                                if (count == 0) break
-                                val item = (size.width - pad * 2 - gap * (count - 1)) / count
-                                val x = if (rtl) size.width - change.position.x else change.position.x
-                                val position = ((x - pad - item / 2f) / (item + gap)).coerceIn(0f, (count - 1).toFloat())
+                                val position = slot(change.position.x)
                                 if (kotlin.math.round(position) != kotlin.math.round(last)) {
                                     haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                                 }
@@ -292,7 +302,7 @@ private fun WeaveNavigationDock(
                             }
                         } finally {
                             scrub = null
-                            if (locked) scrubEnd(last)
+                            if (locked) scrubEnd(committed ?: origin)
                         }
                     }
                 }
@@ -794,6 +804,7 @@ fun WeaveApp(
                     onScrub = { position ->
                         // The pages follow the finger directly; no animation is started per tab.
                         if (!pagerGate.scrubbing) {
+                            pagerGate.scrubRevision++
                             pagerGate.scrubbing = true
                             pagerGate.busy = true
                             dashboardScroll.pager = true
@@ -808,16 +819,18 @@ fun WeaveApp(
                     },
                     onScrubEnd = { position ->
                         val index = kotlin.math.round(position).toInt().coerceIn(0, visibleDestinations.lastIndex)
+                        val revision = pagerGate.scrubRevision
                         pagerGate.scrubbing = false
                         scrubScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                            var settled = false
                             try {
                                 pagerState.settleTo(index)
+                                settled = true
                             } finally {
-                                // A new scrub that interrupted this settle owns the pager now.
-                                if (!pagerGate.scrubbing) {
+                                if (revision == pagerGate.scrubRevision) {
                                     pagerGate.busy = false
                                     dashboardScroll.pager = false
-                                    visibleDestinations.getOrNull(index)?.let { destination = it }
+                                    if (settled) destination = visibleDestinations[index]
                                 }
                             }
                         }
@@ -1691,6 +1704,7 @@ private suspend fun androidx.compose.foundation.pager.PagerState.settleTo(page: 
 private class PagerNavigationGate {
     var busy: Boolean = false
     var scrubbing: Boolean = false
+    var scrubRevision: Long = 0L
 }
 
 /** Dashboard polling pauses while either the Home list or the page pager is moving. */

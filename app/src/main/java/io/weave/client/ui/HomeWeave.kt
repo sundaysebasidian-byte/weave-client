@@ -543,6 +543,7 @@ internal fun ModeChip(
                                 dragging = dragging,
                                 compact = width < DialWidth.roundToPx(),
                                 onDrag = { base, travel ->
+                                    if (!dragging) closing?.cancel()
                                     dragging = true
                                     follow(base, travel)
                                 },
