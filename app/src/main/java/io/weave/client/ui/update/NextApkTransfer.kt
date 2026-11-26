@@ -13,6 +13,7 @@ import android.provider.DocumentsContract
 import androidx.core.content.pm.PackageInfoCompat
 import com.android.apksig.ApkVerifier
 import io.weave.client.BuildConfig
+import io.weave.client.lowerHex
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -71,7 +72,7 @@ internal object NextApkTransfer {
     @Suppress("DEPRECATION")
     private fun installedSigner(info: PackageInfo): String? {
         val signers = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
-        return signers?.singleOrNull()?.toByteArray()?.let { sha256().digest(it).hex() }
+        return signers?.singleOrNull()?.toByteArray()?.let { sha256().digest(it).lowerHex() }
     }
 
     suspend fun download(context: Context, release: NextRelease): File {
@@ -93,7 +94,7 @@ internal object NextApkTransfer {
             val apk = File.createTempFile("next-update-", ".apk", context.cacheDir).also(allocate)
             val initial = release.url.toHttpUrlOrNull() ?: throw NextApkFailure()
             val downloadUrl = request(initial) { response ->
-                if (response.code !in setOf(302, 303, 307)) throw NextApkFailure()
+                if (response.code != 302 && response.code != 303 && response.code != 307) throw NextApkFailure()
                 val location = response.header("Location")?.toHttpUrlOrNull() ?: throw NextApkFailure()
                 if (!allowedAssetRedirect(location)) throw NextApkFailure()
                 location
@@ -151,6 +152,7 @@ internal object NextApkTransfer {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(applicationId)
             setSize(release.size)
+            if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
             if (Build.VERSION.SDK_INT >= 33) setPackageSource(PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
         }
         val id = installer.createSession(params)
@@ -162,6 +164,7 @@ internal object NextApkTransfer {
                         session.fsync(output)
                     }
                 }
+                currentCoroutineContext().ensureActive()
                 val result = Intent(context, NextInstallReceiver::class.java).setPackage(context.packageName)
                 // The installer fills in the status extras, so the intent must stay mutable; it is
                 // explicit and the receiver is not exported.
@@ -173,6 +176,7 @@ internal object NextApkTransfer {
             runCatching { installer.abandonSession(id) }
             throw failure
         }
+        id
     }
 
     internal fun allowedAssetRedirect(url: HttpUrl): Boolean =
@@ -211,7 +215,7 @@ internal object NextApkTransfer {
             digest.update(buffer, 0, count)
             output?.write(buffer, 0, count)
         }
-        if (total != release.size || digest.digest().hex() != release.digest) throw NextApkFailure()
+        if (total != release.size || digest.digest().lowerHex() != release.digest) throw NextApkFailure()
     }
 
     internal fun verifyArchive(context: Context, release: NextRelease, apk: File) {
@@ -225,7 +229,7 @@ internal object NextApkTransfer {
         }
         if (!verification.isVerified || (!verification.isVerifiedUsingV2Scheme &&
                 !verification.isVerifiedUsingV3Scheme && !verification.isVerifiedUsingV31Scheme) ||
-            verification.signerCertificates.singleOrNull()?.let { sha256().digest(it.encoded).hex() } != releaseSigner
+            verification.signerCertificates.singleOrNull()?.let { sha256().digest(it.encoded).lowerHex() } != releaseSigner
         ) throw NextApkFailure()
 
         @Suppress("DEPRECATION")
@@ -239,12 +243,19 @@ internal object NextApkTransfer {
     }
 
     private fun isArm64Archive(apk: File): Boolean = ZipFile(apk).use { zip ->
-        val nativeLibs = zip.entries().asSequence().filter { !it.isDirectory && it.name.startsWith("lib/") }
-            .map { it.name }.toSet()
-        nativeLibs.containsAll(setOf("lib/arm64-v8a/libbridge.so", "lib/arm64-v8a/libclash.so")) &&
-            nativeLibs.all { it.startsWith("lib/arm64-v8a/") }
+        val entries = zip.entries()
+        var bridge = false
+        var core = false
+        while (entries.hasMoreElements()) {
+            val entry = entries.nextElement()
+            val name = entry.name
+            if (entry.isDirectory || !name.startsWith("lib/")) continue
+            if (!name.startsWith("lib/arm64-v8a/")) return@use false
+            if (name == "lib/arm64-v8a/libbridge.so") bridge = true
+            if (name == "lib/arm64-v8a/libclash.so") core = true
+        }
+        bridge && core
     }
 
     private fun sha256() = MessageDigest.getInstance("SHA-256")
-    private fun ByteArray.hex() = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }

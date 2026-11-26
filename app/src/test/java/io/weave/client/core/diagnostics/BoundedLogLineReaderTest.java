@@ -40,6 +40,24 @@ public final class BoundedLogLineReaderTest {
         assertNull(reader.readLine());
     }
 
+    @Test public void httpHandshakeKeepsBufferedEventsAndRejectsInvalidOrTruncatedHeaders() throws IOException {
+        BoundedLogLineReader valid = new BoundedLogLineReader(
+                new StringReader("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{}\n"), 8192);
+        valid.readHttpHeaders();
+        assertEquals("{}", valid.readLine());
+        assertEquals(204, BoundedLogLineReader.httpStatus("HTTP/1.1 204 No Content"));
+        for (String text : new String[]{
+                "HTTP/1.0 2000 invalid\r\n\r\n",
+                "HTTP/1.1 502 upstream said 200\r\n\r\n",
+                "HTTP/1.0 200 OK\r\ntruncated",
+                "HTTP/1.0 200 OK\r\n" + "x".repeat(8193) + "\r\n\r\n",
+                "HTTP/1.0 200 OK\r\n" + ("x".repeat(7000) + "\r\n").repeat(3) + "\r\n",
+        }) {
+            BoundedLogLineReader invalid = new BoundedLogLineReader(new StringReader(text), 8192);
+            assertThrows(IOException.class, invalid::readHttpHeaders);
+        }
+    }
+
     @Test public void completeRowsRemainIndependentWhenChunkIsRefilled() throws IOException {
         String initial = "x".repeat(2047); // CR ends the first chunk; LF starts the next.
         String terminal = "🚇" + "z".repeat(2045); // Straddles a later chunk and has no newline.

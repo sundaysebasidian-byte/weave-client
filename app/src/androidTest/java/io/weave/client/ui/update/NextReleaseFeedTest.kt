@@ -1,5 +1,6 @@
 package io.weave.client.ui.update
 
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -30,6 +31,29 @@ class NextReleaseFeedTest {
         assertNull(NextReleaseFeed.read(page(asset()),tag,"0.4.0"))
         assertNull(NextReleaseFeed.read(page(asset().put("browser_download_url","https://example.org/$apk")),tag,version))
         assertNull(NextReleaseFeed.read(page(asset().put("digest",JSONObject.NULL)),tag,version))
+    }
+
+    @Test fun skipsIncompleteUnrelatedAssets() {
+        val incomplete = JSONObject().put("name", "other.exe").put("state", "uploaded")
+        assertEquals(111, NextReleaseFeed.read(page(incomplete, asset()), tag, version)?.build)
+    }
+
+    @Test fun ignoresObsoleteTagsAndKeepsSameVersionBuilds() = runBlocking {
+        val refs = JSONArray().apply {
+            put(JSONObject())
+            for (rc in 10 downTo 1) put(JSONObject().put("ref", "refs/tags/weave-next-v0.3.0-rc$rc"))
+            repeat(2) { put(JSONObject().put("ref", "refs/tags/$tag")) }
+        }
+        val requested = mutableListOf<String>()
+        val result = NextReleaseFeed.findLatest(refs, "0.4.0-rc5", 110) {
+            requested.add(it)
+            page(asset())
+        }
+        assertEquals(listOf(tag), requested)
+        assertEquals(111, result.second?.build)
+
+        val obsolete = NextReleaseFeed.findLatest(refs, "0.4.0-rc6", 112) { error("No obsolete release lookup") }
+        assertEquals(false to null, obsolete)
     }
 
     @Test fun conflictingSignedLookingAssetsAreNotAnUpdate() {

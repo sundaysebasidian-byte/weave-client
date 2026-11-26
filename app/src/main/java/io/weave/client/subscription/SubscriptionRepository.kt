@@ -81,7 +81,7 @@ class SubscriptionRepository(
         val saved = store.saveNewBatch(records.map { NewSubscriptionBatchEntry(it.name, it.source,
             it.prepared.first, it.prepared.second, it.prepared.counts) }, currentCoroutineContext())
         clientSources.clear()
-        saved.map(::toDomain)
+        saved.map { toDomain(it) }
     }
 
     fun discardClientSources() { clientSources.clear(); migrationBatch.clear(); migrationPreview.clear() }
@@ -149,7 +149,8 @@ class SubscriptionRepository(
             previous.nodes, prepared.second.nodes,
             { it.name to it.protocol }, { it.name to it.protocol },
         )
-        val audit = SubscriptionGuard.audit(previous, prepared.second, snapshot.source, source)
+        val diff = SubscriptionDiffer.compare(previous.nodes, prepared.second.nodes)
+        val audit = SubscriptionGuard.audit(previous, prepared.second, snapshot.source, source, diff, resolutionSource)
         check(store.readForUpdate(id).revision == snapshot.revision) { "订阅已变化，请重新预览" }
         val preview = SubscriptionUpdatePreview(java.util.UUID.randomUUID().toString(), id,
             previous.nodeCount, prepared.second.nodeCount,
@@ -159,7 +160,7 @@ class SubscriptionRepository(
             ).map { it.name },
             removed.map { it.name }, removed.mapTo(linkedSetOf()) { it.id }, audit)
         val pending = PendingUpdate(preview, snapshot.revision, name, source, prepared,
-            SubscriptionDiffer.compare(previous.nodes, prepared.second.nodes), System.nanoTime() + 300_000_000_000L, fetched)
+            diff, System.nanoTime() + REVIEW_LIFETIME_NANOS, fetched)
         synchronized(reviewGate) {
             if (generation != reviewGeneration) throw CancellationException("订阅预览已取消或替换")
             pendingUpdate = pending
@@ -176,7 +177,7 @@ class SubscriptionRepository(
 
     suspend fun applyReview(token: String, acceptCountChange: Boolean): SubscriptionUpdate = withContext(Dispatchers.IO) {
         val pending = pendingUpdate
-        require(pending != null && pending.preview.token == token && System.nanoTime() < pending.expiresAtNanos) {
+        require(pending != null && pending.preview.token == token && pending.expiresAtNanos - System.nanoTime() > 0L) {
             "预览已失效，请重新获取"
         }
         val blockers = pending.preview.audit.findings.filter { it.severity == SubscriptionAuditSeverity.BLOCKED }
@@ -190,29 +191,29 @@ class SubscriptionRepository(
         SubscriptionUpdate(toDomain(saved), pending.diff, pending.preview.audit)
     }
 
-    fun loadMetadata(): List<Subscription> = store.list().map(::toDomain)
+    fun loadMetadata(): List<Subscription> = store.listWithRemoteStatus(includeNodes = false)
+        .map { (record, remote) -> toDomain(record, remote) }
 
     /** One encrypted-index read for both UI lists; caller owns the IO dispatcher. */
     fun loadSnapshot(): Pair<List<Subscription>, List<ProxyNode>> {
-        val records = store.list()
-        return records.map(::toDomain) to projectStoredSubscriptionNodes(records)
+        val records = store.listWithRemoteStatus(includeNodes = true)
+        return records.map { (record, remote) -> toDomain(record, remote) } to
+            projectStoredSubscriptionNodes(records.map { it.first })
     }
 
     fun loadNodes(): List<ProxyNode> = projectStoredSubscriptionNodes(store.list())
 
     fun loadNodes(subscriptionId: String): List<ProxyNode> =
-        loadNodes().filter { it.subscriptionId == subscriptionId }
+        store.get(subscriptionId)?.let { projectStoredSubscriptionNodes(listOf(it)) }.orEmpty()
 
     /** Returns only IDs whose encrypted source is an HTTPS URL; the URL never leaves this layer. */
-    fun loadRemoteIds(): Set<String> = store.list()
-        .filter { runCatching { store.readUrl(it.id) }.getOrNull()?.startsWith("https://", ignoreCase = true) == true }
-        .mapTo(linkedSetOf()) { it.id }
+    fun loadRemoteIds(): Set<String> = store.listWithRemoteStatus(includeNodes = false)
+        .mapNotNullTo(linkedSetOf()) { (record, remote) -> record.id.takeIf { remote } }
 
     suspend fun loadEditor(subscriptionId: String): EditableSubscription =
         withContext(Dispatchers.IO) {
-            val record = store.get(subscriptionId)
+            val (record, source, counts) = store.readEditor(subscriptionId)
                 ?: throw SubscriptionImportException("订阅不存在")
-            val source = store.readUrl(subscriptionId)
             val kind = when {
                 source.startsWith("https://", ignoreCase = true) ->
                     SubscriptionSourceKind.REMOTE
@@ -228,7 +229,7 @@ class SubscriptionRepository(
                 sourceUrl = source.takeIf {
                     kind == SubscriptionSourceKind.REMOTE
                 }.orEmpty(),
-                importCounts = store.importCounts(record.id),
+                importCounts = counts,
             )
         }
 
@@ -279,7 +280,7 @@ class SubscriptionRepository(
     }
 
     internal fun commitTransfer(prepared: PreparedTransfer, coroutine: CoroutineContext): List<Subscription> =
-        store.saveTransferredBatch(prepared.snapshot, prepared.entries, coroutine).map(::toDomain)
+        store.saveTransferredBatch(prepared.snapshot, prepared.entries, coroutine).map { toDomain(it) }
 
     suspend fun replaceRemote(
         subscriptionId: String,
@@ -318,19 +319,18 @@ class SubscriptionRepository(
         val prepared = prepareRuntimePayload(fetched.body, fetched.finalUri.toString())
         val (runtimePayload, parsed) = prepared
         if (parsed.nodeCount == 0) throw SubscriptionImportException("订阅中没有可用节点")
-        val audit = SubscriptionGuard.audit(record, parsed, source, source)
-        val removed = unmatchedOccurrences(
-            record.nodes, parsed.nodes,
-            { it.name to it.protocol }, { it.name to it.protocol },
-        )
-        if (audit.blocked || removed.any { it.id in pinnedNodeIds }) {
-            store.recordRemoteMetadata(subscriptionId, fetched.usage, fetched.updateIntervalHours, snapshot.revision)
+        val diff = SubscriptionDiffer.compare(record.nodes, parsed.nodes)
+        val audit = SubscriptionGuard.audit(record, parsed, source, source, diff, fetched.finalUri.toString())
+        if (audit.blocked || pinnedNodeIds.isNotEmpty() && unmatchedOccurrences(
+                record.nodes, parsed.nodes, { it.name to it.protocol }, { it.name to it.protocol },
+            ).any { it.id in pinnedNodeIds }
+        ) {
+            store.recordRemoteMetadata(subscriptionId, fetched.usage, fetched.updateIntervalHours,
+                snapshot.revision, currentCoroutineContext())
             return@withContext AutoRefreshOutcome.NeedsReview(record.name)
         }
-        val diff = SubscriptionDiffer.compare(record.nodes, parsed.nodes)
-        currentCoroutineContext().ensureActive()
         store.saveReviewed(subscriptionId, snapshot.revision, record.name, source, runtimePayload, parsed,
-            prepared.counts, fetched.remoteMetadata)
+            prepared.counts, fetched.remoteMetadata, currentCoroutineContext())
         AutoRefreshOutcome.Updated(record.name, diff)
     }
 
@@ -470,6 +470,8 @@ class SubscriptionRepository(
             candidate = parsed,
             oldSource = snapshot.source,
             newSource = source,
+            diff = diff,
+            responseSource = resolutionSource,
         )
         if (audit.blocked) {
             // The old encrypted metadata and payload are deliberately untouched. Callers can
@@ -486,6 +488,7 @@ class SubscriptionRepository(
             parsed = parsed,
             counts = prepared.counts,
             remoteMetadata = remoteMetadata,
+            coroutine = currentCoroutineContext(),
         )
         return SubscriptionUpdate(toDomain(updated), diff, audit)
     }
@@ -493,7 +496,11 @@ class SubscriptionRepository(
     private suspend fun prepareRuntimePayload(payload: String, source: String = ""): PreparedSubscription =
         preparation.prepare(payload, source)
 
-    private fun toDomain(record: StoredSubscription) = Subscription(
+    private fun toDomain(
+        record: StoredSubscription,
+        remote: Boolean = runCatching { store.readUrl(record.id) }.getOrNull()
+            ?.startsWith("https://", ignoreCase = true) == true,
+    ) = Subscription(
         id = record.id,
         hasRuntimePayload = record.hasPayload,
         name = record.name,
@@ -506,14 +513,14 @@ class SubscriptionRepository(
             )
         },
         updatedAtMillis = record.updatedAtMillis,
-        remote = runCatching { store.readUrl(record.id) }.getOrNull()
-            ?.startsWith("https://", ignoreCase = true) == true,
+        remote = remote,
     )
 
     private companion object {
         const val LOCAL_IMPORT_SOURCE = "local://user-selected-file"
         const val QR_IMPORT_SOURCE = "qr://locally-scanned-payload"
         const val INLINE_IMPORT_SOURCE = "inline://pasted-payload"
+        const val REVIEW_LIFETIME_NANOS = 300_000_000_000L
         const val MAX_INLINE_BYTES = 5 * 1024 * 1024
     }
 }

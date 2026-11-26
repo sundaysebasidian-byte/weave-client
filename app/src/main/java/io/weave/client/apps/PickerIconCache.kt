@@ -14,10 +14,12 @@ internal class PickerIconCache<K, V>(
             size > maxEntries
     }
 
-    suspend fun get(key: K): V? = withContext(dispatcher) {
+    suspend fun get(key: K): V? {
         synchronized(entries) {
-            if (entries.containsKey(key)) return@withContext entries[key]
+            if (entries.containsKey(key)) return entries[key]
         }
-        read(key).also { value -> synchronized(entries) { entries[key] = value } }
+        return withContext(dispatcher) {
+            read(key).also { value -> synchronized(entries) { entries[key] = value } }
+        }
     }
 }

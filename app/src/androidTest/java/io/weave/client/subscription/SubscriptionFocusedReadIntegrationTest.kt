@@ -95,6 +95,38 @@ class SubscriptionFocusedReadIntegrationTest {
         assertThrows(IllegalStateException::class.java) { store.exportAllForBackup() }
     }
 
+    @Test fun metadataAndExportSkipNodeDecryptionAndSnapshotIndexLookupsStayConstant() = isolated { context ->
+        val delegate = AndroidKeystoreSecretBox()
+        val decryptions = mutableListOf<String>()
+        val box = object : SecretBox by delegate {
+            override fun decrypt(envelope: String, associatedData: ByteArray): ByteArray {
+                decryptions += associatedData.toString(Charsets.UTF_8)
+                return delegate.decrypt(envelope, associatedData)
+            }
+        }
+        val store = SubscriptionSecretStore(context, box)
+        val remote = store.save("Remote", "https://fixture.example/sub", payload, parsed)
+        decryptions.clear()
+        val before = context.indexLookups
+        assertEquals(listOf(true), store.listWithRemoteStatus(includeNodes = true).map { it.second })
+        val oneLookupCount = context.indexLookups - before
+
+        val local = store.save("Local", source, payload, parsed)
+        decryptions.clear()
+        val beforeTwo = context.indexLookups
+        assertEquals(listOf(false, true), store.listWithRemoteStatus(includeNodes = true).map { it.second })
+        assertEquals(oneLookupCount, context.indexLookups - beforeTwo)
+        assertEquals(4, decryptions.size)
+
+        decryptions.clear()
+        assertEquals(listOf(false, true), store.listWithRemoteStatus(includeNodes = false).map { it.second })
+        assertEquals(listOf(local.id, remote.id), decryptions)
+
+        decryptions.clear()
+        assertEquals(listOf(remote.id), store.exportForTransfer(setOf(remote.id)).map { it.id })
+        assertEquals(listOf(remote.id, "${remote.id}:payload"), decryptions)
+    }
+
     @Test fun focusedReadSkipsMalformedUnrelatedTypeButNotCorruptionOnSelectedRow() = isolated { context ->
         val store = SubscriptionSecretStore(context)
         val valid = store.save("Valid", source, payload, parsed)

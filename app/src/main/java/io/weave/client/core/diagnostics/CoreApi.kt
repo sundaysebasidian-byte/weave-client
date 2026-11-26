@@ -5,7 +5,6 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import androidx.compose.runtime.Immutable
 import java.io.IOException
-import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -88,16 +87,15 @@ class CoreApi(private val context: Context) {
                 continuation.invokeOnCancellation { runCatching { socket.close() } }
                 val result = runCatching {
                     socket.connect(LocalSocketAddress(PrivateCoreConnections.socketPath(context), LocalSocketAddress.Namespace.FILESYSTEM))
-                    val query = URLEncoder.encode(level, Charsets.UTF_8.name())
                     socket.outputStream.write(
-                        "GET /logs?level=$query HTTP/1.0\r\nHost: localhost\r\n\r\n".toByteArray(Charsets.US_ASCII),
+                        "GET /logs?level=$level HTTP/1.0\r\nHost: localhost\r\n\r\n".toByteArray(Charsets.US_ASCII),
                     )
                     socket.outputStream.flush()
-                    val reader = socket.inputStream.bufferedReader(Charsets.UTF_8)
-                    val status = reader.readLine().orEmpty()
-                    if (!status.contains(" 200")) throw IOException("log stream refused")
-                    while (reader.readLine()?.isNotEmpty() == true) Unit // headers
+                    socket.soTimeout = 3_000
+                    val reader = socket.inputStream.reader(Charsets.UTF_8)
                     val logLines = BoundedLogLineReader(reader, MAX_LOG_LINE)
+                    logLines.readHttpHeaders()
+                    socket.soTimeout = 0
                     while (continuation.isActive) {
                         val line = logLines.readLine() ?: break
                         if (line.isEmpty()) continue
@@ -123,10 +121,10 @@ class CoreApi(private val context: Context) {
         socket.outputStream.flush()
         val response = BoundedCoreResponse.readUtf8(socket.inputStream, limit)
         val statusLine = response.substringBefore("\r\n")
-        val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull() ?: throw IOException("bad response")
+        val code = BoundedLogLineReader.httpStatus(statusLine)
         if (code !in 200..299) throw IOException("HTTP $code")
         val separator = response.indexOf("\r\n\r\n")
-        check(separator in 0..16_384)
+        if (separator !in 0..16_384) throw IOException("bad response headers")
         response.substring(separator + 4)
     }
 
@@ -140,16 +138,17 @@ class CoreApi(private val context: Context) {
             val array = json.optJSONArray("connections")
             val connections = (0 until minOf(array?.length() ?: 0, MAX_CONNECTIONS)).mapNotNull { index ->
                 val value = array?.optJSONObject(index) ?: return@mapNotNull null
-                val metadata = value.optJSONObject("metadata") ?: JSONObject()
+                val id = value.optString("id").takeIf(ID::matches) ?: return@mapNotNull null
+                val metadata = value.optJSONObject("metadata")
                 val chains = value.optJSONArray("chains")
-                val host = metadata.optString("host").ifBlank { metadata.optString("destinationIP") }
-                val port = metadata.optString("destinationPort")
+                val host = metadata?.optString("host")?.ifBlank { metadata.optString("destinationIP") }.orEmpty()
+                val port = metadata?.optString("destinationPort").orEmpty()
                 CoreConnection(
-                    id = value.optString("id").takeIf(ID::matches) ?: return@mapNotNull null,
-                    uid = metadata.optInt("uid", -1),
-                    process = metadata.optString("process").take(120),
-                    network = metadata.optString("network").take(16),
-                    destination = (if (port.isBlank()) host else ConnectionEndpoint.withPort(host, port)).take(260),
+                    id = id,
+                    uid = metadata?.optInt("uid", -1) ?: -1,
+                    process = metadata?.optString("process").orEmpty().take(120),
+                    network = metadata?.optString("network").orEmpty().take(16),
+                    destination = (if (port.isBlank() || host.isBlank()) host else ConnectionEndpoint.withPort(host, port)).take(260),
                     rule = connectionRuleLabel(value.optString("rule"), value.optString("rulePayload")),
                     chain = (0 until minOf(chains?.length() ?: 0, 12)).map { chains!!.optString(it).take(160) },
                     uploadBytes = value.optLong("upload"),

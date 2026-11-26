@@ -2,6 +2,7 @@ package io.weave.client.ui.update
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,8 @@ import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONException
@@ -25,6 +28,9 @@ internal class NextUpdateController(
     private val preferenceStore: () -> SharedPreferences = {
         context.getSharedPreferences("next_release_check", Context.MODE_PRIVATE)
     },
+    private val downloadApk: suspend (Context, NextRelease) -> File = NextApkTransfer::download,
+    private val installApk: suspend (Context, NextRelease, File) -> Int = NextApkTransfer::install,
+    private val saveApk: suspend (Context, NextRelease, File, Uri) -> Unit = NextApkTransfer::save,
     private val fetchLatest: suspend (String, Int) -> Pair<Boolean, NextRelease?> = NextReleaseFeed::latest,
 ) {
     private val prefs by lazy(preferenceStore)
@@ -37,12 +43,18 @@ internal class NextUpdateController(
     var enabled by mutableStateOf(true); private set
     var busy by mutableStateOf(false); private set
     var staged by mutableStateOf(false); private set
+    var installSessionId by mutableStateOf<Int?>(null); private set
     var status by mutableStateOf<String?>(null); private set
     var release by mutableStateOf<NextRelease?>(null); private set
     var notice by mutableStateOf<NextRelease?>(null); private set
 
     fun foreground() {
-        if (busy || staged) return
+        if (busy || staged || (ready && (!eligible || !enabled))) return
+        if (ready) {
+            val now = System.currentTimeMillis()
+            val last = prefs.getLong("attempt", 0L)
+            if (now >= last && !NextRelease.due(now, last)) return
+        }
         runOperation {
             if (!ready) {
                 val snapshot = withContext(Dispatchers.IO) {
@@ -96,10 +108,13 @@ internal class NextUpdateController(
         val (compatible, candidate) = try {
             withContext(Dispatchers.IO) { fetchLatest(BuildConfig.VERSION_NAME, installedBuild) }
         } catch (e: FeedFailure) {
+            currentCoroutineContext().ensureActive()
             status = e.status; return
         } catch (_: JSONException) {
+            currentCoroutineContext().ensureActive()
             status = "INVALID_FEED"; return
         } catch (_: IOException) {
+            currentCoroutineContext().ensureActive()
             status = "NETWORK"; return
         }
         if (!manual && !enabled) return
@@ -109,7 +124,9 @@ internal class NextUpdateController(
         if (!manual) notice = candidate
     }
 
-    fun dismissNotice() { notice = null }
+    fun dismissNotice(shown: NextRelease) {
+        if (notice === shown) notice = null
+    }
 
     fun download() {
         val candidate = release ?: return
@@ -117,7 +134,7 @@ internal class NextUpdateController(
         runOperation {
             status = "DOWNLOADING"
             try {
-                temp = NextApkTransfer.download(context, candidate)
+                temp = downloadApk(context, candidate)
                 staged = true
                 status = "VERIFIED"
             } catch (_: IOException) { status = "VERIFY_FAILED" }
@@ -133,27 +150,35 @@ internal class NextUpdateController(
             status = "RETRY_DOWNLOAD"
             return
         }
-        if (busy || !staged) return
+        if (busy || !staged || installSessionId != null) return
         NextInstallResults.clear()
         runOperation {
             status = "INSTALLING"
             try {
-                NextApkTransfer.install(context, candidate, apk)
+                installSessionId = installApk(context, candidate, apk)
             } catch (_: IOException) { status = "INSTALL_FAILED" }
               catch (_: SecurityException) { status = "INSTALL_FAILED" }
+              catch (_: IllegalStateException) { status = "INSTALL_FAILED" }
         }
     }
 
     /** Android's answer to a committed session; a success replaces this process. */
-    fun installResult(code: Int) {
-        if (code != android.content.pm.PackageInstaller.STATUS_SUCCESS && status == "INSTALLING") {
+    fun installResult(result: NextInstallResults.Result) {
+        if (result.sessionId != installSessionId) return
+        installSessionId = null
+        if (result.status == PackageInstaller.STATUS_SUCCESS) {
+            clearTemp()
+            release = null
+            notice = null
+            status = "CURRENT"
+        } else {
             status = "INSTALL_FAILED"
         }
     }
 
     /** Android has not yet allowed Weave to install apps. */
     fun installPermissionNeeded() {
-        if (staged) status = "INSTALL_PERMISSION"
+        if (staged && installSessionId == null) status = "INSTALL_PERMISSION"
     }
 
     fun save(destination: Uri) {
@@ -164,20 +189,20 @@ internal class NextUpdateController(
             status = "RETRY_DOWNLOAD"
             return
         }
-        if (busy || !staged) return
+        if (busy || !staged || installSessionId != null) return
         runOperation {
             status = "SAVING"
             try {
-                NextApkTransfer.save(context, candidate, apk, destination)
+                saveApk(context, candidate, apk, destination)
+                clearTemp()
                 status = "SAVED"
             } catch (_: IOException) { status = "SAVE_FAILED" }
               catch (_: SecurityException) { status = "SAVE_FAILED" }
-            finally { clearTemp() }
         }
     }
 
     fun discard() {
-        if (!busy) {
+        if (!busy && installSessionId == null) {
             clearTemp()
             if (release != null) status = "AVAILABLE"
         }

@@ -56,6 +56,12 @@ class RouteReferenceSanitizerTest {
         )
     }
 
+    @Test fun `a fixed default cannot resolve through an orphaned node`() {
+        val fixed = RouteTarget(RouteKind.FIXED, "old", subscription.id, node.id)
+        val target = RouteReferenceSanitizer.defaultTarget(fixed, emptyList(), listOf(node))
+        assertEquals(fixed.copy(label = "出口已失效，请重新选择"), target)
+    }
+
     @Test
     fun `lost group keeps its reselect label across consecutive sanitizations`() {
         val source = listOf(

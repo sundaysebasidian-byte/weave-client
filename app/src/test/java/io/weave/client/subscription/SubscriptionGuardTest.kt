@@ -35,6 +35,28 @@ class SubscriptionGuardTest {
         assertTrue(audit.findings.any { it.code == "node_drop" })
     }
 
+    @Test fun `half and quarter thresholds compare exact ratios`() {
+        val previous = StoredSubscription("sub", "fixture", 9, SubscriptionFormat.URI_LIST,
+            (1..9).map { StoredNode("$it", "node-$it", "ss") }, true)
+        fun findings(count: Int) = SubscriptionGuard.audit(previous, ParsedSubscription(SubscriptionFormat.URI_LIST,
+            count, setOf("ss"), (1..count).map { ParsedNode("node-$it", "ss") })).findings.map { it.code }
+        assertEquals(listOf("node_drop"), findings(2))
+        assertEquals(listOf("large_removal"), findings(4))
+        assertTrue(findings(5).isEmpty())
+        assertTrue(findings(36).isEmpty())
+        assertEquals(listOf("node_spike"), findings(37))
+    }
+
+    @Test fun `reports a changed response host for an unchanged subscription URL`() {
+        val previous = StoredSubscription("sub", "fixture", 1, SubscriptionFormat.URI_LIST,
+            listOf(StoredNode("id", "node", "ss")), true)
+        val candidate = ParsedSubscription(SubscriptionFormat.URI_LIST, 1, setOf("ss"), listOf(ParsedNode("node", "ss")))
+        val source = "https://old.example/sub"
+        val audit = SubscriptionGuard.audit(previous, candidate, source, source,
+            SubscriptionDiffer.compare(previous.nodes, candidate.nodes), "https://other.example/sub")
+        assertEquals(listOf("source_host"), audit.findings.map { it.code })
+    }
+
     @Test
     fun `source host change is reviewable but not silently hidden`() {
         val previous = StoredSubscription(

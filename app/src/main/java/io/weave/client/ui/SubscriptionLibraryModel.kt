@@ -22,6 +22,7 @@ internal fun filterSubscriptions(
     source: SubscriptionSourceFilter,
 ): List<Subscription> {
     val needle = query.trim()
+    if (needle.isEmpty() && source == SubscriptionSourceFilter.ALL) return subscriptions
     return subscriptions.filter { subscription ->
         val sourceMatches = when (source) {
             SubscriptionSourceFilter.ALL -> true

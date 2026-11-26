@@ -1,8 +1,11 @@
 package io.weave.client.ui.update
 
 import android.content.Context
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -89,6 +92,63 @@ class NextUpdateOptOutTest {
         } finally {
             scope.cancel()
             context.deleteSharedPreferences(name)
+        }
+    }
+
+    @Test fun failedExportKeepsVerifiedDownloadAndOnlyMatchingInstallResultUnlocksIt() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefsName = "next_update_test_${UUID.randomUUID()}"
+        val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val apk = File.createTempFile("fixture-update-", ".apk", context.cacheDir)
+        val tag = "weave-next-v0.4.0-rc8"
+        val name = "Weave-Next-0.4.0-rc8-build114-arm64-v8a.apk"
+        val release = requireNotNull(NextRelease.parse(tag, false, true, "0.4.0-rc7", name,
+            "sha256:" + "0".repeat(64), 1L, "https://github.com/${NextRelease.REPO}/releases/download/$tag/$name"))
+        var installs = 0
+        var saves = 0
+        val controller = NextUpdateController(context, scope, { 113 }, preferenceStore = { prefs },
+            downloadApk = { _, _ -> apk },
+            installApk = { _, _, _ -> ++installs; 43 },
+            saveApk = { _, _, _, _ -> ++saves; throw IOException("fixture write failure") },
+        ) { _, _ -> true to release }
+        try {
+            phase("fetch and stage fixture") {
+                withContext(Dispatchers.Main) {
+                    controller.foreground()
+                    while (controller.busy) delay(10)
+                    controller.download()
+                    while (controller.busy) delay(10)
+                    assertTrue(controller.staged)
+                }
+            }
+            phase("failed document save and installer ownership") {
+                withContext(Dispatchers.Main) {
+                    controller.save(Uri.parse("content://fixture.invalid/document/unused"))
+                    while (controller.busy) delay(10)
+                    assertEquals("SAVE_FAILED", controller.status)
+                    assertTrue(controller.staged)
+                    assertTrue(apk.isFile)
+
+                    controller.install()
+                    while (controller.busy) delay(10)
+                    controller.installResult(NextInstallResults.Result(42, PackageInstaller.STATUS_FAILURE))
+                    assertEquals("INSTALLING", controller.status)
+                    controller.install()
+                    controller.save(Uri.parse("content://fixture.invalid/document/unused"))
+                    assertEquals(1, installs)
+                    assertEquals(1, saves)
+
+                    controller.installResult(NextInstallResults.Result(43, PackageInstaller.STATUS_FAILURE_ABORTED))
+                    assertEquals("INSTALL_FAILED", controller.status)
+                    assertNull(controller.installSessionId)
+                    assertTrue(controller.staged)
+                }
+            }
+        } finally {
+            withContext(Dispatchers.Main) { controller.close() }
+            scope.cancel()
+            context.deleteSharedPreferences(prefsName)
         }
     }
 

@@ -64,12 +64,12 @@ internal fun NextUpdateUi(
                 actionLabel = resolveAppOwnedCopy("查看更新", language, staged = null, released = latestPackaged),
                 withDismissAction = true,
             )
-            controller.dismissNotice()
+            controller.dismissNotice(notice)
             if (result == SnackbarResult.ActionPerformed) onOpen()
         }
     }
     LaunchedEffect(visible, notice) {
-        if (visible && notice != null) controller.dismissNotice()
+        if (visible && notice != null) controller.dismissNotice(notice)
     }
 
     // Registered unconditionally so a recreated Activity can still receive the picker result.
@@ -77,20 +77,25 @@ internal fun NextUpdateUi(
     var pickerError by remember { mutableStateOf(false) }
     val saveDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(APK_MIME)) { uri ->
         pickerOpen = false
-        if (uri != null) controller.save(uri) else controller.discard()
+        if (uri != null) controller.save(uri)
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val installResult by io.weave.client.ui.update.NextInstallResults.events.collectAsState()
+    LaunchedEffect(installResult, controller.installSessionId) { installResult?.let(controller::installResult) }
+    // A recreated Activity may receive the permission result while the dialog is closed.
+    var permissionOpen by rememberSaveable { mutableStateOf(false) }
+    val allowInstalls = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (permissionOpen) {
+            permissionOpen = false
+            if (controller.staged && context.packageManager.canRequestPackageInstalls()) controller.install()
+            else controller.installPermissionNeeded()
+        }
     }
 
     if (!visible) return
     val release = controller.release
-    val blocked = controller.busy || pickerOpen
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val installResult by io.weave.client.ui.update.NextInstallResults.events.collectAsState()
-    LaunchedEffect(installResult) { installResult?.let(controller::installResult) }
-    // After the person allows installs in system settings, continue straight to Android's prompt.
-    val allowInstalls = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (context.packageManager.canRequestPackageInstalls()) controller.install()
-        else controller.installPermissionNeeded()
-    }
+    val blocked = controller.busy || pickerOpen || permissionOpen || controller.installSessionId != null
     fun install() {
         pickerError = false
         if (context.packageManager.canRequestPackageInstalls()) {
@@ -99,6 +104,7 @@ internal fun NextUpdateUi(
         }
         controller.installPermissionNeeded()
         try {
+            permissionOpen = true
             allowInstalls.launch(
                 android.content.Intent(
                     android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -106,7 +112,9 @@ internal fun NextUpdateUi(
                 ),
             )
         } catch (_: ActivityNotFoundException) {
-            // The status already explains where to allow it.
+            permissionOpen = false
+        } catch (_: SecurityException) {
+            permissionOpen = false
         }
     }
     fun dismiss() {
@@ -127,7 +135,7 @@ internal fun NextUpdateUi(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text("Weave Next ${BuildConfig.VERSION_NAME} · Build ${BuildConfig.VERSION_CODE}", translate = false)
-                if (!controller.ready || controller.busy) {
+                if (!controller.ready || controller.busy || controller.installSessionId != null) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().testTag("app-update-progress"))
                 }
                 if (controller.ready && controller.eligible) {
@@ -183,6 +191,9 @@ internal fun NextUpdateUi(
                             try {
                                 saveDocument.launch(release.name)
                             } catch (_: ActivityNotFoundException) {
+                                pickerOpen = false
+                                pickerError = true
+                            } catch (_: SecurityException) {
                                 pickerOpen = false
                                 pickerError = true
                             }

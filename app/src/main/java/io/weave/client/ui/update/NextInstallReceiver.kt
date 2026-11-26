@@ -10,10 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 
 /** The latest result of a session Weave committed, for the open update dialog to show. */
 internal object NextInstallResults {
-    private val latest = MutableStateFlow<Int?>(null)
-    val events: StateFlow<Int?> = latest
+    data class Result(val sessionId: Int, val status: Int)
 
-    fun post(status: Int) { latest.value = status }
+    private val latest = MutableStateFlow<Result?>(null)
+    val events: StateFlow<Result?> = latest
+
+    fun post(sessionId: Int, status: Int) { latest.value = Result(sessionId, status) }
     fun clear() { latest.value = null }
 }
 
@@ -23,6 +25,8 @@ internal object NextInstallResults {
  */
 class NextInstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+        if (sessionId < 0) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
             val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
@@ -30,9 +34,10 @@ class NextInstallReceiver : BroadcastReceiver() {
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 if (runCatching { context.startActivity(confirm) }.isSuccess) return
             }
-            NextInstallResults.post(PackageInstaller.STATUS_FAILURE)
+            runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
+            NextInstallResults.post(sessionId, PackageInstaller.STATUS_FAILURE)
             return
         }
-        NextInstallResults.post(status)
+        NextInstallResults.post(sessionId, status)
     }
 }

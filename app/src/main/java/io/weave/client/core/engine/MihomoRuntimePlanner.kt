@@ -34,7 +34,9 @@ object MihomoRuntimePlanner {
         val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT }
         val usableIds = usableSubscriptionIds.toSet()
         val groupIds = buildSet {
-            effectiveRoutes.filter { it.target.kind == RouteKind.GROUP }.mapNotNullTo(this) { it.target.groupId }
+            effectiveRoutes.mapNotNullTo(this) { route ->
+                if (route.target.kind == RouteKind.GROUP) route.target.groupId else null
+            }
             effectiveDefaultTarget?.takeIf { it.kind == RouteKind.GROUP }?.groupId?.let(::add)
             retainAll(groupSubscriptions.keys)
         }
@@ -58,8 +60,9 @@ object MihomoRuntimePlanner {
             }
         }
         val automaticIds = buildSet {
-            effectiveRoutes.filter { it.target.kind == RouteKind.AUTO }
-                .mapNotNullTo(this) { it.target.subscriptionId }
+            effectiveRoutes.mapNotNullTo(this) { route ->
+                if (route.target.kind == RouteKind.AUTO) route.target.subscriptionId else null
+            }
             effectiveDefaultTarget
                 ?.takeIf { it.kind == RouteKind.AUTO }
                 ?.subscriptionId

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import io.weave.client.WeaveProcess
+import io.weave.client.lowerHex
 import io.weave.client.data.crossProcessPreferences
 import io.weave.client.data.ProfileStorage
 import io.weave.client.security.AndroidKeystoreSecretBox
@@ -144,24 +145,27 @@ class SubscriptionSecretStore(
         }
         if (preserveIds) require(incomingIds.all { it != null }) { "备份中的订阅缺少 ID" }
         check(incomingIds.filterNotNull().let { it.size == it.distinct().size }) { "传输中包含重复的订阅 ID，已停止同步" }
-        val records = list()
-        val index = preferences.all
-        check(records.map { it.id }.toSet() == preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()) {
+        val snapshot = preferences
+        val records = readRecords(snapshot, includeNodes = false)
+        val index = snapshot.all
+        check(records.mapTo(hashSetOf()) { it.id } == snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()) {
             "订阅索引无法完整读取，已停止同步"
         }
-        val sources = records.associate { it.id to readUrl(it.id) }
+        val byId = records.asReversed().associateBy { it.id.lowercase() }
+        val byName by lazy { records.groupBy { if (selectedFile) normalizeName(it.name) else it.name } }
         val previous = items.mapIndexed { i, item ->
-            val byId = incomingIds[i]?.let { id -> records.find { it.id.equals(id, ignoreCase = true) } }
-            val candidates = when {
-                byId != null -> listOf(byId)
-                preserveIds || selectedFile && !item.source.startsWith("https://", ignoreCase = true) -> emptyList()
-                else -> records.filter {
-                    val storedName = if (selectedFile) normalizeName(it.name) else it.name
-                    storedName == normalizeName(item.name) && sources[it.id] == item.source
+            val exact = incomingIds[i]?.let(byId::get)
+            val matched = when {
+                exact != null -> exact
+                preserveIds || selectedFile && !item.source.startsWith("https://", ignoreCase = true) -> null
+                else -> {
+                    val candidates = byName[normalizeName(item.name)].orEmpty()
+                        .filter { readUrl(it.id, snapshot) == item.source }
+                    check(candidates.size <= 1) { "存在多个同名同来源订阅，请先明确同步目标" }
+                    candidates.singleOrNull()
                 }
             }
-            check(candidates.size <= 1) { "存在多个同名同来源订阅，请先明确同步目标" }
-            candidates.singleOrNull()?.let { readForUpdate(it.id) }
+            matched?.let { readForUpdate(it.id, snapshot) }
         }
         val ids = items.indices.map { i -> previous[i]?.record?.id ?: incomingIds[i] ?: UUID.randomUUID().toString() }
         check(ids.size == ids.distinct().size) { "传输中包含重复的同一订阅，已停止同步" }
@@ -182,16 +186,21 @@ class SubscriptionSecretStore(
     }
 
     internal fun exportForTransfer(selectedIds: Set<String>): List<TransferSubscription> = locked {
-        val records = list()
+        val snapshot = preferences
+        val records = readRecords(snapshot, includeNodes = false)
         val allowed = SubscriptionShareSelection.validate(records.mapTo(linkedSetOf()) { it.id }, selectedIds)
-        records.filter { it.id in allowed }.map { TransferSubscription(it.name, readUrl(it.id), readPayload(it.id), it.id) }
+        records.mapNotNull {
+            if (it.id in allowed) TransferSubscription(it.name, readUrl(it.id, snapshot), readPayload(it.id, snapshot), it.id)
+            else null
+        }
     }
 
     internal fun exportAllForBackup(): List<TransferSubscription> = locked {
-        val records = list()
-        check(records.mapTo(linkedSetOf()) { it.id } == preferences.getStringSet(KEY_IDS, emptySet()).orEmpty() &&
+        val snapshot = preferences
+        val records = readRecords(snapshot)
+        check(records.mapTo(linkedSetOf()) { it.id } == snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty() &&
             records.all { it.nodes.size == it.nodeCount }) { "订阅索引无法完整读取，已停止备份" }
-        records.map { TransferSubscription(it.name, readUrl(it.id), readPayload(it.id), it.id) }
+        records.map { TransferSubscription(it.name, readUrl(it.id, snapshot), readPayload(it.id, snapshot), it.id) }
     }
 
     /** Staged generations remain unreachable until a single complete index commit succeeds. */
@@ -224,8 +233,10 @@ class SubscriptionSecretStore(
         val name = normalizeName(entry.name)
         val encryptedSource = secretBox.encrypt(entry.source.toByteArray(Charsets.UTF_8), entry.id.toByteArray(Charsets.UTF_8))
         val encryptedPayload = secretBox.encrypt(entry.payload.toByteArray(Charsets.UTF_8), "${entry.id}:payload".toByteArray(Charsets.UTF_8))
-        val reusable = old?.nodes.orEmpty().groupBy { nodeKey(it.name, it.protocol) }
-            .mapValues { (_, nodes) -> ArrayDeque(nodes) }
+        val reusable = HashMap<String, ArrayDeque<StoredNode>>()
+        for (node in old?.nodes.orEmpty()) {
+            reusable.getOrPut(nodeKey(node.name, node.protocol)) { ArrayDeque() }.addLast(node)
+        }
         val occurrences = mutableMapOf<String, Int>()
         val nodes = entry.parsed.nodes.map { node ->
             val fingerprint = nodeKey(node.name, node.protocol)
@@ -266,9 +277,13 @@ class SubscriptionSecretStore(
     }
 
     internal fun readForUpdate(id: String): StoredSubscriptionSnapshot = locked {
-        val current = requireNotNull(get(id)) { "订阅不存在" }
-        val source = readUrl(id)
-        StoredSubscriptionSnapshot(current, source, subscriptionRevision(current, readPayload(id), source))
+        readForUpdate(id, preferences)
+    }
+
+    private fun readForUpdate(id: String, snapshot: SharedPreferences): StoredSubscriptionSnapshot {
+        val current = requireNotNull(readIndexedRecord(id, snapshot)) { "订阅不存在" }
+        val source = readUrl(id, snapshot)
+        return StoredSubscriptionSnapshot(current, source, subscriptionRevision(current, readPayload(id, snapshot), source))
     }
 
     private fun requireRevision(id: String, expected: String) {
@@ -277,22 +292,37 @@ class SubscriptionSecretStore(
         }
     }
 
-    fun importCounts(id: String): SubscriptionImportCounts? = locked {
-        val values = preferences.getString(key(id, "import_counts"), null)?.split(',')
-            ?.map { it.toIntOrNull() ?: return@locked null } ?: return@locked null
-        if (values.size != 4 || values.any { it < 0 }) return@locked null
-        SubscriptionImportCounts(values[0], values[1], values[2], values[3])
+    fun importCounts(id: String): SubscriptionImportCounts? = locked { importCounts(id, preferences) }
+
+    private fun importCounts(id: String, snapshot: SharedPreferences): SubscriptionImportCounts? {
+        val values = snapshot.getString(key(id, "import_counts"), null)?.split(',')
+            ?.map { it.toIntOrNull() ?: return null } ?: return null
+        if (values.size != 4 || values.any { it < 0 }) return null
+        return SubscriptionImportCounts(values[0], values[1], values[2], values[3])
     }
 
-    fun list(): List<StoredSubscription> = locked {
-        // The profile and subscription locks already cover the read. Use one fresh XML snapshot.
+    internal fun readEditor(id: String): Triple<StoredSubscription, String, SubscriptionImportCounts?>? = locked {
         val snapshot = preferences
-        snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
-            .mapNotNull { id -> readRecord(id, snapshot) }
-            .sortedBy { it.name.lowercase() }
+        val record = readIndexedRecord(id, snapshot, includeNodes = false) ?: return@locked null
+        Triple(record, readUrl(id, snapshot), importCounts(id, snapshot))
     }
 
-    private fun readRecord(id: String, snapshot: SharedPreferences): StoredSubscription? {
+    fun list(): List<StoredSubscription> = locked { readRecords(preferences) }
+
+    internal fun listWithRemoteStatus(includeNodes: Boolean): List<Pair<StoredSubscription, Boolean>> = locked {
+        val snapshot = preferences
+        readRecords(snapshot, includeNodes).map { record ->
+            record to (runCatching { readUrl(record.id, snapshot) }.getOrNull()
+                ?.startsWith("https://", ignoreCase = true) == true)
+        }
+    }
+
+    private fun readRecords(snapshot: SharedPreferences, includeNodes: Boolean = true): List<StoredSubscription> =
+        snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
+            .mapNotNull { id -> readRecord(id, snapshot, includeNodes) }
+            .sortedBy { it.name.lowercase() }
+
+    private fun readRecord(id: String, snapshot: SharedPreferences, includeNodes: Boolean): StoredSubscription? {
         val name = snapshot.getString(key(id, "name"), null) ?: return null
         val format = snapshot.getString(key(id, "format"), null)
             ?.let { runCatching { SubscriptionFormat.valueOf(it) }.getOrNull() }
@@ -302,7 +332,7 @@ class SubscriptionSecretStore(
             name = name,
             nodeCount = snapshot.getInt(key(id, "nodes"), 0),
             format = format,
-            nodes = readNodeMetadata(id, snapshot).sortedBy { it.name.lowercase() },
+            nodes = if (includeNodes) readNodeMetadata(id, snapshot).sortedBy { it.name.lowercase() } else emptyList(),
             hasPayload = payloadFile(id, snapshot).isFile,
             usage = SubscriptionUsage.decode(snapshot.getString(key(id, "usage"), null)),
             updatedAtMillis = snapshot.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },
@@ -312,8 +342,9 @@ class SubscriptionSecretStore(
 
     /** Provider-declared quota and refresh interval; neither is secret nor an endpoint. */
     fun recordRemoteMetadata(id: String, usage: SubscriptionUsage?, updateIntervalHours: Int?,
-        expectedRevision: String? = null) = locked {
+        expectedRevision: String? = null, coroutine: CoroutineContext = EmptyCoroutineContext) = locked {
         expectedRevision?.let { requireRevision(id, it) }
+        coroutine.ensureActive()
         if (id !in preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()) return@locked
         val editor = preferences.edit()
         writeRemoteMetadata(editor, id, SubscriptionRemoteMetadata(usage, updateIntervalHours))
@@ -329,10 +360,13 @@ class SubscriptionSecretStore(
         }
     }
 
-    fun get(id: String): StoredSubscription? = locked {
-        val snapshot = preferences
-        if (id !in snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()) return@locked null
-        readRecord(id, snapshot)
+    fun get(id: String): StoredSubscription? = locked { readIndexedRecord(id, preferences) }
+
+    private fun readIndexedRecord(
+        id: String, snapshot: SharedPreferences, includeNodes: Boolean = true,
+    ): StoredSubscription? {
+        if (id !in snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()) return null
+        return readRecord(id, snapshot, includeNodes)
     }
 
     @SuppressLint("UseKtx") // commit() is required here because rename must report persistence failure.
@@ -370,26 +404,20 @@ class SubscriptionSecretStore(
     /**
      * The URL is decrypted only for a network update or an explicitly opened, transient editor.
      */
-    fun readUrl(id: String): String {
-        locked {
-            val encrypted = preferences.getString(key(id, "url"), null)
-                ?: throw NoSuchElementException("Subscription not found")
-            return secretBox.decrypt(
-                envelope = encrypted,
-                associatedData = id.toByteArray(Charsets.UTF_8),
-            ).toString(Charsets.UTF_8)
-        }
+    fun readUrl(id: String): String = locked { readUrl(id, preferences) }
+
+    private fun readUrl(id: String, snapshot: SharedPreferences): String {
+        val encrypted = snapshot.getString(key(id, "url"), null)
+            ?: throw NoSuchElementException("Subscription not found")
+        return secretBox.decrypt(encrypted, id.toByteArray(Charsets.UTF_8)).toString(Charsets.UTF_8)
     }
 
-    fun readPayload(id: String): String {
-        locked {
-            val encrypted = payloadFile(id).takeIf(File::isFile)?.readText(Charsets.UTF_8)
-                ?: throw NoSuchElementException("订阅内容不存在，请重新导入")
-            return secretBox.decrypt(
-                envelope = encrypted,
-                associatedData = "$id:payload".toByteArray(Charsets.UTF_8),
-            ).toString(Charsets.UTF_8)
-        }
+    fun readPayload(id: String): String = locked { readPayload(id, preferences) }
+
+    private fun readPayload(id: String, snapshot: SharedPreferences): String {
+        val encrypted = payloadFile(id, snapshot).takeIf(File::isFile)?.readText(Charsets.UTF_8)
+            ?: throw NoSuchElementException("订阅内容不存在，请重新导入")
+        return secretBox.decrypt(encrypted, "$id:payload".toByteArray(Charsets.UTF_8)).toString(Charsets.UTF_8)
     }
 
     private fun writePayloadCandidate(
@@ -553,8 +581,7 @@ class SubscriptionSecretStore(
                 "${protocol.lowercase()}\u0000$name\u0000$occurrence"
                     .toByteArray(Charsets.UTF_8),
             )
-            .take(8)
-            .joinToString("") { "%02x".format(it) }
+            .lowerHex(8)
 
     private fun nodeKey(name: String, protocol: String) =
         "${protocol.lowercase()}\u0000$name"

@@ -37,6 +37,14 @@ class SubscriptionRequestCompatibilityTest {
         )
     }
 
+    @Test fun `duplicate and empty custom query fields survive expansion`() {
+        val url = "https://subs.wallesspku.space/sub"
+        assertEquals(URI("$url?client=cfa&client=cfa&provider=false&cluster=false"),
+            SubscriptionRequestCompatibility.adapt(URI("$url?client=cfa&client=cfa&provider=false")))
+        assertEquals(URI("$url?sig=a%2Bb&&client=custom&&cluster=false#keep"),
+            SubscriptionRequestCompatibility.adapt(URI("$url?sig=a%2Bb&&client=custom&#keep")))
+    }
+
     @Test
     fun `unrelated hosts are never rewritten`() {
         val uri = URI("https://example.com/sub?token=redacted")

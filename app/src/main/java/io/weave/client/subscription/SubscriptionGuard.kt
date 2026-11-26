@@ -58,8 +58,17 @@ object SubscriptionGuard {
         candidate: ParsedSubscription,
         oldSource: String? = null,
         newSource: String? = null,
+    ): SubscriptionAudit = audit(previous, candidate, oldSource, newSource,
+        SubscriptionDiffer.compare(previous.nodes, candidate.nodes))
+
+    internal fun audit(
+        previous: StoredSubscription,
+        candidate: ParsedSubscription,
+        oldSource: String?,
+        newSource: String?,
+        diff: SubscriptionDiff,
+        responseSource: String? = null,
     ): SubscriptionAudit {
-        val diff = SubscriptionDiffer.compare(previous.nodes, candidate.nodes)
         val findings = mutableListOf<SubscriptionAuditFinding>()
         val oldCount = previous.nodeCount
         val newCount = candidate.nodeCount
@@ -71,20 +80,20 @@ object SubscriptionGuard {
                 SubscriptionAuditSeverity.BLOCKED,
             )
         }
-        if (oldCount >= MIN_BASELINE_NODES && newCount < (oldCount / 4).coerceAtLeast(1)) {
+        if (oldCount >= MIN_BASELINE_NODES && newCount * 4L < oldCount) {
             findings += finding(
                 "node_drop",
                 "节点数量骤降",
                 SubscriptionAuditSeverity.BLOCKED,
             )
-        } else if (oldCount >= MIN_BASELINE_NODES && newCount < oldCount / 2) {
+        } else if (oldCount >= MIN_BASELINE_NODES && newCount * 2L < oldCount) {
             findings += finding(
                 "large_removal",
                 "移除了超过一半节点",
                 SubscriptionAuditSeverity.BLOCKED,
             )
         }
-        if (oldCount >= MIN_BASELINE_NODES && newCount > oldCount * 4) {
+        if (oldCount >= MIN_BASELINE_NODES && newCount > oldCount * 4L) {
             findings += finding(
                 "node_spike",
                 "节点数量异常增长",
@@ -98,10 +107,7 @@ object SubscriptionGuard {
                 SubscriptionAuditSeverity.REVIEW,
             )
         }
-        val unknownProtocols = candidate.protocols
-            .map(String::lowercase)
-            .filterNot(supportedProtocols::contains)
-        if (unknownProtocols.isNotEmpty()) {
+        if (candidate.protocols.any { it.lowercase() !in supportedProtocols }) {
             findings += finding(
                 "protocol",
                 "出现未列入审计白名单的协议",
@@ -115,8 +121,11 @@ object SubscriptionGuard {
                 SubscriptionAuditSeverity.REVIEW,
             )
         }
-        if (sourceHost(oldSource) != null && sourceHost(newSource) != null &&
-            sourceHost(oldSource) != sourceHost(newSource)
+        val oldHost = sourceHost(oldSource)
+        val newHost = if (newSource == oldSource) oldHost else sourceHost(newSource)
+        val responseHost = if (responseSource == newSource) newHost else sourceHost(responseSource)
+        if (oldHost != null && ((newHost != null && oldHost != newHost) ||
+                (responseHost != null && oldHost != responseHost))
         ) {
             findings += finding(
                 "source_host",

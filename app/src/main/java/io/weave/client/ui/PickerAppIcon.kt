@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,8 +46,14 @@ internal fun rememberPickerIcons(): PickerIconCache<InstalledApp, ImageBitmap> {
 /** Use the launcher activity (including aliases), falling back to application info for a known hidden entry. */
 internal fun loadPickerIcon(manager: PackageManager, app: InstalledApp, size: Int): ImageBitmap? =
     try {
-        val drawable = app.launcherActivity?.let { manager.getActivityIcon(ComponentName(app.packageName, it)) }
-            ?: manager.getApplicationIcon(app.packageName)
+        val drawable = app.launcherActivity?.let {
+            try {
+                manager.getActivityIcon(ComponentName(app.packageName, it))
+            } catch (_: PackageManager.NameNotFoundException) {
+                // The launcher entry can change while its application is still installed.
+                null
+            }
+        } ?: manager.getApplicationIcon(app.packageName)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val width = drawable.intrinsicWidth
         val height = drawable.intrinsicHeight
@@ -70,7 +78,8 @@ internal fun loadPickerIcon(manager: PackageManager, app: InstalledApp, size: In
 
 @Composable
 internal fun PickerAppIcon(app: InstalledApp, icons: PickerIconCache<InstalledApp, ImageBitmap>) {
-    val image by produceState<ImageBitmap?>(null, app, icons) { value = icons.get(app) }
+    var image by remember(app, icons) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(app, icons) { image = icons.get(app) }
     val frame = Modifier.size(42.dp)
     val thumbnail = image
     if (thumbnail != null) {

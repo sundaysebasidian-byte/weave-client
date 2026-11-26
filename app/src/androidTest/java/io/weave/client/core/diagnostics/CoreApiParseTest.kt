@@ -8,6 +8,11 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CoreApiParseTest {
+    @Test fun leavesDestinationEmptyWhenOnlyThePortIsKnown() {
+        val json = JSONObject("""{"connections":[{"id":"x","metadata":{"destinationPort":"443"}}]}""")
+        assertEquals("", CoreApi.parseConnections(json).connections.single().destination)
+    }
+
     @Test fun parsesTheControllerConnectionTable() {
         val json = JSONObject(
             """

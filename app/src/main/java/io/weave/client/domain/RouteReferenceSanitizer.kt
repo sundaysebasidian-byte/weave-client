@@ -15,9 +15,12 @@ object RouteReferenceSanitizer {
         nodes: List<ProxyNode>,
         groups: Map<String, String> = emptyMap(),
     ): List<AppRoute> {
+        if (routes.isEmpty()) return routes
         val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
         val fixedNodes = fixedNodeMatches(routes, subscriptionIds, nodes)
-        return routes.map { route ->
+        val seenPackages = HashSet<String>()
+        return routes.mapNotNull { route ->
+            if (!seenPackages.add(route.packageName)) return@mapNotNull null
             val target = route.target
             when (target.kind) {
                 RouteKind.GROUP -> groups[target.groupId]?.let { name ->
@@ -42,7 +45,7 @@ object RouteReferenceSanitizer {
                     }
                 }
             }
-        }.distinctBy(AppRoute::packageName)
+        }
     }
 
     private fun fixedNodeMatches(
@@ -94,9 +97,9 @@ object RouteReferenceSanitizer {
                 target.copy(label = "出口已失效，请重新选择")
             }
             RouteKind.FIXED -> {
-                val node = nodes.firstOrNull {
-                    it.subscriptionId == target.subscriptionId && it.id == target.nodeId
-                }
+                val node = if (subscriptions.any { it.id == target.subscriptionId }) {
+                    nodes.firstOrNull { it.subscriptionId == target.subscriptionId && it.id == target.nodeId }
+                } else null
                 when {
                     node != null -> target.copy(label = NodeDisplayName.core(node.name))
                     else -> target.copy(label = "出口已失效，请重新选择")
