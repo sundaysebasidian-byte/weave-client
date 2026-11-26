@@ -1,5 +1,6 @@
 package io.weave.client.subscription
 
+import io.weave.client.lowerHex
 import java.security.MessageDigest
 
 /** Only this safe summary crosses into UI; candidate credentials remain in repository memory. */
@@ -41,15 +42,7 @@ internal fun subscriptionRevision(record: StoredSubscription, payload: String, s
     digest.update(0.toByte())
     digest.updateRevisionUtf8(payload)
 
-    val bytes = digest.digest()
-    val digits = "0123456789abcdef"
-    return String(CharArray(bytes.size * 2).also { hex ->
-        for (index in bytes.indices) {
-            val byte = bytes[index].toInt() and 0xff
-            hex[index * 2] = digits[byte ushr 4]
-            hex[index * 2 + 1] = digits[byte and 0x0f]
-        }
-    })
+    return digest.digest().lowerHex()
 }
 
 private fun MessageDigest.updateRevisionUtf8(value: String) {

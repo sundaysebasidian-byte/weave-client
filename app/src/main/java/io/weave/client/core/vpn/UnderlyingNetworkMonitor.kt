@@ -35,15 +35,7 @@ internal class UnderlyingNetworkMonitor(
         override fun onAvailable(network: Network) {
             if (!registered) return
             synchronized(capabilityLock) { losingUntil -= network }
-            // API 26+ normally follows onAvailable with onCapabilitiesChanged. Prefer the
-            // callback snapshot; the synchronous read is only a startup fallback when that
-            // callback has not arrived yet.
-            (capabilitiesFor(network)
-                ?: connectivityManager.getNetworkCapabilities(network)?.also {
-                    rememberCapabilities(network, it)
-                })?.let { remembered ->
-                update(network, remembered.isEligible() && !isBlocked(network))
-            }
+            // API 26+ follows this callback with an ordered capability snapshot.
         }
 
         override fun onCapabilitiesChanged(
@@ -90,8 +82,8 @@ internal class UnderlyingNetworkMonitor(
                 linkProperties.dnsServers.joinToString { it.hostAddress.orEmpty() },
             )
             val changed = paths.changed(network, snapshot)
-            publishCurrent(force = changed)
-            if (changed && orderedNetworks().firstOrNull() == network) onPathChanged(network)
+            val networks = publishCurrent(force = changed)
+            if (changed && networks.firstOrNull() == network) onPathChanged(network)
         }
 
         override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
@@ -122,7 +114,7 @@ internal class UnderlyingNetworkMonitor(
         initialNetworks().forEach { network ->
             connectivityManager.getNetworkCapabilities(network)?.let { snapshot ->
                 rememberCapabilities(network, snapshot)
-                update(network, snapshot.isEligible())
+                update(network, snapshot.isEligible() && !isBlocked(network))
             }
         }
     }
@@ -173,34 +165,45 @@ internal class UnderlyingNetworkMonitor(
         publishCurrent(force = transition != NetworkAvailabilityTransition.NONE)
     }
 
-    private fun publishCurrent(force: Boolean = false) {
-        if (!registered) return
+    private fun publishCurrent(force: Boolean = false): List<Network> {
+        if (!registered) return emptyList()
         val networks = orderedNetworks()
-        if (!force && networks == lastPublished) return
+        if (!force && networks == lastPublished) return networks
         lastPublished = networks
         if (networks.isEmpty()) {
             onUnavailable(networks)
         } else {
             onNetworkChanged(networks)
         }
+        return networks
     }
 
-    private fun orderedNetworks(): List<Network> = tracker.snapshot()
-        .mapNotNull { network ->
-            capabilitiesFor(network)
-                ?.takeIf { it.isEligible() && !isBlocked(network) }
-                ?.let { network to it }
+    private data class RankedNetwork(
+        val network: Network,
+        val validated: Boolean,
+        val losing: Boolean,
+        val preference: Int,
+    )
+
+    private fun orderedNetworks(): List<Network> {
+        val available = tracker.snapshot()
+        if (available.isEmpty()) return emptyList()
+        val ranked = synchronized(capabilityLock) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            available.mapNotNull { network ->
+                val value = capabilities[network] ?: return@mapNotNull null
+                if (!value.isEligible() || network in blockedNetworks) return@mapNotNull null
+                RankedNetwork(network, value.isValidated(), (losingUntil[network] ?: now) > now,
+                    networkPreference(value))
+            }
         }
-        .sortedWith(
-            compareBy<Pair<Network, NetworkCapabilities>> { (_, value) ->
-                value.isValidated().not()
-            }.thenBy { (network, _) ->
-                isLosing(network)
-            }.thenBy { (_, value) ->
-                networkPreference(value)
-            }.thenBy { (network, _) -> network.networkHandle },
-        )
-        .map(Pair<Network, NetworkCapabilities>::first)
+        return ranked.sortedWith(networkOrder).map { it.network }
+    }
+
+    private companion object {
+        val networkOrder = compareByDescending<RankedNetwork> { it.validated }
+            .thenBy { it.losing }.thenBy { it.preference }.thenBy { it.network.networkHandle }
+    }
 
     private fun rememberCapabilities(network: Network, value: NetworkCapabilities) {
         synchronized(capabilityLock) { capabilities[network] = value }
@@ -225,10 +228,6 @@ internal class UnderlyingNetworkMonitor(
             blockedNetworks -= network
             losingUntil -= network
         }
-    }
-
-    private fun isLosing(network: Network): Boolean = synchronized(capabilityLock) {
-        losingUntil[network]?.let { it > android.os.SystemClock.elapsedRealtime() } == true
     }
 
     private fun networkPreference(capabilities: NetworkCapabilities?): Int = when {

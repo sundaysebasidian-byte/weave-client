@@ -887,14 +887,10 @@ internal fun SubscriptionManagerDialog(
     val healthByName = remember(health.nodes) {
         NodeHealthIndex(health.nodes)
     }
-    val orderedNodes = remember(filteredNodes, health.nodes, health.checkedAtMillis) {
-        filteredNodes.sortedWith(
-            compareBy<ProxyNode> {
-                healthByName[it.name]?.qualityScoreMs == null
-            }.thenBy {
-                healthByName[it.name]?.qualityScoreMs ?: Int.MAX_VALUE
-            }.thenBy { it.name },
-        )
+    val orderedNodes = remember(filteredNodes, healthByName) {
+        orderRoutePickerNodes(filteredNodes, emptySet(), favoritesOnly = false, query = "") {
+            healthByName[it]?.qualityScoreMs
+        }
     }
     val qualityRows = remember(health.nodes) { QualityMatrixBuilder.previewRows(health.nodes) }
     val filePicker = rememberLauncherForActivityResult(

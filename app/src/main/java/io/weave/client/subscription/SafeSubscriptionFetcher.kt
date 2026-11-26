@@ -52,32 +52,23 @@ internal object SubscriptionRequestCompatibility {
         val host = uri.host?.lowercase()?.trimEnd('.') ?: return uri
         if (WALLLESS_ROOTS.none { host == it || host.endsWith(".$it") }) return uri
 
-        val components = uri.rawQuery.orEmpty().split('&').filter(String::isNotEmpty)
-        val legacy = components.toSet() == setOf("client=cfa", "provider=false", "cluster=false") ||
-            components.toSet() == setOf("client=cfa", "provider=false")
-        val kept = if (legacy) components.filterNot { it == "client=cfa" || it == "provider=false" } else components
-        val present = kept.joinToString("&")
-            .split('&')
-            .asSequence()
-            .mapNotNull { component ->
-                component.substringBefore('=', missingDelimiterValue = component)
-                    .takeIf(String::isNotEmpty)
-                    ?.lowercase()
-            }
-            .toSet()
-        val additions = buildList {
-            // Walless aggregates several physical servers into one advertised node by default.
-            // Request its documented expanded view; never override an explicit user choice.
-            if ("cluster" !in present) add("cluster=false")
+        val query = uri.rawQuery.orEmpty()
+        val components = query.split('&')
+        val legacy = when (components.size) {
+            2 -> "client=cfa" in components && "provider=false" in components
+            3 -> "client=cfa" in components && "provider=false" in components && "cluster=false" in components
+            else -> false
         }
-        if (additions.isEmpty() && !legacy) return uri
+        // Keep custom query bytes, including repeated and empty fields, in their original order.
+        if (!legacy && components.any { it.substringBefore('=').equals("cluster", ignoreCase = true) }) return uri
+        val updatedQuery = if (legacy || query.isEmpty()) "cluster=false" else "$query&cluster=false"
 
         // Do not append after a fragment. URI fragments are rejected by the normal URL policy,
         // but keeping this helper structurally correct also protects callers that use it before
         // validation (and avoids accidentally moving an anchor into the query string).
         val base = uri.toString().substringBefore('#').substringBefore('?')
         val fragment = uri.rawFragment?.let { "#$it" }.orEmpty()
-        return URI(base + "?" + (kept + additions).joinToString("&") + fragment)
+        return URI("$base?$updatedQuery$fragment")
     }
 }
 
@@ -152,7 +143,12 @@ class SafeSubscriptionFetcher(
                     }
                     val location = response.location
                         ?: throw SubscriptionImportException("订阅重定向缺少目标地址")
-                    current = urlPolicy.validate(current.resolve(location).toString())
+                    val redirected = try {
+                        current.resolve(location)
+                    } catch (_: IllegalArgumentException) {
+                        throw SubscriptionImportException("订阅重定向地址无效")
+                    }
+                    current = urlPolicy.validate(redirected.toString())
                 }
 
                 else -> throw SubscriptionImportException("订阅服务器返回 HTTP ${response.status}")

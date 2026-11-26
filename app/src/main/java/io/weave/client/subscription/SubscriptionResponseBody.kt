@@ -1,9 +1,7 @@
 package io.weave.client.subscription
 
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
+import java.nio.charset.CharacterCodingException
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
 
@@ -16,22 +14,25 @@ internal object SubscriptionResponseBody {
             "deflate" -> InflaterInputStream(input)
             else -> throw SubscriptionImportException("订阅压缩格式不受支持")
         }
-        val bytes = decoded.use { stream ->
-            val output = ByteArrayOutputStream(minOf(maxBytes, 32 * 1024))
+        val content = decoded.use { stream ->
+            val output = LocalSubscriptionBuffer(minOf(maxBytes, 32 * 1024))
             val buffer = ByteArray(8192)
             var total = 0
             while (true) {
                 val length = stream.read(buffer)
                 if (length < 0) break
+                if (length > maxBytes - total) {
+                    throw SubscriptionImportException("订阅内容超过 ${maxBytes / 1024} KiB 限制")
+                }
                 total += length
-                if (total > maxBytes) throw SubscriptionImportException("订阅内容超过 ${maxBytes / 1024} KiB 限制")
                 output.write(buffer, 0, length)
             }
-            output.toByteArray()
+            output
         }
-        return runCatching {
-            Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
-        }.getOrElse { throw SubscriptionImportException("订阅内容不是有效 UTF-8") }
+        return try {
+            content.decodeUtf8()
+        } catch (_: CharacterCodingException) {
+            throw SubscriptionImportException("订阅内容不是有效 UTF-8")
+        }
     }
 }
