@@ -30,6 +30,7 @@ class ProductFlowVisualTest {
     }
 
     @Test fun bodySwipeStepsAndDockFollowsTheFingerWithoutCommittingCancelledDrags() {
+        compose.waitUntil(20_000) { compose.onAllNodesWithTag("navigation-tab-HOME").fetchSemanticsNodes().isNotEmpty() }
         val dock = compose.onNodeWithTag("navigation-dock")
         val body = compose.onNodeWithTag("navigation-content")
         compose.onNodeWithTag("navigation-tab-HOME").performClick().assertIsSelected()

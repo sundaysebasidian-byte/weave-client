@@ -36,6 +36,7 @@ import org.junit.Test
 
 class MainActivityRoutingJourneyTest {
     @get:Rule val compose = createEmptyComposeRule()
+    private val payload = "proxies: [{name: 'QA node', type: http, server: 127.0.0.1, port: 8080}]"
 
     @Test fun addingAnApplicationWaitsForAnExplicitRoutingPolicy() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -47,6 +48,10 @@ class MainActivityRoutingJourneyTest {
         val before = routes.load()
         val packageName = "com.android.settings"
         check(before.none { it.packageName == packageName })
+        val store = SubscriptionSecretStore(context)
+        val fixture = store.save(
+            "QA route candidate", "inline://app-rule-test", payload, SubscriptionPayloadParser().parse(payload),
+        )
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
                 val routeTab = compose.onNodeWithTag("navigation-tab-ROUTES")
@@ -73,6 +78,7 @@ class MainActivityRoutingJourneyTest {
             }
         } finally {
             routes.save(before)
+            store.delete(fixture.id)
         }
     }
 
@@ -86,7 +92,6 @@ class MainActivityRoutingJourneyTest {
         val previousTarget = settings.defaultRouteTarget()
         val store = SubscriptionSecretStore(context)
         val fixtures = mutableListOf<String>()
-        val payload = "proxies: [{name: 'QA node', type: http, server: 127.0.0.1, port: 8080}]"
         val parsed = SubscriptionPayloadParser().parse(payload)
         val source = "inline://routing-journey-test"
         try {
