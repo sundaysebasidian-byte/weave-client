@@ -12,8 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -124,7 +126,13 @@ class PrimaryFlowRegressionTest {
         compose.onNodeWithText("Previous provider").performClick()
         compose.onNodeWithText("自动选择").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        compose.waitUntil(15_000) { runCatching { overview.assertIsDisplayed() }.isSuccess }
+        try {
+            compose.waitUntil(15_000) { runCatching { overview.assertIsDisplayed() }.isSuccess }
+        } catch (timeout: ComposeTimeoutException) {
+            val root = compose.onAllNodesWithText("选择订阅").fetchSemanticsNodes().map { it.boundsInRoot }
+            val detail = compose.onAllNodesWithText("自动选择").fetchSemanticsNodes().map { it.boundsInRoot }
+            throw AssertionError("Android Back left the picker without a visible overview. Overview bounds=$root; detail bounds=$detail", timeout)
+        }
         compose.onNodeWithText("本地策略").performClick()
         compose.onNodeWithText("直连").assertIsDisplayed()
         compose.onNodeWithText("订阅").performClick()

@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -58,6 +59,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Add
@@ -444,11 +446,11 @@ private fun ConditionalTargetDialog(
     )
     val overviewScroll = key(section) { rememberLazyListState() }
     val detailScroll = key(subscriptionId) { rememberLazyListState() }
+    val returnToOverview = { selectedSubscriptionId = null }
 
     WeaveDialog(
-        onDismissRequest = {
-            if (subscriptionId == null) onDismiss() else selectedSubscriptionId = null
-        },
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = subscriptionId == null),
         title = {
             Column {
                 Text(title, fontWeight = FontWeight.Bold, translate = translateTitle)
@@ -469,220 +471,223 @@ private fun ConditionalTargetDialog(
             }
         },
         text = {
-            LazyColumn(
-                state = if (subscriptionId == null) overviewScroll else detailScroll,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                if (selectedSubscription == null) {
-                    when (section) {
-                        ExitSection.SUBSCRIPTIONS -> {
-                            item { TargetSectionLabel("选择订阅") }
-                            if (subscriptions.isEmpty()) {
-                                item { Text("没有可用订阅，请先导入或选择直连") }
+            BackHandler(enabled = subscriptionId != null, onBack = returnToOverview)
+            key(subscriptionId, section) {
+                LazyColumn(
+                    state = if (subscriptionId == null) overviewScroll else detailScroll,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (selectedSubscription == null) {
+                        when (section) {
+                            ExitSection.SUBSCRIPTIONS -> {
+                                item { TargetSectionLabel("选择订阅") }
+                                if (subscriptions.isEmpty()) {
+                                    item { Text("没有可用订阅，请先导入或选择直连") }
+                                }
+                                items(
+                                    items = subscriptions,
+                                    key = { "subscription.${it.id}" },
+                                    contentType = { "target-subscription" },
+                                ) { subscription ->
+                                    TargetOptionRow(
+                                        icon = Icons.Rounded.Dns,
+                                        title = subscription.name,
+                                        subtitle = if (subscription.hasRuntimePayload) "${subscription.nodeCount} 个节点"
+                                        else "订阅内容不存在，请重新导入",
+                                        selected = selectedTarget?.subscriptionId == subscription.id,
+                                        translateTitle = false,
+                                        enabled = subscription.hasRuntimePayload,
+                                        onClick = { selectedSubscriptionId = subscription.id },
+                                    )
+                                }
                             }
-                            items(
-                                items = subscriptions,
-                                key = { "subscription.${it.id}" },
-                                contentType = { "target-subscription" },
-                            ) { subscription ->
-                                TargetOptionRow(
-                                    icon = Icons.Rounded.Dns,
-                                    title = subscription.name,
-                                    subtitle = if (subscription.hasRuntimePayload) "${subscription.nodeCount} 个节点"
-                                    else "订阅内容不存在，请重新导入",
-                                    selected = selectedTarget?.subscriptionId == subscription.id,
-                                    translateTitle = false,
-                                    enabled = subscription.hasRuntimePayload,
-                                    onClick = { selectedSubscriptionId = subscription.id },
-                                )
+                            ExitSection.GROUPS -> {
+                                item { TargetSectionLabel("自定义策略组") }
+                                items(
+                                    items = customGroups,
+                                    key = { "group.${it.id}" },
+                                    contentType = { "target-group" },
+                                ) { group ->
+                                    val language = LocalWeaveLanguage.current
+                                    TargetOptionRow(
+                                        icon = Icons.Rounded.Route,
+                                        title = group.name,
+                                        subtitle = listOfNotNull(
+                                            group.strategy.label,
+                                            "${group.members.size} 个节点",
+                                            "链式".takeIf { group.entry != null },
+                                        ).joinToString(" · ") { localizeWeaveText(it, language) },
+                                        selected = selectedTarget?.kind == RouteKind.GROUP && selectedTarget.groupId == group.id,
+                                        translateTitle = false,
+                                        onClick = {
+                                            onSelect(RouteTarget(RouteKind.GROUP, group.name, groupId = group.id))
+                                        },
+                                    )
+                                }
                             }
-                        }
-                        ExitSection.GROUPS -> {
-                            item { TargetSectionLabel("自定义策略组") }
-                            items(
-                                items = customGroups,
-                                key = { "group.${it.id}" },
-                                contentType = { "target-group" },
-                            ) { group ->
-                                val language = LocalWeaveLanguage.current
-                                TargetOptionRow(
-                                    icon = Icons.Rounded.Route,
-                                    title = group.name,
-                                    subtitle = listOfNotNull(
-                                        group.strategy.label,
-                                        "${group.members.size} 个节点",
-                                        "链式".takeIf { group.entry != null },
-                                    ).joinToString(" · ") { localizeWeaveText(it, language) },
-                                    selected = selectedTarget?.kind == RouteKind.GROUP && selectedTarget.groupId == group.id,
-                                    translateTitle = false,
-                                    onClick = {
-                                        onSelect(RouteTarget(RouteKind.GROUP, group.name, groupId = group.id))
-                                    },
-                                )
-                            }
-                        }
-                        ExitSection.LOCAL -> {
-                            item {
-                                TargetOptionRow(
-                                    icon = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                                    title = "直连",
-                                    subtitle = directSubtitle,
-                                    selected = selectedTarget?.kind == RouteKind.DIRECT,
-                                    onClick = {
-                                        onSelect(RouteTarget(RouteKind.DIRECT, "直连"))
-                                    },
-                                )
-                            }
-                            if (allowBlock) {
+                            ExitSection.LOCAL -> {
                                 item {
                                     TargetOptionRow(
-                                        icon = Icons.Rounded.Block,
-                                        title = "阻止联网",
-                                        subtitle = "拒绝这个应用的连接",
-                                        selected = selectedTarget?.kind == RouteKind.BLOCK,
+                                        icon = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                                        title = "直连",
+                                        subtitle = directSubtitle,
+                                        selected = selectedTarget?.kind == RouteKind.DIRECT,
                                         onClick = {
-                                            onSelect(RouteTarget(RouteKind.BLOCK, "阻止联网"))
+                                            onSelect(RouteTarget(RouteKind.DIRECT, "直连"))
                                         },
                                     )
+                                }
+                                if (allowBlock) {
+                                    item {
+                                        TargetOptionRow(
+                                            icon = Icons.Rounded.Block,
+                                            title = "阻止联网",
+                                            subtitle = "拒绝这个应用的连接",
+                                            selected = selectedTarget?.kind == RouteKind.BLOCK,
+                                            onClick = {
+                                                onSelect(RouteTarget(RouteKind.BLOCK, "阻止联网"))
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                } else {
-                    item {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedTextField(
-                                value = nodeSearch,
-                                onValueChange = { nodeSearch = it.take(100) },
-                                label = { Text("搜索节点") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            androidx.compose.material3.FilterChip(
-                                selected = favoritesOnly,
-                                onClick = { favoritesOnly = !favoritesOnly },
-                                label = { Text("只看收藏") },
-                                leadingIcon = {
-                                    Icon(
-                                        if (favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
-                    }
-                    item { TargetSectionLabel("出口") }
-                    item {
-                        TargetOptionRow(
-                            icon = Icons.Rounded.AutoAwesome,
-                            title = "自动选择",
-                            subtitle = "从 ${selectedSubscription.nodeCount} 个节点中自动选择",
-                            selected = selectedTarget?.kind == RouteKind.AUTO &&
-                                selectedTarget.subscriptionId == selectedSubscription.id,
-                            onClick = {
-                                onSelect(
-                                    RouteTarget(
-                                        kind = RouteKind.AUTO,
-                                        label = "自动选择",
-                                        subscriptionId = selectedSubscription.id,
-                                    ),
-                                )
-                            },
-                        )
-                    }
-                    item {
-                        AdaptiveHeadingAction(
-                            heading = { headingModifier ->
-                                Text(
-                                    "手动选择节点",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    letterSpacing = 0.8.sp,
-                                    modifier = headingModifier,
-                                )
-                            },
-                            action = {
-                                TextButton(
-                                    onClick = { onCheckHealth(selectedSubscription.id) },
-                                    enabled = vpnConnected && selectedHealth?.running != true,
-                                ) {
-                                    if (selectedHealth?.running == true) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(15.dp),
-                                            strokeWidth = 2.dp,
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                    }
-                                    Text(
-                                        when {
-                                            selectedHealth?.running == true -> "测速中"
-                                            !vpnConnected -> "连接后测速"
-                                            else -> "测速并排序"
-                                        },
-                                    )
-                                }
-                            },
-                        )
-                    }
-                    if (selectedHealth?.error != null || selectedHealth?.checkedAtMillis != null) {
+                    } else {
                         item {
                             Column(modifier = Modifier.fillMaxWidth()) {
-                                selectedHealth?.error?.let { error ->
+                                OutlinedTextField(
+                                    value = nodeSearch,
+                                    onValueChange = { nodeSearch = it.take(100) },
+                                    label = { Text("搜索节点") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                androidx.compose.material3.FilterChip(
+                                    selected = favoritesOnly,
+                                    onClick = { favoritesOnly = !favoritesOnly },
+                                    label = { Text("只看收藏") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (favoritesOnly) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
+                        }
+                        item { TargetSectionLabel("出口") }
+                        item {
+                            TargetOptionRow(
+                                icon = Icons.Rounded.AutoAwesome,
+                                title = "自动选择",
+                                subtitle = "从 ${selectedSubscription.nodeCount} 个节点中自动选择",
+                                selected = selectedTarget?.kind == RouteKind.AUTO &&
+                                    selectedTarget.subscriptionId == selectedSubscription.id,
+                                onClick = {
+                                    onSelect(
+                                        RouteTarget(
+                                            kind = RouteKind.AUTO,
+                                            label = "自动选择",
+                                            subscriptionId = selectedSubscription.id,
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                        item {
+                            AdaptiveHeadingAction(
+                                heading = { headingModifier ->
                                     Text(
-                                        error,
-                                        color = MaterialTheme.colorScheme.error,
+                                        "手动选择节点",
                                         fontSize = 11.sp,
-                                        lineHeight = 16.sp,
-                                    )
-                                }
-                                selectedHealth?.checkedAtMillis?.let { time ->
-                                    val language = LocalWeaveLanguage.current
-                                    Text(
-                                        localizeWeaveText("检测时间", language) + " · " +
-                                            java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
-                                        translate = false, fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        letterSpacing = 0.8.sp,
+                                        modifier = headingModifier,
                                     )
+                                },
+                                action = {
+                                    TextButton(
+                                        onClick = { onCheckHealth(selectedSubscription.id) },
+                                        enabled = vpnConnected && selectedHealth?.running != true,
+                                    ) {
+                                        if (selectedHealth?.running == true) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(15.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                            when {
+                                                selectedHealth?.running == true -> "测速中"
+                                                !vpnConnected -> "连接后测速"
+                                                else -> "测速并排序"
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                        if (selectedHealth?.error != null || selectedHealth?.checkedAtMillis != null) {
+                            item {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    selectedHealth?.error?.let { error ->
+                                        Text(
+                                            error,
+                                            color = MaterialTheme.colorScheme.error,
+                                            fontSize = 11.sp,
+                                            lineHeight = 16.sp,
+                                        )
+                                    }
+                                    selectedHealth?.checkedAtMillis?.let { time ->
+                                        val language = LocalWeaveLanguage.current
+                                        Text(
+                                            localizeWeaveText("检测时间", language) + " · " +
+                                                java.text.DateFormat.getDateTimeInstance().format(java.util.Date(time)),
+                                            translate = false, fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (orderedNodes == null) {
-                        item { CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp) }
-                    } else if (orderedNodes.isEmpty() && (nodeSearch.isNotBlank() || favoritesOnly)) {
-                        item { Text("没有匹配的节点", modifier = Modifier.padding(vertical = 12.dp)) }
-                    }
-                    items(
-                        items = orderedNodes.orEmpty(),
-                        key = { "node.${it.id}" },
-                        contentType = { "target-node" },
-                    ) { node ->
-                        SelectableNodeOptionRow(
-                            favorite = "${node.subscriptionId}/${node.id}" in favorites,
-                            onFavorite = { onFavorite(node) },
-                            node = node,
-                            health = healthByName[node.name],
-                            checked = selectedHealth?.checkedAtMillis != null,
-                            selected = selectedTarget?.kind == RouteKind.FIXED &&
-                                selectedTarget.subscriptionId == selectedSubscription.id &&
-                                selectedTarget.nodeId == node.id,
-                            onClick = {
-                                onSelect(
-                                    RouteTarget(
-                                        kind = RouteKind.FIXED,
-                                        label = NodeDisplayName.core(node.name),
-                                        subscriptionId = selectedSubscription.id,
-                                        nodeId = node.id,
-                                    ),
-                                )
-                            },
-                        )
+                        if (orderedNodes == null) {
+                            item { CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp) }
+                        } else if (orderedNodes.isEmpty() && (nodeSearch.isNotBlank() || favoritesOnly)) {
+                            item { Text("没有匹配的节点", modifier = Modifier.padding(vertical = 12.dp)) }
+                        }
+                        items(
+                            items = orderedNodes.orEmpty(),
+                            key = { "node.${it.id}" },
+                            contentType = { "target-node" },
+                        ) { node ->
+                            SelectableNodeOptionRow(
+                                favorite = "${node.subscriptionId}/${node.id}" in favorites,
+                                onFavorite = { onFavorite(node) },
+                                node = node,
+                                health = healthByName[node.name],
+                                checked = selectedHealth?.checkedAtMillis != null,
+                                selected = selectedTarget?.kind == RouteKind.FIXED &&
+                                    selectedTarget.subscriptionId == selectedSubscription.id &&
+                                    selectedTarget.nodeId == node.id,
+                                onClick = {
+                                    onSelect(
+                                        RouteTarget(
+                                            kind = RouteKind.FIXED,
+                                            label = NodeDisplayName.core(node.name),
+                                            subscriptionId = selectedSubscription.id,
+                                            nodeId = node.id,
+                                        ),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -703,7 +708,7 @@ private fun ConditionalTargetDialog(
                     }
                 }
                 if (selectedSubscription != null) {
-                    TextButton(onClick = { selectedSubscriptionId = null }) {
+                    TextButton(onClick = returnToOverview) {
                         Text("更换订阅")
                     }
                 }
