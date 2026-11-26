@@ -190,6 +190,11 @@ import io.weave.client.routing.LocalRuleType
 import io.weave.client.subscription.SubscriptionAuditSeverity
 import java.text.DateFormat
 import java.util.Date
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 
 private enum class Destination(
     val item: NavigationItem,
@@ -219,6 +224,11 @@ private fun WeaveNavigationDock(
     val scheme = MaterialTheme.colorScheme
     val indicatorFill = scheme.primaryContainer.copy(alpha = 0.88f)
     val indicatorRim = scheme.primary.copy(alpha = 0.16f)
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val currentSelected by rememberUpdatedState(selected)
+    val select by rememberUpdatedState(onSelect)
+    var scrub by remember { mutableStateOf<Float?>(null) }
     LiquidGlassPanel(
         modifier = Modifier
             .padding(horizontal = 18.dp)
@@ -236,8 +246,49 @@ private fun WeaveNavigationDock(
                 .heightIn(min = WeaveUiTokens.navigationHeight)
                 .testTag("navigation-dock")
                 .selectableGroup()
-                .weaveSwipe(threshold = 48.dp) { step ->
-                    destinations.getOrNull(destinations.indexOf(selected) - step)?.let(onSelect)
+                // Sliding a finger along the dock moves the pill with it and opens the tab under
+                // the finger as it passes; vertical movement is left alone.
+                .pointerInput(destinations, rtl) {
+                    val pad = DockPadding.toPx()
+                    val gap = DockGap.toPx()
+                    val slop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var locked = false
+                        try {
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    if (locked) change.consume()
+                                    break
+                                }
+                                val delta = change.position - down.position
+                                if (!locked) {
+                                    if (kotlin.math.abs(delta.x) > slop && kotlin.math.abs(delta.x) >= kotlin.math.abs(delta.y)) {
+                                        locked = true
+                                    } else if (kotlin.math.abs(delta.y) > slop) {
+                                        break
+                                    } else {
+                                        continue
+                                    }
+                                }
+                                change.consume()
+                                val count = destinations.size
+                                if (count == 0) break
+                                val item = (size.width - pad * 2 - gap * (count - 1)) / count
+                                val x = if (rtl) size.width - change.position.x else change.position.x
+                                val position = ((x - pad - item / 2f) / (item + gap)).coerceIn(0f, (count - 1).toFloat())
+                                scrub = position
+                                val target = destinations[kotlin.math.round(position).toInt()]
+                                if (target != currentSelected) {
+                                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+                                    select(target)
+                                }
+                            }
+                        } finally {
+                            scrub = null
+                        }
+                    }
                 }
                 // One pill slides under the tabs and follows the page while it is being dragged,
                 // stretching slightly between stops. It is read in the draw phase only.
@@ -247,7 +298,7 @@ private fun WeaveNavigationDock(
                     val pad = DockPadding.toPx()
                     val gap = DockGap.toPx()
                     val itemWidth = (size.width - pad * 2 - gap * (count - 1)) / count
-                    val position = indicatorPosition().coerceIn(0f, (count - 1).toFloat())
+                    val position = (scrub ?: indicatorPosition()).coerceIn(0f, (count - 1).toFloat())
                     val between = position - kotlin.math.floor(position)
                     val stretch = kotlin.math.sin(between * kotlin.math.PI.toFloat()) * gap * 4f
                     val width = itemWidth + stretch
@@ -271,7 +322,6 @@ private fun WeaveNavigationDock(
             horizontalArrangement = Arrangement.spacedBy(DockGap),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
             destinations.forEachIndexed { index, item ->
                 val active = selected == item
                 val lit = highlighted == index

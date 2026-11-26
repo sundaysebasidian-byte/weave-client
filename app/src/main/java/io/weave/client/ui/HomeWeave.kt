@@ -20,7 +20,6 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -90,6 +89,27 @@ import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.atan2
 
 /** What the woven line under the headline shows. One value per connection state. */
 internal enum class WeaveStage { IDLE, WEAVING, WOVEN, FRAYED }
@@ -292,10 +312,11 @@ private class AboveAnchor(private val gap: Int, private val margin: Int) : Popup
 }
 
 /**
- * The routing mode control in the connection capsule. A tap opens a three-way dial above it; a
- * long press also opens the dial. A deliberate horizontal swipe on the chip or dial steps one
- * mode in reading order; lifting commits. TalkBack gets a plain button that opens the dial, and the dial's options are
- * a radio group.
+ * The routing mode control in the connection capsule, drawn after the design's mode dial.
+ * A tap opens the dial above the capsule. Holding the chip for a moment, or dragging it sideways,
+ * opens the dial under the finger: the highlight follows the drag with a tick at each mode, and
+ * lifting picks the mode under it. TalkBack gets a button that opens the dial, and the dial's
+ * options are a radio group.
  */
 @Composable
 internal fun ModeChip(
@@ -304,106 +325,138 @@ internal fun ModeChip(
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
-    val density = LocalDensity.current
-    var open by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val current by rememberUpdatedState(selected)
     val choose by rememberUpdatedState(onModeSelected)
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    var preview by remember { mutableStateOf<RoutingMode?>(null) }
-    // Live swipe on the chip: the label follows the finger one detent at a time and the pill
-    // leans a few dp toward the drag; lifting commits, anything else springs back.
-    var swipeStart by remember { mutableIntStateOf(-1) }
-    val lean = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-    val thresholdPx = with(density) { 32.dp.toPx() }
-    val detentPx = with(density) { 56.dp.toPx() }
-    val maxLeanPx = with(density) { 8.dp.toPx() }
-    fun pick(mode: RoutingMode) {
-        open = false
-        if (mode != current) {
-            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            choose(mode)
+    var open by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
+    var pressed by remember { mutableStateOf(false) }
+    var hover by remember { mutableIntStateOf(DialModes.indexOf(selected)) }
+    var deg by remember { mutableStateOf<Float?>(null) }
+    var closing by remember { mutableStateOf<Job?>(null) }
+
+    fun close(after: Long = 0) {
+        closing?.cancel()
+        closing = scope.launch {
+            delay(after)
+            open = false
+            dragging = false
+            deg = null
         }
     }
-    val shape = RoundedCornerShape(50)
+    fun show(drag: Boolean) {
+        closing?.cancel()
+        hover = DialModes.indexOf(current)
+        deg = null
+        dragging = drag
+        open = true
+    }
+    fun follow(baseDeg: Float, travelDp: Float) {
+        val d = (baseDeg + travelDp * DialDegPerDp).coerceIn(-DialMaxDeg, DialMaxDeg)
+        val next = ((d / DialStepDeg).roundToInt() + 1).coerceIn(DialModes.indices)
+        deg = d
+        if (next != hover) {
+            hover = next
+            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        }
+    }
+    fun pick(index: Int) {
+        dragging = false
+        deg = null
+        hover = index
+        val mode = DialModes[index]
+        if (mode == current) {
+            close(220)
+        } else {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            choose(mode)
+            close(380)
+        }
+    }
+
+    val scheme = MaterialTheme.colorScheme
+    val chipScale by animateFloatAsState(if (pressed) 0.94f else 1f, WeaveMotion.quick(), label = "mode-chip-press")
+    val chipColor by animateColorAsState(
+        if (open) scheme.primary else scheme.surfaceVariant, WeaveMotion.quick(), label = "mode-chip-container",
+    )
+    val chipContent by animateColorAsState(
+        if (open) scheme.onPrimary else scheme.onSurface, WeaveMotion.quick(), label = "mode-chip-content",
+    )
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
                 .testTag("home-mode-chip")
                 .heightIn(min = WeaveUiTokens.minTouchTarget)
-                .weaveSwipe(
-                    threshold = 32.dp,
-                    onMove = { dx ->
-                        if (swipeStart < 0) swipeStart = DialModes.indexOf(current)
-                        scope.launch { lean.snapTo((dx / 6f).coerceIn(-maxLeanPx, maxLeanPx)) }
-                        val offset = swipePreviewOffset(dx, thresholdPx, detentPx)
-                        val next = DialModes[(swipeStart + offset).coerceIn(DialModes.indices)]
-                        if (next != (preview ?: current)) {
-                            preview = next
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        }
-                    },
-                    onFinish = {
-                        swipeStart = -1
-                        preview = null
-                        scope.launch { lean.animateTo(0f, WeaveMotion.settle()) }
-                    },
-                ) { step ->
-                    (preview ?: DialModes.getOrNull(DialModes.indexOf(current) + step))?.let(::pick)
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    onClick { if (open) close() else show(drag = false); true }
                 }
-                .clickable(role = Role.Button) { open = !open }
                 .pointerInput(rtl) {
-                    var start = 0
-                    var dx = 0f
-                    val detent = 56.dp.toPx()
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            start = DialModes.indexOf(current)
-                            dx = 0f
-                            preview = current
-                            open = true
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDrag = { change, distance ->
-                            change.consume()
-                            dx += if (rtl) -distance.x else distance.x
-                            val next = DialModes[(start + (dx / detent).roundToInt()).coerceIn(DialModes.indices)]
-                            if (next != preview) {
-                                preview = next
-                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    val slop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        pressed = true
+                        try {
+                            // Tap, a sideways drag, or a hold: whichever happens first.
+                            var outcome = ChipPress.HOLD
+                            withTimeoutOrNull(DialHoldMs) {
+                                while (true) {
+                                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                                    if (change == null || !change.pressed) { outcome = ChipPress.TAP; break }
+                                    val d = change.position - down.position
+                                    if (abs(d.x) > slop && abs(d.x) >= abs(d.y)) { outcome = ChipPress.DRAG; break }
+                                    if (abs(d.y) > slop) { outcome = ChipPress.SCROLL; break }
+                                }
                             }
-                        },
-                        onDragEnd = {
-                            val chosen = preview
-                            preview = null
-                            if (chosen != null && chosen != current) pick(chosen)
-                        },
-                        onDragCancel = { preview = null; open = false },
-                    )
+                            when (outcome) {
+                                ChipPress.SCROLL -> return@awaitEachGesture
+                                ChipPress.TAP -> {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (open) close() else show(drag = false)
+                                    return@awaitEachGesture
+                                }
+                                ChipPress.HOLD -> haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                ChipPress.DRAG -> Unit
+                            }
+                            show(drag = true)
+                            val base = (hover - 1) * DialStepDeg
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    change.consume()
+                                    pick(hover)
+                                    break
+                                }
+                                change.consume()
+                                val dx = (change.position.x - down.position.x).toDp().value
+                                follow(base, if (rtl) -dx else dx)
+                            }
+                        } finally {
+                            pressed = false
+                            if (dragging) {
+                                dragging = false
+                                close()
+                            }
+                        }
+                    }
                 },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val previewing = preview != null && preview != selected
-            val chipColor by animateColorAsState(
-                if (previewing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                WeaveMotion.quick(), label = "mode-chip-container",
-            )
             Row(
                 modifier = Modifier
-                    .graphicsLayer { translationX = if (rtl) -lean.value else lean.value }
+                    .graphicsLayer { scaleX = chipScale; scaleY = chipScale }
                     .heightIn(min = 36.dp)
-                    .clip(shape)
+                    .clip(RoundedCornerShape(50))
                     .background(chipColor)
                     .padding(start = 9.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AnimatedContent(
-                    targetState = preview ?: selected,
+                    targetState = selected,
                     transitionSpec = {
-                        val forward = DialModes.indexOf(targetState) > DialModes.indexOf(initialState)
-                        val sign = if (forward != rtl) 1 else -1
-                        (slideInHorizontally(WeaveMotion.standard()) { w -> sign * w / 4 } + fadeIn(WeaveMotion.standard()))
-                            .togetherWith(slideOutHorizontally(WeaveMotion.quick()) { w -> -sign * w / 4 } + fadeOut(WeaveMotion.quick()))
+                        (fadeIn(tween(320)) + slideInVertically(tween(320, easing = DialEase)) { it / 3 })
+                            .togetherWith(fadeOut(tween(WeaveMotion.QUICK_MS)))
                             .using(SizeTransform(clip = false))
                     },
                     contentAlignment = Alignment.CenterStart,
@@ -413,39 +466,113 @@ internal fun ModeChip(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(ModeIcons.getValue(mode), contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text(mode.label, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        Icon(ModeIcons.getValue(mode), contentDescription = null, tint = chipContent, modifier = Modifier.size(16.dp))
+                        Text(mode.label, color = chipContent, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                     }
                 }
             }
         }
-        if (open) {
-            val gap = with(density) { 14.dp.roundToPx() }
-            val margin = with(density) { 12.dp.roundToPx() }
+
+        val appear by animateFloatAsState(
+            if (open) 1f else 0f,
+            spring(dampingRatio = 0.62f, stiffness = 520f, visibilityThreshold = 0.002f),
+            label = "mode-dial-appear",
+        )
+        if (open || appear > 0.01f) {
+            val density = LocalDensity.current
+            val placement = remember(density) { FullWindowAnchor() }
             Popup(
-                popupPositionProvider = remember(gap, margin) { AboveAnchor(gap, margin) },
-                onDismissRequest = { open = false; preview = null },
-                properties = PopupProperties(focusable = preview == null),
+                popupPositionProvider = placement,
+                onDismissRequest = { close() },
+                properties = PopupProperties(focusable = !dragging, clippingEnabled = false),
             ) {
-                ModeDial(
-                    selected = selected,
-                    preview = preview,
-                    onPick = ::pick,
-                )
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = appear.coerceIn(0f, 1f) }
+                            .background(Color(0x29121A21))
+                            .pointerInput(Unit) { detectTapGestures { close() } },
+                    )
+                    val anchor = placement.anchor
+                    with(density) {
+                        val width = DialWidth.roundToPx()
+                        val margin = 16.dp.roundToPx()
+                        val x = (placement.window.width - margin - width).coerceAtLeast(margin)
+                        val y = anchor.top - DialLift.roundToPx() - DialHeight.roundToPx()
+                        Box(
+                            Modifier
+                                .offset { IntOffset(x, y) }
+                                .graphicsLayer {
+                                    val p = appear
+                                    alpha = (p * 1.6f).coerceIn(0f, 1f)
+                                    val s = 0.88f + 0.12f * p
+                                    scaleX = s
+                                    scaleY = s
+                                    translationY = (1f - p) * 12.dp.toPx()
+                                    transformOrigin = TransformOrigin(0.66f, 1f)
+                                },
+                        ) {
+                            ModeDial(
+                                selected = selected,
+                                hover = hover,
+                                deg = deg,
+                                dragging = dragging,
+                                onDrag = { started, base, travel ->
+                                    if (started) dragging = true
+                                    follow(base, travel)
+                                },
+                                onPick = ::pick,
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private enum class ChipPress { TAP, DRAG, HOLD, SCROLL }
+
+private const val DialHoldMs = 240L
+private const val DialStepDeg = 55f
+private const val DialMaxDeg = 72f
+private const val DialDegPerDp = 1.25f
+private val DialWidth = 300.dp
+private val DialHeight = 176.dp
+/** From the chip's top to the dial's bottom: the capsule's inset above the chip plus a 12dp gap. */
+private val DialLift = 26.dp
+private val DialEase = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
+
+/** Covers the window so the dial can dim the screen; remembers where the chip is. */
+private class FullWindowAnchor : PopupPositionProvider {
+    var anchor by mutableStateOf(IntRect.Zero)
+    var window by mutableStateOf(IntSize.Zero)
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        anchor = anchorBounds
+        window = windowSize
+        return IntOffset.Zero
     }
 }
 
 @Composable
 private fun ModeDial(
     selected: RoutingMode,
-    preview: RoutingMode?,
-    onPick: (RoutingMode) -> Unit,
+    hover: Int,
+    deg: Float?,
+    dragging: Boolean,
+    onDrag: (started: Boolean, baseDeg: Float, travelDp: Float) -> Unit,
+    onPick: (Int) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // At large text sizes the three labels can collide along the arc. Present the same
-    // three radio options as reading-order rows; never shrink or truncate the user's type.
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    // At large text sizes the labels would collide along the arc: offer the same three options
+    // as rows instead, without shrinking the user's type.
     if (LocalDensity.current.fontScale >= 1.3f) {
         Surface(
             modifier = Modifier.width(272.dp),
@@ -453,20 +580,14 @@ private fun ModeDial(
             color = scheme.surface,
             border = androidx.compose.foundation.BorderStroke(WeaveUiTokens.panelBorderWidth, scheme.outlineVariant),
         ) {
-            Column(
-                Modifier.testTag("home-mode-selector").selectableGroup()
-                    .weaveSwipe(threshold = 32.dp) { step ->
-                        DialModes.getOrNull(DialModes.indexOf(selected) + step)?.let(onPick)
-                    }
-                    .verticalScroll(rememberScrollState()).padding(4.dp),
-            ) {
-                DialModes.forEach { mode ->
-                    val active = mode == (preview ?: selected)
+            Column(Modifier.testTag("home-mode-selector").selectableGroup().verticalScroll(rememberScrollState()).padding(4.dp)) {
+                DialModes.forEachIndexed { index, mode ->
+                    val active = index == hover
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = WeaveUiTokens.minTouchTarget)
                             .clip(RoundedCornerShape(WeaveUiTokens.iconTileRadius))
                             .background(if (active) scheme.primaryContainer else Color.Transparent)
-                            .selectable(mode == selected, role = Role.RadioButton, onClick = { onPick(mode) })
+                            .selectable(mode == selected, role = Role.RadioButton, onClick = { onPick(index) })
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -480,90 +601,131 @@ private fun ModeDial(
         }
         return
     }
-    val width = 288.dp
-    val height = 156.dp
-    val radius = 96.dp
+
+    val angle = remember { Animatable((hover - 1) * DialStepDeg) }
+    LaunchedEffect(deg, hover) {
+        if (deg != null) angle.snapTo(deg)
+        else angle.animateTo((hover - 1) * DialStepDeg, spring(dampingRatio = 0.55f, stiffness = 420f))
+    }
+    val arcWidth by animateDpAsState(if (dragging) 17.dp else 14.dp, tween(200), label = "dial-arc")
+    val track = scheme.surfaceVariant
+    val dots = scheme.onSurfaceVariant.copy(alpha = 0.3f)
+    val tickOff = scheme.outlineVariant
+    val tickOn = scheme.primary
+    val highlight = scheme.primary
+    val knob = scheme.onPrimary
+    val shape = RoundedCornerShape(30.dp)
     Surface(
-        shape = RoundedCornerShape(30.dp),
+        shape = shape,
         color = scheme.surface,
-        shadowElevation = 12.dp,
+        shadowElevation = 14.dp,
         tonalElevation = 0.dp,
         modifier = Modifier
-            .size(width, height)
-            .border(0.5.dp, scheme.outlineVariant, RoundedCornerShape(30.dp)),
+            .size(DialWidth, DialHeight)
+            .border(0.5.dp, scheme.outlineVariant, shape),
     ) {
         Box(
-            modifier = Modifier
+            Modifier
                 .testTag("home-mode-selector")
+                .semantics { contentDescription = "运行模式" }
                 .selectableGroup()
-                .weaveSwipe(threshold = 32.dp) { step ->
-                    DialModes.getOrNull(DialModes.indexOf(selected) + step)?.let(onPick)
-                }
-                .drawWithCache {
-                    val r = radius.toPx()
-                    val c = Offset(size.width / 2f, size.height - 22.dp.toPx())
-                    val track = Path().apply {
-                        arcTo(
-                            androidx.compose.ui.geometry.Rect(c.x - r, c.y - r, c.x + r, c.y + r),
-                            startAngleDegrees = 180f + 22f,
-                            sweepAngleDegrees = 180f - 44f,
-                            forceMoveTo = true,
-                        )
+                .pointerInput(rtl) {
+                    val slop = 6.dp.toPx()
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val base = angle.targetValue
+                        var moved = false
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                            val dx = change.position.x - down.position.x
+                            if (!change.pressed) {
+                                change.consume()
+                                if (moved) {
+                                    onPick(hover)
+                                } else {
+                                    // A tap picks the mode whose sector it lands in, measured from the arc's centre.
+                                    val cx = size.width / 2f
+                                    val cy = (12.dp + 150.dp).toPx()
+                                    val a = Math.toDegrees(atan2((change.position.x - cx).toDouble(), (cy - change.position.y).toDouble())).toFloat()
+                                    val signed = if (rtl) -a else a
+                                    if (cy - change.position.y > 30.dp.toPx()) {
+                                        onPick(((signed / DialStepDeg).roundToInt() + 1).coerceIn(DialModes.indices))
+                                    }
+                                }
+                                break
+                            }
+                            if (!moved && abs(dx) > slop) moved = true
+                            if (moved) {
+                                change.consume()
+                                val travel = dx.toDp().value
+                                onDrag(true, base, if (rtl) -travel else travel)
+                            }
+                        }
                     }
-                    val stroke = Stroke(1.dp.toPx(), cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 6.dp.toPx())))
-                    onDrawBehind { drawPath(track, scheme.outlineVariant, style = stroke) }
                 },
         ) {
-            DialModes.forEachIndexed { index, mode ->
-                val angle = (-55f + 55f * index) * (PI.toFloat() / 180f)
-                val ox = radius * sin(angle)
-                val oy = radius * cos(angle)
-                val isSelected = mode == selected
-                val container by animateColorAsState(
-                    when {
-                        preview == mode && !isSelected -> scheme.primaryContainer
-                        isSelected -> scheme.primary
-                        else -> scheme.surfaceVariant
-                    },
-                    WeaveMotion.quick(), label = "dial-container",
+            Canvas(Modifier.padding(top = 12.dp).size(DialWidth, 150.dp)) {
+                val c = Offset(size.width / 2f, 150.dp.toPx())
+                fun ring(r: Float) = androidx.compose.ui.geometry.Rect(c.x - r, c.y - r, c.x + r, c.y + r)
+                val r100 = 100.dp.toPx()
+                drawArc(track, 200f, 140f, false, ring(r100).topLeft, ring(r100).size, style = Stroke(14.dp.toPx(), cap = StrokeCap.Round))
+                val r86 = 86.dp.toPx()
+                drawArc(
+                    dots, 200f, 140f, false, ring(r86).topLeft, ring(r86).size,
+                    style = Stroke(4.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(1.dp.toPx(), 7.dp.toPx()))),
                 )
-                val content by animateColorAsState(
-                    if (isSelected) scheme.onPrimary else scheme.onSurface,
-                    WeaveMotion.quick(), label = "dial-content",
-                )
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 22.dp)
-                        .dialOffset(ox, oy)
-                        .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onPick(mode) }),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(container),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(ModeIcons.getValue(mode), contentDescription = null, tint = content, modifier = Modifier.size(22.dp))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        mode.label,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (isSelected) scheme.onSurface else scheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
+                DialModes.indices.forEach { i ->
+                    val a = ((i - 1) * DialStepDeg * if (rtl) -1 else 1) * (PI.toFloat() / 180f)
+                    val p0 = Offset(c.x + 108.dp.toPx() * sin(a), c.y - 108.dp.toPx() * cos(a))
+                    val p1 = Offset(c.x + 113.dp.toPx() * sin(a), c.y - 113.dp.toPx() * cos(a))
+                    drawLine(if (i == hover) tickOn else tickOff, p0, p1, 1.6.dp.toPx(), StrokeCap.Round)
+                }
+                rotate(if (rtl) -angle.value else angle.value, c) {
+                    drawArc(highlight, 254f, 32f, false, ring(r100).topLeft, ring(r100).size, style = Stroke(arcWidth.toPx(), cap = StrokeCap.Round))
+                    drawCircle(knob, 3.5.dp.toPx(), Offset(c.x, c.y - r100))
                 }
             }
+            val spots = listOf(46.dp to 67.dp, 150.dp to 14.dp, 254.dp to 67.dp)
+            DialModes.forEachIndexed { index, mode ->
+                val (cx, top) = spots[if (rtl) 2 - index else index]
+                val on = index == hover
+                val color by animateColorAsState(if (on) scheme.onSurface else scheme.onSurfaceVariant, tween(200), label = "dial-label")
+                Box(
+                    Modifier
+                        .offset(x = cx - 36.dp, y = 12.dp + top - 8.dp)
+                        .size(72.dp, 32.dp)
+                        .semantics {
+                            role = Role.RadioButton
+                            this.selected = mode == selected
+                            onClick { onPick(index); true }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(mode.label, color = color, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+                }
+            }
+            Box(
+                Modifier.fillMaxWidth().padding(top = 102.dp).clearAndSetSemantics { },
+                contentAlignment = Alignment.TopCenter,
+            ) { AnimatedContent(
+                targetState = hover,
+                transitionSpec = {
+                    (fadeIn(tween(260, easing = DialEase)) + slideInVertically(tween(260, easing = DialEase)) { it / 5 })
+                        .togetherWith(fadeOut(tween(120)))
+                },
+                contentAlignment = Alignment.TopCenter,
+                label = "dial-name",
+            ) { index ->
+                Text(
+                    DialModes[index].label,
+                    color = scheme.onSurface,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.4).sp,
+                    maxLines = 1,
+                )
+            } }
         }
     }
 }
-
-/**
- * Moves an option from the dial's bottom-centre pivot to its place on the arc. The option's circle
- * centre sits 46dp above its own bottom edge (48dp circle, 6dp gap, label).
- */
-private fun Modifier.dialOffset(dx: Dp, dy: Dp): Modifier = offset(x = dx, y = -(dy - 46.dp))
