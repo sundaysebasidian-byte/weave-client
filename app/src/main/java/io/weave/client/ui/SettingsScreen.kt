@@ -413,12 +413,15 @@ internal fun SettingsScreen(
             ),
         ),
     )
-    val searching = query.isNotBlank()
+    val searchTerm = query.trim()
+    val searching = searchTerm.isNotEmpty()
     // While searching, every group shows only its matching rows, and advanced groups open flat so
     // a match is never hidden behind a fold.
     val shown = if (searching) {
         sections.mapNotNull { section ->
-            section.entries.filter { it.matches(query.trim(), language) }
+            val groupMatches = section.title.contains(searchTerm, ignoreCase = true) ||
+                localizeWeaveText(section.title, language).contains(searchTerm, ignoreCase = true)
+            (if (groupMatches) section.entries else section.entries.filter { it.matches(searchTerm, language) })
                 .takeIf { it.isNotEmpty() }
                 ?.let { section.copy(entries = it, icon = null) }
         }
@@ -476,16 +479,11 @@ internal fun SettingsScreen(
         }
         if (shown.isEmpty()) {
             item(key = "no-match") {
-                Text(
-                    "没有匹配的设置",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 48.dp)
-                        .testTag("settings-no-match")
-                        .semantics { liveRegion = LiveRegionMode.Polite },
+                WeaveStateBlock(
+                    title = "没有匹配的设置",
+                    modifier = Modifier.testTag("settings-no-match").semantics { liveRegion = LiveRegionMode.Polite },
+                    actionLabel = "清除搜索",
+                    onAction = { query = "" },
                 )
             }
         }

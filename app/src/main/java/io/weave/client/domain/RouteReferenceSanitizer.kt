@@ -89,7 +89,7 @@ object RouteReferenceSanitizer {
                 ?: target.copy(label = "出口已失效，请重新选择")
             RouteKind.DIRECT -> target.copy(label = "直连")
             RouteKind.BLOCK -> target
-            RouteKind.AUTO -> if (subscriptions.any { it.id == target.subscriptionId }) {
+            RouteKind.AUTO -> if (subscriptions.any { it.id == target.subscriptionId && it.hasRuntimePayload }) {
                 target.copy(label = "自动选择")
             } else {
                 // A deleted proxy target is not user consent to expose the physical address.
@@ -97,7 +97,7 @@ object RouteReferenceSanitizer {
                 target.copy(label = "出口已失效，请重新选择")
             }
             RouteKind.FIXED -> {
-                val node = if (subscriptions.any { it.id == target.subscriptionId }) {
+                val node = if (subscriptions.any { it.id == target.subscriptionId && it.hasRuntimePayload }) {
                     nodes.firstOrNull { it.subscriptionId == target.subscriptionId && it.id == target.nodeId }
                 } else null
                 when {

@@ -244,10 +244,13 @@ class SubscriptionLibraryUiTest {
             within("subscription-search", box)
             listOf("a" to "Alpha Cloud", "d" to "Delta Expiry").forEach { (id, name) ->
                 scrollTo("subscription-card-$id")
-                val card = within("subscription-card-$id", box)
-                val button = within("subscription-refresh-$id", card, vertical = true)
+                val refreshTag = "subscription-refresh-$id"
+                tag(refreshTag).performScrollTo().assertIsDisplayed()
+                val button = within(refreshTag, within("subscription-card-$id", box), vertical = true)
                 assertTrue("$lang refresh target", button.width >= 47f * density && button.height >= 47f * density)
-                within("subscription-expiry-$id", card, vertical = true)
+                val expiryTag = "subscription-expiry-$id"
+                tag(expiryTag).performScrollTo().assertIsDisplayed()
+                within(expiryTag, within("subscription-card-$id", box), vertical = true)
                 compose.onNodeWithText(name, useUnmergedTree = true).assertExists()
             }
         }

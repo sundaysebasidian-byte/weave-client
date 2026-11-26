@@ -2,7 +2,6 @@ package io.weave.client.core.diagnostics
 
 import android.content.Context
 import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.system.Os
 import java.io.File
 import java.net.InetAddress
@@ -24,13 +23,12 @@ object PrivateCoreConnections {
     fun read(context: Context): List<Entry> {
         val connections = request(context, "/connections", 1024 * 1024).optJSONArray("connections")
             ?: return emptyList()
-        return (0 until minOf(connections.length(), 40)).map { index ->
-            val value = connections.getJSONObject(index)
-            val metadata = value.optJSONObject("metadata") ?: JSONObject()
-            val chain = value.optJSONArray("chains")
-            Entry(metadata.optString("process").ifBlank { "UID ${metadata.optInt("uid", -1)}" }.take(120),
-                metadata.optString("network").take(16), value.optString("rule").take(80),
-                (0 until minOf(chain?.length() ?: 0, 12)).map { chain!!.optString(it).take(160) })
+        return (0 until minOf(connections.length(), 40)).mapNotNull { index ->
+            val value = connections.optJSONObject(index) ?: return@mapNotNull null
+            val metadata = value.optJSONObject("metadata")
+            Entry(metadata?.text("process").orEmpty().ifBlank { "UID ${metadata?.optInt("uid", -1) ?: -1}" }.take(120),
+                metadata?.text("network").orEmpty().take(16), value.text("rule").take(80),
+                value.optJSONArray("chains").summary())
         }
     }
 
@@ -56,17 +54,10 @@ object PrivateCoreConnections {
     }
 
     private fun request(context: Context, path: String, limit: Int): JSONObject = LocalSocket().use { socket ->
-        socket.connect(LocalSocketAddress(socketPath(context), LocalSocketAddress.Namespace.FILESYSTEM))
-        socket.soTimeout = 2_000
+        connectControllerSocket(socket, context, 2_000)
         socket.outputStream.write("GET $path HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
         socket.outputStream.flush()
-        val bytes = socket.inputStream.readBytesBounded(limit)
-        val response = bytes.toString(Charsets.UTF_8)
-        check(response.startsWith("HTTP/1.0 200") || response.startsWith("HTTP/1.1 200"))
-        val separator = response.indexOf("\r\n\r\n")
-        check(separator in 0..16_384)
-        // HTTP/1.0 request asks Go net/http for a close-delimited, non-chunked JSON response.
-        JSONObject(response.substring(separator + 4))
+        JSONObject(readControllerResponse(socket.inputStream, limit, 200..200))
     }
 }
 

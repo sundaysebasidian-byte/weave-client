@@ -13,6 +13,24 @@ class CoreApiParseTest {
         assertEquals("", CoreApi.parseConnections(json).connections.single().destination)
     }
 
+    @Test fun ignoresDuplicateIdsAndNullFieldsWithoutLosingValidNumericPort() {
+        val json = JSONObject("""
+            {"uploadTotal":-1,"connections":[
+              {"id":null},
+              {"id":"same","upload":-3,"chains":[null,42,"PROXY"],"metadata":{
+                "host":null,"destinationIP":"192.0.2.1","destinationPort":443,"process":null}},
+              {"id":"same","metadata":{"host":"duplicate.example"}}
+            ]}
+        """.trimIndent())
+        val snapshot = CoreApi.parseConnections(json)
+        assertEquals(0L, snapshot.uploadTotal)
+        val row = snapshot.connections.single()
+        assertEquals("192.0.2.1:443", row.destination)
+        assertEquals(listOf("PROXY"), row.chain)
+        assertEquals("", row.process)
+        assertEquals(0L, row.uploadBytes)
+    }
+
     @Test fun parsesTheControllerConnectionTable() {
         val json = JSONObject(
             """

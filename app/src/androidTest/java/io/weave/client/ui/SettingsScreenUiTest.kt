@@ -15,6 +15,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -61,7 +62,7 @@ class SettingsScreenUiTest {
 
         compose.onNodeWithText("外观与语言").assertIsDisplayed()
         capture("settings")
-        compose.onNodeWithTag("settings-swatch-WATER_LILIES").performClick()
+        compose.onNodeWithTag("settings-swatch-WATER_LILIES").performScrollTo().performClick()
         assertEquals(listOf(WeavePalette.WATER_LILIES), palettes)
 
         // A match inside a folded advanced group shows without expanding it.
@@ -78,6 +79,9 @@ class SettingsScreenUiTest {
         compose.onNodeWithText("应用更新").assertExists()
             .performSemanticsAction(SemanticsActions.OnClick) { action -> check(action()) }
         compose.runOnIdle { assertEquals(1, openedAppUpdates) }
+        compose.onNodeWithTag("settings-search").performTextClearance()
+        compose.onNodeWithTag("settings-search").performTextInput("外观与语")
+        compose.onNodeWithText("减弱引导动画").assertExists()
         compose.onNodeWithTag("settings-search").performTextClearance()
         compose.onNodeWithTag("settings-search").performTextInput("zzz")
         compose.onNodeWithTag("settings-no-match").assertIsDisplayed()

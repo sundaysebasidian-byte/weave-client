@@ -1,5 +1,6 @@
 package io.weave.client.core.diagnostics
 
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -17,6 +18,12 @@ class ConnectionOrderTest {
             listOf("fraction", "exact", "tie", "earlier", "malformed", "missing"),
             rows.latestFirst().map { it.id },
         )
+    }
+
+    @Test fun anAlreadyOrderedListReusesItsOriginalSnapshot() {
+        val list = listOf(row("a", "2026-11-21T12:00:00Z"), row("b", ""), row("c", ""))
+        assertSame(list, list.latestFirst())
+        assertEquals(list, listOf(list[1], list[0], list[2]).latestFirst())
     }
 
     private fun row(id: String, start: String) =

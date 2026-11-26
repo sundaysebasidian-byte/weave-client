@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CoreLogCollectionTest {
@@ -69,10 +70,10 @@ class CoreLogCollectionTest {
                 collect = {
                     channelFlow {
                         send("prior")
-                        send("old buffered")
-                    }.buffer(16).collectCurrentLogLines(oldIsCurrent) { row ->
-                        rows += row
-                        if (row == "prior") {
+                        for (index in 1..64) send("old buffered $index")
+                    }.buffer(64).collectCurrentLogBatches(oldIsCurrent) { batch ->
+                        rows += batch
+                        if ("prior" in batch) {
                             // The user changes level or pauses before the next buffered append.
                             epoch++
                             if (pause) running = false
@@ -82,7 +83,9 @@ class CoreLogCollectionTest {
                 stillCurrent = oldIsCurrent,
                 onStopped = { stopped++ },
             )
-            assertEquals(listOf("prior"), rows)
+            assertEquals("prior", rows.first())
+            assertTrue(rows.size <= 32)
+            val oldRows = rows.toList()
             assertEquals(0, stopped)
 
             if (pause) {
@@ -92,11 +95,11 @@ class CoreLogCollectionTest {
             val currentEpoch = epoch
             val newIsCurrent = { running && epoch == currentEpoch }
             watchCoreLogCollection(
-                collect = { flowOf("new first", "new last").collectCurrentLogLines(newIsCurrent) { rows += it } },
+                collect = { flowOf("new first", "new last").collectCurrentLogBatches(newIsCurrent) { rows += it } },
                 stillCurrent = newIsCurrent,
                 onStopped = { stopped++ },
             )
-            assertEquals(listOf("prior", "new first", "new last"), rows)
+            assertEquals(oldRows + listOf("new first", "new last"), rows)
             assertEquals(1, stopped)
         }
     }
