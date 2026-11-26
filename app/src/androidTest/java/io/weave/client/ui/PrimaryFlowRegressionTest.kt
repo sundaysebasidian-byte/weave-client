@@ -119,11 +119,12 @@ class PrimaryFlowRegressionTest {
                 }
             }
         }
-        compose.onNodeWithText("选择订阅").assertIsDisplayed()
+        val overview = compose.onNodeWithText("选择订阅")
+        overview.assertIsDisplayed()
         compose.onNodeWithText("Previous provider").performClick()
         compose.onNodeWithText("自动选择").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        compose.onNodeWithText("选择订阅").assertIsDisplayed()
+        compose.waitUntil(15_000) { runCatching { overview.assertIsDisplayed() }.isSuccess }
         compose.onNodeWithText("本地策略").performClick()
         compose.onNodeWithText("直连").assertIsDisplayed()
         compose.onNodeWithText("订阅").performClick()

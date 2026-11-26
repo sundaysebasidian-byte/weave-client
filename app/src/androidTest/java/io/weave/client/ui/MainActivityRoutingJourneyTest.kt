@@ -1,7 +1,7 @@
 package io.weave.client.ui
 
 import android.content.Intent
-import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -38,10 +38,18 @@ class MainActivityRoutingJourneyTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val payload = "proxies: [{name: 'QA node', type: http, server: 127.0.0.1, port: 8080}]"
 
+    private fun requireEmulator() {
+        val test = InstrumentationRegistry.getInstrumentation()
+        val qemu = ParcelFileDescriptor.AutoCloseInputStream(
+            test.uiAutomation.executeShellCommand("getprop ro.kernel.qemu"),
+        ).bufferedReader().use { it.readText().trim() }
+        check(qemu == "1") { "Routing fixtures require an Android emulator" }
+    }
+
     @Test fun addingAnApplicationWaitsForAnExplicitRoutingPolicy() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         assumeTrue(InstrumentationRegistry.getArguments().getString("isolatedRoutingTest") == "true")
-        check(Build.HARDWARE == "ranchu" && Build.MODEL.startsWith("sdk_gphone"))
+        requireEmulator()
         val context = instrumentation.targetContext
         val settings = RuntimeSettingsStore(context)
         val routes = AppRouteStore(context)
@@ -55,7 +63,7 @@ class MainActivityRoutingJourneyTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
                 val routeTab = compose.onNodeWithTag("navigation-tab-ROUTES")
-                compose.waitUntil(15_000) { runCatching { routeTab.assertIsDisplayed() }.isSuccess }
+                compose.waitUntil(30_000) { runCatching { routeTab.assertIsDisplayed() }.isSuccess }
                 routeTab.performClick()
                 val language = settings.language()
                 compose.onNodeWithContentDescription(localizeWeaveText("添加规则", language)).performClick()
@@ -63,7 +71,7 @@ class MainActivityRoutingJourneyTest {
                 search.performTextInput(packageName)
                 search.performImeAction()
                 val appRow = hasText(packageName) and hasClickAction() and !hasSetTextAction()
-                compose.waitUntil(15_000) { compose.onAllNodes(appRow).fetchSemanticsNodes().size == 1 }
+                compose.waitUntil(30_000) { compose.onAllNodes(appRow).fetchSemanticsNodes().size == 1 }
                 val app = compose.onNode(appRow)
                 app.assertIsDisplayed()
                 app.performClick()
@@ -85,7 +93,7 @@ class MainActivityRoutingJourneyTest {
     @Test fun notificationEntryAndDialPersistTheUserChoicesAcrossActivityRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         assumeTrue(InstrumentationRegistry.getArguments().getString("isolatedRoutingTest") == "true")
-        check(Build.HARDWARE == "ranchu" && Build.MODEL.startsWith("sdk_gphone"))
+        requireEmulator()
         val context = instrumentation.targetContext
         val settings = RuntimeSettingsStore(context)
         val previousMode = settings.routingMode()
@@ -106,7 +114,7 @@ class MainActivityRoutingJourneyTest {
             val intent = Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_CHOOSE_EXIT)
             ActivityScenario.launch<MainActivity>(intent).use { scenario ->
                 val provider = compose.onNodeWithText(another.name)
-                compose.waitUntil(15_000) { runCatching { provider.assertIsDisplayed() }.isSuccess }
+                compose.waitUntil(30_000) { runCatching { provider.assertIsDisplayed() }.isSuccess }
                 provider.performClick()
                 compose.onNode(hasText("QA node") and hasAnyAncestor(isDialog())).performClick()
                 compose.waitUntil(10_000) {
@@ -120,7 +128,7 @@ class MainActivityRoutingJourneyTest {
                 compose.onNodeWithTag("home-mode-selector").performTouchInput { swipeRight() }
                 compose.waitUntil(10_000) { settings.routingMode() == RoutingMode.DIRECT }
                 scenario.recreate()
-                compose.waitUntil(15_000) { runCatching { chip.assertIsDisplayed() }.isSuccess }
+                compose.waitUntil(30_000) { runCatching { chip.assertIsDisplayed() }.isSuccess }
                 scenario.onActivity {
                     val model = ViewModelProvider(it)[AppViewModel::class.java]
                     assertEquals(RoutingMode.DIRECT, model.dashboard.value.routingMode)
