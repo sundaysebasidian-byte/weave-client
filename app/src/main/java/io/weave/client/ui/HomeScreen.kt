@@ -158,6 +158,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.isSpecified
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -517,6 +518,8 @@ internal fun LiveMetrics(
     val labelStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal)
     val large = MaterialTheme.typography.headlineLarge.merge(TabularNumbers)
     val compact = large.copy(fontSize = 20.sp, lineHeight = 24.sp)
+    // Before giving up the three columns, try a smaller reading; a phone-width screen keeps the row.
+    val narrow = large.copy(fontSize = 16.sp, lineHeight = 20.sp)
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     // TrafficFormat can round up to four digits and can return every unit through PB/s.
     val samples = remember(symbols, rtl) {
@@ -529,15 +532,20 @@ internal fun LiveMetrics(
     val labelWidth = remember(measurer, labelStyle, labels, density) { widest(labels, labelStyle) }
     val largeWidth = remember(measurer, large, samples, density) { widest(samples, large) }
     val compactWidth = remember(measurer, compact, samples, density) { widest(samples, compact) }
+    val narrowWidth = remember(measurer, narrow, samples, density) { widest(samples, narrow) }
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         val gap = 8.dp
         val dividerWidth = 1.dp
         // Weighted cells can differ by a pixel; keep a small inset for actual font shaping.
         val cellWidth = with(density) { ((maxWidth - gap * 4 - dividerWidth * 2) / 3 - 2.dp).toPx().toInt() }
-        val horizontal = cellWidth >= maxOf(labelWidth, compactWidth)
+        val horizontal = cellWidth >= maxOf(labelWidth, narrowWidth)
         val useLarge = if (horizontal) cellWidth >= largeWidth else
             packaged == null || with(density) { maxWidth.toPx() } >= largeWidth
-        val valueStyle = if (useLarge) large else compact
+        val valueStyle = when {
+            useLarge -> large
+            !horizontal || cellWidth >= compactWidth -> compact
+            else -> narrow
+        }
         val divider = MaterialTheme.colorScheme.outlineVariant
         if (horizontal) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
@@ -806,7 +814,8 @@ private fun <T> StableTextSlot(
     fontWeight: FontWeight? = null,
     maxLines: Int = 2,
 ) {
-    Box(modifier = modifier.fillMaxWidth()) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val fitted = fitLongestWord(variants.map { it.second }, style, fontWeight, constraints.maxWidth)
         variants.forEach { (key, text, color) ->
             val isActive = key == active
             val alpha by animateFloatAsState(
@@ -817,7 +826,7 @@ private fun <T> StableTextSlot(
             Text(
                 text = text,
                 color = color,
-                style = style,
+                style = fitted,
                 fontWeight = fontWeight,
                 maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis,
@@ -828,6 +837,42 @@ private fun <T> StableTextSlot(
             )
         }
     }
+}
+
+/**
+ * Shrinks [style] just enough that the longest word of any variant fits on one line, so a long
+ * word such as "Disconnected" never breaks mid-word. Scripts that wrap between any two characters
+ * are left alone.
+ */
+@Composable
+private fun fitLongestWord(texts: List<String>, style: TextStyle, fontWeight: FontWeight?, maxWidth: Int): TextStyle {
+    val language = LocalWeaveLanguage.current
+    val staged = LocalStagedWeaveLocale.current
+    val released = LocalReleasedAppCopy.current
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    return remember(texts, style, fontWeight, maxWidth, language, staged, released, measurer) {
+        val measured = if (fontWeight == null) style else style.copy(fontWeight = fontWeight)
+        val widest = texts.maxOfOrNull { text ->
+            resolveAppOwnedCopy(text, language, staged, released)
+                .split(' ', '\u00A0', '\n')
+                .filter { word -> word.isNotEmpty() && word.none(::breaksAnywhere) }
+                .maxOfOrNull { word -> measurer.measure(word, measured, softWrap = false).size.width } ?: 0
+        } ?: 0
+        if (maxWidth <= 0 || widest <= maxWidth) {
+            style
+        } else {
+            val scale = maxWidth.toFloat() / widest * 0.98f
+            style.copy(
+                fontSize = style.fontSize * scale,
+                lineHeight = if (style.lineHeight.isSpecified) style.lineHeight * scale else style.lineHeight,
+            )
+        }
+    }
+}
+
+private fun breaksAnywhere(char: Char): Boolean = when (Character.UnicodeScript.of(char.code)) {
+    Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA -> true
+    else -> false
 }
 
 /** The bounded surface for an essential failure and, when useful, the way out of it. */

@@ -375,16 +375,41 @@ private fun RoutesHeader(
             )
         }
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                "分流",
-                style = MaterialTheme.typography.displaySmall,
-                maxLines = 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics { heading() },
+        // The title and the preset share a line when both fit; a long preset label moves under the
+        // title instead of cutting it off.
+        androidx.compose.ui.layout.Layout(
+            content = {
+                Text(
+                    "分流",
+                    style = MaterialTheme.typography.displaySmall,
+                    maxLines = 1,
+                    modifier = Modifier.semantics { heading() },
+                )
+                PresetPill(routingMode = routingMode, domesticDirect = domesticDirect, onPreset = onPreset)
+            },
+        ) { measurables, constraints ->
+            val loose = constraints.copy(minWidth = 0, minHeight = 0)
+            val pill = measurables[1].measure(loose)
+            val gap = 12.dp.roundToPx()
+            val titleNeed = measurables[0].maxIntrinsicWidth(constraints.maxHeight)
+            val inline = titleNeed + gap + pill.width <= constraints.maxWidth
+            val title = measurables[0].measure(
+                loose.copy(maxWidth = if (inline) constraints.maxWidth - gap - pill.width else constraints.maxWidth),
             )
-            PresetPill(routingMode = routingMode, domesticDirect = domesticDirect, onPreset = onPreset)
+            val width = constraints.maxWidth
+            if (inline) {
+                val height = maxOf(title.height, pill.height)
+                layout(width, height) {
+                    title.placeRelative(0, height - title.height)
+                    pill.placeRelative(width - pill.width, height - pill.height)
+                }
+            } else {
+                val below = 4.dp.roundToPx()
+                layout(width, title.height + below + pill.height) {
+                    title.placeRelative(0, 0)
+                    pill.placeRelative(0, title.height + below)
+                }
+            }
         }
     }
 }
@@ -673,15 +698,20 @@ private fun CollapsedGroup(
             ) {
                 routes.take(4).forEach { route ->
                     val badge = appBadgeColors(route.tint)
+                    val icon = rememberAppIcon(route.packageName, 22.dp)
                     Box(
                         modifier = Modifier
                             .size(26.dp)
                             .border(2.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
                             .clip(RoundedCornerShape(8.dp))
-                            .background(badge.background),
+                            .background(if (icon != null) MaterialTheme.colorScheme.surface else badge.background),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(RouteBadgeMonogram.first(route.monogram), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                        if (icon != null) {
+                            Image(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                        } else {
+                            Text(RouteBadgeMonogram.first(route.monogram), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                        }
                     }
                 }
             }
@@ -734,14 +764,19 @@ private fun AppRouteRow(
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(WeaveUiTokens.iconTile)
-                .clip(RoundedCornerShape(WeaveUiTokens.iconTileRadius))
-                .background(badge.background),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(route.monogram, color = badge.content, fontWeight = FontWeight.Bold, fontSize = 13.sp, translate = false)
+        val icon = rememberAppIcon(route.packageName, WeaveUiTokens.iconTile)
+        if (icon != null) {
+            Image(icon, contentDescription = null, modifier = Modifier.size(WeaveUiTokens.iconTile))
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(WeaveUiTokens.iconTile)
+                    .clip(RoundedCornerShape(WeaveUiTokens.iconTileRadius))
+                    .background(badge.background),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(route.monogram, color = badge.content, fontWeight = FontWeight.Bold, fontSize = 13.sp, translate = false)
+            }
         }
         Spacer(Modifier.width(12.dp))
         Text(

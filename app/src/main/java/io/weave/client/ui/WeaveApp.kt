@@ -115,6 +115,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
@@ -220,6 +222,8 @@ private fun WeaveNavigationDock(
     highlighted: Int,
     indicatorPosition: () -> Float,
     onSelect: (Destination) -> Unit,
+    onScrub: (Float) -> Unit,
+    onScrubEnd: (Float) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val indicatorFill = scheme.primaryContainer.copy(alpha = 0.88f)
@@ -227,7 +231,8 @@ private fun WeaveNavigationDock(
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val currentSelected by rememberUpdatedState(selected)
-    val select by rememberUpdatedState(onSelect)
+    val scrubTo by rememberUpdatedState(onScrub)
+    val scrubEnd by rememberUpdatedState(onScrubEnd)
     var scrub by remember { mutableStateOf<Float?>(null) }
     LiquidGlassPanel(
         modifier = Modifier
@@ -246,8 +251,8 @@ private fun WeaveNavigationDock(
                 .heightIn(min = WeaveUiTokens.navigationHeight)
                 .testTag("navigation-dock")
                 .selectableGroup()
-                // Sliding a finger along the dock moves the pill with it and opens the tab under
-                // the finger as it passes; vertical movement is left alone.
+                // Sliding a finger along the dock moves the pill and the pages with it; lifting the
+                // finger settles on the tab underneath. Vertical movement is left alone.
                 .pointerInput(destinations, rtl) {
                     val pad = DockPadding.toPx()
                     val gap = DockGap.toPx()
@@ -255,6 +260,7 @@ private fun WeaveNavigationDock(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         var locked = false
+                        var last = destinations.indexOf(currentSelected).coerceAtLeast(0).toFloat()
                         try {
                             while (true) {
                                 val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
@@ -278,15 +284,16 @@ private fun WeaveNavigationDock(
                                 val item = (size.width - pad * 2 - gap * (count - 1)) / count
                                 val x = if (rtl) size.width - change.position.x else change.position.x
                                 val position = ((x - pad - item / 2f) / (item + gap)).coerceIn(0f, (count - 1).toFloat())
-                                scrub = position
-                                val target = destinations[kotlin.math.round(position).toInt()]
-                                if (target != currentSelected) {
+                                if (kotlin.math.round(position) != kotlin.math.round(last)) {
                                     haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
-                                    select(target)
                                 }
+                                last = position
+                                scrub = position
+                                scrubTo(position)
                             }
                         } finally {
                             scrub = null
+                            if (locked) scrubEnd(last)
                         }
                     }
                 }
@@ -634,6 +641,7 @@ fun WeaveApp(
         initialPage = visibleDestinations.indexOf(destination).coerceAtLeast(0),
     ) { visibleDestinations.size }
     val pagerGate = remember { PagerNavigationGate() }
+    val scrubScope = rememberCoroutineScope()
     val dashboardScroll = remember(viewModel) { DashboardScrollGate(viewModel::setDashboardScrolling) }
     val pageHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     LaunchedEffect(pagerState) {
@@ -662,7 +670,7 @@ fun WeaveApp(
             if (kotlin.math.abs(target - from) > 1) {
                 pagerState.scrollToPage(if (target > from) target - 1 else target + 1)
             }
-            pagerState.animateScrollToPage(target, animationSpec = WeaveMotion.settle())
+            pagerState.settleTo(target)
         } finally {
             pagerGate.busy = false
         }
@@ -774,6 +782,37 @@ fun WeaveApp(
                     highlighted = pagerState.targetPage,
                     indicatorPosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
                     onSelect = { destination = it },
+                    onScrub = { position ->
+                        // The pages follow the finger directly; no animation is started per tab.
+                        if (!pagerGate.scrubbing) {
+                            pagerGate.scrubbing = true
+                            pagerGate.busy = true
+                            dashboardScroll.pager = true
+                            scrubScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                                pagerState.stopScroll(androidx.compose.foundation.MutatePriority.PreventUserInput)
+                            }
+                        }
+                        val layout = pagerState.layoutInfo
+                        val span = (layout.pageSize + layout.pageSpacing).toFloat()
+                        val current = pagerState.currentPage + pagerState.currentPageOffsetFraction
+                        if (span > 0f) pagerState.dispatchRawDelta((position - current) * span)
+                    },
+                    onScrubEnd = { position ->
+                        val index = kotlin.math.round(position).toInt().coerceIn(0, visibleDestinations.lastIndex)
+                        pagerGate.scrubbing = false
+                        scrubScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                            try {
+                                pagerState.settleTo(index)
+                            } finally {
+                                // A new scrub that interrupted this settle owns the pager now.
+                                if (!pagerGate.scrubbing) {
+                                    pagerGate.busy = false
+                                    dashboardScroll.pager = false
+                                    visibleDestinations.getOrNull(index)?.let { destination = it }
+                                }
+                            }
+                        }
+                    },
                 )
             },
             contentWindowInsets = WindowInsets(0),
@@ -1590,8 +1629,28 @@ private fun DashboardEffects(
 }
 
 /** True while the pager is being moved by the app, so its intermediate stops are not taken as the user's choice. */
+/**
+ * Animates to [page] without letting a stray tap stop it halfway: a touch on the content during the
+ * settle would otherwise leave the pager on whatever page was passing underneath.
+ */
+private suspend fun androidx.compose.foundation.pager.PagerState.settleTo(page: Int) {
+    val layout = layoutInfo
+    val span = (layout.pageSize + layout.pageSpacing).toFloat()
+    val distance = (page - currentPage - currentPageOffsetFraction) * span
+    if (span > 0f && kotlin.math.abs(distance) >= 1f) {
+        scroll(androidx.compose.foundation.MutatePriority.PreventUserInput) {
+            var moved = 0f
+            androidx.compose.animation.core.animate(0f, distance, animationSpec = WeaveMotion.settle()) { value, _ ->
+                moved += scrollBy(value - moved)
+            }
+        }
+    }
+    if (currentPage != page || currentPageOffsetFraction != 0f) scrollToPage(page)
+}
+
 private class PagerNavigationGate {
     var busy: Boolean = false
+    var scrubbing: Boolean = false
 }
 
 /** Dashboard polling pauses while either the Home list or the page pager is moving. */
