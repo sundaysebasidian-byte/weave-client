@@ -64,3 +64,18 @@ if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' "$resul
   exit 1
 fi
 grep -E '^Time:|^OK \(' "$results/instrumentation.txt"
+
+# Run these separately so product flows and the storage/recovery tests each retain a receipt.
+routing_classes=io.weave.client.ui.PrimaryFlowRegressionTest,io.weave.client.ui.MainActivityRoutingJourneyTest,io.weave.client.ui.WeaveAdaptiveControlsTest
+"${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
+  "$component" > "$results/routing-instrumentation.txt" 2>&1
+grep -Fx 'OK (8 tests)' "$results/routing-instrumentation.txt"
+awk '
+  /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
+  /^INSTRUMENTATION_STATUS_CODE: 0\r?$/ { passed++ }
+  /^INSTRUMENTATION_STATUS_CODE: -[0-9]+\r?$/ { unsuccessful++ }
+  END {
+    printf "Routing journeys: %d started, %d passed, %d unsuccessful\n", started, passed, unsuccessful
+    exit !(started == 8 && passed == 8 && unsuccessful == 0)
+  }
+' "$results/routing-instrumentation.txt"

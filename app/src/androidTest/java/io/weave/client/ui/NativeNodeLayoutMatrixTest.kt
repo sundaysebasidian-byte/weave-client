@@ -115,6 +115,7 @@ class NativeNodeLayoutMatrixTest(private val width: Int, private val scale: Floa
             width == 320 && scale == 2f && language == WeaveLanguage.GERMAN) {
             compose.runOnIdle { showDialog.value = true }
             compose.waitForIdle()
+            compose.onNodeWithText("Fixture subscription").performClick()
             compose.onNode(hasScrollAction(), useUnmergedTree = true).performScrollToNode(hasTestTag("picker-name-fixture"))
             compose.onNodeWithTag("picker-name-fixture", useUnmergedTree = true).assertIsDisplayed()
             capture(if (language == WeaveLanguage.ENGLISH) "after-default-exit-english.png" else "after-default-exit-german-large.png")

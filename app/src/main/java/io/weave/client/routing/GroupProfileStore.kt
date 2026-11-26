@@ -32,7 +32,10 @@ internal class GroupProfileStore(
     )
 
     fun read(repairInvalidRoutes: Boolean = false): Snapshot = ProfileStorage.access(context) {
-        readLocked(routes.load(), groups.list()).also { if (repairInvalidRoutes) publishRoutes(it) }
+        val saved = routes.load()
+        readLocked(saved, groups.list()).also {
+            if (repairInvalidRoutes && it.routes != saved) routes.save(it.routes)
+        }
     }
 
     fun change(epoch: String, id: String, previous: CustomProxyGroup?, replacement: CustomProxyGroup?): Snapshot =
@@ -54,10 +57,15 @@ internal class GroupProfileStore(
     /** Single store commits are atomic already; combine live read and write under the profile lock. */
     fun changeRoutes(epoch: String, edit: (Snapshot) -> List<AppRoute>): Snapshot? =
         ProfileStorage.withCurrentEpoch(context, epoch) {
-            val current = readLocked()
+            val saved = routes.snapshot()
+            val current = readLocked(selectedRoutes = saved)
             val next = edit(current)
             if (next == current.routes) return@withCurrentEpoch null
-            readLocked(next, current.groups).also(::publishRoutes)
+            val checked = RouteReferenceSanitizer.routes(
+                next, current.subscriptions, current.nodes, current.groups.associate { it.id to it.name },
+            )
+            if (checked != saved) routes.save(checked)
+            current.copy(routes = checked)
         }
 
     fun changeDefault(epoch: String, target: RouteTarget): Snapshot =
@@ -91,10 +99,11 @@ internal class GroupProfileStore(
             group.copy(members = group.members.filterNot { it.subscriptionId == id }).takeIf { it.members.isNotEmpty() }
         }
         if (pruned != current) groups.save(pruned)
+        val defaultTarget = settings.defaultRouteTarget()
         val reconciled = SubscriptionDeletionReconciler.reconcile(
-            id, routes.snapshot(), settings.defaultRouteTarget(), subscriptions.loadMetadata(),
+            id, routes.snapshot(), defaultTarget, subscriptions.loadMetadata(),
         )
-        if (reconciled.defaultTarget != settings.defaultRouteTarget()) {
+        if (reconciled.defaultTarget != defaultTarget) {
             reconciled.defaultTarget?.let(settings::setDefaultRouteTarget) ?: settings.clearDefaultRouteTarget()
         }
         deleted to readLocked(reconciled.routes).also(::publishRoutes)

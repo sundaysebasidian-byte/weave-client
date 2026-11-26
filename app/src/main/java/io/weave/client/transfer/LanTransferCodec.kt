@@ -145,7 +145,13 @@ object LanTransferCodec {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
         cipher.updateAAD(AAD)
-        return ENCRYPTED_MAGIC + nonce + cipher.doFinal(plaintext)
+        val headerSize = ENCRYPTED_MAGIC.size + nonce.size
+        val packet = ByteArray(headerSize + cipher.getOutputSize(plaintext.size))
+        ENCRYPTED_MAGIC.copyInto(packet)
+        nonce.copyInto(packet, ENCRYPTED_MAGIC.size)
+        val written = cipher.doFinal(plaintext, 0, plaintext.size, packet, headerSize)
+        check(written == packet.size - headerSize)
+        return packet
     }
 
     fun open(packet: ByteArray, key: ByteArray): ByteArray {

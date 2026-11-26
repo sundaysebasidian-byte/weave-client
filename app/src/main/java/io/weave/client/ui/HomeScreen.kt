@@ -228,12 +228,13 @@ internal fun HomeScreen(
     onMoreClick: () -> Unit,
     onIpQuality: () -> Unit,
     contentPadding: PaddingValues,
+    onImport: () -> Unit = onDefaultRouteClick,
 ) {
     val scrollState = rememberScrollState()
     // Traffic counters should not invalidate the status block, the weave or the capsule.
     val overviewState = remember(
         state.connectionState, state.coreAvailable, state.networkPathStatus,
-        state.defaultRouteTarget, state.routingMode, state.statusMessage,
+        state.defaultRouteTarget, state.routingMode, state.statusMessage, state.hasUsableSubscription,
     ) {
         DashboardState(
             connectionState = state.connectionState,
@@ -242,16 +243,18 @@ internal fun HomeScreen(
             defaultRouteTarget = state.defaultRouteTarget,
             routingMode = state.routingMode,
             statusMessage = state.statusMessage,
+            hasUsableSubscription = state.hasUsableSubscription,
         )
     }
     val exitState = remember(
-        state.connectionState, state.activeNode, state.defaultRouteTarget, state.routingMode,
+        state.connectionState, state.activeNode, state.defaultRouteTarget, state.routingMode, state.hasUsableSubscription,
     ) {
         DashboardState(
             connectionState = state.connectionState,
             activeNode = state.activeNode,
             defaultRouteTarget = state.defaultRouteTarget,
             routingMode = state.routingMode,
+            hasUsableSubscription = state.hasUsableSubscription,
         )
     }
     // The callback can change between compositions; the long-lived effects must call the latest.
@@ -322,6 +325,7 @@ internal fun HomeScreen(
             exit = exitState,
             onConnect = onConnect,
             onChooseExit = onDefaultRouteClick,
+            onImport = onImport,
             onModeSelected = onModeSelected,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -594,6 +598,7 @@ private fun ConnectionCapsule(
     exit: DashboardState,
     onConnect: () -> Unit,
     onChooseExit: () -> Unit,
+    onImport: () -> Unit,
     onModeSelected: (RoutingMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -623,7 +628,7 @@ private fun ConnectionCapsule(
                     .height(28.dp)
                     .background(scheme.outlineVariant),
             )
-            PrimaryAction(hero = heroModel(state), onConnect = onConnect, onChooseExit = onChooseExit)
+            PrimaryAction(heroModel(state), onConnect, onChooseExit, onImport)
         }
     }
 }
@@ -646,7 +651,9 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
     val latency = node?.latencyMs?.takeIf { it in 1..10_000 }
     // Facts only: how the exit was chosen, the protocol and measured latency.
     val meta = when (readiness) {
-        ExitReadiness.MISSING -> localizeWeaveText("未选择时自动使用第一个可用订阅", language)
+        ExitReadiness.MISSING -> localizeWeaveText(
+            if (state.hasUsableSubscription == false) "还没有订阅" else "未选择时自动使用第一个可用订阅", language,
+        )
         ExitReadiness.INVALID -> localizeWeaveText(HeroDetail.EXIT_INVALID.source, language)
         ExitReadiness.NOT_USED -> localizeWeaveText("直连模式下不使用出口", language)
         ExitReadiness.READY -> listOfNotNull(
@@ -728,7 +735,7 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
 private const val PRIMARY_ACTION_DEBOUNCE_MS = 600L
 
 @Composable
-private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: () -> Unit) {
+private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: () -> Unit, onImport: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val language = LocalWeaveLanguage.current
@@ -758,6 +765,7 @@ private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: 
                 onClick = {
                     when (hero.action) {
                         HeroAction.CHOOSE_EXIT -> onChooseExit()
+                        HeroAction.IMPORT -> onImport()
                         HeroAction.IN_PROGRESS -> Unit
                         HeroAction.CONNECT, HeroAction.DISCONNECT, HeroAction.RETRY -> {
                             val now = android.os.SystemClock.uptimeMillis()
@@ -786,6 +794,7 @@ private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: 
                 Icon(
                     imageVector = when (action) {
                         HeroAction.CHOOSE_EXIT -> Icons.Rounded.Route
+                        HeroAction.IMPORT -> Icons.Rounded.Add
                         HeroAction.RETRY -> Icons.Rounded.RestartAlt
                         else -> Icons.Rounded.PowerSettingsNew
                     },

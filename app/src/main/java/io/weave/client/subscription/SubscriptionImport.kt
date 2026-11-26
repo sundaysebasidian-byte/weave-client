@@ -115,6 +115,17 @@ class SubscriptionPayloadParser {
             )
         }
 
+    internal fun runtimeNodes(input: String): List<Map<String, Any?>> {
+        val document = ClashSubscriptionDocument.unwrap(input)
+        val root = ClashSubscriptionDocument.readRootWithKey(document, "proxies")
+            ?: return ClashYamlCodec.nodes(ClashYamlCodec.read(normalizeForMihomo(input)))
+        val nodes = ClashYamlCodec.nodes(root)
+        if (nodes.any { it["name"]?.toString().isNullOrBlank() || it["type"]?.toString().isNullOrBlank() }) {
+            throw SubscriptionImportException("节点缺少名称或协议类型")
+        }
+        return nodes
+    }
+
     /**
      * A user-supplied Clash document is a provider, not a control-plane configuration. Strip
      * control/listener sections before it reaches Mihomo; otherwise an imported subscription

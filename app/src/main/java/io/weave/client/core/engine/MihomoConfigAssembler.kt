@@ -11,6 +11,7 @@ import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.subscription.StoredSubscription
+import io.weave.client.subscription.StoredNode
 import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
 import io.weave.client.subscription.ClashYamlCodec
@@ -62,8 +63,8 @@ class MihomoConfigAssembler(
         packageUids: Map<String, Int> = emptyMap(),
         networkPreferences: NetworkPreferences = NetworkPreferences(),
         additionalSubscriptionIds: Set<String> = emptySet(),
-    ): AssembledMihomoConfig = io.weave.client.data.ProfileStorage.access(appContext) {
-        val subscriptions = secretStore.list()
+    ): AssembledMihomoConfig = secretStore.withRuntimeSnapshot { catalog ->
+        val subscriptions = catalog.records()
         val usable = subscriptions.filter { it.hasPayload }
         if (
             mode != RoutingMode.DIRECT &&
@@ -81,6 +82,10 @@ class MihomoConfigAssembler(
         }
         val byId = usable.associateBy(StoredSubscription::id)
         val customGroups = customGroupStore.list().associateBy(CustomProxyGroup::id)
+        val nodesById = HashMap<String, Map<String, StoredNode>>()
+        fun nodesOf(subscription: StoredSubscription) = nodesById.getOrPut(subscription.id) {
+            buildMap { catalog.nodes(subscription.id).forEach { putIfAbsent(it.id, it) } }
+        }
         val plan = MihomoRuntimePlanner.plan(
             routes = routes,
             mode = mode,
@@ -100,20 +105,20 @@ class MihomoConfigAssembler(
         val effectiveRoutes = plan.effectiveRoutes
 
         runCatching {
-            validateTargets(effectiveRoutes, byId, customGroups)
-            effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId, customGroups) }
+            effectiveRoutes.forEach { validateTarget(it.appName, it.target, byId, customGroups, ::nodesOf) }
+            effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId, customGroups, ::nodesOf) }
         }.onFailure { throw RuntimeFailureException(RuntimeFailure.SUBSCRIPTION_MISSING, it.message.orEmpty()) }
         val activeSubscriptions = usable.filter { it.id in plan.activeSubscriptionIds }
         // Put the actual node objects in the validated configuration. A file provider can fail
         // Initial() after config validation succeeds and silently publish COMPATIBLE; inline
         // providers are parsed by the same native validation as the rest of the configuration.
         val nodesBySubscription = activeSubscriptions.associate { subscription ->
-            val raw = secretStore.readPayload(subscription.id)
-            val normalized = payloadParser.normalizeForMihomo(raw)
-            val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(normalized))
+            val raw = catalog.payload(subscription.id)
+            val nodes = payloadParser.runtimeNodes(raw)
             if (nodes.isEmpty()) fail(RuntimeFailure.NODES_NOT_LOADED)
             subscription.id to nodes
         }
+        val chainSources = HashMap<String, Map<String, Map<String, Any?>>>()
         val providerDefinitions = linkedMapOf<String, Any?>()
         activeSubscriptions.forEach { subscription ->
             providerDefinitions[providerName(subscription)] = mapOf(
@@ -126,9 +131,15 @@ class MihomoConfigAssembler(
         activeGroups.filter { it.entry != null }.forEach { group ->
             val members = group.members.map { ref ->
                 val subscription = byId.getValue(ref.subscriptionId)
-                val node = subscription.nodes.first { it.id == ref.nodeId }
-                val source = nodesBySubscription.getValue(ref.subscriptionId)
-                    .firstOrNull { it["name"]?.toString() == node.name }
+                val node = nodesOf(subscription).getValue(ref.nodeId)
+                val sources = chainSources.getOrPut(ref.subscriptionId) {
+                    buildMap {
+                        for (source in nodesBySubscription.getValue(ref.subscriptionId)) {
+                            source["name"]?.toString()?.let { putIfAbsent(it, source) }
+                        }
+                    }
+                }
+                val source = sources[node.name]
                     ?: fail(RuntimeFailure.NODES_NOT_LOADED)
                 source + ("name" to nodePrefix(subscription) + node.name)
             }
@@ -342,9 +353,7 @@ class MihomoConfigAssembler(
             fixedTargets.forEach { target ->
                     requiredNodeGroups += fixedGroup(target)
                     val subscription = byId.getValue(requireNotNull(target.subscriptionId))
-                    val node = subscription.nodes.first {
-                        it.id == requireNotNull(target.nodeId)
-                    }
+                    val node = nodesOf(subscription).getValue(requireNotNull(target.nodeId))
                     appendLine("  - name: ${yamlString(fixedGroup(target))}")
                     appendLine("    type: select")
                     appendLine("    use:")
@@ -364,7 +373,7 @@ class MihomoConfigAssembler(
                 )
                 group.entry?.let { entry ->
                     val entrySubscription = byId.getValue(entry.subscriptionId)
-                    val entryNode = entrySubscription.nodes.first { it.id == entry.nodeId }
+                    val entryNode = nodesOf(entrySubscription).getValue(entry.nodeId)
                     appendLine("  - name: ${yamlString(chainEntryGroup(group))}")
                     appendLine("    type: select")
                     appendLine("    use:")
@@ -382,7 +391,7 @@ class MihomoConfigAssembler(
                     }
                     val names = group.members.map { ref ->
                         val subscription = byId.getValue(ref.subscriptionId)
-                        exactBody(nodePrefix(subscription) + subscription.nodes.first { it.id == ref.nodeId }.name)
+                        exactBody(nodePrefix(subscription) + nodesOf(subscription).getValue(ref.nodeId).name)
                     }
                     appendLine("    filter: ${yamlString("^(?:" + names.joinToString("|") + ")$")}")
                 }
@@ -449,21 +458,11 @@ class MihomoConfigAssembler(
             rules.forEach { appendLine("  - ${yamlString(it)}") }
         }
 
-        return@access AssembledMihomoConfig(yaml, activeSubscriptions.size, requiredNodeGroups)
+        AssembledMihomoConfig(yaml, activeSubscriptions.size, requiredNodeGroups)
     }
 
     fun cleanRuntimeFiles() {
         providerDirectory.parentFile?.deleteRecursively()
-    }
-
-    private fun validateTargets(
-        routes: List<AppRoute>,
-        subscriptions: Map<String, StoredSubscription>,
-        groups: Map<String, CustomProxyGroup>,
-    ) {
-        routes.forEach { route ->
-            validateTarget(route.appName, route.target, subscriptions, groups)
-        }
     }
 
     private fun validateTarget(
@@ -471,6 +470,7 @@ class MihomoConfigAssembler(
         target: RouteTarget,
         subscriptions: Map<String, StoredSubscription>,
         groups: Map<String, CustomProxyGroup>,
+        nodesOf: (StoredSubscription) -> Map<String, StoredNode>,
     ) {
         when (target.kind) {
             RouteKind.GROUP -> {
@@ -479,7 +479,7 @@ class MihomoConfigAssembler(
                     val subscription = requireNotNull(subscriptions[ref.subscriptionId]) {
                         "$owner 使用的策略组包含已删除的订阅"
                     }
-                    require(subscription.nodes.any { it.id == ref.nodeId }) {
+                    require(ref.nodeId in nodesOf(subscription)) {
                         "$owner 使用的策略组包含已失效的节点"
                     }
                 }
@@ -503,7 +503,7 @@ class MihomoConfigAssembler(
                 val subscription = requireNotNull(subscriptions[id]) {
                     "$owner 指向的订阅不可用于 Mihomo；当前仅支持 Clash YAML"
                 }
-                require(subscription.nodes.any { it.id == nodeId }) {
+                require(nodeId in nodesOf(subscription)) {
                     "$owner 指向的节点已不存在，请重新选择"
                 }
             }

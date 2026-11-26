@@ -1,6 +1,7 @@
 package io.weave.client
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.NotificationManager
 import android.Manifest
 import android.content.pm.PackageManager
@@ -8,7 +9,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -20,7 +24,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -31,6 +34,9 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.weave.client.core.ipc.CoreClient
 import io.weave.client.core.vpn.VpnRuntimeState
@@ -42,6 +48,7 @@ import io.weave.client.domain.WeaveLanguage
 import io.weave.client.subscription.ExternalImport
 import io.weave.client.subscription.ExternalImportParser
 import io.weave.client.ui.AppViewModel
+import io.weave.client.ui.StartupProfile
 import io.weave.client.ui.ExternalRequest
 import io.weave.client.ui.WeaveApp
 import io.weave.client.ui.LocalWeaveLanguage
@@ -70,7 +77,6 @@ class MainActivity : ComponentActivity() {
     }
     private lateinit var vpnDisclosureStore: VpnDisclosureStore
     private var vpnDisclosureAccepted by mutableStateOf(false)
-    private val appViewModel: AppViewModel by viewModels()
     private data class ReadyProfile(
         val model: AppViewModel,
         val locale: PackagedAppLocale?,
@@ -83,8 +89,14 @@ class MainActivity : ComponentActivity() {
     private var pendingIntent: Intent? = null
     private var coreAttached = false
     private var started = false
+    private val vpnServiceStarts = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            attachCoreIfReady(connecting = true)
+        }
+    }
     private var vpnPermissionAttempt = VpnPermissionAttempt.IDLE
     private var grantedConnectionJob: Job? = null
+    private var permissionRequestJob: Job? = null
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -174,11 +186,12 @@ class MainActivity : ComponentActivity() {
         startupFailed = false
         startupJob = lifecycleScope.launch {
             val ready = try {
-                val releasedLocale = withContext(Dispatchers.IO) {
+                val (releasedLocale, initialProfile) = withContext(Dispatchers.IO) {
                     ProfileStorage.access(this@MainActivity) { WeaveLocales.syncFromSystem(this@MainActivity) }
-                    PackagedAppLocale.observe(this@MainActivity)
+                    PackagedAppLocale.observe(this@MainActivity) to StartupProfile.read(application)
                 }
-                ReadyProfile(appViewModel, releasedLocale)
+                val factory = viewModelFactory { initializer { AppViewModel(application, initialProfile) } }
+                ReadyProfile(ViewModelProvider(this@MainActivity, factory)[AppViewModel::class.java], releasedLocale)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -281,18 +294,34 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         started = true
+        ContextCompat.registerReceiver(
+            this, vpnServiceStarts, IntentFilter(WeaveVpnService.ACTION_SERVICE_STARTED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         attachCoreIfReady()
     }
 
-    private fun attachCoreIfReady() {
-        if (!coreAttached && readyModel != null && started) {
+    private fun attachCoreIfReady(connecting: Boolean = false) {
+        if (coreAttached || readyModel == null || !started) return
+        if (connecting || hasRunningVpnService()) {
             CoreClient.attach(this)
             coreAttached = true
+        } else if (VpnRuntimeState.snapshot.value.state in setOf(ConnectionState.CONNECTED, ConnectionState.CONNECTING)) {
+            // The Activity may have stopped receiving events before the tunnel shut down.
+            VpnRuntimeState.update(ConnectionState.DISCONNECTED)
         }
+    }
+
+    @Suppress("DEPRECATION") // Android continues to expose services owned by the caller.
+    private fun hasRunningVpnService(): Boolean {
+        val component = ComponentName(this, WeaveVpnService::class.java)
+        return getSystemService(ActivityManager::class.java).getRunningServices(Int.MAX_VALUE)
+            .any { it.service == component }
     }
 
     override fun onStop() {
         started = false
+        unregisterReceiver(vpnServiceStarts)
         if (coreAttached) {
             CoreClient.detach()
             coreAttached = false
@@ -345,13 +374,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestVpnPermission() {
-        if (!vpnPermissionAttempt.canRequest) return
-        val permissionIntent: Intent? = VpnService.prepare(this)
-        if (permissionIntent == null) {
-            WeaveVpnService.start(this)
-        } else {
-            vpnPermissionAttempt = VpnPermissionAttempt.WAITING
-            vpnPermissionLauncher.launch(permissionIntent)
+        val model = readyModel ?: return
+        if (!vpnPermissionAttempt.canRequest || permissionRequestJob?.isActive == true) return
+        permissionRequestJob = lifecycleScope.launch {
+            model.awaitRoutingSave()
+            if (!started || !vpnPermissionAttempt.canRequest) return@launch
+            val permissionIntent: Intent? = VpnService.prepare(this@MainActivity)
+            if (permissionIntent == null) {
+                attachCoreIfReady(connecting = true)
+                WeaveVpnService.start(this@MainActivity)
+            } else {
+                vpnPermissionAttempt = VpnPermissionAttempt.WAITING
+                vpnPermissionLauncher.launch(permissionIntent)
+            }
         }
     }
 
@@ -366,6 +401,7 @@ class MainActivity : ComponentActivity() {
             if (!model.dashboard.value.coreAvailable) {
                 model.connect()
             } else if (VpnService.prepare(this@MainActivity) == null) {
+                attachCoreIfReady(connecting = true)
                 WeaveVpnService.start(this@MainActivity)
             } else {
                 // Permission can be revoked after the result. Never re-open consent without another tap.
@@ -376,6 +412,7 @@ class MainActivity : ComponentActivity() {
 
     private fun disconnectVpn() {
         vpnPermissionAttempt = vpnPermissionAttempt.retire()
+        permissionRequestJob?.cancel()
         grantedConnectionJob?.cancel()
         WeaveVpnService.stop(this)
     }

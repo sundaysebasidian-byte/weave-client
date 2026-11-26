@@ -1331,6 +1331,12 @@
 {"id":"断开连接失败","text":"No se pudo cerrar la conexión"}
 {"id":"跳到最新日志","text":"Ir a los registros más recientes"}
 {"id":"已复制脱敏日志","text":"Se copiaron los registros anonimizados"}
+{"id":"策略组","text":"Grupos"}
+{"id":"分流设置未能保存","text":"No se pudieron guardar los ajustes de enrutamiento"}
+{"id":"已保存，请重新连接以应用分流设置","text":"Guardado. Vuelve a conectarte para aplicar los ajustes de enrutamiento"}
+{"id":"无法读取应用列表","text":"No se pudieron cargar las aplicaciones"}
+{"id":"收藏已达到上限","text":"Se alcanzó el límite de favoritos"}
+{"id":"无法保存收藏","text":"No se pudieron guardar los favoritos"}
 {"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","text":"{message} [{code}]"}
 {"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","text":"Protección frente al tráfico DNS fuera del túnel"}
 {"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","text":"{transport} · {profile} · {explanation}"}

@@ -122,6 +122,11 @@ object CoreClient {
     suspend fun awaitConnected(timeoutMs: Long = CONNECT_TIMEOUT_MS): Boolean =
         withTimeoutOrNull(timeoutMs) { connected.first { it } } ?: false
 
+    /** Main thread only. Local UI actions do not need to wake an idle VPN process. */
+    internal suspend fun awaitConnectedIfAttached() {
+        if (bindCount > 0) awaitConnected()
+    }
+
     suspend fun queryRuntime(): EngineRuntimeSnapshot? =
         request(CoreIpc.MSG_QUERY_RUNTIME, timeoutMs = QUERY_TIMEOUT_MS)?.getOrNull()?.let { bundle ->
             lockdownEnabled = bundle.lockdown()

@@ -54,6 +54,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Add
@@ -110,6 +114,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -158,7 +163,6 @@ import io.weave.client.core.ipquality.IpQualityReport
 import io.weave.client.core.ipquality.IpQualityState
 import io.weave.client.policy.PolicyPack
 import io.weave.client.policy.PolicyPackIntegrity
-import io.weave.client.domain.AppRoute
 import io.weave.client.domain.AutomaticStrategy
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.DashboardState
@@ -194,9 +198,12 @@ internal fun AppPickerDialog(
     apps: List<InstalledApp>,
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
+    status: InstalledAppsStatus = InstalledAppsStatus.READY,
+    onRetry: () -> Unit = {},
 ) {
     val icons = rememberPickerIcons()
-    var query by remember { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var query by rememberSaveable { mutableStateOf("") }
     val filtered = remember(apps, query) {
         val term = query.trim()
         if (term.isEmpty()) {
@@ -216,12 +223,18 @@ internal fun AppPickerDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = query,
-                    onValueChange = { query = it },
+                    onValueChange = { query = it.take(100) },
                     label = { Text(stringResource(R.string.app_picker_search), translate = false) },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (filtered.isEmpty()) {
+                if (status == InstalledAppsStatus.LOADING || status == InstalledAppsStatus.IDLE) {
+                    androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else if (status == InstalledAppsStatus.FAILED) {
+                    WeaveStateBlock(title = "无法读取应用列表", actionLabel = "重试", onAction = onRetry)
+                } else if (filtered.isEmpty()) {
                     Text(
                         stringResource(R.string.app_picker_empty),
                         translate = false,
@@ -286,7 +299,9 @@ internal fun RouteTargetDialog(
     favorites: Set<String>,
     onFavorite: (ProxyNode) -> Unit,
     onSubscriptionSelected: (String?) -> Unit,
-    route: AppRoute,
+    appName: String,
+    packageName: String,
+    selectedTarget: RouteTarget?,
     subscriptions: List<Subscription>,
     nodes: List<ProxyNode>,
     health: SubscriptionHealthState,
@@ -294,17 +309,17 @@ internal fun RouteTargetDialog(
     onCheckHealth: (String) -> Unit,
     onDismiss: () -> Unit,
     onSelect: (RouteTarget) -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)?,
     customGroups: List<io.weave.client.routing.CustomProxyGroup> = emptyList(),
 ) {
-    var confirmingDelete by remember(route.packageName) { mutableStateOf(false) }
+    var confirmingDelete by remember(packageName) { mutableStateOf(false) }
 
-    if (confirmingDelete) {
+    if (confirmingDelete && onDelete != null) {
         WeaveDialog(
             onDismissRequest = { confirmingDelete = false },
             title = { Text("删除分流规则？", fontWeight = FontWeight.Bold) },
             text = {
-                Text("删除后，${route.appName} 将改用默认出口。")
+                Text("删除后，$appName 将改用默认出口。")
             },
             confirmButton = {
                 TextButton(onClick = onDelete) {
@@ -321,11 +336,13 @@ internal fun RouteTargetDialog(
     }
 
     ConditionalTargetDialog(
-        title = route.appName,
+        pickerKey = "app:$packageName",
+        title = appName,
+        translateTitle = false,
         favorites = favorites,
         onFavorite = onFavorite,
         onSubscriptionSelected = onSubscriptionSelected,
-        selectedTarget = route.target,
+        selectedTarget = selectedTarget,
         subscriptions = subscriptions,
         nodes = nodes,
         health = health,
@@ -335,7 +352,7 @@ internal fun RouteTargetDialog(
         directSubtitle = "不使用任何代理节点",
         onDismiss = onDismiss,
         onSelect = onSelect,
-        onDelete = { confirmingDelete = true },
+        onDelete = onDelete?.let { { confirmingDelete = true } },
         customGroups = customGroups,
     )
 }
@@ -356,6 +373,7 @@ internal fun DefaultRouteTargetDialog(
     customGroups: List<io.weave.client.routing.CustomProxyGroup> = emptyList(),
 ) {
     ConditionalTargetDialog(
+        pickerKey = "default",
         title = "默认出口",
         favorites = favorites,
         onFavorite = onFavorite,
@@ -374,8 +392,13 @@ internal fun DefaultRouteTargetDialog(
     )
 }
 
+private enum class ExitSection(val label: String) {
+    SUBSCRIPTIONS("订阅"), GROUPS("策略组"), LOCAL("本地策略"),
+}
+
 @Composable
 private fun ConditionalTargetDialog(
+    pickerKey: String,
     favorites: Set<String>,
     onFavorite: (ProxyNode) -> Unit,
     onSubscriptionSelected: (String?) -> Unit,
@@ -392,118 +415,140 @@ private fun ConditionalTargetDialog(
     onSelect: (RouteTarget) -> Unit,
     onDelete: (() -> Unit)? = null,
     customGroups: List<io.weave.client.routing.CustomProxyGroup> = emptyList(),
+    translateTitle: Boolean = true,
 ) {
-    var selectedSubscriptionId by rememberSaveable(title) { mutableStateOf(selectedTarget?.subscriptionId) }
+    var selectedSubscriptionId by rememberSaveable(pickerKey) { mutableStateOf<String?>(null) }
     var nodeSearch by rememberSaveable(selectedSubscriptionId) { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-    DisposableEffect(selectedSubscriptionId) {
-        selectedSubscriptionId?.let(onSubscriptionSelected)
-        onDispose { onSubscriptionSelected(null) }
+    val sections = remember(customGroups.isNotEmpty()) {
+        ExitSection.entries.filter { it != ExitSection.GROUPS || customGroups.isNotEmpty() }
     }
+    var selectedSection by rememberSaveable(pickerKey) { mutableStateOf(ExitSection.SUBSCRIPTIONS) }
+    val section = selectedSection.takeIf { it in sections } ?: ExitSection.SUBSCRIPTIONS
     val selectedSubscription = subscriptions.firstOrNull {
-        it.id == selectedSubscriptionId
+        it.id == selectedSubscriptionId && it.hasRuntimePayload
     }
-    val subscriptionNodes = remember(nodes, selectedSubscriptionId) {
-        nodes.filter { it.subscriptionId == selectedSubscriptionId }
+    val subscriptionId = selectedSubscription?.id
+    DisposableEffect(subscriptionId) {
+        if (subscriptionId != null) onSubscriptionSelected(subscriptionId)
+        onDispose { if (subscriptionId != null) onSubscriptionSelected(null) }
     }
     val selectedHealth = health.takeIf {
-        it.subscriptionId == selectedSubscriptionId
+        subscriptionId != null && it.subscriptionId == subscriptionId
     }
     val healthByName = remember(selectedHealth?.nodes) {
         NodeHealthIndex(selectedHealth?.nodes.orEmpty())
     }
-    val orderedNodes = remember(subscriptionNodes, selectedHealth?.nodes, favorites, favoritesOnly, nodeSearch) {
-        orderRoutePickerNodes(subscriptionNodes, favorites, favoritesOnly, nodeSearch) { rawName ->
-            healthByName[rawName]?.qualityScoreMs
-        }
-    }
+    val orderedNodes = if (subscriptionId == null) emptyList() else rememberFilteredPickerNodes(
+        rememberRankedPickerNodes(nodes, healthByName, favorites, favoritesOnly, subscriptionId), nodeSearch,
+    )
+    val overviewScroll = key(section) { rememberLazyListState() }
+    val detailScroll = key(subscriptionId) { rememberLazyListState() }
 
     WeaveDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (subscriptionId == null) onDismiss() else selectedSubscriptionId = null
+        },
         title = {
             Column {
-                Text(title, fontWeight = FontWeight.Bold)
-                Text(
-                    if (selectedSubscription == null) {
-                        "先选择订阅，再选择出口"
-                    } else {
-                        selectedSubscription.name
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                )
+                Text(title, fontWeight = FontWeight.Bold, translate = translateTitle)
+                if (selectedSubscription != null) {
+                    MaterialText(
+                        selectedSubscription.name,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                    )
+                } else {
+                    WeaveSegmentedTabs(
+                        options = sections.map(ExitSection::label),
+                        selectedIndex = sections.indexOf(section),
+                        onSelect = { selectedSection = sections[it] },
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
         },
         text = {
             LazyColumn(
+                state = if (subscriptionId == null) overviewScroll else detailScroll,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 460.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (selectedSubscription == null) {
-                    item { TargetSectionLabel("选择订阅") }
-                    items(
-                        items = subscriptions,
-                        key = { "subscription.${it.id}" },
-                        contentType = { "target-subscription" },
-                    ) { subscription ->
-                        TargetOptionRow(
-                            icon = Icons.Rounded.Dns,
-                            title = subscription.name,
-                            subtitle = "${subscription.nodeCount} 个节点",
-                            selected = selectedTarget?.subscriptionId == subscription.id,
-                            translateTitle = false,
-                            onClick = { selectedSubscriptionId = subscription.id },
-                        )
-                    }
-                    if (customGroups.isNotEmpty()) {
-                        item { TargetSectionLabel("自定义策略组") }
-                        items(
-                            items = customGroups,
-                            key = { "group.${it.id}" },
-                            contentType = { "target-group" },
-                        ) { group ->
-                            val language = LocalWeaveLanguage.current
-                            TargetOptionRow(
-                                icon = Icons.Rounded.Route,
-                                title = group.name,
-                                subtitle = listOfNotNull(
-                                    group.strategy.label,
-                                    "${group.members.size} 个节点",
-                                    "链式".takeIf { group.entry != null },
-                                ).joinToString(" · ") { localizeWeaveText(it, language) },
-                                selected = selectedTarget?.kind == RouteKind.GROUP && selectedTarget.groupId == group.id,
-                                translateTitle = false,
-                                onClick = {
-                                    onSelect(RouteTarget(RouteKind.GROUP, group.name, groupId = group.id))
-                                },
-                            )
+                    when (section) {
+                        ExitSection.SUBSCRIPTIONS -> {
+                            item { TargetSectionLabel("选择订阅") }
+                            if (subscriptions.isEmpty()) {
+                                item { Text("没有可用订阅，请先导入或选择直连") }
+                            }
+                            items(
+                                items = subscriptions,
+                                key = { "subscription.${it.id}" },
+                                contentType = { "target-subscription" },
+                            ) { subscription ->
+                                TargetOptionRow(
+                                    icon = Icons.Rounded.Dns,
+                                    title = subscription.name,
+                                    subtitle = if (subscription.hasRuntimePayload) "${subscription.nodeCount} 个节点"
+                                    else "订阅内容不存在，请重新导入",
+                                    selected = selectedTarget?.subscriptionId == subscription.id,
+                                    translateTitle = false,
+                                    enabled = subscription.hasRuntimePayload,
+                                    onClick = { selectedSubscriptionId = subscription.id },
+                                )
+                            }
                         }
-                    }
-                    item { TargetSectionLabel("本地策略") }
-                    item {
-                        TargetOptionRow(
-                            icon = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                            title = "直连",
-                            subtitle = directSubtitle,
-                            selected = selectedTarget?.kind == RouteKind.DIRECT,
-                            onClick = {
-                                onSelect(RouteTarget(RouteKind.DIRECT, "直连"))
-                            },
-                        )
-                    }
-                    if (allowBlock) {
-                        item {
-                            TargetOptionRow(
-                                icon = Icons.Rounded.Block,
-                                title = "阻止联网",
-                                subtitle = "拒绝这个应用的连接",
-                                selected = selectedTarget?.kind == RouteKind.BLOCK,
-                                onClick = {
-                                    onSelect(RouteTarget(RouteKind.BLOCK, "阻止联网"))
-                                },
-                            )
+                        ExitSection.GROUPS -> {
+                            item { TargetSectionLabel("自定义策略组") }
+                            items(
+                                items = customGroups,
+                                key = { "group.${it.id}" },
+                                contentType = { "target-group" },
+                            ) { group ->
+                                val language = LocalWeaveLanguage.current
+                                TargetOptionRow(
+                                    icon = Icons.Rounded.Route,
+                                    title = group.name,
+                                    subtitle = listOfNotNull(
+                                        group.strategy.label,
+                                        "${group.members.size} 个节点",
+                                        "链式".takeIf { group.entry != null },
+                                    ).joinToString(" · ") { localizeWeaveText(it, language) },
+                                    selected = selectedTarget?.kind == RouteKind.GROUP && selectedTarget.groupId == group.id,
+                                    translateTitle = false,
+                                    onClick = {
+                                        onSelect(RouteTarget(RouteKind.GROUP, group.name, groupId = group.id))
+                                    },
+                                )
+                            }
+                        }
+                        ExitSection.LOCAL -> {
+                            item {
+                                TargetOptionRow(
+                                    icon = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                                    title = "直连",
+                                    subtitle = directSubtitle,
+                                    selected = selectedTarget?.kind == RouteKind.DIRECT,
+                                    onClick = {
+                                        onSelect(RouteTarget(RouteKind.DIRECT, "直连"))
+                                    },
+                                )
+                            }
+                            if (allowBlock) {
+                                item {
+                                    TargetOptionRow(
+                                        icon = Icons.Rounded.Block,
+                                        title = "阻止联网",
+                                        subtitle = "拒绝这个应用的连接",
+                                        selected = selectedTarget?.kind == RouteKind.BLOCK,
+                                        onClick = {
+                                            onSelect(RouteTarget(RouteKind.BLOCK, "阻止联网"))
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {
@@ -608,8 +653,13 @@ private fun ConditionalTargetDialog(
                             }
                         }
                     }
+                    if (orderedNodes == null) {
+                        item { CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp) }
+                    } else if (orderedNodes.isEmpty() && (nodeSearch.isNotBlank() || favoritesOnly)) {
+                        item { Text("没有匹配的节点", modifier = Modifier.padding(vertical = 12.dp)) }
+                    }
                     items(
-                        items = orderedNodes,
+                        items = orderedNodes.orEmpty(),
                         key = { "node.${it.id}" },
                         contentType = { "target-node" },
                     ) { node ->
@@ -914,6 +964,7 @@ private fun TargetOptionRow(
     subtitle: String?,
     selected: Boolean,
     translateTitle: Boolean = true,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     // Same selected treatment as node rows and settings choices: a light wash, edge and check.
@@ -924,6 +975,7 @@ private fun TargetOptionRow(
         onClick = onClick,
         icon = icon,
         translateTitle = translateTitle,
+        enabled = enabled,
         selectedDescription = "当前选择",
     )
 }

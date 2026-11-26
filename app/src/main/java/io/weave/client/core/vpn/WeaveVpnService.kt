@@ -178,6 +178,7 @@ class WeaveVpnService : VpnService() {
             }
         }
         shutdownRequested = false
+        sendBroadcast(Intent(ACTION_SERVICE_STARTED).setPackage(packageName))
 
         createNotificationChannel()
         val reloading = intent?.action == ACTION_RELOAD || intent?.action == ACTION_RELOAD_IF_RUNNING
@@ -570,17 +571,16 @@ class WeaveVpnService : VpnService() {
     }
 
     private fun prepareCurrentRuntime(): PreparedRuntime = io.weave.client.data.ProfileStorage.access(this) {
-        val routes = routeStore.load()
+        val (mode, defaultTarget, networkPreferences) = settingsStore.runtimeRoutingSnapshot()
+        val routes = if (mode == io.weave.client.domain.RoutingMode.RULE) routeStore.load() else emptyList()
         val installedApps = installedAppMappings(routes.map { it.packageName })
         val probeId = probeSubscriptionId.also { probeSubscriptionId = null }
-        val networkPreferences = settingsStore.networkPreferences()
-        val mode = settingsStore.routingMode()
         val installedPackages = installedApps.mapTo(mutableSetOf()) { it.second }
         return@access PreparedRuntime(
             assembled = configAssembler.assemble(
                 routes = routes,
                 mode = mode,
-                defaultTarget = settingsStore.defaultRouteTarget(),
+                defaultTarget = defaultTarget,
                 packageUids = installedApps.associate { (uid, packageName) ->
                     packageName to uid
                 },
@@ -883,6 +883,7 @@ class WeaveVpnService : VpnService() {
         const val ACTION_START = "io.weave.client.action.START"
         const val ACTION_STOP = "io.weave.client.action.STOP"
         const val ACTION_RELOAD = "io.weave.client.action.RELOAD"
+        internal const val ACTION_SERVICE_STARTED = "io.weave.client.action.VPN_SERVICE_STARTED"
         private const val ACTION_RELOAD_IF_RUNNING = "io.weave.client.action.RELOAD_IF_RUNNING"
         private const val EXTRA_PROBE_SUBSCRIPTION_ID = "probe_subscription_id"
         private const val CHANNEL_ID = "proxy_connection"

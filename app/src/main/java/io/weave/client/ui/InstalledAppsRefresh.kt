@@ -8,11 +8,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
+internal enum class InstalledAppsStatus { IDLE, LOADING, READY, FAILED }
+
 /** The picker and migration dialog share this Main-owned in-memory snapshot. */
 internal class InstalledAppsRefresh(
     private val scope: CoroutineScope,
     private val read: suspend () -> List<InstalledApp>,
     private val publish: (List<InstalledApp>) -> Unit,
+    private val publishStatus: (InstalledAppsStatus) -> Unit = {},
 ) {
     private var job: Job? = null
     private var loaded = false
@@ -25,6 +28,7 @@ internal class InstalledAppsRefresh(
         }
         if (loaded && !forceRefresh) return
 
+        publishStatus(InstalledAppsStatus.LOADING)
         val request = scope.launch(start = CoroutineStart.LAZY) {
             do {
                 rescanPending = false
@@ -40,6 +44,7 @@ internal class InstalledAppsRefresh(
                     loaded = false
                 }
             } while (rescanPending)
+            publishStatus(if (loaded) InstalledAppsStatus.READY else InstalledAppsStatus.FAILED)
         }
         job = request
         request.start()
@@ -51,5 +56,6 @@ internal class InstalledAppsRefresh(
         job = null
         loaded = false
         publish(emptyList())
+        publishStatus(InstalledAppsStatus.IDLE)
     }
 }

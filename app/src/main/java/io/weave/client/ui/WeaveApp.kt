@@ -161,7 +161,6 @@ import io.weave.client.core.ipquality.IpQualityReport
 import io.weave.client.core.ipquality.IpQualityState
 import io.weave.client.policy.PolicyPack
 import io.weave.client.policy.PolicyPackIntegrity
-import io.weave.client.domain.AppRoute
 import io.weave.client.domain.AutomaticStrategy
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.DashboardState
@@ -497,7 +496,7 @@ fun WeaveApp(
     // Picker events must carry the profile revision when the picker was opened, even if a
     // restored profile has the same route IDs or the chosen target is the generic DIRECT option.
     var appPickerEpoch by remember { mutableStateOf<String?>(null) }
-    var editingRoute by remember { mutableStateOf<Pair<String, AppRoute>?>(null) }
+    var editingRoute by remember { mutableStateOf<AppRouteSelection?>(null) }
     var defaultRoutePickerEpoch by remember { mutableStateOf<String?>(null) }
     val showAppPicker = appPickerEpoch != null
     val showDefaultRoutePicker = defaultRoutePickerEpoch != null
@@ -550,7 +549,7 @@ fun WeaveApp(
     var quickStartConnectResume by remember { mutableStateOf(0) }
 
     fun usableGuideNodes(): List<ProxyNode> {
-        val enabledIds = viewModel.subscriptions.value.filter { it.enabled }.map { it.id }.toSet()
+        val enabledIds = viewModel.subscriptions.value.filter { it.enabled && it.hasRuntimePayload }.map { it.id }.toSet()
         return viewModel.nodes.value.filter { it.subscriptionId in enabledIds }
     }
     fun closeQuickStart() {
@@ -580,13 +579,23 @@ fun WeaveApp(
     }
 
     /** Same consent path as the connect button: the VPN disclosure precedes the system prompt. */
+    fun openImport() {
+        importStartWith = null
+        showImportDialog = true
+    }
+
     fun requestConnect() {
         val dashboard = viewModel.dashboard.value
         when (dashboard.connectionState) {
             ConnectionState.CONNECTED -> onRequestDisconnection()
             ConnectionState.CONNECTING -> Unit
             ConnectionState.DISCONNECTED, ConnectionState.ERROR -> {
-                if (dashboard.coreAvailable && vpnDisclosureAccepted) {
+                val action = heroModel(dashboard).action
+                if (action == HeroAction.IMPORT) {
+                    openImport()
+                } else if (action == HeroAction.CHOOSE_EXIT) {
+                    openDefaultRoutePicker()
+                } else if (dashboard.coreAvailable && vpnDisclosureAccepted) {
                     onRequestConnection()
                 } else if (dashboard.coreAvailable) {
                     disclosureMode = VpnDisclosureMode.CONNECT
@@ -692,8 +701,8 @@ fun WeaveApp(
         onSensitiveSurfaceChanged(sensitiveSurfaceVisible)
     }
 
-    LaunchedEffect(destination) {
-        if (destination == Destination.ROUTES || destination == Destination.SUBSCRIPTIONS) {
+    LaunchedEffect(destination, showAppPicker, showProxyMigration) {
+        if (showAppPicker || showProxyMigration || destination == Destination.SUBSCRIPTIONS) {
             viewModel.ensureInstalledAppsLoaded()
         } else {
             viewModel.releaseInstalledAppsWhenIdle()
@@ -853,6 +862,7 @@ fun WeaveApp(
                     onMoreClick = { showConnectionActions = true },
                     onIpQuality = { showNetworkPrivacyCenter = true },
                     contentPadding = innerPadding,
+                    onImport = ::openImport,
                 )
             }
             Destination.ROUTES -> {
@@ -860,12 +870,15 @@ fun WeaveApp(
                 // Routes only needs the routing mode; live traffic updates must not recompose it.
                 val routesDashboard = viewModel.dashboard.collectAsStateWithLifecycle()
                 val routingMode by remember(routesDashboard) { derivedStateOf { routesDashboard.value.routingMode } }
+                val defaultTarget by remember(routesDashboard) { derivedStateOf { routesDashboard.value.defaultRouteTarget } }
                 RoutesScreen(
                     onPreset = viewModel::applyRoutingPreset,
                     routes = routes,
                     onRouteClick = { packageName ->
                         editingRoute = viewModel.groupProfileEpoch.value?.let { epoch ->
-                            routes.firstOrNull { it.packageName == packageName }?.let { epoch to it }
+                            routes.firstOrNull { it.packageName == packageName }?.let {
+                                AppRouteSelection(epoch, it.packageName, it.appName, it.target)
+                            }
                         }
                     },
                     onAdd = { appPickerEpoch = viewModel.groupProfileEpoch.value },
@@ -874,6 +887,8 @@ fun WeaveApp(
                     routingMode = routingMode,
                     domesticDirect = networkPreferences.domesticDirect,
                     onModeSelected = viewModel::selectMode,
+                    defaultTarget = defaultTarget,
+                    onDefaultTarget = { openDefaultRoutePicker() },
                 )
             }
             Destination.SUBSCRIPTIONS -> {
@@ -884,7 +899,7 @@ fun WeaveApp(
                 SubscriptionsScreen(
                     subscriptions = subscriptions,
                     migrationClients = migrationClients,
-                    onAdd = { importStartWith = null; showImportDialog = true },
+                    onAdd = ::openImport,
                     onAddFrom = { kind -> importStartWith = kind; showImportDialog = true },
                     onMigrate = { showProxyMigration = true },
                     onTransfer = { showLanTransferDialog = true },
@@ -1317,6 +1332,9 @@ fun WeaveApp(
     }
 
     if (showLanTransferDialog) {
+        DisposableEffect(viewModel) {
+            onDispose(viewModel::closeLanExportIfOpen)
+        }
         val lanTransferState by viewModel.lanTransferState.collectAsStateWithLifecycle()
         val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
         val transferEpoch by viewModel.groupProfileEpoch.collectAsStateWithLifecycle()
@@ -1344,25 +1362,27 @@ fun WeaveApp(
 
     appPickerEpoch?.let { epoch ->
         val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+        val installedAppsStatus by viewModel.installedAppsStatus.collectAsStateWithLifecycle()
         val routes by viewModel.routes.collectAsStateWithLifecycle()
         val unroutedApps = remember(installedApps, routes) {
             AppPickerFilter.unrouted(installedApps, routes, { it.packageName }, { it.packageName })
         }
         AppPickerDialog(
             apps = unroutedApps,
+            status = installedAppsStatus,
+            onRetry = { viewModel.ensureInstalledAppsLoaded(forceRefresh = true) },
             onDismiss = { if (!routePickerSaving) appPickerEpoch = null },
-            onSelect = { packageName ->
+            onSelect = onSelectApp@{ packageName ->
                 if (!routePickerSaving) {
-                    routePickerSaving = true
-                    viewModel.addAppRoute(epoch, packageName) { result ->
-                        finishRouteChoice(result) { appPickerEpoch = null }
-                    }
+                    val app = unroutedApps.firstOrNull { it.packageName == packageName } ?: return@onSelectApp
+                    appPickerEpoch = null
+                    editingRoute = AppRouteSelection(epoch, app.packageName, app.label, app = app)
                 }
             },
         )
     }
 
-    editingRoute?.let { (epoch, route) ->
+    editingRoute?.let { route ->
         val healthOwner = remember { Any() }
         val favorites by viewModel.favoriteNodes.collectAsStateWithLifecycle()
         val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
@@ -1370,31 +1390,43 @@ fun WeaveApp(
         val subscriptionHealth by viewModel.subscriptionHealth.collectAsStateWithLifecycle()
         val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
         val customGroups by viewModel.customGroups.collectAsStateWithLifecycle()
-            RouteTargetDialog(
-                favorites = favorites,
-                onFavorite = viewModel::toggleFavoriteNode,
-                onSubscriptionSelected = { viewModel.selectRouteHealthSubscription(healthOwner, it) },
-                route = route,
-                subscriptions = subscriptions,
-                nodes = nodes,
-                health = subscriptionHealth,
-                vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
-                onCheckHealth = { viewModel.checkRouteSubscriptionHealth(healthOwner, it) },
-                onDismiss = { if (!routePickerSaving) editingRoute = null },
-                customGroups = customGroups,
+        RouteTargetDialog(
+            favorites = favorites,
+            onFavorite = viewModel::toggleFavoriteNode,
+            onSubscriptionSelected = { viewModel.selectRouteHealthSubscription(healthOwner, it) },
+            appName = route.appName,
+            packageName = route.packageName,
+            selectedTarget = route.target,
+            subscriptions = subscriptions,
+            nodes = nodes,
+            health = subscriptionHealth,
+            vpnConnected = dashboard.connectionState == ConnectionState.CONNECTED,
+            onCheckHealth = { viewModel.checkRouteSubscriptionHealth(healthOwner, it) },
+            onDismiss = {
+                if (!routePickerSaving) {
+                    editingRoute = null
+                    if (route.app != null) appPickerEpoch = route.epoch
+                }
+            },
+            customGroups = customGroups,
             onSelect = { target ->
                 if (!routePickerSaving) {
                     routePickerSaving = true
-                    viewModel.setRouteTarget(epoch, route.packageName, target) { result ->
+                    val completed: (Result<Unit>) -> Unit = { result ->
                         finishRouteChoice(result) { editingRoute = null }
                     }
+                    val app = route.app
+                    if (app == null) viewModel.setRouteTarget(route.epoch, route.packageName, target, completed)
+                    else viewModel.addAppRoute(route.epoch, app, target, completed)
                 }
             },
-            onDelete = {
-                if (!routePickerSaving) {
-                    routePickerSaving = true
-                    viewModel.removeAppRoute(epoch, route.packageName) { result ->
-                        finishRouteChoice(result) { editingRoute = null }
+            onDelete = if (route.app != null) null else {
+                {
+                    if (!routePickerSaving) {
+                        routePickerSaving = true
+                        viewModel.removeAppRoute(route.epoch, route.packageName) { result ->
+                            finishRouteChoice(result) { editingRoute = null }
+                        }
                     }
                 }
             },
@@ -1587,6 +1619,14 @@ fun WeaveApp(
 private data class OwnedExternalImport(
     val id: String,
     val value: io.weave.client.subscription.ExternalImport,
+)
+
+private data class AppRouteSelection(
+    val epoch: String,
+    val packageName: String,
+    val appName: String,
+    val target: RouteTarget? = null,
+    val app: InstalledApp? = null,
 )
 
 /**

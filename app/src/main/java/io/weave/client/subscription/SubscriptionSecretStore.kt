@@ -309,6 +309,16 @@ class SubscriptionSecretStore(
 
     fun list(): List<StoredSubscription> = locked { readRecords(preferences) }
 
+    internal fun <T> withRuntimeSnapshot(block: (RuntimeSnapshot) -> T): T = locked {
+        block(RuntimeSnapshot(preferences))
+    }
+
+    internal inner class RuntimeSnapshot(private val values: SharedPreferences) {
+        fun records(): List<StoredSubscription> = readRecords(values, includeNodes = false)
+        fun nodes(id: String): List<StoredNode> = readNodeMetadata(id, values).sortedBy { it.name.lowercase() }
+        fun payload(id: String): String = readPayload(id, values)
+    }
+
     internal fun listWithRemoteStatus(includeNodes: Boolean): List<Pair<StoredSubscription, Boolean>> = locked {
         val snapshot = preferences
         readRecords(snapshot, includeNodes).map { record ->
@@ -478,14 +488,15 @@ class SubscriptionSecretStore(
     }
 
     private fun migrateLegacyNodeMetadata() {
-        preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().forEach { id ->
-            if (preferences.contains(key(id, "node_metadata_encrypted"))) return@forEach
-            val legacy = preferences.getStringSet(key(id, "node_metadata"), emptySet())
+        val snapshot = preferences
+        snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty().forEach { id ->
+            if (snapshot.contains(key(id, "node_metadata_encrypted"))) return@forEach
+            val legacy = snapshot.getStringSet(key(id, "node_metadata"), emptySet())
                 .orEmpty()
                 .mapNotNull(::decodeNode)
             if (legacy.isEmpty()) return@forEach
             runCatching {
-                preferences.edit()
+                snapshot.edit()
                     .putString(key(id, "node_metadata_encrypted"), encryptNodeMetadata(id, legacy))
                     .remove(key(id, "node_metadata"))
                     .commit()
@@ -496,13 +507,14 @@ class SubscriptionSecretStore(
     /** Rebuild a missing/old UI index from the retained encrypted source; never fetch or delete. */
     private fun repairNodeIndexes() {
         val parser = SubscriptionPayloadParser()
-        preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().forEach { id ->
-            val previous = readNodeMetadata(id)
-            if (preferences.getInt(key(id, "node_index_version"), 0) == NODE_INDEX_VERSION &&
-                previous.size == preferences.getInt(key(id, "nodes"), 0) && previous.isNotEmpty()
+        val snapshot = preferences
+        snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty().forEach { id ->
+            val previous = readNodeMetadata(id, snapshot)
+            if (snapshot.getInt(key(id, "node_index_version"), 0) == NODE_INDEX_VERSION &&
+                previous.size == snapshot.getInt(key(id, "nodes"), 0) && previous.isNotEmpty()
             ) return@forEach
             runCatching {
-                val parsed = parser.parse(readPayload(id))
+                val parsed = parser.parse(readPayload(id, snapshot))
                 check(parsed.nodes.isNotEmpty())
                 val remaining = LegacyNodeIdIndex(YamlNodeName::legacyEquivalent)
                 previous.forEach { remaining.add(it.id, it.name, it.protocol) }
@@ -514,7 +526,7 @@ class SubscriptionSecretStore(
                     val oldId = remaining.take(node.name, node.protocol)
                     StoredNode(oldId ?: nodeId(node.name, node.protocol, occurrence), node.name, node.protocol)
                 }
-                check(preferences.edit()
+                check(snapshot.edit()
                     .putString(key(id, "node_metadata_encrypted"), encryptNodeMetadata(id, nodes))
                     .putInt(key(id, "nodes"), nodes.size)
                     .putInt(key(id, "node_index_version"), NODE_INDEX_VERSION)
@@ -526,17 +538,18 @@ class SubscriptionSecretStore(
     }
 
     private fun cleanPayloadDirectory(directory: File) {
-        val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty()
+        val snapshot = preferences
+        val ids = snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
         // Older versions moved the active file before committing deletion. Recover that move
         // if the index still refers to the subscription; never discard its only encrypted copy.
         directory.listFiles().orEmpty().filter { it.extension == DELETED_PAYLOAD_EXTENSION }.forEach { file ->
             val id = file.name.removeSuffix(".$DELETED_PAYLOAD_EXTENSION")
             if (id in ids) {
-                val target = payloadFile(id)
+                val target = payloadFile(id, snapshot)
                 if (!target.exists()) check(file.renameTo(target)) { "Unable to recover interrupted subscription deletion" }
             }
         }
-        val referencedFiles = referencedPayloadNames()
+        val referencedFiles = referencedPayloadNames(snapshot)
         directory.listFiles().orEmpty().forEach { file ->
             if (
                 (file.extension == DELETED_PAYLOAD_EXTENSION && file.name.removeSuffix(".$DELETED_PAYLOAD_EXTENSION") !in ids) ||
@@ -548,8 +561,7 @@ class SubscriptionSecretStore(
         }
     }
 
-    private fun referencedPayloadNames(): Set<String> {
-        val current = preferences
+    private fun referencedPayloadNames(current: SharedPreferences = preferences): Set<String> {
         return current.getStringSet(KEY_IDS, emptySet()).orEmpty().mapTo(mutableSetOf()) { id ->
             current.getString(key(id, "payload_generation"), null)?.let { payloadFileName(id, it) } ?: "$id.enc"
         }

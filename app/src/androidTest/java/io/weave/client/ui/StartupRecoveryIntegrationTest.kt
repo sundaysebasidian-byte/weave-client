@@ -92,11 +92,13 @@ class StartupRecoveryIntegrationTest {
             compose.onAllNodesWithTag("profile-recovery").fetchSemanticsNodes().isEmpty() &&
                 compose.onAllNodesWithTag("profile-loading").fetchSemanticsNodes().isEmpty()
         }
-        assertTrue(runBlocking { CoreClient.awaitConnected(10_000) })
+        compose.onNodeWithTag("navigation-tab-HOME").assertIsDisplayed()
+        assertNoRuntimeService()
         scenario.moveToState(Lifecycle.State.CREATED)
         assertFalse(runBlocking { CoreClient.awaitConnected(100) })
         scenario.moveToState(Lifecycle.State.RESUMED)
-        assertTrue(runBlocking { CoreClient.awaitConnected(10_000) })
+        compose.onNodeWithTag("navigation-tab-HOME").assertIsDisplayed()
+        assertNoRuntimeService()
     }
 
     @Test fun queuedImportSurvivesRecreationUntilRecoverySucceeds() = damagedProfile(MainActivity.ACTION_IMPORT) { scenario, journal, _ ->

@@ -18,18 +18,34 @@ import io.weave.client.domain.StrategyScope
 import io.weave.client.domain.WeavePalette
 import io.weave.client.domain.WeaveLanguage
 
+internal const val MAX_FAVORITE_NODES = 512
+
 internal sealed interface StoredReleaseAppCopySelection {
     data object Absent : StoredReleaseAppCopySelection
     data object Unsupported : StoredReleaseAppCopySelection
     data class Selected(val canonicalTag: String) : StoredReleaseAppCopySelection
 }
 
+internal data class RuntimeRoutingSnapshot(
+    val mode: RoutingMode,
+    val defaultTarget: RouteTarget?,
+    val network: NetworkPreferences,
+)
+
+internal data class UiSettingsSnapshot(
+    val routing: RuntimeRoutingSnapshot,
+    val explicitLanguage: WeaveLanguage?,
+    val favorites: Set<String>,
+)
+
 class RuntimeSettingsStore(context: Context) {
     private val appContext = context.applicationContext
     private val preferences get() = appContext.crossProcessPreferences(PREFERENCES_NAME)
     private val secretBox = AndroidKeystoreSecretBox()
 
-    fun routingMode(): RoutingMode = preferences.getString(KEY_ROUTING_MODE, null)
+    fun routingMode(): RoutingMode = routingMode(preferences)
+
+    private fun routingMode(preferences: SharedPreferences): RoutingMode = preferences.getString(KEY_ROUTING_MODE, null)
         ?.let { runCatching { RoutingMode.valueOf(it) }.getOrNull() }
         ?: RoutingMode.RULE
 
@@ -45,18 +61,35 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     // Opaque subscription/node IDs only; no node names, hosts or credentials.
-    fun favoriteNodeIds(): Set<String> = preferences.getStringSet("favorite_node_ids", emptySet()).orEmpty().toSet()
+    fun favoriteNodeIds(): Set<String> = favoriteNodeIds(preferences)
+
+    private fun favoriteNodeIds(preferences: SharedPreferences): Set<String> =
+        preferences.getStringSet("favorite_node_ids", emptySet()).orEmpty().toSet()
 
     fun setFavoriteNodeIds(ids: Set<String>) {
-        preferences.edit(commit = true) { putStringSet("favorite_node_ids", ids.take(512).toSet()) }
+        preferences.edit(commit = true) { putStringSet("favorite_node_ids", ids.take(MAX_FAVORITE_NODES).toSet()) }
     }
 
-    fun networkPreferences(): NetworkPreferences = readNetworkPreferences(strictSecrets = false)
+    fun networkPreferences(): NetworkPreferences = readNetworkPreferences(preferences, strictSecrets = false)
 
-    internal fun networkPreferencesForBackup(): NetworkPreferences = readNetworkPreferences(strictSecrets = true)
+    internal fun networkPreferencesForBackup(): NetworkPreferences = readNetworkPreferences(preferences, strictSecrets = true)
 
-    private fun readNetworkPreferences(strictSecrets: Boolean): NetworkPreferences {
+    internal fun uiSnapshot(): UiSettingsSnapshot {
         val preferences = preferences
+        return UiSettingsSnapshot(
+            routing = runtimeRoutingSnapshot(preferences),
+            explicitLanguage = explicitLanguage(preferences),
+            favorites = favoriteNodeIds(preferences),
+        )
+    }
+
+    internal fun runtimeRoutingSnapshot(): RuntimeRoutingSnapshot = runtimeRoutingSnapshot(preferences)
+
+    private fun runtimeRoutingSnapshot(preferences: SharedPreferences) = RuntimeRoutingSnapshot(
+        routingMode(preferences), defaultRouteTarget(preferences), readNetworkPreferences(preferences, strictSecrets = false),
+    )
+
+    private fun readNetworkPreferences(preferences: SharedPreferences, strictSecrets: Boolean): NetworkPreferences {
         return NetworkPreferences(
             automaticStrategy = enumPreference(preferences,
                 KEY_AUTOMATIC_STRATEGY,
@@ -139,7 +172,9 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     /** Null means the UI follows the system language. */
-    fun explicitLanguage(): WeaveLanguage? = preferences.getString(KEY_LANGUAGE, null)
+    fun explicitLanguage(): WeaveLanguage? = explicitLanguage(preferences)
+
+    private fun explicitLanguage(preferences: SharedPreferences): WeaveLanguage? = preferences.getString(KEY_LANGUAGE, null)
         ?.let { stored -> WeaveLanguage.entries.firstOrNull { it.name == stored } }
 
     /** Read-only release-app copy record; not used by the current startup/picker path. */
@@ -226,8 +261,9 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit(commit = true) { putString(KEY_LANGUAGE, language.name) }
     }
 
-    fun defaultRouteTarget(): RouteTarget? {
-        val preferences = preferences
+    fun defaultRouteTarget(): RouteTarget? = defaultRouteTarget(preferences)
+
+    private fun defaultRouteTarget(preferences: SharedPreferences): RouteTarget? {
         val kind = preferences.getString(KEY_DEFAULT_ROUTE_KIND, null)
             ?.let { runCatching { RouteKind.valueOf(it) }.getOrNull() }
             ?: return null

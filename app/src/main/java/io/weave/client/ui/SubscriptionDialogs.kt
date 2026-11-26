@@ -876,17 +876,7 @@ internal fun SubscriptionManagerDialog(
     val healthByName = remember(health.nodes) {
         NodeHealthIndex(health.nodes)
     }
-    val rankedNodes = remember(nodes, healthByName) {
-        orderRoutePickerNodes(nodes, emptySet(), favoritesOnly = false, query = "") {
-            healthByName[it]?.qualityScoreMs
-        }
-    }
-    val orderedNodes = remember(rankedNodes, nodeQuery) {
-        val term = nodeQuery.trim()
-        if (term.isEmpty()) rankedNodes else rankedNodes.filter {
-            it.name.contains(term, ignoreCase = true) || it.protocol.contains(term, ignoreCase = true)
-        }
-    }
+    val orderedNodes = rememberFilteredPickerNodes(rememberRankedPickerNodes(nodes, healthByName), nodeQuery)
     val qualityRows = remember(health.nodes) { QualityMatrixBuilder.previewRows(health.nodes) }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -1236,7 +1226,9 @@ internal fun SubscriptionManagerDialog(
                     }
                 }
                 if (!state.loading) {
-                    if (orderedNodes.isEmpty()) {
+                    if (orderedNodes == null) {
+                        item { CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp) }
+                    } else if (orderedNodes.isEmpty()) {
                         item(key = "empty", contentType = "subscription-empty") {
                             Text(
                                 "没有匹配的节点",

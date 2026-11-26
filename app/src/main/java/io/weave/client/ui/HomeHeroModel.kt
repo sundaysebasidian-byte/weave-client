@@ -65,6 +65,7 @@ internal enum class HeroHeadline(val source: String) {
 internal enum class HeroDetail(val source: String, val tone: WeaveStatusTone) {
     READY("准备就绪", WeaveStatusTone.NEUTRAL),
     EXIT_INVALID("出口已失效", WeaveStatusTone.CAUTION),
+    EMPTY_LIBRARY("还没有订阅", WeaveStatusTone.NEUTRAL),
     CORE_UNAVAILABLE("内核不可用", WeaveStatusTone.CRITICAL),
     ESTABLISHING("正在建立隧道", WeaveStatusTone.NEUTRAL),
     EXIT_VERIFIED("出口已验证", WeaveStatusTone.NEUTRAL),
@@ -86,7 +87,7 @@ internal enum class HeroDetail(val source: String, val tone: WeaveStatusTone) {
  */
 internal enum class HeroGlyph { POWER, PROGRESS, LINK, CHECK, WARNING }
 
-internal enum class HeroAction { CONNECT, DISCONNECT, IN_PROGRESS, RETRY, CHOOSE_EXIT }
+internal enum class HeroAction { CONNECT, DISCONNECT, IN_PROGRESS, RETRY, CHOOSE_EXIT, IMPORT }
 
 internal data class HeroModel(
     val headline: HeroHeadline,
@@ -102,6 +103,23 @@ internal data class HeroModel(
 internal fun heroModel(state: DashboardState): HeroModel {
     val readiness = exitReadiness(state)
     val coreMissing = !state.coreAvailable
+    val idle = state.connectionState == ConnectionState.DISCONNECTED || state.connectionState == ConnectionState.ERROR
+    val failed = state.connectionState == ConnectionState.ERROR
+    if (idle && !coreMissing) {
+        val invalid = readiness == ExitReadiness.INVALID
+        if (invalid || (readiness == ExitReadiness.MISSING && state.hasUsableSubscription == false)) {
+            return HeroModel(
+                headline = if (failed) HeroHeadline.FAILED else HeroHeadline.DISCONNECTED,
+                detail = if (invalid) HeroDetail.EXIT_INVALID else HeroDetail.EMPTY_LIBRARY,
+                tone = if (invalid) WeaveStatusTone.CAUTION else WeaveStatusTone.NEUTRAL,
+                glyph = if (invalid) HeroGlyph.WARNING else HeroGlyph.POWER,
+                action = if (invalid) HeroAction.CHOOSE_EXIT else HeroAction.IMPORT,
+                actionLabel = if (invalid) "选择出口" else "添加订阅",
+                actionEnabled = true,
+                actionEmphasized = true,
+            )
+        }
+    }
     return when (state.connectionState) {
         ConnectionState.CONNECTED -> HeroModel(
             headline = HeroHeadline.CONNECTED,
@@ -130,33 +148,19 @@ internal fun heroModel(state: DashboardState): HeroModel {
             glyph = HeroGlyph.WARNING,
             action = HeroAction.RETRY,
             actionLabel = "重试连接",
-            actionEnabled = !coreMissing && readiness != ExitReadiness.INVALID,
+            actionEnabled = !coreMissing,
             actionEmphasized = true,
         )
-        ConnectionState.DISCONNECTED -> if (readiness == ExitReadiness.INVALID) {
-            // A deleted exit cannot pass validation, so choosing a new one leads.
-            HeroModel(
-                headline = HeroHeadline.DISCONNECTED,
-                detail = if (coreMissing) HeroDetail.CORE_UNAVAILABLE else HeroDetail.EXIT_INVALID,
-                tone = if (coreMissing) WeaveStatusTone.CRITICAL else WeaveStatusTone.CAUTION,
-                glyph = HeroGlyph.POWER,
-                action = HeroAction.CHOOSE_EXIT,
-                actionLabel = "选择出口",
-                actionEnabled = true,
-                actionEmphasized = true,
-            )
-        } else {
-            HeroModel(
-                headline = HeroHeadline.DISCONNECTED,
-                detail = if (coreMissing) HeroDetail.CORE_UNAVAILABLE else HeroDetail.READY,
-                tone = if (coreMissing) WeaveStatusTone.CRITICAL else WeaveStatusTone.NEUTRAL,
-                glyph = HeroGlyph.POWER,
-                action = HeroAction.CONNECT,
-                actionLabel = "连接",
-                actionEnabled = !coreMissing,
-                actionEmphasized = true,
-            )
-        }
+        ConnectionState.DISCONNECTED -> HeroModel(
+            headline = HeroHeadline.DISCONNECTED,
+            detail = if (coreMissing) HeroDetail.CORE_UNAVAILABLE else HeroDetail.READY,
+            tone = if (coreMissing) WeaveStatusTone.CRITICAL else WeaveStatusTone.NEUTRAL,
+            glyph = HeroGlyph.POWER,
+            action = HeroAction.CONNECT,
+            actionLabel = "连接",
+            actionEnabled = !coreMissing,
+            actionEmphasized = true,
+        )
     }
 }
 
@@ -194,7 +198,9 @@ internal fun heroIssue(state: DashboardState): HeroIssue? = when {
         val fallback = when (readiness) {
             ExitReadiness.INVALID -> INVALID_EXIT_LABEL
             ExitReadiness.NOT_USED -> "重试连接"
-            ExitReadiness.MISSING, ExitReadiness.READY -> "连接未能建立。可直接重试，或更换出口后再连接。"
+            ExitReadiness.MISSING -> if (state.hasUsableSubscription == false) "还没有订阅"
+            else "连接未能建立。可直接重试，或更换出口后再连接。"
+            ExitReadiness.READY -> "连接未能建立。可直接重试，或更换出口后再连接。"
         }
         HeroIssue(
             kind = HeroIssueKind.CONNECTION_FAILED,
