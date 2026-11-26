@@ -10,3 +10,8 @@
 {"id":"确认导入","en":"Confirm import"}
 {"id":"离线订阅文件不能下载节点集合","en":"An offline subscription file cannot download nodes."}
 {"id":"订阅互传","en":"Transfer subscriptions"}
+{"id":"安装更新","en":"Install update"}
+{"id":"安装包已验证，可以直接安装。","en":"APK verified. You can install it now."}
+{"id":"请在系统设置中允许 Weave 安装应用，然后返回点「安装更新」。","en":"Allow Weave to install apps in system settings, then come back and tap Install update."}
+{"id":"正在打开系统安装确认。","en":"Opening Android’s install confirmation."}
+{"id":"安装未完成。可以重试，或保存安装包后手动安装。","en":"The update was not installed. Try again, or save the APK and install it yourself."}

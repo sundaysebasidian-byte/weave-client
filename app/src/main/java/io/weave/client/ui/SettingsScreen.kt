@@ -266,17 +266,6 @@ internal fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
-            key = "quick-start",
-            title = "开始使用",
-            entries = listOf(
-                LinkEntry(Icons.Rounded.AutoAwesome, "新手引导", "导入、选节点，再连接", onOpenQuickStart),
-                ToggleEntry(
-                    Icons.Rounded.AutoAwesome, "减弱引导动画", "引导页面使用即时转场",
-                    quickStartReducedMotion, onQuickStartMotionChanged,
-                ),
-            ),
-        ),
-        SettingsSection(
             key = "appearance",
             title = "外观与语言",
             entries = listOf(
@@ -297,6 +286,10 @@ internal fun SettingsScreen(
                         language.nativeLabel
                     },
                 ) { showLanguage = true },
+                ToggleEntry(
+                    Icons.Rounded.AutoAwesome, "减弱引导动画", "引导页面使用即时转场",
+                    quickStartReducedMotion, onQuickStartMotionChanged,
+                ),
             ),
         ),
         SettingsSection(
@@ -306,17 +299,13 @@ internal fun SettingsScreen(
                 LinkEntry(
                     Icons.Rounded.Dns,
                     "DNS",
-                    listOf(
-                        preferences.dnsProfile.label,
-                        preferences.effectiveDnsTransport.label,
-                        preferences.dnsRoutingMode.label,
-                    ).joinToString(" · ") { localizeWeaveText(it, language) },
+                    preferences.dnsProfile.label,
                 ) { showDnsSettings = true },
                 LinkEntry(Icons.Rounded.Language, "IPv4 / IPv6", preferences.ipv6Mode.label) { showIpv6Mode = true },
                 LinkEntry(Icons.Rounded.Speed, "自动节点策略", preferences.automaticStrategy.label) {
                     showAutomaticStrategy = true
                 },
-                LinkEntry(Icons.Rounded.Bolt, "Always-on 与断网保护", "需同时开启 Always-on 与阻止无 VPN 连接", onOpenVpnSettings),
+                LinkEntry(Icons.Rounded.Bolt, "Always-on 与断网保护", null, onOpenVpnSettings),
             ),
         ),
         SettingsSection(
@@ -329,7 +318,7 @@ internal fun SettingsScreen(
                     Icons.Rounded.Block, "阻止 UDP STUN", "降低 WebRTC 暴露风险；可能影响音视频通话",
                     preferences.blockUdpStun, onBlockUdpStunChanged,
                 ),
-                LinkEntry(Icons.Rounded.Lock, "恢复中心", "查看失败记录、解除安全模式", onOpenRecoveryCenter),
+                LinkEntry(Icons.Rounded.Lock, "恢复中心", null, onOpenRecoveryCenter),
             ),
         ),
         SettingsSection(
@@ -340,11 +329,8 @@ internal fun SettingsScreen(
                     Icons.Rounded.Sync,
                     "自动更新订阅",
                     when (preferences.subscriptionAutoUpdateHours) {
-                        0 -> "关闭 · 仅手动刷新"
-                        else -> listOf(
-                            "每 ${preferences.subscriptionAutoUpdateHours} 小时",
-                            if (preferences.subscriptionAutoUpdateUnmeteredOnly) "仅不计流量网络" else "任意网络",
-                        ).joinToString(" · ") { localizeWeaveText(it, language) }
+                        0 -> "未开启"
+                        else -> localizeWeaveText("每 ${preferences.subscriptionAutoUpdateHours} 小时", language)
                     },
                 ) { showAutoUpdate = true },
                 LinkEntry(Icons.Rounded.Lock, "备份与恢复", null, onOpenBackup),
@@ -381,7 +367,7 @@ internal fun SettingsScreen(
                 LinkEntry(
                     Icons.Rounded.Wifi,
                     "局域网代理共享",
-                    if (preferences.lanSharing) "已开启 · 需要用户名和密码" else "未开启",
+                    if (preferences.lanSharing) "已开启" else "未开启",
                 ) { showLanProxy = true },
             ),
         ),
@@ -411,15 +397,16 @@ internal fun SettingsScreen(
             onExpandedChange = { diagnosticsExpanded = it },
             entries = listOf(
                 LinkEntry(Icons.Rounded.SwapVert, "实时连接", null, onOpenConnections),
-                LinkEntry(Icons.Rounded.Info, "内核日志", "仅内存显示，复制默认脱敏", onOpenLogs),
+                LinkEntry(Icons.Rounded.Info, "内核日志", null, onOpenLogs),
             ),
         ),
         SettingsSection(
             key = "about",
             title = "关于",
             entries = listOf(
+                LinkEntry(Icons.Rounded.AutoAwesome, "新手引导", null, onOpenQuickStart),
                 LinkEntry(Icons.Rounded.CloudDownload, "应用更新", null, onOpenAppUpdates),
-                LinkEntry(Icons.Rounded.Policy, "Weave ${BuildConfig.VERSION_NAME}", "开源许可与第三方组件") {
+                LinkEntry(Icons.Rounded.Policy, "Weave ${BuildConfig.VERSION_NAME}", null) {
                     showOpenSourceDetails = true
                 },
                 LinkEntry(Icons.Rounded.Security, "VPN 数据路径说明", null, onShowVpnDisclosure),
@@ -479,11 +466,11 @@ internal fun SettingsScreen(
                     SettingsGroup(title = section.title) { SettingEntries(section.entries) }
                 }
             }
-            if (section.key == "dns-connection" && !searching) {
-                item(key = "notifications") {
-                    Box(Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)) {
-                        NotificationStatusCard(notificationsEnabled, onRequestNotifications)
-                    }
+        }
+        if (!searching) {
+            item(key = "notifications") {
+                Box(Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)) {
+                    NotificationStatusCard(notificationsEnabled, onRequestNotifications)
                 }
             }
         }
@@ -952,7 +939,7 @@ private fun ExpandableSettingsGroup(
         modifier = Modifier
             .padding(horizontal = WeaveUiTokens.screenHorizontal)
             .fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(WeaveUiTokens.panelRadius),
     ) {
         Column {
             Row(
@@ -1050,24 +1037,48 @@ private fun LinkSetting(
     ) {
         SettingRowIcon(icon)
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            if (subtitle != null) {
-                Text(
-                    subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    modifier = Modifier.padding(top = 2.dp),
+        if (subtitle == null) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        } else {
+            // The label keeps the width it needs (up to most of the row); the value takes what is
+            // left and ends in an ellipsis, so a long value never breaks the label mid-word.
+            androidx.compose.ui.layout.Layout(
+                modifier = Modifier.weight(1f),
+                content = {
+                    Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        subtitle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                    )
+                },
+            ) { measurables, constraints ->
+                val width = constraints.maxWidth
+                val gap = 12.dp.roundToPx()
+                val titleNeed = minOf(measurables[0].maxIntrinsicWidth(constraints.maxHeight), (width * 0.64f).toInt())
+                val value = measurables[1].measure(
+                    androidx.compose.ui.unit.Constraints(maxWidth = (width - titleNeed - gap).coerceAtLeast(0)),
                 )
+                val label = measurables[0].measure(
+                    androidx.compose.ui.unit.Constraints(maxWidth = (width - value.width - gap).coerceAtLeast(0)),
+                )
+                val height = maxOf(label.height, value.height)
+                layout(width, height) {
+                    label.placeRelative(0, (height - label.height) / 2)
+                    value.placeRelative(width - value.width, (height - value.height) / 2)
+                }
             }
         }
         if (onClick != null) {
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(4.dp))
             Icon(
                 Icons.Rounded.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.size(18.dp),
             )
         }
     }

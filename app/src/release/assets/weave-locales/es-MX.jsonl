@@ -1319,6 +1319,11 @@
 {"id":"确认导入","text":"Confirmar importación"}
 {"id":"离线订阅文件不能下载节点集合","text":"Un archivo de suscripción sin conexión no puede descargar grupos de nodos"}
 {"id":"订阅互传","text":"Transferir suscripciones"}
+{"id":"安装更新","text":"Instalar actualización"}
+{"id":"安装包已验证，可以直接安装。","text":"Paquete de instalación verificado. Ya puedes instalarlo."}
+{"id":"请在系统设置中允许 Weave 安装应用，然后返回点「安装更新」。","text":"Permite que Weave instale apps en la configuración del sistema y luego vuelve y toca Instalar actualización."}
+{"id":"正在打开系统安装确认。","text":"Abriendo la confirmación de instalación de Android."}
+{"id":"安装未完成。可以重试，或保存安装包后手动安装。","text":"No se completó la instalación. Vuelve a intentarlo o guarda el paquete e instálalo manualmente."}
 {"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","text":"{message} [{code}]"}
 {"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","text":"Protección frente al tráfico DNS fuera del túnel"}
 {"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","text":"{transport} · {profile} · {explanation}"}

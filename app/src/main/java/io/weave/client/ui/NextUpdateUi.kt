@@ -83,6 +83,32 @@ internal fun NextUpdateUi(
     if (!visible) return
     val release = controller.release
     val blocked = controller.busy || pickerOpen
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val installResult by io.weave.client.ui.update.NextInstallResults.events.collectAsState()
+    LaunchedEffect(installResult) { installResult?.let(controller::installResult) }
+    // After the person allows installs in system settings, continue straight to Android's prompt.
+    val allowInstalls = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (context.packageManager.canRequestPackageInstalls()) controller.install()
+        else controller.installPermissionNeeded()
+    }
+    fun install() {
+        pickerError = false
+        if (context.packageManager.canRequestPackageInstalls()) {
+            controller.install()
+            return
+        }
+        controller.installPermissionNeeded()
+        try {
+            allowInstalls.launch(
+                android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    android.net.Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        } catch (_: ActivityNotFoundException) {
+            // The status already explains where to allow it.
+        }
+    }
     fun dismiss() {
         if (!blocked) {
             if (controller.staged) controller.discard()
@@ -146,6 +172,10 @@ internal fun NextUpdateUi(
                 }
                 if (release != null && controller.staged && !blocked) {
                     Button(
+                        modifier = Modifier.testTag("app-update-install"),
+                        onClick = ::install,
+                    ) { Text("安装更新") }
+                    TextButton(
                         modifier = Modifier.testTag("app-update-save"),
                         onClick = {
                             pickerError = false
@@ -185,7 +215,10 @@ private fun updateStatusText(status: String?): String? = when (status) {
     "INVALID_FEED" -> "无法读取 GitHub 发布信息，请稍后再试。"
     "STORAGE" -> "无法保存检查时间，未连接 GitHub。"
     "DOWNLOADING" -> "正在下载并验证安装包。"
-    "VERIFIED" -> "安装包已验证。建议保存到下载目录，再用「文件」打开并按 Android 提示确认更新。"
+    "VERIFIED" -> "安装包已验证，可以直接安装。"
+    "INSTALL_PERMISSION" -> "请在系统设置中允许 Weave 安装应用，然后返回点「安装更新」。"
+    "INSTALLING" -> "正在打开系统安装确认。"
+    "INSTALL_FAILED" -> "安装未完成。可以重试，或保存安装包后手动安装。"
     "VERIFY_FAILED" -> "下载或验证失败，未保留安装包。请检查网络后重试。"
     "SAVING" -> "正在保存并核对安装包。"
     "SAVED" -> "已保存并核对。请在「文件」中打开刚保存的安装包，按 Android 提示确认更新。"

@@ -26,7 +26,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -72,21 +74,63 @@ import androidx.compose.ui.unit.sp
  */
 
 /** Row radius shared by choice rows, node rows and picker targets. */
-internal val WeaveRowShape = RoundedCornerShape(14.dp)
+internal val WeaveRowShape = RoundedCornerShape(16.dp)
 
 /**
- * The single "this is the current choice" treatment: a faint primary wash plus a hairline primary
- * edge. It replaces the old full primaryContainer slab, and is always paired with a check icon or
- * selected semantics so the state is not carried by color alone.
+ * The single "this is the current choice" treatment: a faint primary wash that fades in and out.
+ * It is always paired with a choice mark or selected semantics so the state is not carried by
+ * color alone.
  */
 @Composable
 internal fun Modifier.weaveSelectionSurface(selected: Boolean, shape: Shape = WeaveRowShape): Modifier {
-    if (!selected) return this.clip(shape)
     val primary = MaterialTheme.colorScheme.primary
+    val wash by androidx.compose.animation.animateColorAsState(
+        primary.copy(alpha = if (selected) 0.085f else 0f),
+        WeaveMotion.quick(),
+        label = "selection-wash",
+    )
     return this
         .clip(shape)
-        .background(primary.copy(alpha = 0.075f))
-        .border(1.dp, primary.copy(alpha = 0.42f), shape)
+        .background(wash)
+}
+
+/** A round choice mark: an empty ring that fills and shows a check when chosen. */
+@Composable
+internal fun WeaveChoiceMark(selected: Boolean, enabled: Boolean = true, selectedDescription: String = "已选择") {
+    val scheme = MaterialTheme.colorScheme
+    val progress by androidx.compose.animation.core.animateFloatAsState(
+        if (selected) 1f else 0f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.72f, stiffness = 620f),
+        label = "choice-mark",
+    )
+    val tint = if (enabled) scheme.primary else scheme.onSurface.copy(alpha = 0.38f)
+    val ring = if (enabled) scheme.outline.copy(alpha = 0.55f) else scheme.onSurface.copy(alpha = 0.2f)
+    val description = if (selected) localizedContentDescription(selectedDescription) else null
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(22.dp)) {
+            val radius = size.minDimension / 2f
+            val stroke = 1.5.dp.toPx()
+            drawCircle(ring.copy(alpha = ring.alpha * (1f - progress)), radius - stroke / 2f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+            if (progress > 0f) drawCircle(tint, radius * progress.coerceAtMost(1.08f))
+        }
+        Icon(
+            Icons.Rounded.Check,
+            contentDescription = null,
+            tint = scheme.onPrimary,
+            modifier = Modifier
+                .size(14.dp)
+                .graphicsLayer {
+                    alpha = progress.coerceIn(0f, 1f)
+                    scaleX = 0.6f + 0.4f * progress
+                    scaleY = 0.6f + 0.4f * progress
+                },
+        )
+    }
 }
 
 /**
@@ -113,10 +157,10 @@ internal fun WeaveChoiceRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = WeaveUiTokens.minTouchTarget)
+            .heightIn(min = 52.dp)
             .weaveSelectionSurface(selected)
             .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
@@ -135,7 +179,8 @@ internal fun WeaveChoiceRow(
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
                 title,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
                 color = if (enabled) Color.Unspecified else disabled,
                 translate = translateTitle,
             )
@@ -155,15 +200,8 @@ internal fun WeaveChoiceRow(
             Spacer(Modifier.width(8.dp))
             trailing()
         }
-        if (selected) {
-            Spacer(Modifier.width(10.dp))
-            Icon(
-                Icons.Rounded.CheckCircle,
-                contentDescription = localizedContentDescription(selectedDescription),
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(WeaveUiTokens.iconSize),
-            )
-        }
+        Spacer(Modifier.width(12.dp))
+        WeaveChoiceMark(selected = selected, enabled = enabled, selectedDescription = selectedDescription)
     }
 }
 

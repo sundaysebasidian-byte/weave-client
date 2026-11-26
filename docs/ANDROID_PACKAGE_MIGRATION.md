@@ -16,11 +16,11 @@ is signed by the expected production certificate matching the installed app.
 The release size and digest are checked too; the digest does not replace the
 signature check.
 
-Tap **Download and verify**, then **Save APK**. Choose a local folder such as
-Downloads, open the saved file from Android’s Files app, and confirm the system
-update. Android may require you to allow the particular Files app to install an APK;
-Weave does not request install-source permission. Canceling the Android prompt
-does not replace the installed app. Successful in-place updates to Weave Next
+Tap **Download and verify**, then **Install update** and confirm the system
+update. The first time, Android asks you to allow Weave to install apps; Weave uses
+this only to hand the verified APK to Android’s installer. Alternatively tap
+**Save APK**, choose a local folder such as Downloads and open the saved file from
+Android’s Files app. Canceling the Android prompt does not replace the installed app. Successful in-place updates to Weave Next
 do not require importing a legacy backup.
 
 ## Moving data from the legacy app

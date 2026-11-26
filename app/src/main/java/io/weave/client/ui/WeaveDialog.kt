@@ -8,10 +8,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
@@ -33,11 +38,23 @@ internal fun WeaveDialog(
     properties: DialogProperties = DialogProperties(),
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(WeaveUiTokens.panelRadius)
+    val shape = RoundedCornerShape(WeaveUiTokens.panelRadius + 2.dp)
+    // A short settle as the dialog appears: it rises from slightly smaller instead of popping in.
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = 520f)) }
     AlertDialog(
         onDismissRequest = onDismissRequest,
         properties = properties,
-        modifier = modifier.border(WeaveUiTokens.panelBorderWidth, colors.outlineVariant, shape),
+        modifier = modifier
+            .graphicsLayer {
+                val p = appear.value
+                alpha = p.coerceIn(0f, 1f)
+                val scale = 0.94f + 0.06f * p
+                scaleX = scale
+                scaleY = scale
+                translationY = (1f - p) * 12.dp.toPx()
+            }
+            .border(WeaveUiTokens.panelBorderWidth, colors.outlineVariant.copy(alpha = 0.6f), shape),
         shape = shape,
         containerColor = colors.surface,
         tonalElevation = 0.dp,
@@ -45,7 +62,7 @@ internal fun WeaveDialog(
         textContentColor = colors.onSurfaceVariant,
         title = if (title == null && icon == null) null else {
             {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().semantics { heading() },
                         verticalAlignment = Alignment.CenterVertically,
@@ -54,11 +71,10 @@ internal fun WeaveDialog(
                         icon?.invoke()
                         if (title != null) {
                             Box(Modifier.weight(1f)) {
-                                ProvideTextStyle(MaterialTheme.typography.titleLarge) { title() }
+                                ProvideTextStyle(MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.2).sp)) { title() }
                             }
                         }
                     }
-                    HorizontalDivider(thickness = WeaveUiTokens.panelBorderWidth, color = colors.outlineVariant)
                 }
             }
         },

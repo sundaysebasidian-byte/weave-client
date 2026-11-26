@@ -53,10 +53,12 @@ routing rules, device identifiers, or diagnostic reports. No Weave server receiv
 these requests.
 
 An APK is downloaded only when you select **Download and verify**. The verified
-file stays in Weave’s private cache until you save it through Android’s file picker.
-Weave requests no install-source permission. Open the saved APK in Files and
-confirm the installation with Android. If you choose a cloud-backed folder in the
-system picker, that provider may store the file.
+file stays in Weave’s private cache. **Install update** hands it to Android’s
+package installer, which asks you to confirm every installation; Weave requests
+the install-apps permission only for this, and Android asks you to allow it once.
+You can instead save the APK through Android’s file picker and install it from
+Files. If you choose a cloud-backed folder in the system picker, that provider
+may store the file.
 
 ## Network parties selected by the user
 
