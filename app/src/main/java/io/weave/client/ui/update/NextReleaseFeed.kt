@@ -26,23 +26,37 @@ internal object NextReleaseFeed {
     // Matching refs is an unpaginated GitHub endpoint. Never follow a URL provided by a ref.
     suspend fun latest(localVersion: String, localBuild: Int): Pair<Boolean, NextRelease?> {
         val refs = JSONArray(get("$api/git/matching-refs/tags/${NextRelease.PREFIX}")!!)
-        val tags = (0 until refs.length()).mapNotNull { i ->
-            val ref = refs.getJSONObject(i).getString("ref")
-            if (!ref.startsWith("refs/tags/")) null else ref.removePrefix("refs/tags/")
-                .takeIf { NextRelease.allowedTag(it, localVersion) }
-        }.distinct().sortedWith { a, b -> NextRelease.compareTags(b, a) }
+        return findLatest(refs, localVersion, localBuild) { tag ->
+            get("$api/releases/tags/$tag", missingAllowed = true)?.let(::JSONObject)
+        }
+    }
+
+    internal suspend fun findLatest(
+        refs: JSONArray,
+        localVersion: String,
+        localBuild: Int,
+        releasePage: suspend (String) -> JSONObject?,
+    ): Pair<Boolean, NextRelease?> {
+        val localTag = NextRelease.PREFIX + localVersion
+        val tags = buildSet {
+            for (index in 0 until refs.length()) {
+                val ref = refs.optJSONObject(index)?.optString("ref") ?: continue
+                if (!ref.startsWith("refs/tags/")) continue
+                val tag = ref.removePrefix("refs/tags/")
+                if (NextRelease.allowedTag(tag, localVersion) && NextRelease.compareTags(tag, localTag) >= 0) {
+                    add(tag)
+                }
+            }
+        }.sortedWith { a, b -> NextRelease.compareTags(b, a) }
 
         var compatible = false
         // Tags can be created before a public release exists. Never infer an APK from a tag.
         for ((index, tag) in tags.withIndex()) {
             if (index >= 8) throw FeedFailure("INVALID_FEED")
-            val page = get("$api/releases/tags/$tag", missingAllowed = true) ?: continue
-            val r = read(JSONObject(page), tag, localVersion) ?: continue
+            val page = releasePage(tag) ?: continue
+            val r = read(page, tag, localVersion) ?: continue
             compatible = true
             if (r.upgrades(localVersion, localBuild)) return true to r
-            // Versions are descending. An old semantic version cannot be an upgrade, even if
-            // someone renumbers it. The public release tag is immutable by channel convention.
-            if (NextRelease.compareTags(tag, NextRelease.PREFIX + localVersion) <= 0) break
         }
         return compatible to null
     }
@@ -53,10 +67,10 @@ internal object NextReleaseFeed {
         val assets = page.getJSONArray("assets")
         var found: NextRelease? = null
         for (i in 0 until assets.length()) {
-            val a = assets.getJSONObject(i)
-            if (a.optString("state") != "uploaded") continue
-            val parsed = NextRelease.parse(tag, false, prerelease, localVersion, a.getString("name"),
-                a.optString("digest"), a.getLong("size"), a.getString("browser_download_url")) ?: continue
+            val asset = assets.optJSONObject(i) ?: continue
+            if (asset.optString("state") != "uploaded") continue
+            val parsed = NextRelease.parse(tag, false, prerelease, localVersion, asset.optString("name"),
+                asset.optString("digest"), asset.optLong("size", -1), asset.optString("browser_download_url")) ?: continue
             if (found != null) throw FeedFailure("INVALID_FEED")
             found = parsed
         }
