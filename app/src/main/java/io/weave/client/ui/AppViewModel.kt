@@ -240,6 +240,8 @@ internal data class StartupProfile(
 }
 
 class AppViewModel internal constructor(application: Application, initialProfile: StartupProfile) : AndroidViewModel(application) {
+    private val appUpdateOwner = lazy { io.weave.client.ui.update.NextUpdateController(application, viewModelScope) }
+    internal val appUpdates by appUpdateOwner
     private val subscriptionRepository by lazy { SubscriptionRepository(application) }
     private val installedAppRepository = InstalledAppRepository(application)
     private val routeStore = AppRouteStore(application)
@@ -2007,6 +2009,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     }
 
     override fun onCleared() {
+        if (appUpdateOwner.isInitialized()) appUpdates.close()
         cancelForegroundDiagnostics()
         lanTransferServer.stop()
         super.onCleared()

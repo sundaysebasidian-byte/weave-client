@@ -183,7 +183,6 @@ import io.weave.client.domain.WeaveAppearanceGroup
 import io.weave.client.domain.WeavePalette
 import io.weave.client.domain.WeaveLanguage
 import io.weave.client.ui.LocalWeaveLanguage
-import io.weave.client.ui.update.NextUpdateController
 import io.weave.client.ui.theme.LocalWeavePalette
 import io.weave.client.routing.LocalRouteRule
 import io.weave.client.routing.LocalRuleAction
@@ -493,10 +492,7 @@ fun WeaveApp(
     val snackbar = remember { SnackbarHostState() }
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     val destinationState = rememberSaveableStateHolder()
-    val updateContext = LocalContext.current.applicationContext
-    val updateScope = rememberCoroutineScope()
-    val appUpdates = remember(updateContext, updateScope) { NextUpdateController(updateContext, updateScope) }
-    DisposableEffect(appUpdates) { onDispose { appUpdates.close() } }
+    val appUpdates = viewModel.appUpdates
     var showAppUpdates by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importStartWith by remember { mutableStateOf<io.weave.client.domain.SubscriptionSourceKind?>(null) }

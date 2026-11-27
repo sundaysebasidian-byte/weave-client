@@ -32,6 +32,7 @@ import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -158,10 +159,13 @@ class MainActivityRoutingJourneyTest {
                 chip.performClick()
                 compose.onNodeWithTag("home-mode-selector").performTouchInput { swipeRight() }
                 compose.waitUntil(10_000) { settings.routingMode() == RoutingMode.DIRECT }
+                lateinit var updates: io.weave.client.ui.update.NextUpdateController
+                scenario.onActivity { updates = ViewModelProvider(it)[AppViewModel::class.java].appUpdates }
                 scenario.recreate()
                 compose.waitUntil(30_000) { runCatching { chip.assertIsDisplayed() }.isSuccess }
                 scenario.onActivity {
                     val model = ViewModelProvider(it)[AppViewModel::class.java]
+                    assertSame(updates, model.appUpdates)
                     assertEquals(RoutingMode.DIRECT, model.dashboard.value.routingMode)
                     assertEquals(another.id, model.dashboard.value.defaultRouteTarget?.subscriptionId)
                 }
