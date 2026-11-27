@@ -5,8 +5,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import com.google.zxing.NotFoundException
-import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.PlanarYUVLuminanceSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class QrCodeImageReader(context: Context) {
@@ -24,7 +27,7 @@ class QrCodeImageReader(context: Context) {
         }
     }
 
-    suspend fun read(uri: Uri): String = withContext(Dispatchers.Default) {
+    suspend fun read(uri: Uri): String = withContext(Dispatchers.IO) {
         val declaredLength = runCatching {
             appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
         }.getOrNull()
@@ -52,12 +55,14 @@ class QrCodeImageReader(context: Context) {
             resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         }.getOrNull() ?: throw SubscriptionImportException("无法读取所选二维码图片")
 
-        decodeAndRecycle(bitmap)
+        readBitmap(bitmap)
     }
 
-    private fun decodeAndRecycle(bitmap: Bitmap): String {
+    private suspend fun decodeAndRecycle(bitmap: Bitmap): String {
         return try {
             decode(bitmap)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: NotFoundException) {
             throw SubscriptionImportException("图片中没有识别到二维码")
         } catch (error: SubscriptionImportException) {
@@ -69,12 +74,28 @@ class QrCodeImageReader(context: Context) {
         }
     }
 
-    private fun decode(bitmap: Bitmap): String {
+    private suspend fun decode(bitmap: Bitmap): String {
         val width = bitmap.width
         val height = bitmap.height
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        return QrImageTextDecoder.decode(RGBLuminanceSource(width, height, pixels))
+        val decodeScope = currentCoroutineContext()
+        val luminance = ByteArray(Math.multiplyExact(width, height))
+        val rowsPerRead = minOf(height, 16)
+        val pixels = IntArray(width * rowsPerRead)
+        for (firstRow in 0 until height step rowsPerRead) {
+            decodeScope.ensureActive()
+            val rows = minOf(rowsPerRead, height - firstRow)
+            bitmap.getPixels(pixels, 0, width, 0, firstRow, width, rows)
+            val offset = firstRow * width
+            repeat(width * rows) { index ->
+                val argb = pixels[index]
+                val red = argb ushr 16 and 0xff
+                val green = argb ushr 8 and 0xff
+                val blue = argb and 0xff
+                luminance[offset + index] = ((red + 2 * green + blue) / 4).toByte()
+            }
+        }
+        val source = PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
+        return QrImageTextDecoder.decode(source)
     }
 
     private fun sampleSize(width: Int, height: Int): Int {
