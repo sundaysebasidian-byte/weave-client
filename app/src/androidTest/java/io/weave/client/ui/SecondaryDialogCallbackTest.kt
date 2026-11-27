@@ -34,13 +34,38 @@ class SecondaryDialogCallbackTest {
         var dismissed = 0
         var probes = 0
         compose.setContent { WeaveTheme {
-            DnsSettingsDialog(NetworkPreferences(), DnsProbeState(), { dismissed++ }, { selected = it }, {}, { true }, {}, { probes++ })
+            DnsSettingsDialog(NetworkPreferences(), DnsProbeState(), { dismissed++ }, { selected = it }, {}, { _, done -> done(null) }, {}, { probes++ })
         } }
         compose.onNodeWithText("Cloudflare", useUnmergedTree = true).performScrollTo().performClick()
         assertEquals(DnsProfile.CLOUDFLARE_DNS, selected)
         assertEquals(1, dismissed)
         assertEquals(0, probes)
         capture("dns-profiles.png")
+    }
+    @Test fun customDnsRetainsTheDraftUntilTheSaveSucceeds() {
+        var endpoint: String? = null
+        var complete: ((String?) -> Unit)? = null
+        var dismissed = 0
+        compose.setContent { WeaveTheme {
+            DnsSettingsDialog(
+                NetworkPreferences(), DnsProbeState(), { dismissed++ }, {}, {},
+                { input, done -> endpoint = input; complete = done }, {}, {},
+            )
+        } }
+        compose.onNodeWithText("自定义", useUnmergedTree = true).performScrollTo().performClick()
+        val address = "https://resolver.invalid/dns-query"
+        compose.onNode(hasSetTextAction()).performTextInput(address)
+        val save = compose.onNodeWithText("保存")
+        save.performClick()
+        save.assertIsNotEnabled()
+        assertEquals(address, endpoint)
+        assertEquals(0, dismissed)
+        compose.runOnIdle { checkNotNull(complete)("分流设置未能保存") }
+        compose.onNodeWithText("分流设置未能保存").assertIsDisplayed()
+        compose.onNodeWithText(address).assertIsDisplayed()
+        save.assertIsEnabled().performClick()
+        compose.runOnIdle { checkNotNull(complete)(null) }
+        assertEquals(1, dismissed)
     }
     @Test fun visibleRuleChipsSubmitTheChosenTypeAndAction() {
         var submitted: Triple<LocalRuleType, String, LocalRuleAction>? = null

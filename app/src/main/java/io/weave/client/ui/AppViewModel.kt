@@ -250,7 +250,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     private val profileOwner = Mutex()
     private var routingSave: Job? = null
     private var routingWrite = 0L
-    private var routingNeedsReload = false
+    private var routingReloadMessage: String? = null
     private val mutableGroupProfileEpoch = MutableStateFlow<String?>(null)
     internal val groupProfileEpoch = mutableGroupProfileEpoch.asStateFlow()
     private val profileEpoch get() = mutableGroupProfileEpoch.value
@@ -670,40 +670,30 @@ class AppViewModel internal constructor(application: Application, initialProfile
     fun setDefaultRouteTarget(epoch: String, target: RouteTarget, onComplete: (Result<Unit>) -> Unit) =
         applyRouteChange("正在安全切换默认出口", onComplete) { groupProfile.changeDefault(epoch, target) }
 
-    fun setAutomaticStrategy(strategy: AutomaticStrategy) {
-        if (mutableNetworkPreferences.value.automaticStrategy == strategy) return
-        settingsStore.setAutomaticStrategy(strategy)
-        mutableNetworkPreferences.update { it.copy(automaticStrategy = strategy) }
-        reloadIfConnected("正在应用新的自动节点策略")
-    }
+    fun setAutomaticStrategy(strategy: AutomaticStrategy) = saveNetworkPreferences(
+        "正在应用新的自动节点策略", { it.copy(automaticStrategy = strategy) },
+        { settingsStore.setAutomaticStrategy(strategy) },
+    )
 
-    fun setStrategyScope(scope: StrategyScope) {
-        if (mutableNetworkPreferences.value.strategyScope == scope) return
-        settingsStore.setStrategyScope(scope)
-        mutableNetworkPreferences.update { it.copy(strategyScope = scope) }
-        reloadIfConnected("正在应用新的订阅策略组范围")
-    }
+    fun setStrategyScope(scope: StrategyScope) = saveNetworkPreferences(
+        "正在应用新的订阅策略组范围", { it.copy(strategyScope = scope) },
+        { settingsStore.setStrategyScope(scope) },
+    )
 
-    fun setDnsTransport(transport: DnsTransport) {
-        if (mutableNetworkPreferences.value.dnsTransport == transport) return
-        settingsStore.setDnsTransport(transport)
-        mutableNetworkPreferences.update { it.copy(dnsTransport = transport) }
-        reloadIfConnected("正在安全切换加密 DNS")
-    }
+    fun setDnsTransport(transport: DnsTransport) = saveNetworkPreferences(
+        "正在安全切换加密 DNS", { it.copy(dnsTransport = transport) },
+        { settingsStore.setDnsTransport(transport) },
+    )
 
-    fun setDnsProfile(profile: DnsProfile) {
-        if (mutableNetworkPreferences.value.dnsProfile == profile) return
-        settingsStore.setDnsProfile(profile)
-        mutableNetworkPreferences.update { it.copy(dnsProfile = profile) }
-        reloadIfConnected("正在应用 DNS 过滤策略")
-    }
+    fun setDnsProfile(profile: DnsProfile) = saveNetworkPreferences(
+        "正在应用 DNS 过滤策略", { it.copy(dnsProfile = profile) },
+        { settingsStore.setDnsProfile(profile) },
+    )
 
-    fun setDnsRoutingMode(mode: DnsRoutingMode) {
-        if (mutableNetworkPreferences.value.dnsRoutingMode == mode) return
-        settingsStore.setDnsRoutingMode(mode)
-        mutableNetworkPreferences.update { it.copy(dnsRoutingMode = mode) }
-        reloadIfConnected("正在应用 DNS 分流策略")
-    }
+    fun setDnsRoutingMode(mode: DnsRoutingMode) = saveNetworkPreferences(
+        "正在应用 DNS 分流策略", { it.copy(dnsRoutingMode = mode) },
+        { settingsStore.setDnsRoutingMode(mode) },
+    )
 
     fun probeDnsProviders() {
         if (dnsProbeJob?.isActive == true) return
@@ -745,34 +735,30 @@ class AppViewModel internal constructor(application: Application, initialProfile
         cancelDnsProbe()
     }
 
-    fun setCustomDnsEndpoint(endpoint: String): Boolean {
+    fun setCustomDnsEndpoint(endpoint: String, onComplete: (String?) -> Unit) {
         val normalized = runCatching {
             io.weave.client.core.engine.MihomoFeatureCompiler.validateCustomDnsEndpoint(endpoint)
-        }.getOrElse { return false }
-        settingsStore.setCustomDnsEndpoint(normalized)
-        settingsStore.setDnsProfile(DnsProfile.CUSTOM)
-        mutableNetworkPreferences.update {
-            it.copy(dnsProfile = DnsProfile.CUSTOM, customDnsEndpoint = normalized)
+        }.getOrElse {
+            onComplete("地址无效：请使用 https:// 或 tls://，并填写主机名")
+            return
         }
-        reloadIfConnected("正在应用自定义加密 DNS")
-        return true
-    }
-
-    fun setIpv6Mode(mode: Ipv6Mode) {
-        if (mutableNetworkPreferences.value.ipv6Mode == mode) return
-        settingsStore.setIpv6Mode(mode)
-        mutableNetworkPreferences.update { it.copy(ipv6Mode = mode) }
-        reloadIfConnected("正在安全应用 IP 协议设置")
-    }
-
-    fun setBlockUdpStun(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.blockUdpStun == enabled) return
-        settingsStore.setBlockUdpStun(enabled)
-        mutableNetworkPreferences.update { it.copy(blockUdpStun = enabled) }
-        reloadIfConnected(
-            if (enabled) "正在启用 UDP STUN 阻断" else "正在关闭 UDP STUN 阻断",
+        saveNetworkPreferences(
+            "正在应用自定义加密 DNS",
+            { it.copy(dnsProfile = DnsProfile.CUSTOM, customDnsEndpoint = normalized) },
+            { settingsStore.selectCustomDnsEndpoint(normalized) },
+            onComplete,
         )
     }
+
+    fun setIpv6Mode(mode: Ipv6Mode) = saveNetworkPreferences(
+        "正在安全应用 IP 协议设置", { it.copy(ipv6Mode = mode) },
+        { settingsStore.setIpv6Mode(mode) },
+    )
+
+    fun setBlockUdpStun(enabled: Boolean) = saveNetworkPreferences(
+        if (enabled) "正在启用 UDP STUN 阻断" else "正在关闭 UDP STUN 阻断",
+        { it.copy(blockUdpStun = enabled) }, { settingsStore.setBlockUdpStun(enabled) },
+    )
 
     fun setDomesticDirect(enabled: Boolean) {
         saveRouting(
@@ -786,53 +772,89 @@ class AppViewModel internal constructor(application: Application, initialProfile
         saveRouting(mode, domesticDirect, "正在安全应用新的运行模式")
     }
 
+    private class SettingsChange(val write: () -> Unit, val publish: () -> Unit)
+
     private fun saveRouting(mode: RoutingMode?, domestic: Boolean?, message: String) {
+        enqueueRoutingSave(message) {
+            val modeChanged = mode != null && mutableDashboard.value.routingMode != mode
+            val domesticChanged = domestic != null && mutableNetworkPreferences.value.domesticDirect != domestic
+            if (!modeChanged && !domesticChanged) return@enqueueRoutingSave null
+            SettingsChange(
+                write = {
+                    if (mode != null && domestic != null) settingsStore.setRoutingPreset(mode, domestic)
+                    else if (mode != null) settingsStore.setRoutingMode(mode)
+                    else if (domestic != null) settingsStore.setDomesticDirect(domestic)
+                },
+                publish = {
+                    if (domestic != null) mutableNetworkPreferences.update { it.copy(domesticDirect = domestic) }
+                    if (mode != null) mutableDashboard.update { it.copy(routingMode = mode) }
+                },
+            )
+        }
+    }
+
+    private fun saveNetworkPreferences(
+        message: String?,
+        update: (NetworkPreferences) -> NetworkPreferences,
+        write: () -> Unit,
+        onComplete: (String?) -> Unit = {},
+    ) {
+        enqueueRoutingSave(message, onComplete) {
+            val current = mutableNetworkPreferences.value
+            val next = update(current)
+            if (next == current) null else SettingsChange(write) { mutableNetworkPreferences.update(update) }
+        }
+    }
+
+    private fun enqueueRoutingSave(
+        message: String?,
+        onComplete: (String?) -> Unit = {},
+        change: () -> SettingsChange?,
+    ) {
+        val epoch = profileEpoch
         val previous = routingSave?.takeIf { it.isActive }
         val revision = ++routingWrite
         routingSave = viewModelScope.launch {
             previous?.join()
-            profileOwner.withLock {
-                val modeChanged = mode != null && mutableDashboard.value.routingMode != mode
-                val domesticChanged = domestic != null && mutableNetworkPreferences.value.domesticDirect != domestic
-                val saved = if (modeChanged || domesticChanged) {
-                    withContext(Dispatchers.IO) {
-                        probeSafely {
-                            if (mode != null && domestic != null) settingsStore.setRoutingPreset(mode, domestic)
-                            else if (mode != null) settingsStore.setRoutingMode(mode)
-                            else if (domestic != null) settingsStore.setDomesticDirect(domestic)
-                        }
+            val error = profileOwner.withLock {
+                val pending = change()
+                val result = if (pending == null) Result.success(Unit) else withContext(Dispatchers.IO) {
+                    probeSafely {
+                        if (epoch == null) pending.write()
+                        else io.weave.client.data.ProfileStorage.withCurrentEpoch(getApplication(), epoch) { pending.write() }
                     }
-                } else Result.success(Unit)
-                saved.onSuccess {
-                    routingNeedsReload = routingNeedsReload || modeChanged || domesticChanged
-                    if (domestic != null) mutableNetworkPreferences.update { it.copy(domesticDirect = domestic) }
-                    if (mode != null) mutableDashboard.update { it.copy(routingMode = mode) }
-                }.onFailure {
-                    mutableDashboard.update { it.copy(statusMessage = "分流设置未能保存") }
                 }
-                if (revision == routingWrite && routingNeedsReload) {
-                    routingNeedsReload = false
-                    runCatching {
-                        when (VpnRuntimeState.snapshot.value.state) {
-                            ConnectionState.CONNECTED, ConnectionState.CONNECTING -> {
-                                WeaveVpnService.reload(getApplication())
-                                if (saved.isSuccess) mutableDashboard.update { it.copy(statusMessage = message) }
+                val error = if (result.isFailure) "分流设置未能保存" else null
+                if (result.isSuccess && pending != null) {
+                    pending.publish()
+                    if (message != null) routingReloadMessage = message
+                }
+                if (error != null) mutableDashboard.update { it.copy(statusMessage = error) }
+
+                if (revision == routingWrite) {
+                    val reloadMessage = routingReloadMessage
+                    routingReloadMessage = null
+                    if (reloadMessage != null &&
+                        VpnRuntimeState.snapshot.value.state in setOf(ConnectionState.CONNECTED, ConnectionState.CONNECTING)
+                    ) {
+                        runCatching { WeaveVpnService.reload(getApplication()) }
+                            .onSuccess {
+                                if (error == null) mutableDashboard.update { it.copy(statusMessage = reloadMessage) }
                             }
-                            else -> Unit
-                        }
-                    }.onFailure {
-                        mutableDashboard.update { it.copy(statusMessage = "已保存，请重新连接以应用分流设置") }
+                            .onFailure {
+                                mutableDashboard.update { it.copy(statusMessage = "已保存，请重新连接以应用分流设置") }
+                            }
                     }
                 }
+                error
             }
+            onComplete(error)
         }
     }
 
-    fun setWeavePalette(palette: WeavePalette) {
-        if (mutableNetworkPreferences.value.weavePalette == palette) return
-        settingsStore.setWeavePalette(palette)
-        mutableNetworkPreferences.update { it.copy(weavePalette = palette) }
-    }
+    fun setWeavePalette(palette: WeavePalette) = saveNetworkPreferences(
+        null, { it.copy(weavePalette = palette) }, { settingsStore.setWeavePalette(palette) },
+    )
 
     /** Null follows the device language. */
     fun setLanguage(language: WeaveLanguage?) {
@@ -861,26 +883,19 @@ class AppViewModel internal constructor(application: Application, initialProfile
         io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication())
     }
 
-    fun setBypassDirectApps(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.bypassDirectApps == enabled) return
-        settingsStore.setBypassDirectApps(enabled)
-        mutableNetworkPreferences.update { it.copy(bypassDirectApps = enabled) }
-        reloadIfConnected("正在应用直连应用绕过设置")
-    }
+    fun setBypassDirectApps(enabled: Boolean) = saveNetworkPreferences(
+        "正在应用直连应用绕过设置", { it.copy(bypassDirectApps = enabled) },
+        { settingsStore.setBypassDirectApps(enabled) },
+    )
 
-    fun setBootstrapDns(value: io.weave.client.domain.BootstrapDns) {
-        if (mutableNetworkPreferences.value.bootstrapDns == value) return
-        settingsStore.setBootstrapDns(value)
-        mutableNetworkPreferences.update { it.copy(bootstrapDns = value) }
-        reloadIfConnected("正在应用引导 DNS")
-    }
+    fun setBootstrapDns(value: io.weave.client.domain.BootstrapDns) = saveNetworkPreferences(
+        "正在应用引导 DNS", { it.copy(bootstrapDns = value) }, { settingsStore.setBootstrapDns(value) },
+    )
 
-    fun setSystemHttpProxy(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.systemHttpProxy == enabled) return
-        settingsStore.setSystemHttpProxy(enabled)
-        mutableNetworkPreferences.update { it.copy(systemHttpProxy = enabled) }
-        reloadIfConnected(if (enabled) "正在启用系统 HTTP 代理" else "正在关闭系统 HTTP 代理")
-    }
+    fun setSystemHttpProxy(enabled: Boolean) = saveNetworkPreferences(
+        if (enabled) "正在启用系统 HTTP 代理" else "正在关闭系统 HTTP 代理",
+        { it.copy(systemHttpProxy = enabled) }, { settingsStore.setSystemHttpProxy(enabled) },
+    )
 
     fun setLanSharing(enabled: Boolean) {
         if (mutableNetworkPreferences.value.lanSharing == enabled) return

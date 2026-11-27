@@ -222,7 +222,7 @@ class ProductExperienceUiTest {
                 SettingsScreen(NetworkPreferences(), WeaveLanguage.ENGLISH, probeState, PaddingValues(0.dp),
                     onOpenVpnSettings = {}, onAutomaticStrategySelected = {}, onStrategyScopeSelected = {},
                     onDnsTransportSelected = {}, onDnsProfileSelected = {}, onDnsRoutingModeSelected = {},
-                    onCustomDnsEndpointSaved = { true }, onProbeDnsProviders = onProbe, onIpv6ModeSelected = {},
+                    onCustomDnsEndpointSaved = { _, done -> done(null) }, onProbeDnsProviders = onProbe, onIpv6ModeSelected = {},
                     onBlockUdpStunChanged = {}, onDomesticDirectChanged = {}, onPaletteSelected = {},
                     onLanguageSelected = {}, onShowVpnDisclosure = {}, onOpenPrivacyObservatory = {},
                     onOpenRecoveryCenter = {}, onOpenPolicyPacks = {}, onOpenLocalRouteRules = {},

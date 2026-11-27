@@ -219,10 +219,18 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit(commit = true) { putString(KEY_DNS_ROUTING_MODE, mode.name) }
     }
 
-    fun setCustomDnsEndpoint(endpoint: String) {
+    fun setCustomDnsEndpoint(endpoint: String) = writeCustomDnsEndpoint(endpoint, select = false)
+
+    internal fun selectCustomDnsEndpoint(endpoint: String) = writeCustomDnsEndpoint(endpoint, select = true)
+
+    private fun writeCustomDnsEndpoint(endpoint: String, select: Boolean) {
         // This may contain a private resolver or a profile token. Never log or export it.
         val normalized = endpoint.trim()
         preferences.edit(commit = true) {
+            if (select) {
+                require(normalized.isNotBlank())
+                putString(KEY_DNS_PROFILE, DnsProfile.CUSTOM.name)
+            }
             if (normalized.isBlank()) {
                 remove(KEY_CUSTOM_DNS_ENDPOINT_ENCRYPTED)
                 remove(KEY_CUSTOM_DNS_ENDPOINT)
