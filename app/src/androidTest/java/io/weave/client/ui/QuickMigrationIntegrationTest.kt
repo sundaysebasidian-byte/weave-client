@@ -22,7 +22,11 @@ class QuickMigrationIntegrationTest {
     @Test fun explicitPasteSavesValidatedNodesAndKeepsTheLibraryOnInvalidInput() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         assumeTrue(InstrumentationRegistry.getArguments().getString("isolatedRoutingTest") == "true")
-        check(Build.HARDWARE == "ranchu" && Build.MODEL.startsWith("sdk_gphone"))
+        // AOSP and Google APIs images use different product names on the same emulator.
+        check(Build.HARDWARE == "ranchu" &&
+            (Build.PRODUCT.startsWith("sdk_phone") || Build.PRODUCT.startsWith("sdk_gphone"))) {
+            "Quick migration requires a disposable Android SDK emulator"
+        }
         val store = SubscriptionSecretStore(instrumentation.targetContext)
         val originalIds = store.list().mapTo(mutableSetOf()) { it.id }
         try {
