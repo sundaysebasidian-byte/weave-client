@@ -320,7 +320,7 @@ internal fun LocalRouteRulesDialog(
                                     fontSize = 11.sp,
                                 )
                             }
-                            Switch(
+                            WeaveSwitch(
                                 checked = rule.enabled,
                                 onCheckedChange = { onToggle(rule.id, it) },
                             )

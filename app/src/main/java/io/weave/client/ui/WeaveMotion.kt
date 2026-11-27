@@ -14,6 +14,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -61,8 +66,9 @@ import io.weave.client.ui.theme.LocalWeavePalette
 
 /**
  * The app's motion vocabulary. Motion is reserved for feedback: a state changed, a choice was
- * made, a group opened or a screen moved. Every spec here is finite; nothing loops in the
- * background, so an idle screen draws no frames.
+ * made, a group opened or a screen moved. Every spec here is finite. The one exception is the
+ * home weave, whose threads drift and carry traffic while the home page is on screen; it runs on
+ * infinite-animation frames, stops with the page and stays still when system animations are off.
  */
 internal object WeaveMotion {
     /** Press, toggle and selection feedback. */
@@ -125,6 +131,8 @@ internal fun Modifier.pressScale(interactionSource: InteractionSource, pressedSc
 /** Tabular figures keep changing throughput numbers from jittering sideways. */
 internal val TabularNumbers = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
 
+private val ScreenOpenSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 340f)
+
 /**
  * Full-screen tool surface (connections, logs, rule sets, groups, backup) that shares the app's
  * atmosphere, header rhythm and safe-area handling.
@@ -139,15 +147,93 @@ internal fun WeaveToolScreen(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // The screen grows out of the touch that opened it, follows a predictive back gesture and
+    // shrinks away when it closes. The dialog window's own animation and dim are replaced by this.
+    val touch = androidx.compose.runtime.remember { WeaveTouch.recent() }
+    val appear = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    val back = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    val fromLeft = androidx.compose.runtime.remember { booleanArrayOf(true) }
+    val origin = androidx.compose.runtime.remember { floatArrayOf(0f, 0f) }
+    var closing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val dismiss by androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    androidx.compose.runtime.LaunchedEffect(Unit) { appear.animateTo(1f, ScreenOpenSpring) }
+    val close: () -> Unit = {
+        if (!closing) {
+            closing = true
+            scope.launch {
+                appear.animateTo(0f, tween(230, easing = androidx.compose.animation.core.FastOutLinearInEasing))
+                dismiss()
+                // A screen that declines to close comes back rather than staying invisible.
+                kotlinx.coroutines.delay(150)
+                back.snapTo(0f)
+                closing = false
+                appear.animateTo(1f, ScreenOpenSpring)
+            }
+        }
+    }
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = close,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
             securePolicy = if (secure) SecureFlagPolicy.SecureOn else SecureFlagPolicy.Inherit,
         ),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.SideEffect {
+            (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { window ->
+                window.setWindowAnimations(0)
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            }
+        }
+        androidx.activity.compose.PredictiveBackHandler(enabled = !closing) { events ->
+            try {
+                events.collect { event ->
+                    fromLeft[0] = event.swipeEdge == androidx.activity.BackEventCompat.EDGE_LEFT
+                    back.snapTo(event.progress)
+                }
+                close()
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                scope.launch { back.animateTo(0f, WeaveSprings.spatial()) }
+                throw cancelled
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = appear.value.coerceIn(0f, 1f) * (1f - 0.5f * back.value) }
+                .background(Color.Black.copy(alpha = 0.3f)),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned {
+                    val p = it.positionOnScreen()
+                    origin[0] = p.x
+                    origin[1] = p.y
+                }
+                .graphicsLayer {
+                    val p = appear.value
+                    val b = back.value
+                    val scale = (0.74f + 0.26f * p) * (1f - 0.1f * b)
+                    scaleX = scale
+                    scaleY = scale
+                    // Opaque early, so the screen reads as growing out of the row, not fading in.
+                    alpha = (p * 2f).coerceIn(0f, 1f)
+                    translationX = (if (fromLeft[0]) 1f else -1f) * b * 22.dp.toPx()
+                    transformOrigin = touch?.let {
+                        androidx.compose.ui.graphics.TransformOrigin(
+                            ((it.x - origin[0]) / size.width).coerceIn(0f, 1f),
+                            ((it.y - origin[1]) / size.height).coerceIn(0f, 1f),
+                        )
+                    } ?: androidx.compose.ui.graphics.TransformOrigin.Center
+                    val round = maxOf(1f - p, b)
+                    clip = round > 0f
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(34.dp.toPx() * round.coerceIn(0f, 1f))
+                }
+                .recordWeaveTouches(),
+        ) {
             MonetAtmosphere(palette = LocalWeavePalette.current, modifier = Modifier.fillMaxSize())
             Column(
                 modifier = Modifier
@@ -164,7 +250,7 @@ internal fun WeaveToolScreen(
                     HeaderActionButton(
                         icon = Icons.AutoMirrored.Rounded.ArrowBack,
                         contentDescription = localizedContentDescription("返回"),
-                        onClick = onDismiss,
+                        onClick = close,
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {

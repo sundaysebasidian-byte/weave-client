@@ -18,12 +18,17 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -130,7 +135,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.withStyle
 import androidx.compose.runtime.remember
@@ -268,45 +274,71 @@ internal fun HomeScreen(
     val connected = state.connectionState == ConnectionState.CONNECTED
     val fontScale = LocalDensity.current.fontScale
     val capsuleSpace = WeaveUiTokens.capsuleHeight * maxOf(1f, fontScale) + 28.dp
-    Box(
+    val light = rememberHomeLight()
+    val lightScope = rememberCoroutineScope()
+    val liveTone = weaveLiveTone()
+    val currentTraffic by androidx.compose.runtime.rememberUpdatedState(state.downloadBytesPerSecond + state.uploadBytesPerSecond)
+    val rtl = LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val density = LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding()),
     ) {
+        val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + WeaveUiTokens.screenTop
+        val viewport = if (constraints.hasBoundedHeight) maxHeight - topPadding - capsuleSpace else 0.dp
+        ConnectionAura(state = state.connectionState, modifier = Modifier.matchParentSize())
+        LightWaves(light = light, state = state.connectionState, modifier = Modifier.matchParentSize())
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(
-                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + WeaveUiTokens.screenTop,
-                    bottom = capsuleSpace,
-                ),
+                .padding(top = topPadding, bottom = capsuleSpace),
         ) {
-            HomeHeader(onMoreClick = onMoreClick)
-            Spacer(Modifier.height(28.dp))
-            StatusBlock(state = overviewState, exit = exitState)
-            WeaveStrands(
-                stage = weaveStage(state.connectionState),
-                mode = state.routingMode,
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .fillMaxWidth()
-                    .height(WeaveUiTokens.weaveHeight),
+            // The weave takes whatever height the page has left, so the screen never ends in a gap.
+            HomeStage(
+                viewport = viewport,
+                top = {
+                    Column {
+                        Box(Modifier.weaveEntrance("home/header", 0)) { HomeHeader(onMoreClick = onMoreClick) }
+                        Spacer(Modifier.height(28.dp))
+                        Box(Modifier.weaveEntrance("home/status", 1)) { StatusBlock(state = overviewState, exit = exitState) }
+                    }
+                },
+                weave = {
+                    WeaveStrands(
+                        stage = weaveStage(state.connectionState),
+                        mode = state.routingMode,
+                        traffic = { currentTraffic },
+                        onKnotTied = { lightScope.launch { light.emit(light.knot, liveTone, 1.15f, 1400) } },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onGloballyPositioned {
+                                light.knot = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)
+                            }
+                            .weaveEntrance("home/weave", 2),
+                    )
+                },
+                bottom = {
+                    Column {
+                        Box(Modifier.weaveEntrance("home/metrics", 3)) {
+                            LiveMetrics(
+                                connected = connected,
+                                download = state.downloadBytesPerSecond,
+                                upload = state.uploadBytesPerSecond,
+                                latencyMs = state.activeNode?.latencyMs?.takeIf { it in 1..10_000 },
+                                history = if (connected) trafficHistory else emptyList(),
+                            )
+                        }
+                        heroIssue(overviewState)?.let { issue ->
+                            Spacer(Modifier.height(20.dp))
+                            ConnectionIssueNotice(issue = issue, onChooseExit = onDefaultRouteClick)
+                        }
+                        Spacer(Modifier.height(20.dp))
+                        Box(Modifier.weaveEntrance("home/checks", 4)) { PrivacyCheckEntry(onClick = onIpQuality) }
+                    }
+                },
             )
-            Spacer(Modifier.height(18.dp))
-            LiveMetrics(
-                connected = connected,
-                download = state.downloadBytesPerSecond,
-                upload = state.uploadBytesPerSecond,
-                latencyMs = state.activeNode?.latencyMs?.takeIf { it in 1..10_000 },
-                history = if (connected) trafficHistory else emptyList(),
-            )
-            heroIssue(overviewState)?.let { issue ->
-                Spacer(Modifier.height(20.dp))
-                ConnectionIssueNotice(issue = issue, onChooseExit = onDefaultRouteClick)
-            }
-            Spacer(Modifier.height(20.dp))
-            PrivacyCheckEntry(onClick = onIpQuality)
         }
         // Content scrolls under a short fade so the capsule never sits on a hard edge.
         val fadeGround = MaterialTheme.colorScheme.background
@@ -330,8 +362,43 @@ internal fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = WeaveUiTokens.capsuleHorizontal)
-                .padding(bottom = 12.dp),
+                .padding(bottom = 12.dp)
+                .onGloballyPositioned {
+                    // The action disc sits at the capsule's trailing end.
+                    val inset = with(density) { (WeaveUiTokens.capsuleButton / 2 + 6.dp).toPx() }
+                    val x = if (rtl) inset else it.size.width - inset
+                    light.action = it.positionInRoot() + Offset(x, it.size.height / 2f)
+                },
         )
+    }
+}
+
+/**
+ * The home page's vertical rhythm: the status above, the readings below and the weave between
+ * them, stretched to fill the screen's remaining height within sensible limits.
+ */
+@Composable
+private fun HomeStage(
+    viewport: androidx.compose.ui.unit.Dp,
+    top: @Composable () -> Unit,
+    weave: @Composable () -> Unit,
+    bottom: @Composable () -> Unit,
+) {
+    androidx.compose.ui.layout.Layout(contents = listOf(top, weave, bottom)) { (topParts, weaveParts, bottomParts), constraints ->
+        val loose = constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
+        val tops = topParts.map { it.measure(loose) }
+        val bottoms = bottomParts.map { it.measure(loose) }
+        val used = tops.sumOf { it.height } + bottoms.sumOf { it.height }
+        val weaveHeight = (viewport.roundToPx() - used)
+            .coerceIn(WeaveUiTokens.weaveMinHeight.roundToPx(), WeaveUiTokens.weaveMaxHeight.roundToPx())
+        val weaves = weaveParts.map { it.measure(androidx.compose.ui.unit.Constraints.fixed(constraints.maxWidth, weaveHeight)) }
+        layout(constraints.maxWidth, used + weaveHeight) {
+            var y = 0
+            (tops + weaves + bottoms).forEach {
+                it.placeRelative(0, y)
+                y += it.height
+            }
+        }
     }
 }
 
@@ -560,10 +627,7 @@ internal fun LiveMetrics(
                         Spacer(Modifier.height(6.dp))
                         // The entire reading fits this cell. Otherwise all metrics use the
                         // full-width stack, without a live wrap changing the dock geometry.
-                        androidx.compose.material3.Text(
-                            values[index], modifier = Modifier.fillMaxWidth(), style = valueStyle,
-                            softWrap = false, maxLines = 1,
-                        )
+                        Box(Modifier.fillMaxWidth()) { RollingText(values[index], style = valueStyle) }
                         Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(14.dp)) {
                             if (index == 0 && history.size >= 2) Sparkline(history, Modifier.fillMaxSize(), MaterialTheme.colorScheme.secondary)
                         }
@@ -576,7 +640,7 @@ internal fun LiveMetrics(
                     if (index > 0) Box(Modifier.fillMaxWidth().height(dividerWidth).background(divider))
                     Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
                         Text(label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, translate = false)
-                        Text(values[index], modifier = Modifier.fillMaxWidth(), style = valueStyle, translate = false)
+                        Box(Modifier.fillMaxWidth()) { RollingText(values[index], style = valueStyle, softWrap = true) }
                         if (index == 0) Box(Modifier.fillMaxWidth().height(14.dp)) {
                             if (history.size >= 2) Sparkline(history, Modifier.fillMaxSize(), MaterialTheme.colorScheme.secondary)
                         }
@@ -628,7 +692,10 @@ private fun ConnectionCapsule(
                     .height(28.dp)
                     .background(scheme.outlineVariant),
             )
-            PrimaryAction(heroModel(state), onConnect, onChooseExit, onImport)
+            PrimaryAction(
+                heroModel(state), onConnect, onChooseExit, onImport,
+                connected = state.connectionState == ConnectionState.CONNECTED,
+            )
         }
     }
 }
@@ -736,28 +803,59 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
 private const val PRIMARY_ACTION_DEBOUNCE_MS = 600L
 
 @Composable
-private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: () -> Unit, onImport: () -> Unit) {
+private fun PrimaryAction(
+    hero: HeroModel,
+    onConnect: () -> Unit,
+    onChooseExit: () -> Unit,
+    onImport: () -> Unit,
+    connected: Boolean = false,
+) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val language = LocalWeaveLanguage.current
     val interaction = remember { MutableInteractionSource() }
     // A quick double tap must not connect and immediately disconnect again.
-    var lastToggleAt by remember { mutableLongStateOf(0L) }
+    // The lock runs on the composition's clock, so it is also deterministic under test clocks.
+    var toggleLocked by remember { mutableStateOf(false) }
+    val toggleScope = rememberCoroutineScope()
+    val live = weaveLiveTone()
+    val liveContent = if (live.luminance() > 0.45f) scheme.background else Color.White
     val container by animateColorAsState(
-        if (hero.actionEmphasized) scheme.primary else scheme.primaryContainer,
+        when {
+            connected -> live
+            hero.actionEmphasized -> scheme.primary
+            else -> scheme.primaryContainer
+        },
         WeaveMotion.standard(), label = "primary-action-container",
     )
     val content by animateColorAsState(
-        if (hero.actionEmphasized) scheme.onPrimary else scheme.onPrimaryContainer,
+        when {
+            connected -> liveContent
+            hero.actionEmphasized -> scheme.onPrimary
+            else -> scheme.onPrimaryContainer
+        },
         WeaveMotion.standard(), label = "primary-action-content",
     )
     Box(
         modifier = Modifier
             .testTag("home-primary-action")
             .size(WeaveUiTokens.capsuleButton)
-            .pressScale(interaction, pressedScale = 0.94f)
+            .primaryActionLight(connecting = hero.action == HeroAction.IN_PROGRESS, connected = connected)
+            .pressScale(interaction, pressedScale = 0.92f)
             .clip(CircleShape)
             .background(if (hero.actionEnabled) container else container.copy(alpha = 0.55f))
+            // A cached top highlight makes the button read as a lit, tactile disc.
+            .drawWithCache {
+                val sheen = Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.22f),
+                    0.55f to Color.White.copy(alpha = 0f),
+                )
+                val ring = Stroke(1.dp.toPx())
+                onDrawBehind {
+                    drawRect(sheen)
+                    if (connected) drawCircle(content.copy(alpha = 0.28f), size.minDimension / 2f - ring.width, style = ring)
+                }
+            }
             .clickable(
                 interactionSource = interaction,
                 indication = androidx.compose.foundation.LocalIndication.current,
@@ -769,9 +867,12 @@ private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: 
                         HeroAction.IMPORT -> onImport()
                         HeroAction.IN_PROGRESS -> Unit
                         HeroAction.CONNECT, HeroAction.DISCONNECT, HeroAction.RETRY -> {
-                            val now = android.os.SystemClock.uptimeMillis()
-                            if (now - lastToggleAt >= PRIMARY_ACTION_DEBOUNCE_MS) {
-                                lastToggleAt = now
+                            if (!toggleLocked) {
+                                toggleLocked = true
+                                toggleScope.launch {
+                                    kotlinx.coroutines.delay(PRIMARY_ACTION_DEBOUNCE_MS)
+                                    toggleLocked = false
+                                }
                                 haptics.performHapticFeedback(
                                     if (hero.action == HeroAction.DISCONNECT) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
                                 )
@@ -790,7 +891,13 @@ private fun PrimaryAction(hero: HeroModel, onConnect: () -> Unit, onChooseExit: 
             label = "primary-action-glyph",
         ) { action ->
             if (action == HeroAction.IN_PROGRESS) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = content)
+                // The orbiting arc around the disc carries the progress; the glyph rests dimmed.
+                Icon(
+                    Icons.Rounded.PowerSettingsNew,
+                    contentDescription = null,
+                    tint = content.copy(alpha = 0.55f),
+                    modifier = Modifier.size(WeaveUiTokens.iconSize),
+                )
             } else {
                 Icon(
                     imageVector = when (action) {
@@ -830,7 +937,7 @@ private fun <T> StableTextSlot(
             val isActive = key == active
             val alpha by animateFloatAsState(
                 targetValue = if (isActive) 1f else 0f,
-                animationSpec = WeaveMotion.standard(),
+                animationSpec = if (isActive) tween(420, delayMillis = 60, easing = FastOutSlowInEasing) else tween(240),
                 label = "stable-slot-alpha",
             )
             Text(
@@ -841,7 +948,17 @@ private fun <T> StableTextSlot(
                 maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .graphicsLayer { this.alpha = alpha }
+                    .graphicsLayer {
+                        this.alpha = alpha
+                        // The new state rises in from a soft blur; the old one drifts up and dissolves.
+                        val away = 1f - alpha
+                        translationY = away * (if (isActive) 10.dp else (-8).dp).toPx()
+                        renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && away > 0.01f && away < 0.99f) {
+                            androidx.compose.ui.graphics.BlurEffect(away * 18f, away * 18f, androidx.compose.ui.graphics.TileMode.Decal)
+                        } else {
+                            null
+                        }
+                    }
                     // Hidden variants only reserve space; they must not be read or matched.
                     .then(if (isActive) Modifier else Modifier.clearAndSetSemantics { }),
             )

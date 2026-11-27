@@ -99,7 +99,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -124,11 +123,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -225,8 +225,12 @@ private fun WeaveNavigationDock(
     onScrubEnd: (Float) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val indicatorFill = scheme.primaryContainer.copy(alpha = 0.88f)
-    val indicatorRim = scheme.primary.copy(alpha = 0.16f)
+    val dark = scheme.background.luminance() < 0.35f
+    val indicatorFill = scheme.primaryContainer.copy(alpha = 0.92f)
+    val indicatorTop = androidx.compose.ui.graphics.lerp(scheme.primaryContainer, if (dark) scheme.primary else scheme.surface, if (dark) 0.14f else 0.5f)
+    val indicatorRimTop = Color.White.copy(alpha = if (dark) 0.12f else 0.8f)
+    val indicatorRimBottom = scheme.primary.copy(alpha = if (dark) 0.2f else 0.14f)
+    val indicatorShadow = scheme.primary.copy(alpha = if (dark) 0.22f else 0.10f)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val currentSelected by rememberUpdatedState(selected)
@@ -307,31 +311,34 @@ private fun WeaveNavigationDock(
                 }
                 // One pill slides under the tabs and follows the page while it is being dragged,
                 // stretching slightly between stops. It is read in the draw phase only.
-                .drawBehind {
+                .drawWithCache {
                     val count = destinations.size
-                    if (count == 0) return@drawBehind
                     val pad = DockPadding.toPx()
                     val gap = DockGap.toPx()
-                    val itemWidth = (size.width - pad * 2 - gap * (count - 1)) / count
-                    val position = (scrub ?: indicatorPosition()).coerceIn(0f, (count - 1).toFloat())
-                    val between = position - kotlin.math.floor(position)
-                    val stretch = kotlin.math.sin(between * kotlin.math.PI.toFloat()) * gap * 4f
-                    val width = itemWidth + stretch
-                    var left = pad + position * (itemWidth + gap) - stretch / 2f
-                    if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) {
-                        left = size.width - left - width
-                    }
+                    val itemWidth = if (count == 0) 0f else (size.width - pad * 2 - gap * (count - 1)) / count
                     val radius = androidx.compose.ui.geometry.CornerRadius(WeaveUiTokens.compactPanelRadius.toPx())
-                    val topLeft = androidx.compose.ui.geometry.Offset(left, pad)
-                    val pill = androidx.compose.ui.geometry.Size(width, size.height - pad * 2)
-                    drawRoundRect(indicatorFill, topLeft, pill, radius)
-                    drawRoundRect(
-                        indicatorRim,
-                        topLeft,
-                        pill,
-                        radius,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
-                    )
+                    val pillHeight = size.height - pad * 2
+                    // The pill's light is the same at every position, so its brushes are built per size only.
+                    val fill = Brush.verticalGradient(0f to indicatorTop, 1f to indicatorFill, startY = pad, endY = pad + pillHeight)
+                    val rim = Brush.verticalGradient(0f to indicatorRimTop, 0.5f to indicatorRimBottom.copy(alpha = 0f), 1f to indicatorRimBottom, startY = pad, endY = pad + pillHeight)
+                    val rimStroke = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx())
+                    val shadowDrop = 1.5.dp.toPx()
+                    onDrawBehind {
+                        if (count == 0) return@onDrawBehind
+                        val position = (scrub ?: indicatorPosition()).coerceIn(0f, (count - 1).toFloat())
+                        val between = position - kotlin.math.floor(position)
+                        val stretch = kotlin.math.sin(between * kotlin.math.PI.toFloat()) * gap * 4f
+                        val width = itemWidth + stretch
+                        var left = pad + position * (itemWidth + gap) - stretch / 2f
+                        if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) {
+                            left = size.width - left - width
+                        }
+                        val topLeft = androidx.compose.ui.geometry.Offset(left, pad)
+                        val pill = androidx.compose.ui.geometry.Size(width, pillHeight)
+                        drawRoundRect(indicatorShadow, topLeft.copy(y = pad + shadowDrop), pill, radius)
+                        drawRoundRect(fill, topLeft, pill, radius)
+                        drawRoundRect(rim, topLeft, pill, radius, style = rimStroke)
+                    }
                 }
                 .padding(DockPadding),
             horizontalArrangement = Arrangement.spacedBy(DockGap),
@@ -394,7 +401,7 @@ private fun WeaveNavigationDock(
                         item.label,
                         color = content,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = if (lit) FontWeight.SemiBold else FontWeight.Medium,
                     )
                 }
             }
@@ -781,7 +788,8 @@ fun WeaveApp(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(background),
+            .background(background)
+            .recordWeaveTouches(),
     ) {
         MonetAtmosphere(
             palette = networkPreferences.weavePalette,
@@ -791,7 +799,7 @@ fun WeaveApp(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onBackground,
-            snackbarHost = { SnackbarHost(snackbar) },
+            snackbarHost = { WeaveSnackbarHost(snackbar) },
             bottomBar = {
                 WeaveNavigationDock(
                     destinations = visibleDestinations,
@@ -852,12 +860,13 @@ fun WeaveApp(
                         val distance = kotlin.math.abs(
                             (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction,
                         ).coerceIn(0f, 1f)
-                        alpha = 1f - 0.35f * distance
-                        val scale = 1f - 0.035f * distance
+                        alpha = 1f - 0.45f * distance
+                        val scale = 1f - 0.06f * distance
                         scaleX = scale
                         scaleY = scale
                     },
             ) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalWeaveEntranceEnabled provides (page == pagerState.targetPage)) {
             destinationState.SaveableStateProvider(shown.name) {
             when (shown) {
             Destination.HOME -> {
@@ -990,6 +999,7 @@ fun WeaveApp(
                     onQuickStartMotionChanged = ::changeQuickStartMotion,
                     onOpenAppUpdates = { showAppUpdates = true },
                 )
+            }
             }
             }
             }

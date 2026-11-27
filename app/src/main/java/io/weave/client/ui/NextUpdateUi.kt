@@ -152,7 +152,7 @@ internal fun NextUpdateUi(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        Switch(checked = controller.enabled, onCheckedChange = null)
+                        WeaveSwitch(checked = controller.enabled, onCheckedChange = null)
                     }
                 }
                 if (release != null) {

@@ -203,7 +203,7 @@ internal fun SubscriptionAutoUpdateDialog(
                         Text("仅在不计流量的网络", fontWeight = FontWeight.SemiBold)
                         Text("通常是 Wi‑Fi；避免消耗移动数据", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
-                    Switch(checked = unmetered, onCheckedChange = { unmetered = it }, enabled = selectedHours > 0)
+                    WeaveSwitch(checked = unmetered, onCheckedChange = { unmetered = it }, enabled = selectedHours > 0)
                 }
             }
         },
@@ -235,7 +235,7 @@ internal fun LanProxySharingDialog(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("开启共享", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Switch(checked = enabled, onCheckedChange = onToggle)
+                    WeaveSwitch(checked = enabled, onCheckedChange = onToggle)
                 }
                 if (enabled && credentials != null) {
                     LiquidGlassPanel(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
@@ -634,8 +634,11 @@ internal fun LogsScreen(
         )
     }
     // Sequence keys keep repeated messages distinct when the bounded window rotates.
+    // The index is read here, with the rows this composition shows: a batch that lands before the
+    // list recomposes must not send the scroll past the items the list knows about.
+    val lastIndex = lines.lastIndex
     LaunchedEffect(lines.lastOrNull()?.id, followsTail) {
-        if (followsTail && lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
+        if (followsTail && lastIndex >= 0) listState.scrollToItem(lastIndex)
     }
     WeaveToolScreen(
         title = "内核日志",
@@ -696,7 +699,7 @@ internal fun LogsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("隐藏 IP 地址", modifier = Modifier.weight(1f), fontSize = 13.sp)
-            Switch(checked = redacted, onCheckedChange = null)
+            WeaveSwitch(checked = redacted, onCheckedChange = null)
         }
         if (!followsTail && lines.isNotEmpty()) {
             TextButton(onClick = { followsTail = true }, modifier = Modifier.padding(horizontal = 20.dp)) {

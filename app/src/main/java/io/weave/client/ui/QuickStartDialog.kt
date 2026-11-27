@@ -478,7 +478,7 @@ private fun MotionToggle(reducedMotion: Boolean, onChange: (Boolean) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
-        Switch(checked = reducedMotion, onCheckedChange = null)
+        WeaveSwitch(checked = reducedMotion, onCheckedChange = null)
     }
 }
 

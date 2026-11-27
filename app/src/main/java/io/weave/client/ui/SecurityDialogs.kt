@@ -484,7 +484,7 @@ private fun PolicyPackRow(
                         fontSize = 11.sp,
                     )
                 }
-                Switch(checked = pack.active, onCheckedChange = { onToggle(pack.id, it) })
+                WeaveSwitch(checked = pack.active, onCheckedChange = { onToggle(pack.id, it) })
             }
             if (pack.description.isNotBlank()) {
                 Text(

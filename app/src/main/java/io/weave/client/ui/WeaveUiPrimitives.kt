@@ -7,6 +7,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.HorizontalDivider
@@ -39,8 +40,32 @@ internal fun MonetAtmosphere(
 ) {
     val background = MaterialTheme.colorScheme.background
     if (palette.group == WeaveAppearanceGroup.MINIMAL) {
-        // All minimal canvases are neutral and stable; green belongs to actions, not the backdrop.
-        Box(modifier = modifier.background(background))
+        // Minimal canvases stay neutral; green belongs to actions, not the backdrop. A faint fall of
+        // light from the top and a cool bloom in the corner give the page depth without a tint.
+        val surface = MaterialTheme.colorScheme.surface
+        val cool = MaterialTheme.colorScheme.primaryContainer
+        Spacer(
+            modifier = modifier
+                .background(background)
+                .drawWithCache {
+                    val fall = Brush.verticalGradient(
+                        0f to surface,
+                        0.42f to background,
+                        1f to background,
+                    )
+                    val bloomCenter = androidx.compose.ui.geometry.Offset(size.width * 0.04f, size.height * 0.02f)
+                    val bloomRadius = size.width * 0.9f
+                    val bloom = Brush.radialGradient(
+                        listOf(cool.copy(alpha = 0.32f), Color.Transparent),
+                        center = bloomCenter,
+                        radius = bloomRadius,
+                    )
+                    onDrawBehind {
+                        drawRect(fall)
+                        drawCircle(bloom, bloomRadius, bloomCenter)
+                    }
+                },
+        )
         return
     }
     val teal = MaterialTheme.colorScheme.primaryContainer

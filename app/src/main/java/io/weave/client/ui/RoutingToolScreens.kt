@@ -150,7 +150,7 @@ internal fun RuleSetsScreen(
                                     fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, translate = false)
                             }
                         }
-                        Switch(checked = set.enabled, onCheckedChange = { onToggle(set.id, it) })
+                        WeaveSwitch(checked = set.enabled, onCheckedChange = { onToggle(set.id, it) })
                     }
                 }
             }
@@ -399,7 +399,7 @@ private fun CustomGroupEditor(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
-                            Switch(checked = chained, onCheckedChange = { enabled ->
+                            WeaveSwitch(checked = chained, onCheckedChange = { enabled ->
                                 members = customGroupDraftMembers(members, entry, enabled)
                                 chained = enabled
                             })
