@@ -1,5 +1,14 @@
 package io.weave.client.ui
 
+import androidx.compose.foundation.focusable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -393,6 +402,18 @@ internal fun ModeChip(
                     role = Role.Button
                     onClick { if (open) close() else show(drag = false); true }
                 }
+                .onKeyEvent { event ->
+                    when (event.key) {
+                        Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar -> {
+                            if (event.type == KeyEventType.KeyUp) {
+                                if (open) close() else show(drag = false)
+                            }
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                .focusable()
                 .pointerInput(rtl) {
                     val slop = viewConfiguration.touchSlop
                     awaitEachGesture {
@@ -506,7 +527,38 @@ internal fun ModeChip(
                 onDismissRequest = { close() },
                 properties = PopupProperties(focusable = !chipDrag, clippingEnabled = false),
             ) {
-                Box(Modifier.fillMaxSize()) {
+                val dialFocus = remember { FocusRequester() }
+                LaunchedEffect(open, chipDrag) {
+                    if (open && !chipDrag) dialFocus.requestFocus()
+                }
+                Box(
+                    Modifier.fillMaxSize()
+                        .focusRequester(dialFocus)
+                        .onKeyEvent { event ->
+                            val step = when (event.key) {
+                                Key.DirectionLeft -> if (rtl) 1 else -1
+                                Key.DirectionRight -> if (rtl) -1 else 1
+                                Key.DirectionUp -> -1
+                                Key.DirectionDown -> 1
+                                else -> 0
+                            }
+                            if (step != 0) {
+                                if (event.type == KeyEventType.KeyUp) hover = (hover + step).coerceIn(DialModes.indices)
+                                true
+                            } else when (event.key) {
+                                Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar -> {
+                                    if (event.type == KeyEventType.KeyUp) pick(hover)
+                                    true
+                                }
+                                Key.Escape -> {
+                                    if (event.type == KeyEventType.KeyUp) close()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                        .focusable(),
+                ) {
                     Box(
                         Modifier
                             .fillMaxSize()
