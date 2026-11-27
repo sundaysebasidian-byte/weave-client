@@ -229,9 +229,11 @@ internal fun RoutesScreen(
     val listAlpha by androidx.compose.animation.core.animateFloatAsState(
         if (rulesApply) 1f else 0.45f, WeaveMotion.standard(), label = "routes-dim",
     )
+    val listState = rememberSmoothLazyListState()
     LazyColumn(
-        state = rememberSmoothLazyListState(),
+        state = listState,
         modifier = Modifier
+            .weaveCompactTitle("分流", listState)
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding())
             .testTag("routes-list"),

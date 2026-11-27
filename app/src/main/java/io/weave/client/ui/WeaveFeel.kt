@@ -35,6 +35,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
@@ -147,24 +155,31 @@ private class WeavePressNode(private val source: InteractionSource) :
  * Items of a screen rise into place the first time that screen opens in this process: a short
  * cascade of the first few blocks, then nothing. Revisiting a page or scrolling never replays it.
  */
+private val EntranceSpring = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.86f, stiffness = 340f)
+
 internal object WeaveEntrance {
     private val played = HashSet<String>()
     @Synchronized fun claim(key: String): Boolean = played.add(key)
 }
 
+/** False on pages only passed through on the way to another one, so they keep their cascade. */
+internal val LocalWeaveEntranceEnabled = androidx.compose.runtime.compositionLocalOf { true }
+
 @Composable
 internal fun Modifier.weaveEntrance(key: String, index: Int, enabled: Boolean = index < 8): Modifier {
-    val play = remember(key) { enabled && WeaveEntrance.claim(key) }
+    val allowed = LocalWeaveEntranceEnabled.current
+    val play = remember(key) { allowed && enabled && WeaveEntrance.claim(key) }
     if (!play) return this
     val progress = remember(key) { Animatable(0f) }
     LaunchedEffect(key) {
-        delay(index * 34L)
-        progress.animateTo(1f, WeaveSprings.slowSpatial())
+        delay(index * 28L)
+        progress.animateTo(1f, EntranceSpring)
     }
     return graphicsLayer {
         val p = progress.value
-        alpha = p.coerceIn(0f, 1f)
-        translationY = (1f - p) * 18.dp.toPx()
+        // Opacity arrives early and the rise settles after it, so a page never reads as empty.
+        alpha = (p * 1.6f).coerceIn(0f, 1f)
+        translationY = (1f - p) * 16.dp.toPx()
     }
 }
 
@@ -290,4 +305,103 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.entranceItem(
     content: @Composable androidx.compose.foundation.lazy.LazyItemScope.() -> Unit,
 ) = item(key = key, contentType = contentType) {
     androidx.compose.foundation.layout.Box(Modifier.weaveEntrance("$screen/$key", index)) { this@item.content() }
+}
+
+/**
+ * Where the last finger came down, in screen coordinates. A screen or dialog opened by that tap
+ * grows out of this point, so a surface always seems to come from what was touched.
+ */
+internal object WeaveTouch {
+    @Volatile private var x = Float.NaN
+    @Volatile private var y = Float.NaN
+    @Volatile private var at = 0L
+
+    fun record(screen: Offset) {
+        x = screen.x
+        y = screen.y
+        at = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** The touch point if it is recent enough to have opened what is appearing now. */
+    fun recent(): Offset? =
+        if (!x.isNaN() && android.os.SystemClock.uptimeMillis() - at < 1500L) Offset(x, y) else null
+}
+
+/** Observes touches inside this layout without consuming them, for [WeaveTouch]. */
+internal fun Modifier.recordWeaveTouches(): Modifier {
+    val origin = floatArrayOf(0f, 0f)
+    return this
+        .onGloballyPositioned {
+            val p = it.positionOnScreen()
+            origin[0] = p.x
+            origin[1] = p.y
+        }
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    if (event.type == androidx.compose.ui.input.pointer.PointerEventType.Press) {
+                        event.changes.firstOrNull()?.let { WeaveTouch.record(Offset(origin[0], origin[1]) + it.position) }
+                    }
+                }
+            }
+        }
+}
+
+/**
+ * A compact title that settles over the top of a scrolled page: a translucent band behind the
+ * status bar with the page name, fading in as the large title scrolls away. It is drawn over the
+ * list, so it costs no layout and takes no touches.
+ */
+@Composable
+internal fun Modifier.weaveCompactTitle(title: String, state: androidx.compose.foundation.lazy.LazyListState): Modifier {
+    val scheme = MaterialTheme.colorScheme
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val language = LocalWeaveLanguage.current
+    val staged = LocalStagedWeaveLocale.current
+    val released = LocalReleasedAppCopy.current
+    val label = remember(title, language, staged, released) { resolveAppOwnedCopy(title, language, staged, released) }
+    val style = MaterialTheme.typography.titleMedium.copy(
+        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        color = scheme.onSurface,
+    )
+    val topInset = androidx.compose.foundation.layout.WindowInsets.statusBars
+        .asPaddingValues().calculateTopPadding()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val progress = remember(state, density) {
+        val start = with(density) { 36.dp.toPx() }
+        val range = with(density) { 44.dp.toPx() }
+        androidx.compose.runtime.derivedStateOf {
+            if (state.firstVisibleItemIndex > 0) 1f
+            else ((state.firstVisibleItemScrollOffset - start) / range).coerceIn(0f, 1f)
+        }
+    }
+    val surface = scheme.surface
+    val hairline = scheme.outlineVariant
+    return drawWithCache {
+        val band = 50.dp.toPx()
+        val barHeight = topInset.toPx() + band
+        val layout = measurer.measure(
+            label,
+            style,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            constraints = androidx.compose.ui.unit.Constraints(maxWidth = (size.width - 112.dp.toPx()).toInt().coerceAtLeast(1)),
+        )
+        val glass = Brush.verticalGradient(0f to surface.copy(alpha = 0.95f), 1f to surface.copy(alpha = 0.82f), endY = barHeight)
+        val lift = 6.dp.toPx()
+        onDrawWithContent {
+            drawContent()
+            val p = progress.value
+            if (p <= 0f) return@onDrawWithContent
+            drawRect(glass, size = androidx.compose.ui.geometry.Size(size.width, barHeight), alpha = p)
+            drawLine(hairline.copy(alpha = 0.7f * p), Offset(0f, barHeight), Offset(size.width, barHeight), 1f)
+            translate(
+                left = (size.width - layout.size.width) / 2f,
+                top = topInset.toPx() + (band - layout.size.height) / 2f + (1f - p) * lift,
+            ) {
+                drawText(layout, alpha = p)
+            }
+        }
+    }
 }

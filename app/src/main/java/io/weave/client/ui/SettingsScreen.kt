@@ -429,9 +429,11 @@ internal fun SettingsScreen(
         sections
     }
 
+    val listState = rememberSmoothLazyListState()
     LazyColumn(
-        state = rememberSmoothLazyListState(),
+        state = listState,
         modifier = Modifier
+            .weaveCompactTitle("设置", listState)
             .testTag("settings-list")
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding()),

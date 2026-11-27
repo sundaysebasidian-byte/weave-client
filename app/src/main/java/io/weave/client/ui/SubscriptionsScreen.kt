@@ -246,9 +246,11 @@ internal fun SubscriptionsScreen(
     } else {
         null
     }
+    val listState = rememberSmoothLazyListState()
     LazyColumn(
-        state = rememberSmoothLazyListState(),
+        state = listState,
         modifier = Modifier
+            .weaveCompactTitle("订阅", listState)
             .fillMaxSize()
             .padding(bottom = contentPadding.calculateBottomPadding())
             .testTag("subscription-list"),
@@ -370,7 +372,7 @@ internal fun SubscriptionsScreen(
                 }
             }
         }
-        item(key = "security-note") {
+        entranceItem("subscriptions", "security-note", 7) {
             SecurityNote()
         }
     }

@@ -634,8 +634,11 @@ internal fun LogsScreen(
         )
     }
     // Sequence keys keep repeated messages distinct when the bounded window rotates.
+    // The index is read here, with the rows this composition shows: a batch that lands before the
+    // list recomposes must not send the scroll past the items the list knows about.
+    val lastIndex = lines.lastIndex
     LaunchedEffect(lines.lastOrNull()?.id, followsTail) {
-        if (followsTail && lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
+        if (followsTail && lastIndex >= 0) listState.scrollToItem(lastIndex)
     }
     WeaveToolScreen(
         title = "内核日志",

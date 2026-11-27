@@ -788,7 +788,8 @@ fun WeaveApp(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(background),
+            .background(background)
+            .recordWeaveTouches(),
     ) {
         MonetAtmosphere(
             palette = networkPreferences.weavePalette,
@@ -859,12 +860,13 @@ fun WeaveApp(
                         val distance = kotlin.math.abs(
                             (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction,
                         ).coerceIn(0f, 1f)
-                        alpha = 1f - 0.35f * distance
-                        val scale = 1f - 0.035f * distance
+                        alpha = 1f - 0.45f * distance
+                        val scale = 1f - 0.06f * distance
                         scaleX = scale
                         scaleY = scale
                     },
             ) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalWeaveEntranceEnabled provides (page == pagerState.targetPage)) {
             destinationState.SaveableStateProvider(shown.name) {
             when (shown) {
             Destination.HOME -> {
@@ -997,6 +999,7 @@ fun WeaveApp(
                     onQuickStartMotionChanged = ::changeQuickStartMotion,
                     onOpenAppUpdates = { showAppUpdates = true },
                 )
+            }
             }
             }
             }

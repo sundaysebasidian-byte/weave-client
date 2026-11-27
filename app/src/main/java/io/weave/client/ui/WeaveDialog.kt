@@ -1,6 +1,8 @@
 package io.weave.client.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,20 +42,35 @@ internal fun WeaveDialog(
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(WeaveUiTokens.panelRadius + 2.dp)
     // A short settle as the dialog appears: it rises from slightly smaller instead of popping in.
+    // It grows out of the touch that opened it, when there was one.
     val appear = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = 520f)) }
+    val touch = remember { WeaveTouch.recent() }
+    val origin = remember { floatArrayOf(0f, 0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 420f)) }
     AlertDialog(
         onDismissRequest = onDismissRequest,
         properties = properties,
         modifier = modifier
+            .onGloballyPositioned {
+                val p = it.positionOnScreen()
+                origin[0] = p.x
+                origin[1] = p.y
+            }
             .graphicsLayer {
                 val p = appear.value
                 alpha = p.coerceIn(0f, 1f)
-                val scale = 0.94f + 0.06f * p
+                val scale = 0.82f + 0.18f * p
                 scaleX = scale
                 scaleY = scale
-                translationY = (1f - p) * 12.dp.toPx()
+                transformOrigin = touch?.let {
+                    androidx.compose.ui.graphics.TransformOrigin(
+                        ((it.x - origin[0]) / size.width).coerceIn(-0.2f, 1.2f),
+                        ((it.y - origin[1]) / size.height).coerceIn(-0.6f, 1.6f),
+                    )
+                } ?: androidx.compose.ui.graphics.TransformOrigin.Center
+                if (touch == null) translationY = (1f - p) * 12.dp.toPx()
             }
+            .recordWeaveTouches()
             .border(WeaveUiTokens.panelBorderWidth, weaveRimBrush(), shape),
         shape = shape,
         containerColor = colors.surface,
