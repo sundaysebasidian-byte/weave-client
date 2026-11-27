@@ -10,7 +10,7 @@ val LocalWeaveLanguage = staticCompositionLocalOf { WeaveLanguage.SIMPLIFIED_CHI
 /** Supplied only by an isolated locale preview at present; no settings picker is wired to it. */
 internal val LocalStagedWeaveLocale = staticCompositionLocalOf<StagedComposeLocale?> { null }
 
-/** No released build installs a provider yet. Only a package-verified catalog can be supplied. */
+/** The activity supplies a verified catalog from the installed APK. */
 internal val LocalReleasedAppCopy = staticCompositionLocalOf<ReleasedAppCopy?> { null }
 
 internal class ReleasedAppCopy private constructor(internal val renderer: StagedComposeLocale) {
@@ -2166,6 +2166,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "安全模式已解除，可以重新连接" to SupplementalTranslation("Safe mode cleared; you can reconnect", "安全模式已解除，可以重新連線", "セーフモードを解除しました。再接続できます", "Mode sécurisé désactivé ; vous pouvez vous reconnecter", "Abgesicherter Modus beendet; du kannst dich erneut verbinden"),
     "局域网二维码导入失败" to SupplementalTranslation("LAN QR import failed", "區域網路 QR 匯入失敗", "LAN QR インポートに失敗しました", "Échec de l’import du QR LAN", "LAN-QR-Import fehlgeschlagen"),
     "局域网导入失败" to SupplementalTranslation("LAN import failed", "區域網路匯入失敗", "LAN インポートに失敗しました", "Échec de l’import LAN", "LAN-Import fehlgeschlagen"),
+    "传输完成" to SupplementalTranslation("Transfer complete", "傳輸完成", "転送完了", "Transfert terminé", "Übertragung abgeschlossen"),
     "所有 DNS 端点都无法完成检测" to SupplementalTranslation("All DNS endpoints failed the test", "所有 DNS 端點都無法完成檢測", "すべての DNS エンドポイントをテストできませんでした", "Tous les points DNS ont échoué au test", "Alle DNS-Endpunkte konnten nicht getestet werden"),
     "无法启动局域网导出" to SupplementalTranslation("Unable to start LAN export", "無法啟動區域網路匯出", "LAN エクスポートを開始できません", "Impossible de démarrer l’export LAN", "LAN-Export konnte nicht gestartet werden"),
     "无法打开订阅" to SupplementalTranslation("Unable to open subscription", "無法開啟訂閱", "購読を開けません", "Impossible d’ouvrir l’abonnement", "Abonnement konnte nicht geöffnet werden"),

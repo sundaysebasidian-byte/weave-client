@@ -10,6 +10,7 @@ class DownloadMeasurementTest {
         assertEquals(100L, m.elapsedMillis)
         assertEquals(25L, m.headersMillis)
         assertEquals(75L, m.bodyMillis)
+        assertEquals(111.8481066667, m.bodyMegabitsPerSecond!!, 0.000001)
     }
 
     @Test fun throughputDoesNotUseTruncatedMillis() {
@@ -20,5 +21,9 @@ class DownloadMeasurementTest {
         assertThrows(IllegalArgumentException::class.java) { DownloadMeasurement(1, 0, 0, 0) }
         assertThrows(IllegalArgumentException::class.java) { DownloadMeasurement(1, 100, 101, 0) }
         assertThrows(IllegalArgumentException::class.java) { DownloadMeasurement(0, 100, 10, 0) }
+    }
+
+    @Test fun noBodyIntervalDoesNotProduceAnInfiniteRate() {
+        assertNull(DownloadMeasurement(1024, 100, 100, 0).bodyMegabitsPerSecond)
     }
 }

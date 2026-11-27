@@ -37,4 +37,14 @@
     <string name="app_picker_empty">一致するランチャーアプリはありません</string>
     <string name="app_picker_add">%1$s を追加</string>
     <string name="app_picker_close">閉じる</string>
+    <string name="about_github_description">プロジェクトを表示してスターで応援</string>
+    <string name="about_github_unavailable">この GitHub リンクを開けるアプリがありません</string>
+    <string name="migration_paste">貼り付けてインポート</string>
+    <string name="migration_paste_description">元のアプリで購読リンクまたは設定をコピーし、「貼り付けてインポート」をタップしてください。</string>
+    <string name="migration_empty_clipboard">クリップボードに対応するテキストがありません</string>
+    <string name="home_speed_test">ネットワーク速度テスト</string>
+    <string name="home_latency_measured">HTTPS 応答時間</string>
+    <string name="home_download_measured">ダウンロードの測定値</string>
+    <string name="home_measurement_starting">測定を開始しています…</string>
+    <string name="privacy_check_external_requests">テストでは、表示されたサービスにリクエストを送信します。</string>
 </resources>

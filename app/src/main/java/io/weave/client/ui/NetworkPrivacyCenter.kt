@@ -205,26 +205,6 @@ internal fun NetworkPrivacyCenterDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    DiagnosticsSummary(
-                        report = report,
-                        ipQuality = ipQualityState.report,
-                        endpointState = endpointState,
-                        browserResult = browserResult,
-                    )
-                }
-                item {
-                    TextButton(onClick = onOpenVpnSettings, modifier = Modifier.fillMaxWidth()) {
-                        Text(l("系统 VPN 设置"))
-                    }
-                    TextButton(onClick = {
-                        summaryPreview = DiagnosticSafeSummary.build(BuildConfig.VERSION_NAME, report,
-                            ipQualityState.report, endpointState.report, ipQualityState.stale || endpointState.stale,
-                            browserResult != null, browserResult?.candidates?.size ?: 0)
-                    }, enabled = !running, modifier = Modifier.fillMaxWidth()) {
-                        Text(l(if (summaryCopied) "已复制脱敏摘要" else "预览脱敏摘要"))
-                    }
-                }
-                item {
                     Text(stringResource(R.string.net_active_disclosure),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(
@@ -243,6 +223,28 @@ internal fun NetworkPrivacyCenterDialog(
                             Spacer(Modifier.width(8.dp))
                         }
                         Text(if (running) l("检测中…") else l("运行完整检测"))
+                    }
+                }
+                item {
+                    DiagnosticsSummary(
+                        report = report,
+                        ipState = ipQualityState,
+                        endpointState = endpointState,
+                        browserResult = browserResult,
+                        browserRunning = browserRunning,
+                        browserError = browserError != null,
+                    )
+                }
+                item {
+                    TextButton(onClick = onOpenVpnSettings, modifier = Modifier.fillMaxWidth()) {
+                        Text(l("系统 VPN 设置"))
+                    }
+                    TextButton(onClick = {
+                        summaryPreview = DiagnosticSafeSummary.build(BuildConfig.VERSION_NAME, report,
+                            ipQualityState.report, endpointState.report, ipQualityState.stale || endpointState.stale,
+                            browserResult != null, browserResult?.candidates?.size ?: 0)
+                    }, enabled = !running, modifier = Modifier.fillMaxWidth()) {
+                        Text(l(if (summaryCopied) "已复制脱敏摘要" else "预览脱敏摘要"))
                     }
                 }
                 if (!running && browserResult != null) {
@@ -270,10 +272,10 @@ internal fun NetworkPrivacyCenterDialog(
                     }
                     Text(stringResource(R.string.net_download_scope),
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    downloadState.measurement?.let { measured ->
-                        DiagnosticDownloadReading(
-                            measured.megabitsPerSecond, measured.bytes / 1024, measured.elapsedMillis,
-                        )
+                    downloadState.measurement?.takeUnless { downloadState.running }?.let { measured ->
+                        measured.bodyMegabitsPerSecond?.let { rate ->
+                            DiagnosticDownloadReading(rate, measured.bytes / 1024, measured.bodyMillis)
+                        }
                         Text(stringResource(R.string.net_download_phases, measured.headersMillis, measured.bodyMillis),
                             style = MaterialTheme.typography.bodySmall)
                         DiagnosticMeasurementTime(measured.measuredAt)
@@ -473,19 +475,26 @@ internal fun NetworkPrivacyCenterDialog(
 @Composable
 private fun DiagnosticsSummary(
     report: PrivacyObservationReport,
-    ipQuality: IpQualityReport?,
+    ipState: IpQualityProbeState,
     endpointState: CommonEndpointProbeState,
     browserResult: BrowserPrivacyResult?,
+    browserRunning: Boolean,
+    browserError: Boolean,
 ) {
     val language = LocalWeaveLanguage.current
     val packaged = LocalReleasedAppCopy.current
     fun copy(source: String): String = resolveAppOwnedCopy(source, language, staged = null, released = packaged)
     val localLabel = "${report.verifiedCount}/${report.observations.size}"
+    val identity = ipState.report
     val ipLabel = when {
-        ipQuality == null -> "—"
-        else -> "${listOfNotNull(ipQuality.ipv4, ipQuality.ipv6).size}/2"
+        ipState.running -> copy("检测中…")
+        ipState.stale || ipState.error != null -> copy("未知")
+        identity == null -> "—"
+        else -> "${(if (identity.ipv4 == null) 0 else 1) + (if (identity.ipv6 == null) 0 else 1)}/2"
     }
     val browserLabel = when {
+        browserRunning -> copy("检测中…")
+        browserError -> copy("未知")
         browserResult == null -> "—"
         else -> if (browserResult.candidates.isEmpty()) {
             copy("已完成")
@@ -494,6 +503,8 @@ private fun DiagnosticsSummary(
         }
     }
     val endpointLabel = when {
+        endpointState.running -> "${endpointState.progress.size}/${io.weave.client.core.diagnostics.CommonEndpointProbe.COMMON_ENDPOINTS.size}"
+        endpointState.stale || endpointState.error != null -> copy("未知")
         endpointState.report == null -> "—"
         else -> "${endpointState.report.availableCount}/${endpointState.report.results.size}"
     }

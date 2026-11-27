@@ -9,9 +9,9 @@ import java.util.function.Consumer;
 /** One registry and I/O boundary for app-owned, APK-local release copy only. */
 final class PackagedReleaseCopyAsset {
     enum Seal {
-        AR("ar-EG", "العربية (مصر)", 189607, "8e80224de928138d659e6ae62fbd93be5e414e09cc0147b930a5b5c6cc523771"),
-        ES("es-MX", "Español (México)", 165589, "8e1638542f1e6d29b357d7e943ae55a4578ea10c935df49957d88327d1b1f561"),
-        KO("ko-KR", "한국어 (대한민국)", 173111, "044ea82dcb785fe9fa770b1de0e77a30323bc5d5516323f9b255b03b87fc72fc");
+        AR("ar-EG", "العربية (مصر)", 190424, "8287bdd6281ee6994afa0c2b1cfb8578d7cc6ce3b27d08e70b0b84fcda78cc45"),
+        ES("es-MX", "Español (México)", 166327, "62b3cc8221ada6fb262f6a9411f5d548a27a15c715afe101a973527a5bd28dec"),
+        KO("ko-KR", "한국어 (대한민국)", 173876, "dadaaa24d969273ee16928000005f320bc76a2e63b845055785a320b5db8e152");
 
         final String tag;
         final String label;

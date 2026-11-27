@@ -18,7 +18,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 class OneTimeLanTransferServer {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -30,6 +31,7 @@ class OneTimeLanTransferServer {
         packet: ByteArray,
         expiryMs: Long = 5 * 60_000L,
         ensureActive: () -> Unit = {},
+        onFinished: (delivered: Boolean) -> Unit = {},
     ): LanTransferLink {
         val host = localPrivateIpv4()
             ?: throw SubscriptionImportException("未找到可用的局域网 IPv4 地址")
@@ -39,12 +41,18 @@ class OneTimeLanTransferServer {
         val port = synchronized(this) {
             ensureActive()
             stop()
-            startServing(host, token, sealed, expiryMs)
+            startServing(host, token, sealed, expiryMs, onFinished)
         }
         return LanTransferLink(host, port, token, key)
     }
 
-    private fun startServing(host: String, token: String, sealed: ByteArray, expiryMs: Long): Int {
+    private fun startServing(
+        host: String,
+        token: String,
+        sealed: ByteArray,
+        expiryMs: Long,
+        onFinished: (Boolean) -> Unit,
+    ): Int {
         // Bind only to the selected private interface. A wildcard listener would expose the
         // one-time transfer endpoint to other local interfaces (including tethering/USB links).
         val server = ServerSocket()
@@ -57,13 +65,13 @@ class OneTimeLanTransferServer {
         }
         socket = server
         job = scope.launch {
+            var delivered = false
             try {
                 launch {
                     delay(expiryMs)
-                    stop(server)
+                    if (stop(server)) onFinished(false)
                 }
-                var consumed = false
-                while (!server.isClosed && !consumed) {
+                while (!server.isClosed && !delivered) {
                     server.accept().use { client ->
                         val owned = synchronized(this@OneTimeLanTransferServer) {
                             if (socket !== server) false else {
@@ -74,9 +82,10 @@ class OneTimeLanTransferServer {
                         if (!owned) return@launch
                         try {
                             val requestLine = readHeader(client).lineSequence().firstOrNull()
-                            consumed = requestLine == "GET /v1/$token HTTP/1.0" ||
+                            val authorized = requestLine == "GET /v1/$token HTTP/1.0" ||
                                 requestLine == "GET /v1/$token HTTP/1.1"
-                            sendResponse(client, sealed.takeIf { consumed })
+                            sendResponse(client, sealed.takeIf { authorized })
+                            delivered = authorized
                         } catch (_: IOException) {
                             // A peer leaving before its request completes must not tear down a share.
                         } finally {
@@ -89,7 +98,7 @@ class OneTimeLanTransferServer {
             } catch (_: IOException) {
                 // Listener closed on expiration or by the sender.
             } finally {
-                stop(server)
+                if (stop(server)) onFinished(delivered)
             }
         }
         return server.localPort
@@ -110,9 +119,13 @@ class OneTimeLanTransferServer {
     }
 
     @Synchronized
-    private fun stop(ownedSocket: ServerSocket) {
-        if (socket === ownedSocket) stop()
-        else runCatching { ownedSocket.close() }
+    private fun stop(ownedSocket: ServerSocket): Boolean {
+        if (socket !== ownedSocket) {
+            runCatching { ownedSocket.close() }
+            return false
+        }
+        stop()
+        return true
     }
 
     @Synchronized
@@ -153,7 +166,10 @@ class OneTimeLanTransferServer {
                     !it.isPointToPoint &&
                     !it.isVirtual &&
                     !it.name.startsWith("tun") &&
-                    !it.name.startsWith("wg")
+                    !it.name.startsWith("wg") &&
+                    !it.name.startsWith("rmnet") &&
+                    !it.name.startsWith("ccmni") &&
+                    !it.name.startsWith("pdp")
             }
             .sortedBy {
                 when {
@@ -169,19 +185,23 @@ class OneTimeLanTransferServer {
 }
 
 object LanTransferClient {
-    suspend fun fetch(link: LanTransferLink): ByteArray = withContext(Dispatchers.IO) {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(link.host, link.port), 10_000)
-            socket.getOutputStream().apply {
-                write(
-                    (
-                        "GET /v1/${link.token} HTTP/1.1\r\nHost: ${link.host}\r\n" +
-                            "Connection: close\r\n\r\n"
-                        ).toByteArray(),
-                )
-                flush()
+    suspend fun fetch(link: LanTransferLink): ByteArray = coroutineScope {
+        suspendCancellableCoroutine { continuation ->
+            val socket = Socket()
+            continuation.invokeOnCancellation { runCatching { socket.close() } }
+            launch(Dispatchers.IO) {
+                val result = runCatching {
+                    socket.use {
+                        it.connect(InetSocketAddress(link.host, link.port), 10_000)
+                        val header = "GET /v1/${link.token} HTTP/1.1\r\nHost: ${link.host}\r\nConnection: close\r\n\r\n"
+                        it.getOutputStream().write(header.toByteArray(Charsets.US_ASCII))
+                        // Content-Length frames the authenticated ciphertext. Closing our
+                        // socket after reading that frame avoids waiting for the peer's FIN.
+                        readLanTransferResponse(it.transferInput(), requireEof = false)
+                    }
+                }
+                continuation.resumeWith(result)
             }
-            readLanTransferResponse(socket.transferInput())
         }
     }
 }
@@ -207,7 +227,7 @@ private fun Socket.transferInput(timeoutSeconds: Long = 45): InputStream = objec
     }
 }.buffered(16 * 1024)
 
-internal fun readLanTransferResponse(input: InputStream): ByteArray {
+internal fun readLanTransferResponse(input: InputStream, requireEof: Boolean = true): ByteArray {
     val headerBytes = ByteArray(4_096)
     var end = 0
     for (index in headerBytes.indices) {
@@ -234,6 +254,9 @@ internal fun readLanTransferResponse(input: InputStream): ByteArray {
         val name = line.substring(0, separator).trim()
         val value = line.substring(separator + 1).trim()
         when {
+            name.equals("transfer-encoding", ignoreCase = true) ||
+                name.equals("content-encoding", ignoreCase = true) && !value.equals("identity", ignoreCase = true) ->
+                throw SubscriptionImportException("发送设备返回无效响应")
             name.equals("content-type", ignoreCase = true) -> {
                 if (type != null) throw SubscriptionImportException("发送设备返回无效响应")
                 type = value
@@ -258,6 +281,6 @@ internal fun readLanTransferResponse(input: InputStream): ByteArray {
         if (count <= 0) throw SubscriptionImportException("发送设备返回的传输长度无效")
         offset += count
     }
-    if (input.read() >= 0) throw SubscriptionImportException("发送设备返回的传输长度无效")
+    if (requireEof && input.read() >= 0) throw SubscriptionImportException("发送设备返回的传输长度无效")
     return packet
 }

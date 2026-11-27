@@ -19,16 +19,14 @@ internal class SubscriptionPreparation(private val resolver: ClashProviderResolv
         normalize(resolver.resolveDetailed(payload, source))
 
     /** Files exported by Weave already contain materialized nodes. Do not resolve or fetch. */
-    suspend fun prepareOffline(payload: String): PreparedSubscription {
-        val plain = ClashSubscriptionDocument.unwrap(payload)
-        if (ClashSubscriptionDocument.hasRootKey(plain, "proxy-providers"))
-            throw SubscriptionImportException("离线订阅文件不能下载节点集合")
-        return normalize(ClashProviderResolver.Resolution(payload, null, 0, 0))
-    }
+    suspend fun prepareOffline(payload: String): PreparedSubscription =
+        normalize(ClashProviderResolver.Resolution(payload, null, 0, 0), offline = true)
 
-    private suspend fun normalize(resolved: ClashProviderResolver.Resolution): PreparedSubscription {
-        val parsed = parser.parse(resolved.payload)
-        val normalized = parser.normalizeForMihomo(resolved.payload, parsed)
+    private suspend fun normalize(resolved: ClashProviderResolver.Resolution, offline: Boolean = false): PreparedSubscription {
+        val (parsed, normalized) = parser.prepareClash(resolved.payload, offline) ?: run {
+            val metadata = parser.parse(resolved.payload)
+            metadata to parser.normalizeForMihomo(resolved.payload, metadata)
+        }
         val stored = parser.parse(normalized)
         currentCoroutineContext().ensureActive()
         check(resolved.rootNodes == null ||

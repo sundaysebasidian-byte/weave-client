@@ -37,4 +37,14 @@
     <string name="app_picker_empty">일치하는 런처 앱이 없습니다</string>
     <string name="app_picker_add">%1$s 추가</string>
     <string name="app_picker_close">닫기</string>
+    <string name="about_github_description">프로젝트를 보고 스타로 응원하기</string>
+    <string name="about_github_unavailable">이 GitHub 링크를 열 수 있는 앱이 없습니다</string>
+    <string name="migration_paste">붙여넣고 가져오기</string>
+    <string name="migration_paste_description">원본 앱에서 구독 링크 또는 설정을 복사한 후 붙여넣고 가져오기를 누르세요.</string>
+    <string name="migration_empty_clipboard">클립보드에 지원되는 텍스트가 없습니다</string>
+    <string name="home_speed_test">네트워크 속도 테스트</string>
+    <string name="home_latency_measured">HTTPS 응답 시간</string>
+    <string name="home_download_measured">다운로드 측정값</string>
+    <string name="home_measurement_starting">측정 시작 중…</string>
+    <string name="privacy_check_external_requests">테스트 중 표시된 서비스에 요청을 보냅니다.</string>
 </resources>

@@ -71,7 +71,7 @@ object VpnRuntimeState {
     @Synchronized fun acceptsEvidence(revision: Long): Boolean {
         val current = mutableSnapshot.value
         return current.revision == revision && current.state == ConnectionState.CONNECTED &&
-            current.pathStatus in setOf(NetworkPathStatus.TUN_READY, NetworkPathStatus.VERIFIED)
+            (current.pathStatus == NetworkPathStatus.TUN_READY || current.pathStatus == NetworkPathStatus.VERIFIED)
     }
 
     fun confirmReachable(revision: Long) {

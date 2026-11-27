@@ -10,6 +10,8 @@ import android.widget.Toast
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.horizontalScroll
@@ -178,32 +180,49 @@ internal fun SubscriptionAutoUpdateDialog(
 ) {
     var selectedHours by remember { mutableStateOf(hours) }
     var unmetered by remember { mutableStateOf(unmeteredOnly) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val intervals = listOf(0, 6, 12, 24)
     WeaveDialog(
         onDismissRequest = onDismiss,
         title = { Text("自动更新订阅", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "只刷新 HTTPS 远程订阅。节点变化通过安全审计后才会生效；影响已固定出口的更新会保留旧版本并提醒你预览。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0, 6, 12, 24).forEach { option ->
-                        FilterChip(
-                            selected = selectedHours == option,
-                            onClick = { selectedHours = option },
-                            label = { Text(if (option == 0) "关闭" else "$option 小时") },
-                        )
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides density) {
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        "只刷新 HTTPS 远程订阅。节点变化通过安全审计后才会生效；影响已固定出口的更新会保留旧版本并提醒你预览。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                    )
+                    intervals.forEach { option ->
+                        val selected = selectedHours == option
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .heightIn(min = WeaveUiTokens.minTouchTarget)
+                                .selectable(selected, role = Role.RadioButton, onClick = { selectedHours = option })
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            RadioButton(selected = selected, onClick = null)
+                            Text(
+                                if (option == 0) "关闭" else "$option 小时",
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                lineHeight = 24.sp,
+                            )
+                        }
                     }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("仅在不计流量的网络", fontWeight = FontWeight.SemiBold)
-                        Text("通常是 Wi‑Fi；避免消耗移动数据", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("仅在不计流量的网络", fontWeight = FontWeight.SemiBold)
+                            Text("通常是 Wi‑Fi；避免消耗移动数据", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        WeaveSwitch(checked = unmetered, onCheckedChange = { unmetered = it }, enabled = selectedHours > 0)
                     }
-                    WeaveSwitch(checked = unmetered, onCheckedChange = { unmetered = it }, enabled = selectedHours > 0)
                 }
             }
         },

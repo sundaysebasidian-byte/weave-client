@@ -39,4 +39,14 @@
     <string name="app_picker_empty">No hay aplicaciones que coincidan</string>
     <string name="app_picker_add">Añadir %1$s</string>
     <string name="app_picker_close">Cerrar</string>
+    <string name="about_github_description">Ver el proyecto y apoyarlo con una estrella</string>
+    <string name="about_github_unavailable">Ninguna aplicación puede abrir este enlace de GitHub</string>
+    <string name="migration_paste">Pegar e importar</string>
+    <string name="migration_paste_description">Copia un enlace de suscripción o una configuración en la aplicación de origen y toca Pegar e importar.</string>
+    <string name="migration_empty_clipboard">El portapapeles no contiene texto compatible</string>
+    <string name="home_speed_test">Prueba de velocidad</string>
+    <string name="home_latency_measured">Tiempo de respuesta HTTPS</string>
+    <string name="home_download_measured">Muestra de descarga</string>
+    <string name="home_measurement_starting">Iniciando la medición…</string>
+    <string name="privacy_check_external_requests">La prueba envía solicitudes a los servicios indicados.</string>
 </resources>

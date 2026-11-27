@@ -1,5 +1,10 @@
 package io.weave.client.ui
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
+import io.weave.client.R
+
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -264,6 +269,10 @@ internal fun SettingsScreen(
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
 
     var query by rememberSaveable { mutableStateOf("") }
+    val uriHandler = LocalUriHandler.current
+    val linkContext = LocalContext.current
+    val githubDescription = stringResource(R.string.about_github_description)
+    val cannotOpenLink = stringResource(R.string.about_github_unavailable)
     val sections = listOf(
         SettingsSection(
             key = "appearance",
@@ -410,6 +419,13 @@ internal fun SettingsScreen(
                     showOpenSourceDetails = true
                 },
                 LinkEntry(Icons.Rounded.Security, "VPN 数据路径说明", null, onShowVpnDisclosure),
+                LinkEntry(Icons.Rounded.Star, "GitHub", githubDescription) {
+                    try {
+                        uriHandler.openUri("https://github.com/sundaysebasidian-byte/weave-client")
+                    } catch (_: IllegalArgumentException) {
+                        Toast.makeText(linkContext, cannotOpenLink, Toast.LENGTH_SHORT).show()
+                    }
+                },
             ),
         ),
     )

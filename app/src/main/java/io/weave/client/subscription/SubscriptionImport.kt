@@ -115,6 +115,19 @@ class SubscriptionPayloadParser {
             )
         }
 
+    /** Use the same audited YAML root for metadata and provider serialization. */
+    internal fun prepareClash(input: String, offline: Boolean): Pair<ParsedSubscription, String>? {
+        val document = ClashSubscriptionDocument.unwrap(input)
+        if (looksLikeHtml(document)) return null
+        val root = ClashSubscriptionDocument.readRoot(document) ?: return null
+        if (offline && root.containsKey("proxy-providers")) {
+            throw SubscriptionImportException("离线订阅文件不能下载节点集合")
+        }
+        if (!root.containsKey("proxies")) return null
+        val nodes = ClashYamlCodec.nodes(root)
+        return clashMetadata(nodes) to ClashYamlCodec.write(mapOf("proxies" to nodes))
+    }
+
     internal fun runtimeNodes(input: String): List<Map<String, Any?>> {
         val document = ClashSubscriptionDocument.unwrap(input)
         val root = ClashSubscriptionDocument.readRootWithKey(document, "proxies")
@@ -156,14 +169,7 @@ class SubscriptionPayloadParser {
         val document = payload.trim().removePrefix("\uFEFF")
         val clashRoot = ClashSubscriptionDocument.readRootWithKey(document, "proxies")
         if (clashRoot != null) {
-            val nodes = parseClashNodes(clashRoot)
-            val protocols = nodes.mapTo(sortedSetOf()) { it.protocol }
-            return ParsedSubscription(
-                format = SubscriptionFormat.CLASH_YAML,
-                nodeCount = nodes.size,
-                protocols = protocols,
-                nodes = nodes,
-            )
+            return clashMetadata(ClashYamlCodec.nodes(clashRoot))
         }
 
         if (document.startsWith("{") && SING_BOX_MARKER.containsMatchIn(document)) {
@@ -209,8 +215,8 @@ class SubscriptionPayloadParser {
         return null
     }
 
-    private fun parseClashNodes(root: Map<String, Any?>): List<ParsedNode> =
-        ClashYamlCodec.nodes(root).map { node ->
+    private fun clashMetadata(nativeNodes: List<Map<String, Any?>>): ParsedSubscription {
+        val nodes = nativeNodes.map { node ->
             val name = node["name"]?.toString()?.takeIf(String::isNotBlank)
                 ?: throw SubscriptionImportException("节点缺少名称或协议类型")
             val protocol = node["type"]?.toString()?.lowercase(java.util.Locale.ROOT)?.takeIf(String::isNotBlank)
@@ -219,6 +225,13 @@ class SubscriptionPayloadParser {
             // applying the smaller URI-conversion allowlist. Native validation still gates use.
             ParsedNode(name, protocol)
         }
+        return ParsedSubscription(
+            format = SubscriptionFormat.CLASH_YAML,
+            nodeCount = nodes.size,
+            protocols = nodes.mapTo(sortedSetOf()) { it.protocol },
+            nodes = nodes,
+        )
+    }
 
     private fun extractJsonArray(payload: String, key: String): String? {
         val keyMatch = Regex(""""${Regex.escape(key)}"\s*:""").find(payload) ?: return null

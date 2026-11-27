@@ -3,6 +3,7 @@ package io.weave.client.subscription
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import io.weave.client.data.utf8SizeUpTo
 import io.weave.client.domain.EditableSubscription
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
@@ -64,11 +65,11 @@ class SubscriptionRepository(
     suspend fun previewClientSourceSelection(token: String, selected: Set<String>): MigrationBatchPreview = withContext(Dispatchers.IO) {
         migrationBatch.clear()
         val records = clientSources.select(token, selected)
-        var bytes = 0L
+        var remaining = 20 * 1024 * 1024
         val prepared = records.map { record ->
             val payload = record.read()
-            bytes += payload.toByteArray(Charsets.UTF_8).size
-            require(bytes <= 20L * 1024 * 1024) { "订阅内容超过大小限制" }
+            remaining -= utf8SizeUpTo(payload, remaining)
+                ?: throw SubscriptionImportException("订阅内容超过大小限制")
             val normalized = prepareRuntimePayload(payload, record.source)
             require(record.expectedNodes == null || record.expectedNodes == normalized.counts.imported) { "订阅规范化前后节点不一致，已停止保存" }
             PreparedSourceMigration(record.entry.name, record.source, normalized)
@@ -97,7 +98,7 @@ class SubscriptionRepository(
     suspend fun previewMigrationText(name: String, input: String): MigrationPreview = withContext(Dispatchers.IO) {
         discardClientSources()
         val value = input.trim()
-        require(value.toByteArray(Charsets.UTF_8).size <= MAX_INLINE_BYTES) { "粘贴内容超过 5 MiB 限制" }
+        require(utf8SizeUpTo(value, MAX_INLINE_BYTES) != null) { "粘贴内容超过 5 MiB 限制" }
         if (qrDecoder.isRemoteLink(value)) {
             val link = qrDecoder.decode(value) as QrSubscriptionInput.RemoteUrl
             val fetched = safeFetcher.fetch(link.url)
@@ -384,7 +385,7 @@ class SubscriptionRepository(
     /** Accepts either a remote HTTPS subscription or pasted URI/Base64/JSON content. */
     suspend fun importText(name: String, input: String): Subscription = withContext(Dispatchers.IO) {
         val value = input.trim()
-        if (value.toByteArray(Charsets.UTF_8).size > MAX_INLINE_BYTES) {
+        if (utf8SizeUpTo(value, MAX_INLINE_BYTES) == null) {
             throw SubscriptionImportException("粘贴内容超过 ${MAX_INLINE_BYTES / (1024 * 1024)} MiB 限制")
         }
         if (qrDecoder.isRemoteLink(value)) {

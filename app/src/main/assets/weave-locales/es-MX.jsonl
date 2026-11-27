@@ -1470,3 +1470,4 @@
 {"id":"dynamic:v2:^每个策略组最多 (\\d+) 个节点$","text":"Cada grupo puede contener hasta {first} nodos"}
 {"id":"dynamic:v2:^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$","text":"No hay ninguna versión compatible posterior a la compilación actual ({first})."}
 {"id":"dynamic:v2:^规则集条目超过 (\\d+) 条上限$","text":"El conjunto de reglas supera el límite de {first} entradas"}
+{"id":"传输完成","text":"Transferencia completada"}

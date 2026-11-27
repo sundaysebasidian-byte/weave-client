@@ -20,6 +20,7 @@ class DownloadProbe internal constructor(
     private val timeoutMillis: Long,
 ) {
     constructor() : this({ client }, TIMEOUT_MILLIS)
+    internal constructor(network: DiagnosticNetwork) : this({ network.bind(client.newBuilder()) }, TIMEOUT_MILLIS)
 
     suspend fun run(): DownloadMeasurement {
         val deadlineStart = System.nanoTime()
@@ -27,6 +28,7 @@ class DownloadProbe internal constructor(
             withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(ENDPOINT)
                     .header("Accept-Encoding", "identity")
+                    .header("Cache-Control", "no-cache, no-store")
                     .build()
                 val call = callFactory().newCall(request)
                 val start = System.nanoTime()
@@ -46,7 +48,8 @@ class DownloadProbe internal constructor(
                                     check(it.header("Content-Encoding").let { encoding ->
                                         encoding == null || encoding.equals("identity", ignoreCase = true)
                                     }) { "下载测速响应已压缩" }
-                                    val input = checkNotNull(it.body) { "下载测速未收到数据" }.byteStream()
+                                    val body = checkNotNull(it.body) { "下载测速未收到数据" }
+                                    val input = body.byteStream()
                                     val buffer = ByteArray(16 * 1024)
                                     var total = 0L
                                     while (total < MAX_BYTES && continuation.isActive) {

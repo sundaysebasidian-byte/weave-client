@@ -195,7 +195,7 @@ class RuntimeSettingsStore(context: Context) {
     private fun explicitLanguage(preferences: SharedPreferences): WeaveLanguage? = preferences.getString(KEY_LANGUAGE, null)
         ?.let { stored -> WeaveLanguage.entries.firstOrNull { it.name == stored } }
 
-    /** Read-only release-app copy record; not used by the current startup/picker path. */
+    /** The explicit regional choice on Android versions without per-app system languages. */
     internal fun releaseAppCopySelection(): StoredReleaseAppCopySelection {
         val selected = ReleaseAppCopySelection.read(preferences.all)
         return when (selected.state) {
@@ -207,6 +207,12 @@ class RuntimeSettingsStore(context: Context) {
         }
     }
 
+    internal fun setReleaseAppCopyLanguage(tag: String): Boolean {
+        val verified = ReleaseAppCopySelection.read(mapOf(ReleaseAppCopySelection.KEY to tag))
+        require(verified.state == ReleaseAppCopySelection.State.SELECTED)
+        return preferences.edit().putString(ReleaseAppCopySelection.KEY, tag).commit()
+    }
+
     fun isLocaleMigrated(): Boolean = preferences.getBoolean(KEY_LOCALE_MIGRATED, false)
 
     fun markLocaleMigrated() {
@@ -214,7 +220,10 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     fun setFollowSystemLanguage() {
-        preferences.edit(commit = true) { remove(KEY_LANGUAGE) }
+        preferences.edit(commit = true) {
+            remove(KEY_LANGUAGE)
+            remove(ReleaseAppCopySelection.KEY)
+        }
     }
 
     fun setAutomaticStrategy(strategy: AutomaticStrategy) {
@@ -284,7 +293,10 @@ class RuntimeSettingsStore(context: Context) {
     fun language(): WeaveLanguage = explicitLanguage() ?: WeaveLanguage.fromSystem()
 
     fun setLanguage(language: WeaveLanguage) {
-        preferences.edit(commit = true) { putString(KEY_LANGUAGE, language.name) }
+        preferences.edit(commit = true) {
+            putString(KEY_LANGUAGE, language.name)
+            remove(ReleaseAppCopySelection.KEY)
+        }
     }
 
     fun defaultRouteTarget(): RouteTarget? = defaultRouteTarget(preferences)

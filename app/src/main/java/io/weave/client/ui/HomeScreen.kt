@@ -1,5 +1,8 @@
 package io.weave.client.ui
 
+import androidx.compose.ui.res.stringResource
+import io.weave.client.R
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -235,6 +238,8 @@ internal fun HomeScreen(
     onIpQuality: () -> Unit,
     contentPadding: PaddingValues,
     onImport: () -> Unit = onDefaultRouteClick,
+    downloadState: DownloadProbeState = DownloadProbeState(),
+    onMeasure: (() -> Unit)? = null,
 ) {
     val scrollState = rememberScrollState()
     // Traffic counters should not invalidate the status block, the weave or the capsule.
@@ -326,7 +331,7 @@ internal fun HomeScreen(
                                 connected = connected,
                                 download = state.downloadBytesPerSecond,
                                 upload = state.uploadBytesPerSecond,
-                                latencyMs = state.activeNode?.latencyMs?.takeIf { it in 1..10_000 },
+                                latencyMs = state.activeNode?.latencyMs?.takeIf { connected && it in 1..10_000 },
                                 history = if (connected) trafficHistory else emptyList(),
                             )
                         }
@@ -335,6 +340,9 @@ internal fun HomeScreen(
                             ConnectionIssueNotice(issue = issue, onChooseExit = onDefaultRouteClick)
                         }
                         Spacer(Modifier.height(20.dp))
+                        if (onMeasure != null) {
+                            HomeNetworkMeasurement(downloadState, onMeasure)
+                        }
                         Box(Modifier.weaveEntrance("home/checks", 4)) { PrivacyCheckEntry(onClick = onIpQuality) }
                     }
                 },
@@ -578,14 +586,14 @@ internal fun LiveMetrics(
     val labels = remember(language, packaged) {
         listOf("下载", "上传", "延迟").map { resolveAppOwnedCopy(it, language, staged = null, released = packaged) }
     }
-    val canonicalValues = listOf(
-        if (connected) formatRate(download) else "—",
-        if (connected) formatRate(upload) else "—",
-        latencyMs?.let { "$it ms" } ?: "—",
-    )
-    // Ordinary six locales allocate the same list as before; do not transform on that path.
-    val values = if (symbols == null) canonicalValues else
-        canonicalValues.map { ReleaseMeasurementText.reading(it, symbols, rtl) }
+    fun localReading(value: String): String =
+        if (symbols == null) value else ReleaseMeasurementText.reading(value, symbols, rtl)
+    val down = remember(connected, download, symbols, rtl) { localReading(if (connected) formatRate(download) else "—") }
+    val up = remember(connected, upload, symbols, rtl) { localReading(if (connected) formatRate(upload) else "—") }
+    val latency = remember(connected, latencyMs, symbols, rtl) {
+        localReading(latencyMs?.takeIf { connected && it in 1..10_000 }?.let { "$it ms" } ?: "—")
+    }
+    val values = remember(down, up, latency) { listOf(down, up, latency) }
     val labelStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal)
     val large = MaterialTheme.typography.headlineLarge.merge(TabularNumbers)
     val compact = large.copy(fontSize = 20.sp, lineHeight = 24.sp)
@@ -1024,6 +1032,32 @@ private fun routeKindLabel(kind: RouteKind): String = when (kind) {
     RouteKind.DIRECT -> "直连"
     RouteKind.BLOCK -> "阻止"
     RouteKind.GROUP -> "自定义策略组"
+}
+
+@Composable
+private fun HomeNetworkMeasurement(state: DownloadProbeState, onMeasure: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        TextButton(onClick = onMeasure, enabled = !state.running, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Rounded.Speed, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(if (state.running) R.string.home_measurement_starting else R.string.home_speed_test),
+                translate = false)
+        }
+        if (!state.running) {
+            state.measurement?.let { measurement ->
+                Text("${stringResource(R.string.home_latency_measured)} · ${measurement.headersMillis} ms",
+                    translate = false, style = MaterialTheme.typography.bodySmall)
+                measurement.bodyMegabitsPerSecond?.let { rate ->
+                    Text(stringResource(R.string.home_download_measured), translate = false,
+                        style = MaterialTheme.typography.bodySmall)
+                    DiagnosticDownloadReading(rate, measurement.bytes / 1024, measurement.bodyMillis)
+                }
+                Text(stringResource(R.string.net_download_scope), translate = false,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }
 }
 
 @Composable

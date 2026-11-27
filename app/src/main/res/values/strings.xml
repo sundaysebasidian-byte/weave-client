@@ -39,4 +39,14 @@
     <string name="app_picker_empty">No matching launcher apps</string>
     <string name="app_picker_add">Add %1$s</string>
     <string name="app_picker_close">Close</string>
+    <string name="about_github_description">View the project and support us with a star</string>
+    <string name="about_github_unavailable">No app can open this GitHub link</string>
+    <string name="migration_paste">Paste and import</string>
+    <string name="migration_paste_description">Copy a subscription link or configuration in the source app, then tap Paste and import.</string>
+    <string name="migration_empty_clipboard">The clipboard has no supported text</string>
+    <string name="home_speed_test">Network speed test</string>
+    <string name="home_latency_measured">HTTPS response time</string>
+    <string name="home_download_measured">Download sample</string>
+    <string name="home_measurement_starting">Starting the measurement…</string>
+    <string name="privacy_check_external_requests">The test sends requests to the listed services.</string>
 </resources>

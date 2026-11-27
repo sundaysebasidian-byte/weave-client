@@ -163,7 +163,10 @@ data class LanTransferState(
     val pendingLink: String = "",
     val sharedNames: List<String> = emptyList(),
     val pendingLinkRevision: Long = 0L,
-)
+    val imported: Boolean = false,
+) {
+    override fun toString(): String = "LanTransferState(running=$running, imported=$imported)"
+}
 
 @Immutable
 data class PolicyPackState(
@@ -258,8 +261,6 @@ class AppViewModel internal constructor(application: Application, initialProfile
     internal val groupProfileEpoch = mutableGroupProfileEpoch.asStateFlow()
     private val profileEpoch get() = mutableGroupProfileEpoch.value
     private val backup by lazy { io.weave.client.transfer.WeaveBackup(application, subscriptionRepository) }
-    private val ipQualityProbe by lazy { IpQualityProbe() }
-    private val commonEndpointProbe by lazy { CommonEndpointProbe() }
     private val dnsProviderProbe by lazy { DnsProviderProbe() }
     private val qrCodeImageReader = QrCodeImageReader(application)
     private val lanTransferServer = OneTimeLanTransferServer()
@@ -377,6 +378,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     private val mutableLanTransferState = MutableStateFlow(LanTransferState())
     private var lanExportJob: Job? = null
+    private var lanExportRevision = 0L
     private var lanScanRevision = 0L
     val lanTransferState = mutableLanTransferState.asStateFlow()
 
@@ -982,21 +984,6 @@ class AppViewModel internal constructor(application: Application, initialProfile
         subscriptionRepository.previewMigrationFile(name, uri)
     }
 
-    fun listCmfaSubscriptions(packageName: String, tree: Uri) {
-        if (mutableClientImportState.value.running) return
-        if (io.weave.client.subscription.ClientSourceCapabilities.cmfaAuthority(packageName) != tree.authority) {
-            mutableClientImportState.value = ClientImportState(error = "请选择 CMFA 的配置目录")
-            return
-        }
-        mutableClientImportState.value = ClientImportState(running = true)
-        viewModelScope.launch {
-            startupJob.join()
-            try { mutableClientImportState.value = ClientImportState(catalogue = subscriptionRepository.listCmfaSubscriptions(tree)) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { mutableClientImportState.value = ClientImportState(error = error.message ?: "订阅导入失败") }
-        }
-    }
-
     fun listKaringSubscriptions(uri: Uri) {
         if (mutableClientImportState.value.running) return
         mutableClientImportState.value = ClientImportState(running = true)
@@ -1029,6 +1016,23 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     fun previewClientImportText(name: String, text: String) = runClientImportPreview {
         subscriptionRepository.previewMigrationText(name, text)
+    }
+
+    fun quickImportClientText(text: String) {
+        val state = mutableClientImportState.value
+        if (state.running) return
+        applyReviewedClientImport(ClientImportState(), batch = false) {
+            startupJob.join()
+            // Some source apps copy a heading and an HTTPS subscription link on separate lines.
+            val source = if (text.length <= (32 * 1024)) {
+                withContext(Dispatchers.IO) {
+                    io.weave.client.subscription.ExternalImportParser.fromSharedText(text)
+                        as? io.weave.client.subscription.ExternalImport.Remote
+                }
+            } else null
+            val preview = subscriptionRepository.previewMigrationText(source?.suggestedName.orEmpty(), source?.url ?: text)
+            listOf(subscriptionRepository.applyMigrationPreview(preview.token))
+        }
     }
 
     fun previewClientImportQrImage(name: String, uri: Uri) = runClientImportPreview {
@@ -1065,6 +1069,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
         val active = state.copy(running = true, error = null)
         mutableClientImportState.value = active
         viewModelScope.launch {
+            var changedNodeIds: Set<String>? = null
             finishReviewedClientImport(
                 state = mutableClientImportState,
                 active = active,
@@ -1073,8 +1078,20 @@ class AppViewModel internal constructor(application: Application, initialProfile
                 onSaved = { subscriptions ->
                     mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
                 },
-                readNodes = { withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() } },
-                onNodes = { mutableNodes.value = it },
+                readNodes = { saved ->
+                    val ids = if (subscriptionsLoaded) saved.mapTo(linkedSetOf(), Subscription::id) else null
+                    changedNodeIds = ids
+                    withContext(Dispatchers.IO) {
+                        if (ids == null) subscriptionRepository.loadNodes()
+                        else ids.flatMap(subscriptionRepository::loadNodes)
+                    }
+                },
+                onNodes = { nodes ->
+                    val ids = changedNodeIds
+                    mutableNodes.update { existing ->
+                        if (ids == null) nodes else existing.filterNot { it.subscriptionId in ids } + nodes
+                    }
+                },
                 requestReload = {
                     if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
                         WeaveVpnService.reload(getApplication())
@@ -1353,6 +1370,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     fun startLanExport(selectedIds: Set<String>) {
         if (mutableLanTransferState.value.running) return
         val selection = selectedIds.toSet()
+        val revision = ++lanExportRevision
         mutableLanTransferState.value = LanTransferState(running = true)
         lanExportJob = viewModelScope.launch {
             startupJob.join()
@@ -1363,7 +1381,16 @@ class AppViewModel internal constructor(application: Application, initialProfile
                     val plaintext = LanTransferCodec.encode(items)
                     try {
                         owner.ensureActive()
-                        lanTransferServer.start(plaintext, ensureActive = owner::ensureActive) to items.map { it.name }
+                        val link = lanTransferServer.start(plaintext, ensureActive = owner::ensureActive) { delivered ->
+                            viewModelScope.launch {
+                                if (revision == lanExportRevision) {
+                                    mutableLanTransferState.value = LanTransferState(
+                                        message = if (delivered) "传输完成" else "发送设备拒绝了传输或链接已失效",
+                                    )
+                                }
+                            }
+                        }
+                        link to items.map { it.name }
                     } finally {
                         plaintext.fill(0)
                     }
@@ -1386,6 +1413,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     }
 
     fun stopLanExport() {
+        lanExportRevision++
         lanExportJob?.cancel()
         lanExportJob = null
         lanTransferServer.stop()
@@ -1400,13 +1428,14 @@ class AppViewModel internal constructor(application: Application, initialProfile
         val current = mutableLanTransferState.value
         if (current.running || !canSubmitLanImport(observedScanRevision, current.pendingLinkRevision)) return
         closeLanExportIfOpen()
-        mutableLanTransferState.value = LanTransferState(running = true)
+        val scan = LanTransferState(pendingLink = current.pendingLink, pendingLinkRevision = current.pendingLinkRevision)
+        mutableLanTransferState.value = scan.copy(running = true)
         viewModelScope.launch {
             probeSafely {
                 val link = LanTransferLink.parse(rawLink)
                 link.requireConfirmation(confirmationCode)
                 val items = withContext(Dispatchers.IO) {
-                    val plaintext = LanTransferCodec.open(LanTransferClient.fetch(link), link.key)
+                        val plaintext = LanTransferCodec.open(LanTransferClient.fetch(link), link.key)
                     try {
                         LanTransferCodec.decode(plaintext)
                     } finally {
@@ -1417,13 +1446,14 @@ class AppViewModel internal constructor(application: Application, initialProfile
             }.onSuccess { imported ->
                 val refreshed = probeSafely { refreshSubscriptionsAndReferences(imported.mapTo(linkedSetOf()) { it.id }) }
                 mutableLanTransferState.value = LanTransferState(
+                    imported = true,
                     message = "已安全同步 ${imported.size} 个订阅；同源订阅已原位更新",
                     error = if (refreshed.isFailure) "订阅读取失败，请重新打开应用" else null,
                 )
                 if (refreshed.isSuccess) reloadIfConnected("局域网订阅已导入，正在安全更新运行配置")
             }.onFailure { error ->
-                mutableLanTransferState.value = LanTransferState(
-                    error = error.message ?: "局域网导入失败",
+                mutableLanTransferState.value = scan.copy(
+                    error = if (error is java.io.IOException) "局域网导入失败" else error.message ?: "局域网导入失败",
                 )
             }
         }
@@ -1588,7 +1618,9 @@ class AppViewModel internal constructor(application: Application, initialProfile
             mutableIpQualityState.value.running ||
             mutableCommonEndpointState.value.running
         ) return
-        if (!VpnRuntimeState.acceptsEvidence(VpnRuntimeState.snapshot.value.revision)) {
+        val pathRevision = VpnRuntimeState.snapshot.value.revision
+        val network = io.weave.client.core.diagnostics.DiagnosticNetwork.capture(getApplication())
+        if (network == null || !VpnRuntimeState.acceptsEvidence(pathRevision)) {
             mutableIpQualityState.value = IpQualityProbeState(error = "网络尚未就绪，请连接并等待恢复后重试")
             mutableCommonEndpointState.value = CommonEndpointProbeState(error = "网络尚未就绪，请连接并等待恢复后重试")
             return
@@ -1599,22 +1631,20 @@ class AppViewModel internal constructor(application: Application, initialProfile
         mutableIpQualityState.update { it.copy(running = true, error = null) }
         mutableCommonEndpointState.update { it.copy(running = true, error = null, progress = emptyList()) }
         val generation = ++privacyGeneration
-        val pathRevision = VpnRuntimeState.snapshot.value.revision
         fun stillCurrent() = generation == privacyGeneration && VpnRuntimeState.acceptsEvidence(pathRevision)
         privacyProbeJob = viewModelScope.launch {
             val preferences = mutableNetworkPreferences.value
             coroutineScope {
                 val ipDeferred = async(Dispatchers.IO) {
-                    probeSafely { ipQualityProbe.run(ipv6Mode = preferences.ipv6Mode) }
+                    probeSafely { IpQualityProbe(network).run(ipv6Mode = preferences.ipv6Mode) }
                 }
                 val endpointDeferred = async(Dispatchers.IO) {
                     probeSafely {
-                        commonEndpointProbe.run(onResult = { result ->
+                        CommonEndpointProbe(network).run(onResult = { result ->
                             withContext(Dispatchers.Main) {
                                 if (stillCurrent()) mutableCommonEndpointState.update { state ->
-                                    state.copy(progress = (state.progress + result).sortedBy { item ->
-                                        io.weave.client.core.diagnostics.CommonEndpointProbe.COMMON_ENDPOINTS.indexOf(item.endpoint)
-                                    })
+                                    // The report UI already renders fixed endpoint slots in order.
+                                    state.copy(progress = state.progress + result)
                                 }
                             }
                         })
@@ -1676,15 +1706,16 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     fun runDownloadProbe() {
         if (downloadProbeJob?.isActive == true || privacyProbeJob?.isActive == true) return
-        if (!VpnRuntimeState.acceptsEvidence(VpnRuntimeState.snapshot.value.revision)) {
+        val revision = VpnRuntimeState.snapshot.value.revision
+        val network = io.weave.client.core.diagnostics.DiagnosticNetwork.capture(getApplication())
+        if (network == null || !VpnRuntimeState.acceptsEvidence(revision)) {
             mutableDownloadState.value = DownloadProbeState(error = "网络尚未就绪，请连接并等待恢复后重试")
             return
         }
         mutableDownloadState.update { it.copy(running = true, error = null) }
-        val revision = VpnRuntimeState.snapshot.value.revision
         val generation = privacyGeneration
         downloadProbeJob = viewModelScope.launch {
-            probeSafely { io.weave.client.core.diagnostics.DownloadProbe().run() }
+            probeSafely { io.weave.client.core.diagnostics.DownloadProbe(network).run() }
                 .onSuccess {
                     if (generation == privacyGeneration && VpnRuntimeState.acceptsEvidence(revision))
                         mutableDownloadState.value = DownloadProbeState(measurement = it)

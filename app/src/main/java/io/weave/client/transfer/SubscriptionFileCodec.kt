@@ -57,8 +57,6 @@ internal object SubscriptionFileCodec {
         if (item.source.startsWith("https://", ignoreCase = true)) {
             require(identities.add(item.name.trim() to item.source))
         }
-        // WVLAN001 uses UTF-8. Never export silent replacements for broken UTF-16 from storage.
-        val encoder = Charsets.UTF_8.newEncoder()
-        require(encoder.canEncode(item.name) && encoder.canEncode(item.source) && encoder.canEncode(item.payload))
+        // WVLAN001 validates UTF-8 at the codec boundary for both encoding and decoding.
     }
 }

@@ -3,6 +3,7 @@ package io.weave.client.ui
 import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.ClipboardManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -12,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -23,9 +23,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,14 +38,14 @@ import io.weave.client.subscription.ClientSourceCatalogue
 import io.weave.client.subscription.MigrationPreview
 import io.weave.client.domain.Subscription
 import androidx.core.content.ContextCompat
+import io.weave.client.R
 
 /** Matches the catalogue session's limit; the backend rejects larger selections as well. */
 private const val MAX_SOURCE_SELECTION = 20
 
 /**
  * Client migration without reading another app's sandbox:
- * - CMFA: the user grants one directory through the system document picker (CMFA's own
- *   DocumentsProvider); Weave lists the configs it exposes and the user multi-selects them.
+ * - Copy or share a subscription from its source; file access is limited to one user-selected export.
  * - Karing: only from an official backup the user picks, and only when the root has verified it.
  * - x2ray and anything else: explained honestly, with the manual file/text/QR fallback.
  * Every listed name, count and protocol comes from [ClientImportState]; nothing is invented here.
@@ -57,11 +57,11 @@ internal fun ClientExportImportDialog(
     onPreviewFile: (String, Uri) -> Unit, onPreviewText: (String, String) -> Unit,
     onConfirm: (String) -> Unit, onReset: () -> Unit,
     onPreviewQrImage: (String, Uri) -> Unit, onOpenSubscription: (String) -> Unit,
-    onListCmfaSubscriptions: (String, Uri) -> Unit = { _, _ -> },
     onListKaringSubscriptions: (Uri) -> Unit = {},
     onPreviewSourceSelection: (String, Set<String>) -> Unit = { _, _ -> },
     onConfirmSourceSelection: (String) -> Unit = {},
     karingBackupSupported: Boolean = false,
+    onQuickImportText: (String) -> Unit = { onPreviewText("", it) },
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -72,15 +72,11 @@ internal fun ClientExportImportDialog(
     var scannerError by remember { mutableStateOf<String?>(null) }
     // The manual fallback is secondary when a client is visible, but open by default otherwise.
     var manualExpanded by rememberSaveable { mutableStateOf(clients.isEmpty()) }
-    // The CMFA variant chosen when the system picker was launched. The result is only ever
-    // forwarded with this package; there is no fallback to another package.
-    var pendingTreePackage by rememberSaveable { mutableStateOf<String?>(null) }
-    var pickerError by remember { mutableStateOf(false) }
+    var clipboardError by remember { mutableStateOf(false) }
     val catalogue = state.catalogue
     // Selection belongs to one catalogue token; a new listing starts empty.
     var selection by remember(catalogue?.token) { mutableStateOf(emptySet<String>()) }
     val selected = clients.firstOrNull { it.packageName == selectedPackage }
-    val cmfaClients = remember(clients) { clients.filter { ClientSourceCapabilities.cmfaAuthority(it.packageName) != null } }
     val karingInstalled = remember(clients) { clients.any { ClientSourceCapabilities.isKaring(it.packageName) } }
     val busy = state.running
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -89,26 +85,11 @@ internal fun ClientExportImportDialog(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPreviewQrImage(name, uri)
     }
-    val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        val packageName = pendingTreePackage
-        pendingTreePackage = null
-        if (uri != null && packageName != null) onListCmfaSubscriptions(packageName, uri)
-    }
     val karingPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onListKaringSubscriptions(uri)
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) showScanner = true else scannerError = "未获得相机权限，可选择二维码图片"
-    }
-    fun authorizeCmfa(packageName: String) {
-        pickerError = false
-        pendingTreePackage = packageName
-        // No initial URI: the provider's root id is not part of a verified public contract, so the
-        // user navigates to CMFA in the system picker. A missing picker is reported, not retried.
-        if (runCatching { treePicker.launch(null) }.isFailure) {
-            pendingTreePackage = null
-            pickerError = true
-        }
     }
     if (showScanner) {
         LiveQrScanner(onDismiss = { showScanner = false }, onResult = { value ->
@@ -167,12 +148,21 @@ internal fun ClientExportImportDialog(
                             modifier = Modifier.testTag("client-import-edit")) { Text("重新选择内容") }
                     }
                     else -> {
-                        // Capability cards describe what each client actually allows today.
-                        CmfaSourceCard(cmfaClients, busy, onAuthorize = ::authorizeCmfa)
-                        if (pickerError) {
-                            WeaveNotice(icon = Icons.Rounded.Warning, message = "无法打开系统目录选择器",
-                                tone = WeaveStatusTone.CRITICAL)
+                        Text(stringResource(R.string.migration_paste_description), translate = false,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick = {
+                            val clip = runCatching {
+                                context.getSystemService(ClipboardManager::class.java)?.primaryClip
+                            }.getOrNull()
+                            // Read text only; a content URI does not grant access to the source app.
+                            val pasted = clip?.takeIf { it.itemCount == 1 }?.getItemAt(0)?.text
+                            clipboardError = pasted == null || pasted.isBlank()
+                            if (!clipboardError && pasted != null) onQuickImportText(pasted.toString())
+                        }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("client-import-clipboard")) {
+                            Text(stringResource(R.string.migration_paste), translate = false)
                         }
+                        if (clipboardError) Text(stringResource(R.string.migration_empty_clipboard),
+                            translate = false, color = MaterialTheme.colorScheme.error)
                         KaringSourceCard(
                             installed = karingInstalled,
                             supported = karingBackupSupported,
@@ -329,40 +319,6 @@ private fun SourceStatus(installed: Boolean) {
 @Composable
 private fun SourceNote(text: String) {
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-}
-
-@Composable
-private fun CmfaSourceCard(cmfaClients: List<InstalledApp>, busy: Boolean, onAuthorize: (String) -> Unit) {
-    WeaveToolSection(
-        modifier = Modifier.testTag("client-source-cmfa"),
-        title = "Clash Meta for Android (CMFA)",
-        icon = Icons.Rounded.FolderOpen,
-        translateTitle = false,
-    ) {
-        SourceStatus(installed = cmfaClients.isNotEmpty())
-        SourceNote("在系统窗口中选择 CMFA 的配置目录并授权一次，之后可在 Weave 内勾选一个或多个订阅。")
-        SourceNote("导入的是本地快照：CMFA 不提供原始订阅地址，因此不会自动远程更新；原有 DNS、分流和策略组不会迁移。")
-        cmfaClients.forEach { client ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (cmfaClients.size > 1) {
-                    Text(client.label, fontWeight = FontWeight.SemiBold, translate = false,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                Button(
-                    onClick = { onAuthorize(client.packageName) },
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = WeaveUiTokens.minTouchTarget)
-                        .testTag("client-source-cmfa-authorize-${client.packageName}"),
-                ) {
-                    Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("授权配置目录", textAlign = TextAlign.Center)
-                }
-            }
-        }
-    }
 }
 
 @Composable

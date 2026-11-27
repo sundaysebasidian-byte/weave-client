@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.MainActivity
+import io.weave.client.core.diagnostics.DiagnosticNetwork
 import io.weave.client.core.ipc.CoreClient
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.core.vpn.WeaveVpnService
@@ -77,6 +78,7 @@ class MainActivityVpnLifecycleTest {
                     assertNotNull(CoreClient.queryRuntime())
                     val network = context.getSystemService(ConnectivityManager::class.java)
                     val tunnel = checkNotNull(network.activeNetwork)
+                    assertNotNull("Diagnostics must be able to capture Android's VPN network", DiagnosticNetwork.capture(context))
                     scenario.onActivity { WeaveVpnService.start(it) }
                     // Validation of the physical path can advance the revision without a restart.
                     val disconnected = withTimeoutOrNull(2_000) {

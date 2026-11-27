@@ -872,6 +872,7 @@ fun WeaveApp(
             Destination.HOME -> {
                 val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
                 val trafficHistory by viewModel.trafficHistory.collectAsStateWithLifecycle()
+                val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
                 HomeScreen(
                     onScrolling = { scrolling -> dashboardScroll.list = scrolling },
                     state = dashboard,
@@ -883,6 +884,8 @@ fun WeaveApp(
                     onIpQuality = { showNetworkPrivacyCenter = true },
                     contentPadding = innerPadding,
                     onImport = ::openImport,
+                    downloadState = downloadState,
+                    onMeasure = viewModel::runDownloadProbe,
                 )
             }
             Destination.ROUTES -> {
@@ -1166,21 +1169,13 @@ fun WeaveApp(
             onRunFullCheck = {
                 browserPrivacyResult = null
                 browserPrivacyError = null
-                // Do not start external STUN if the HTTPS checks reject this path.
-                browserProbeRequest = if (io.weave.client.core.vpn.VpnRuntimeState.acceptsEvidence(expectedRevision)) {
-                    BrowserProbeRequest()
-                } else null
+                browserProbeRequest = BrowserProbeRequest()
                 viewModel.runIpQualityProbe()
             },
             onRunBrowserCheck = {
                 browserPrivacyResult = null
-                if (io.weave.client.core.vpn.VpnRuntimeState.acceptsEvidence(expectedRevision)) {
-                    browserPrivacyError = null
-                    browserProbeRequest = BrowserProbeRequest()
-                } else {
-                    browserProbeRequest = null
-                    browserPrivacyError = "网络尚未就绪，请连接并等待恢复后重试"
-                }
+                browserPrivacyError = null
+                browserProbeRequest = BrowserProbeRequest()
             },
             onBrowserResult = {
                 if (expectedBrowserRequest?.canPublish(
@@ -1343,8 +1338,8 @@ fun WeaveApp(
             onConfirm = viewModel::applyClientImport,
             onReset = viewModel::resetClientImport,
             onPreviewQrImage = viewModel::previewClientImportQrImage,
-            onListCmfaSubscriptions = viewModel::listCmfaSubscriptions,
             onListKaringSubscriptions = viewModel::listKaringSubscriptions,
+            onQuickImportText = viewModel::quickImportClientText,
             karingBackupSupported = true,
             onPreviewSourceSelection = viewModel::previewClientSourceSelection,
             onConfirmSourceSelection = viewModel::applyClientSourceSelection,

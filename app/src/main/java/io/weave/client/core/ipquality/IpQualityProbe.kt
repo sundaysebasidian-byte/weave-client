@@ -88,6 +88,9 @@ class IpQualityProbe(
     private val transport: IpQualityHttpTransport = UrlConnectionIpQualityTransport(),
     private val timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
 ) {
+    internal constructor(network: io.weave.client.core.diagnostics.DiagnosticNetwork) :
+        this(UrlConnectionIpQualityTransport(network::open))
+
     suspend fun run(
         ipv6Mode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
         now: Long = System.currentTimeMillis(),
@@ -344,12 +347,14 @@ class IpQualityProbe(
     }
 }
 
-private class UrlConnectionIpQualityTransport : IpQualityHttpTransport {
+private class UrlConnectionIpQualityTransport(
+    private val open: (java.net.URL) -> java.net.URLConnection = java.net.URL::openConnection,
+) : IpQualityHttpTransport {
     override fun get(url: String, timeoutMillis: Int): IpQualityHttpResponse {
         val uri = URI(url)
         require(uri.scheme.equals("https", ignoreCase = true)) { "探测端点必须使用 HTTPS" }
         val started = System.nanoTime()
-        val connection = (uri.toURL().openConnection() as? HttpURLConnection)
+        val connection = (open(uri.toURL()) as? HttpURLConnection)
             ?: error("无法创建 HTTPS 连接")
         return try {
             connection.instanceFollowRedirects = false

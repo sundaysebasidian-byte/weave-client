@@ -28,6 +28,11 @@ cleanup() {
 }
 trap cleanup EXIT
 python3 "$root/tools/wait-android-ready.py" "$serial" | tee "$results/readiness.txt"
+# The hosted AVD can suspend its display before the first Compose assertion.
+# Keep the explicitly disposable device awake for both instrumentation batches.
+"${target[@]}" shell svc power stayon true
+"${target[@]}" shell input keyevent KEYCODE_WAKEUP
+"${target[@]}" shell wm dismiss-keyguard
 abi=$("${target[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')
 case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported emulator ABI' >&2; exit 1 ;; esac
 product_apk="$root/app/build/outputs/apk/debug/app-$abi-debug.apk"
@@ -76,9 +81,12 @@ routing_classes+=,io.weave.client.ui.ProductFlowVisualTest#bodySwipeStepsAndDock
 routing_classes+=,io.weave.client.ui.NetworkSettingsSaveIntegrationTest
 routing_classes+=,io.weave.client.ui.FirstImportIntegrationTest
 routing_classes+=,io.weave.client.ui.LargeNodePickerIntegrationTest
+routing_classes+=,io.weave.client.ui.PackagedAppLocaleIntegrationTest
+routing_classes+=,io.weave.client.ui.QuickMigrationIntegrationTest
+routing_classes+=,io.weave.client.ui.SubscriptionAutoUpdateLayoutTest
 "${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
   "$component" > "$results/routing-instrumentation.txt" 2>&1
-expected_routing_tests=12
+expected_routing_tests=15
 grep -Fx "OK ($expected_routing_tests tests)" "$results/routing-instrumentation.txt"
 awk -v expected="$expected_routing_tests" '
   /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
