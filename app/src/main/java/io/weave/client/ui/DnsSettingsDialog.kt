@@ -191,7 +191,7 @@ internal fun DnsSettingsDialog(
     onDismiss: () -> Unit,
     onProfileSelected: (DnsProfile) -> Unit,
     onRoutingModeSelected: (DnsRoutingMode) -> Unit,
-    onCustomEndpointSaved: (String) -> Boolean,
+    onCustomEndpointSaved: (String, (String?) -> Unit) -> Unit,
     onTransportSelected: (DnsTransport) -> Unit,
     onProbeProviders: () -> Unit,
 ) {
@@ -201,6 +201,7 @@ internal fun DnsSettingsDialog(
     var showingProbe by remember { mutableStateOf(false) }
     var endpoint by remember { mutableStateOf(preferences.customDnsEndpoint) }
     var error by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
     val showingChildPanel = editingCustom || choosingTransport || choosingRouting || showingProbe
     val returnToOverview = {
         editingCustom = false
@@ -211,8 +212,8 @@ internal fun DnsSettingsDialog(
     }
 
     WeaveDialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = !showingChildPanel),
+        onDismissRequest = { if (!saving) onDismiss() },
+        properties = DialogProperties(dismissOnBackPress = !showingChildPanel, dismissOnClickOutside = !saving),
         title = {
             Text(
                 when {
@@ -228,7 +229,7 @@ internal fun DnsSettingsDialog(
         text = {
             // Register inside the dialog window. Android can handle the IME before this
             // callback, and outside taps still use the dialog's own onDismissRequest.
-            BackHandler(enabled = showingChildPanel, onBack = returnToOverview)
+            BackHandler(enabled = showingChildPanel) { if (!saving) returnToOverview() }
             when {
                 showingProbe -> DnsProbePanel(
                     state = probeState,
@@ -284,6 +285,7 @@ internal fun DnsSettingsDialog(
                         label = { Text("DoH / DoT 地址") },
                         placeholder = { Text("https://dns.example/dns-query") },
                         singleLine = true,
+                        enabled = !saving,
                         isError = error != null,
                         supportingText = error?.let { message -> { Text(message) } },
                     )
@@ -368,14 +370,21 @@ internal fun DnsSettingsDialog(
         },
         confirmButton = {
             if (editingCustom) {
-                TextButton(onClick = {
-                    val valid = runCatching { onCustomEndpointSaved(endpoint) }.getOrElse { false }
-                    if (valid) onDismiss() else error = "地址无效：请使用 https:// 或 tls://，并填写主机名"
-                }) { Text("保存") }
+                TextButton(
+                    enabled = !saving,
+                    onClick = {
+                        saving = true
+                        error = null
+                        onCustomEndpointSaved(endpoint) { failure ->
+                            saving = false
+                            if (failure == null) onDismiss() else error = failure
+                        }
+                    },
+                ) { Text("保存") }
             }
         },
         dismissButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !saving, onClick = {
                 if (showingChildPanel) returnToOverview() else onDismiss()
             }) {
                 Text(if (showingChildPanel) "返回" else "取消")

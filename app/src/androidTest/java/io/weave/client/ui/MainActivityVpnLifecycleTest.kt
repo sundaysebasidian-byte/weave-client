@@ -1,5 +1,6 @@
 package io.weave.client.ui
 
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import androidx.lifecycle.Lifecycle
@@ -17,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -53,6 +55,19 @@ class MainActivityVpnLifecycleTest {
                 }
                 withTimeout(10_000) { model.dashboard.first { it.coreAvailable } }
                 assertFalse("Browsing with no tunnel should not create a control connection", CoreClient.awaitConnected(200))
+                try {
+                    scenario.onActivity { WeaveVpnService.reload(it) }
+                    val unexpected = withTimeoutOrNull(2_000) {
+                        VpnRuntimeState.snapshot.first { it.state != ConnectionState.DISCONNECTED }
+                    }
+                    assertEquals("Reloading idle settings must not establish a tunnel", null, unexpected)
+                } finally {
+                    // A pre-fix binary could have started a real tunnel.
+                    if (VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED) {
+                        scenario.onActivity { WeaveVpnService.stop(it) }
+                        withTimeout(15_000) { VpnRuntimeState.snapshot.first { it.state == ConnectionState.DISCONNECTED } }
+                    }
+                }
                 scenario.onActivity { WeaveVpnService.start(it) }
                 try {
                     val connected = withTimeout(30_000) {
@@ -60,6 +75,15 @@ class MainActivityVpnLifecycleTest {
                     }
                     assertEquals(connected.message, ConnectionState.CONNECTED, connected.state)
                     assertNotNull(CoreClient.queryRuntime())
+                    val network = context.getSystemService(ConnectivityManager::class.java)
+                    val tunnel = checkNotNull(network.activeNetwork)
+                    scenario.onActivity { WeaveVpnService.start(it) }
+                    // Validation of the physical path can advance the revision without a restart.
+                    val disconnected = withTimeoutOrNull(2_000) {
+                        VpnRuntimeState.snapshot.first { it.state != ConnectionState.CONNECTED }
+                    }
+                    assertEquals("An already connected session should not restart", null, disconnected)
+                    assertEquals("A duplicate start must leave the same Android tunnel running", tunnel, network.activeNetwork)
                     scenario.moveToState(Lifecycle.State.CREATED)
                     assertFalse(CoreClient.awaitConnected(200))
                     scenario.moveToState(Lifecycle.State.RESUMED)

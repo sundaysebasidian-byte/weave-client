@@ -28,3 +28,5 @@
 {"id":"无法读取应用列表","en":"Could not load apps"}
 {"id":"收藏已达到上限","en":"Favorites are full"}
 {"id":"无法保存收藏","en":"Could not save favorites"}
+{"id":"已停止订阅刷新","en":"Subscription refresh stopped"}
+{"id":"无法读取局域网共享凭据","en":"Could not load LAN sharing credentials"}

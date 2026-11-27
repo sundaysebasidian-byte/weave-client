@@ -1,7 +1,9 @@
 package io.weave.client.ui
 
 import io.weave.client.core.engine.EngineRuntimeSnapshot
+import io.weave.client.core.vpn.VpnRuntimeSnapshot
 import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.NetworkPathStatus
 import io.weave.client.domain.DashboardState
 import io.weave.client.domain.RoutingMode
 import org.junit.Assert.*
@@ -9,6 +11,16 @@ import org.junit.Test
 
 class DashboardRefreshPolicyTest {
     private val idle = EngineRuntimeSnapshot("test-node", "http", 25, 0, 0, 0)
+
+    @Test fun `traffic polling stops on unavailable paths and follows the new revision`() {
+        val ready = VpnRuntimeSnapshot(ConnectionState.CONNECTED, revision = 17, pathStatus = NetworkPathStatus.TUN_READY)
+        assertEquals(17L, ready.dashboardTrafficRevision())
+        assertEquals(17L, ready.copy(pathStatus = NetworkPathStatus.VERIFIED).dashboardTrafficRevision())
+        assertNull(ready.copy(pathStatus = NetworkPathStatus.WAITING_NETWORK).dashboardTrafficRevision())
+        assertNull(ready.copy(pathStatus = NetworkPathStatus.RECOVERING).dashboardTrafficRevision())
+        assertNull(ready.copy(state = ConnectionState.DISCONNECTED).dashboardTrafficRevision())
+        assertEquals(18L, ready.copy(revision = 18).dashboardTrafficRevision())
+    }
 
     @Test fun `idle polling backs off only after three samples`() {
         val policy = DashboardRefreshPolicy()

@@ -319,9 +319,13 @@ class SubscriptionSecretStore(
         fun payload(id: String): String = readPayload(id, values)
     }
 
-    internal fun listWithRemoteStatus(includeNodes: Boolean): List<Pair<StoredSubscription, Boolean>> = locked {
+    internal fun listWithRemoteStatus(
+        includeNodes: Boolean,
+        select: (StoredSubscription) -> Boolean = { true },
+    ): List<Pair<StoredSubscription, Boolean>> = locked {
         val snapshot = preferences
-        readRecords(snapshot, includeNodes).map { record ->
+        readRecords(snapshot, includeNodes).mapNotNull { record ->
+            if (!select(record)) return@mapNotNull null
             record to (runCatching { readUrl(record.id, snapshot) }.getOrNull()
                 ?.startsWith("https://", ignoreCase = true) == true)
         }

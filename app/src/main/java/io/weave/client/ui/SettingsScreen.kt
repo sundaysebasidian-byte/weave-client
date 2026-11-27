@@ -211,7 +211,7 @@ internal fun SettingsScreen(
     onDnsTransportSelected: (DnsTransport) -> Unit,
     onDnsProfileSelected: (DnsProfile) -> Unit,
     onDnsRoutingModeSelected: (DnsRoutingMode) -> Unit,
-    onCustomDnsEndpointSaved: (String) -> Boolean,
+    onCustomDnsEndpointSaved: (String, (String?) -> Unit) -> Unit,
     onProbeDnsProviders: () -> Unit,
     onIpv6ModeSelected: (Ipv6Mode) -> Unit,
     onBlockUdpStunChanged: (Boolean) -> Unit,
@@ -638,9 +638,7 @@ internal fun SettingsScreen(
             onDismiss = { showDnsSettings = false },
             onProfileSelected = onDnsProfileSelected,
             onRoutingModeSelected = onDnsRoutingModeSelected,
-            onCustomEndpointSaved = { endpoint ->
-                onCustomDnsEndpointSaved(endpoint)
-            },
+            onCustomEndpointSaved = onCustomDnsEndpointSaved,
             onTransportSelected = onDnsTransportSelected,
             onProbeProviders = onProbeDnsProviders,
         )

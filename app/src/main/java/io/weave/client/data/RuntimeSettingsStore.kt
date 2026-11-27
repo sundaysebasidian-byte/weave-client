@@ -111,8 +111,7 @@ class RuntimeSettingsStore(context: Context) {
             blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
             domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
             weavePalette = weavePalette(preferences),
-            subscriptionAutoUpdateHours = preferences.getInt(KEY_AUTO_UPDATE_HOURS, 0)
-                .takeIf { it in AUTO_UPDATE_CHOICES } ?: 0,
+            subscriptionAutoUpdateHours = autoUpdateHours(preferences),
             subscriptionAutoUpdateUnmeteredOnly = preferences.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true),
             bypassDirectApps = preferences.getBoolean(KEY_BYPASS_DIRECT_APPS, false),
             bootstrapDns = enumPreference(preferences, KEY_BOOTSTRAP_DNS, BootstrapDns.MAINLAND),
@@ -120,6 +119,13 @@ class RuntimeSettingsStore(context: Context) {
             lanSharing = preferences.getBoolean(KEY_LAN_SHARING, false),
         )
     }
+
+    internal fun subscriptionAutoUpdateSchedule(): Pair<Int, Boolean> = preferences.let { snapshot ->
+        autoUpdateHours(snapshot) to snapshot.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true)
+    }
+
+    private fun autoUpdateHours(snapshot: SharedPreferences): Int =
+        snapshot.getInt(KEY_AUTO_UPDATE_HOURS, 0).takeIf { it in AUTO_UPDATE_CHOICES } ?: 0
 
     fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
         require(supportsAutoUpdateHours(hours)) { "unsupported interval" }
@@ -151,24 +157,36 @@ class RuntimeSettingsStore(context: Context) {
      * Random credentials for the LAN-shared proxy, generated once and kept encrypted. They are
      * shown to the user so other devices can authenticate; loopback clients skip auth.
      */
-    fun lanProxyCredentials(): Pair<String, String> {
-        preferences.getString(KEY_LAN_CREDENTIALS, null)?.let { encrypted ->
-            runCatching {
-                secretBox.decrypt(encrypted, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
-            }.getOrNull()?.split(':', limit = 2)?.takeIf { it.size == 2 }?.let { return it[0] to it[1] }
+    fun lanProxyCredentials(): Pair<String, String> = prepareLanCredentials(enableSharing = false)
+
+    internal fun enableLanSharing(): Pair<String, String> = prepareLanCredentials(enableSharing = true)
+
+    private fun prepareLanCredentials(enableSharing: Boolean): Pair<String, String> =
+        ProfileStorage.access(appContext) {
+            val snapshot = preferences
+            val existing = snapshot.getString(KEY_LAN_CREDENTIALS, null)?.let { encrypted ->
+                runCatching {
+                    secretBox.decrypt(encrypted, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
+                }.getOrNull()?.split(':', limit = 2)?.takeIf { it.size == 2 && it.all(String::isNotEmpty) }
+                    ?.let { it[0] to it[1] }
+            }
+            val credentials = existing ?: newLanCredentials()
+            if (existing == null || enableSharing) snapshot.edit(commit = true) {
+                if (existing == null) putString(
+                    KEY_LAN_CREDENTIALS,
+                    secretBox.encrypt("${credentials.first}:${credentials.second}".toByteArray(Charsets.UTF_8), LAN_CREDENTIALS_AAD),
+                )
+                if (enableSharing) putBoolean(KEY_LAN_SHARING, true)
+            }
+            credentials
         }
+
+    private fun newLanCredentials(): Pair<String, String> {
         val random = java.security.SecureRandom()
         fun token(length: Int) = buildString {
             repeat(length) { append(CREDENTIAL_ALPHABET[random.nextInt(CREDENTIAL_ALPHABET.length)]) }
         }
-        val credentials = "weave-${token(4)}" to token(16)
-        preferences.edit(commit = true) {
-            putString(
-                KEY_LAN_CREDENTIALS,
-                secretBox.encrypt("${credentials.first}:${credentials.second}".toByteArray(Charsets.UTF_8), LAN_CREDENTIALS_AAD),
-            )
-        }
-        return credentials
+        return "weave-${token(4)}" to token(16)
     }
 
     /** Null means the UI follows the system language. */
@@ -219,10 +237,18 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit(commit = true) { putString(KEY_DNS_ROUTING_MODE, mode.name) }
     }
 
-    fun setCustomDnsEndpoint(endpoint: String) {
+    fun setCustomDnsEndpoint(endpoint: String) = writeCustomDnsEndpoint(endpoint, select = false)
+
+    internal fun selectCustomDnsEndpoint(endpoint: String) = writeCustomDnsEndpoint(endpoint, select = true)
+
+    private fun writeCustomDnsEndpoint(endpoint: String, select: Boolean) {
         // This may contain a private resolver or a profile token. Never log or export it.
         val normalized = endpoint.trim()
         preferences.edit(commit = true) {
+            if (select) {
+                require(normalized.isNotBlank())
+                putString(KEY_DNS_PROFILE, DnsProfile.CUSTOM.name)
+            }
             if (normalized.isBlank()) {
                 remove(KEY_CUSTOM_DNS_ENDPOINT_ENCRYPTED)
                 remove(KEY_CUSTOM_DNS_ENDPOINT)

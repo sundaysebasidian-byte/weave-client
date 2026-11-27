@@ -22,6 +22,13 @@ data class SubscriptionAudit(
     val findings: List<SubscriptionAuditFinding> = emptyList(),
 ) {
     val blocked: Boolean get() = severity == SubscriptionAuditSeverity.BLOCKED
+    val requiresNodeCountConfirmation: Boolean get() {
+        val blockers = findings.filter { it.severity == SubscriptionAuditSeverity.BLOCKED }
+        return blocked && blockers.isNotEmpty() && blockers.all { it.code in CountChangeCodes }
+    }
+
+    fun canApply(acceptCountChange: Boolean): Boolean =
+        !blocked || (requiresNodeCountConfirmation && acceptCountChange)
     val summary: String
         get() = when (severity) {
             SubscriptionAuditSeverity.CLEAN -> "订阅安全审计通过"
@@ -30,6 +37,8 @@ data class SubscriptionAudit(
         }
 
     companion object {
+        private val CountChangeCodes = setOf("node_drop", "large_removal", "node_spike")
+
         fun clean(oldNodeCount: Int = 0, newNodeCount: Int = 0) = SubscriptionAudit(
             severity = SubscriptionAuditSeverity.CLEAN,
             oldNodeCount = oldNodeCount,

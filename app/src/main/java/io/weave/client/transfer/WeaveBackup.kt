@@ -37,6 +37,7 @@ import io.weave.client.policy.PolicyPackCodec
 import io.weave.client.policy.PolicyPackStore
 import io.weave.client.subscription.PreparedTransfer
 import io.weave.client.subscription.SubscriptionRepository
+import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -78,7 +79,15 @@ class WeaveBackup(
     }
 
     suspend fun export(passphrase: CharArray): ByteArray = withContext(Dispatchers.IO) {
-        val entries = ProfileStorage.access(context) {
+        BackupCodec.encrypt(exportEntries(), passphrase, formatVersion = 2)
+    }
+
+    internal suspend fun exportTo(destination: OutputStream, passphrase: CharArray) = withContext(Dispatchers.IO) {
+        // Older clients reject the version rather than silently losing newer profile fields.
+        BackupCodec.encryptTo(destination, exportEntries(), passphrase, formatVersion = 2)
+    }
+
+    private fun exportEntries(): Map<String, String> = ProfileStorage.access(context) {
         val subscriptions = repository.exportAllForBackup()
         mapOf(
             MANIFEST to JSONObject()
@@ -113,9 +122,6 @@ class WeaveBackup(
                 put(JSONObject().put("payload", PolicyPackCodec.encode(pack)).put("active", pack.active))
             } }.toString(),
         )
-        }
-        // Older clients reject the envelope version instead of silently losing policy packs.
-        BackupCodec.encrypt(entries, passphrase, formatVersion = 2)
     }
 
     fun preview(entries: Map<String, String>): BackupPreview = decode(entries).preview

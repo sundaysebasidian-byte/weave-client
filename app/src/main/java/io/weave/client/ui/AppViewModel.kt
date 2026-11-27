@@ -70,6 +70,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -239,6 +240,8 @@ internal data class StartupProfile(
 }
 
 class AppViewModel internal constructor(application: Application, initialProfile: StartupProfile) : AndroidViewModel(application) {
+    private val appUpdateOwner = lazy { io.weave.client.ui.update.NextUpdateController(application, viewModelScope) }
+    internal val appUpdates by appUpdateOwner
     private val subscriptionRepository by lazy { SubscriptionRepository(application) }
     private val installedAppRepository = InstalledAppRepository(application)
     private val routeStore = AppRouteStore(application)
@@ -250,7 +253,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     private val profileOwner = Mutex()
     private var routingSave: Job? = null
     private var routingWrite = 0L
-    private var routingNeedsReload = false
+    private var routingReloadMessage: String? = null
     private val mutableGroupProfileEpoch = MutableStateFlow<String?>(null)
     internal val groupProfileEpoch = mutableGroupProfileEpoch.asStateFlow()
     private val profileEpoch get() = mutableGroupProfileEpoch.value
@@ -327,12 +330,15 @@ class AppViewModel internal constructor(application: Application, initialProfile
     val updatePreview = mutableUpdatePreview.asStateFlow()
 
     fun discardUpdatePreview() {
+        val preview = mutableUpdatePreview.value ?: return
         mutableUpdatePreview.value = null
-        subscriptionRepository.discardReview()
+        subscriptionRepository.discardReview(preview.token)
     }
 
     fun confirmUpdatePreview(acceptCountChange: Boolean) {
         val preview = mutableUpdatePreview.value ?: return
+        val editor = mutableEditorState.value
+        if (editor.running || editor.subscriptionId != preview.subscriptionId || !preview.audit.canApply(acceptCountChange)) return
         mutableUpdatePreview.value = null
         runSubscriptionMutation(preview.subscriptionId, { "订阅已安全更新" }) {
             subscriptionRepository.applyReview(preview.token, acceptCountChange)
@@ -341,22 +347,31 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     private fun prepareUpdatePreview(id: String, onComplete: (Boolean) -> Unit = {},
         prepare: suspend () -> io.weave.client.subscription.SubscriptionUpdatePreview) {
-        if (mutableEditorState.value.running) return
-        mutableEditorState.update { it.copy(running = true, error = null) }
+        val current = mutableEditorState.value
+        if (current.running || current.subscriptionId != id) return
+        val active = current.copy(running = true, error = null)
+        mutableEditorState.value = active
         viewModelScope.launch {
             var offered = false
-            probeSafely { prepare() }.onSuccess { preview ->
-                if (mutableEditorState.value.subscriptionId == id) {
-                    mutableUpdatePreview.value = preview
-                    offered = true
-                    launch {
-                        delay(300_000)
-                        if (mutableUpdatePreview.value?.token == preview.token) discardUpdatePreview()
-                    }
-                } else subscriptionRepository.discardReview()
-            }.onFailure { error -> mutableEditorState.update { it.copy(error = error.message) } }
-            mutableEditorState.update { it.copy(running = false) }
-            onComplete(offered)
+            var error: String? = null
+            try {
+                probeSafely { prepare() }.onSuccess { preview ->
+                    if (mutableEditorState.value === active) {
+                        mutableUpdatePreview.value = preview
+                        offered = true
+                        val token = preview.token
+                        viewModelScope.launch {
+                            delay(300_000)
+                            if (mutableUpdatePreview.value?.token == token) discardUpdatePreview()
+                        }
+                    } else subscriptionRepository.discardReview(preview.token)
+                }.onFailure { error = it.message ?: "订阅修改失败" }
+            } finally {
+                if (mutableEditorState.value === active) {
+                    mutableEditorState.value = active.copy(running = false, error = error)
+                }
+                onComplete(offered)
+            }
         }
     }
 
@@ -514,14 +529,16 @@ class AppViewModel internal constructor(application: Application, initialProfile
             readiness.complete(Unit)
         }
         viewModelScope.launch {
+            var previousRevision: Long? = null
             combine(
                 VpnRuntimeState.snapshot,
                 mutableDashboardVisible,
                 mutableDashboardScrolling,
             ) { runtime, visible, scrolling ->
-                runtime.state to (visible && !scrolling)
-            }.distinctUntilChanged().collectLatest { (connectionState, visible) ->
-                if (connectionState != ConnectionState.CONNECTED) {
+                runtime.dashboardTrafficRevision() to (visible && !scrolling)
+            }.distinctUntilChanged().collectLatest { (revision, visible) ->
+                if (revision != previousRevision) {
+                    previousRevision = revision
                     mutableTrafficHistory.value = emptyList()
                     mutableDashboard.update {
                         it.copy(
@@ -531,9 +548,8 @@ class AppViewModel internal constructor(application: Application, initialProfile
                             attributedAppConnections = 0,
                         )
                     }
-                    return@collectLatest
                 }
-                if (!visible) return@collectLatest
+                if (revision == null || !visible) return@collectLatest
                 // A fling can briefly report idle between gestures. collectLatest cancels
                 // this settling window if scrolling/covering/backgrounding resumes.
                 delay(DashboardRefreshPolicy.RESUME_SETTLE_MS)
@@ -542,6 +558,9 @@ class AppViewModel internal constructor(application: Application, initialProfile
                     val runtime = withContext(Dispatchers.IO) {
                         CoreClient.queryRuntime()
                     }
+                    if (VpnRuntimeState.snapshot.value.dashboardTrafficRevision() != revision ||
+                        !mutableDashboardVisible.value || mutableDashboardScrolling.value
+                    ) return@collectLatest
                     if (runtime != null) {
                         mutableDashboard.update { it.withRuntime(runtime) }
                         mutableTrafficHistory.update { history ->
@@ -670,40 +689,30 @@ class AppViewModel internal constructor(application: Application, initialProfile
     fun setDefaultRouteTarget(epoch: String, target: RouteTarget, onComplete: (Result<Unit>) -> Unit) =
         applyRouteChange("正在安全切换默认出口", onComplete) { groupProfile.changeDefault(epoch, target) }
 
-    fun setAutomaticStrategy(strategy: AutomaticStrategy) {
-        if (mutableNetworkPreferences.value.automaticStrategy == strategy) return
-        settingsStore.setAutomaticStrategy(strategy)
-        mutableNetworkPreferences.update { it.copy(automaticStrategy = strategy) }
-        reloadIfConnected("正在应用新的自动节点策略")
-    }
+    fun setAutomaticStrategy(strategy: AutomaticStrategy) = saveNetworkPreferences(
+        "正在应用新的自动节点策略", { it.copy(automaticStrategy = strategy) },
+        { settingsStore.setAutomaticStrategy(strategy) },
+    )
 
-    fun setStrategyScope(scope: StrategyScope) {
-        if (mutableNetworkPreferences.value.strategyScope == scope) return
-        settingsStore.setStrategyScope(scope)
-        mutableNetworkPreferences.update { it.copy(strategyScope = scope) }
-        reloadIfConnected("正在应用新的订阅策略组范围")
-    }
+    fun setStrategyScope(scope: StrategyScope) = saveNetworkPreferences(
+        "正在应用新的订阅策略组范围", { it.copy(strategyScope = scope) },
+        { settingsStore.setStrategyScope(scope) },
+    )
 
-    fun setDnsTransport(transport: DnsTransport) {
-        if (mutableNetworkPreferences.value.dnsTransport == transport) return
-        settingsStore.setDnsTransport(transport)
-        mutableNetworkPreferences.update { it.copy(dnsTransport = transport) }
-        reloadIfConnected("正在安全切换加密 DNS")
-    }
+    fun setDnsTransport(transport: DnsTransport) = saveNetworkPreferences(
+        "正在安全切换加密 DNS", { it.copy(dnsTransport = transport) },
+        { settingsStore.setDnsTransport(transport) },
+    )
 
-    fun setDnsProfile(profile: DnsProfile) {
-        if (mutableNetworkPreferences.value.dnsProfile == profile) return
-        settingsStore.setDnsProfile(profile)
-        mutableNetworkPreferences.update { it.copy(dnsProfile = profile) }
-        reloadIfConnected("正在应用 DNS 过滤策略")
-    }
+    fun setDnsProfile(profile: DnsProfile) = saveNetworkPreferences(
+        "正在应用 DNS 过滤策略", { it.copy(dnsProfile = profile) },
+        { settingsStore.setDnsProfile(profile) },
+    )
 
-    fun setDnsRoutingMode(mode: DnsRoutingMode) {
-        if (mutableNetworkPreferences.value.dnsRoutingMode == mode) return
-        settingsStore.setDnsRoutingMode(mode)
-        mutableNetworkPreferences.update { it.copy(dnsRoutingMode = mode) }
-        reloadIfConnected("正在应用 DNS 分流策略")
-    }
+    fun setDnsRoutingMode(mode: DnsRoutingMode) = saveNetworkPreferences(
+        "正在应用 DNS 分流策略", { it.copy(dnsRoutingMode = mode) },
+        { settingsStore.setDnsRoutingMode(mode) },
+    )
 
     fun probeDnsProviders() {
         if (dnsProbeJob?.isActive == true) return
@@ -745,34 +754,30 @@ class AppViewModel internal constructor(application: Application, initialProfile
         cancelDnsProbe()
     }
 
-    fun setCustomDnsEndpoint(endpoint: String): Boolean {
+    fun setCustomDnsEndpoint(endpoint: String, onComplete: (String?) -> Unit) {
         val normalized = runCatching {
             io.weave.client.core.engine.MihomoFeatureCompiler.validateCustomDnsEndpoint(endpoint)
-        }.getOrElse { return false }
-        settingsStore.setCustomDnsEndpoint(normalized)
-        settingsStore.setDnsProfile(DnsProfile.CUSTOM)
-        mutableNetworkPreferences.update {
-            it.copy(dnsProfile = DnsProfile.CUSTOM, customDnsEndpoint = normalized)
+        }.getOrElse {
+            onComplete("地址无效：请使用 https:// 或 tls://，并填写主机名")
+            return
         }
-        reloadIfConnected("正在应用自定义加密 DNS")
-        return true
-    }
-
-    fun setIpv6Mode(mode: Ipv6Mode) {
-        if (mutableNetworkPreferences.value.ipv6Mode == mode) return
-        settingsStore.setIpv6Mode(mode)
-        mutableNetworkPreferences.update { it.copy(ipv6Mode = mode) }
-        reloadIfConnected("正在安全应用 IP 协议设置")
-    }
-
-    fun setBlockUdpStun(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.blockUdpStun == enabled) return
-        settingsStore.setBlockUdpStun(enabled)
-        mutableNetworkPreferences.update { it.copy(blockUdpStun = enabled) }
-        reloadIfConnected(
-            if (enabled) "正在启用 UDP STUN 阻断" else "正在关闭 UDP STUN 阻断",
+        saveNetworkPreferences(
+            "正在应用自定义加密 DNS",
+            { it.copy(dnsProfile = DnsProfile.CUSTOM, customDnsEndpoint = normalized) },
+            { settingsStore.selectCustomDnsEndpoint(normalized) },
+            onComplete,
         )
     }
+
+    fun setIpv6Mode(mode: Ipv6Mode) = saveNetworkPreferences(
+        "正在安全应用 IP 协议设置", { it.copy(ipv6Mode = mode) },
+        { settingsStore.setIpv6Mode(mode) },
+    )
+
+    fun setBlockUdpStun(enabled: Boolean) = saveNetworkPreferences(
+        if (enabled) "正在启用 UDP STUN 阻断" else "正在关闭 UDP STUN 阻断",
+        { it.copy(blockUdpStun = enabled) }, { settingsStore.setBlockUdpStun(enabled) },
+    )
 
     fun setDomesticDirect(enabled: Boolean) {
         saveRouting(
@@ -786,53 +791,89 @@ class AppViewModel internal constructor(application: Application, initialProfile
         saveRouting(mode, domesticDirect, "正在安全应用新的运行模式")
     }
 
+    private class SettingsChange(val write: () -> Unit, val publish: () -> Unit)
+
     private fun saveRouting(mode: RoutingMode?, domestic: Boolean?, message: String) {
+        enqueueRoutingSave(message) {
+            val modeChanged = mode != null && mutableDashboard.value.routingMode != mode
+            val domesticChanged = domestic != null && mutableNetworkPreferences.value.domesticDirect != domestic
+            if (!modeChanged && !domesticChanged) return@enqueueRoutingSave null
+            SettingsChange(
+                write = {
+                    if (mode != null && domestic != null) settingsStore.setRoutingPreset(mode, domestic)
+                    else if (mode != null) settingsStore.setRoutingMode(mode)
+                    else if (domestic != null) settingsStore.setDomesticDirect(domestic)
+                },
+                publish = {
+                    if (domestic != null) mutableNetworkPreferences.update { it.copy(domesticDirect = domestic) }
+                    if (mode != null) mutableDashboard.update { it.copy(routingMode = mode) }
+                },
+            )
+        }
+    }
+
+    private fun saveNetworkPreferences(
+        message: String?,
+        update: (NetworkPreferences) -> NetworkPreferences,
+        write: () -> Unit,
+        onComplete: (String?) -> Unit = {},
+    ) {
+        enqueueRoutingSave(message, onComplete) {
+            val current = mutableNetworkPreferences.value
+            val next = update(current)
+            if (next == current) null else SettingsChange(write) { mutableNetworkPreferences.update(update) }
+        }
+    }
+
+    private fun enqueueRoutingSave(
+        message: String?,
+        onComplete: (String?) -> Unit = {},
+        change: () -> SettingsChange?,
+    ) {
+        val epoch = profileEpoch
         val previous = routingSave?.takeIf { it.isActive }
         val revision = ++routingWrite
         routingSave = viewModelScope.launch {
             previous?.join()
-            profileOwner.withLock {
-                val modeChanged = mode != null && mutableDashboard.value.routingMode != mode
-                val domesticChanged = domestic != null && mutableNetworkPreferences.value.domesticDirect != domestic
-                val saved = if (modeChanged || domesticChanged) {
-                    withContext(Dispatchers.IO) {
-                        probeSafely {
-                            if (mode != null && domestic != null) settingsStore.setRoutingPreset(mode, domestic)
-                            else if (mode != null) settingsStore.setRoutingMode(mode)
-                            else if (domestic != null) settingsStore.setDomesticDirect(domestic)
-                        }
+            val error = profileOwner.withLock {
+                val pending = change()
+                val result = if (pending == null) Result.success(Unit) else withContext(Dispatchers.IO) {
+                    probeSafely {
+                        if (epoch == null) pending.write()
+                        else io.weave.client.data.ProfileStorage.withCurrentEpoch(getApplication(), epoch) { pending.write() }
                     }
-                } else Result.success(Unit)
-                saved.onSuccess {
-                    routingNeedsReload = routingNeedsReload || modeChanged || domesticChanged
-                    if (domestic != null) mutableNetworkPreferences.update { it.copy(domesticDirect = domestic) }
-                    if (mode != null) mutableDashboard.update { it.copy(routingMode = mode) }
-                }.onFailure {
-                    mutableDashboard.update { it.copy(statusMessage = "分流设置未能保存") }
                 }
-                if (revision == routingWrite && routingNeedsReload) {
-                    routingNeedsReload = false
-                    runCatching {
-                        when (VpnRuntimeState.snapshot.value.state) {
-                            ConnectionState.CONNECTED, ConnectionState.CONNECTING -> {
-                                WeaveVpnService.reload(getApplication())
-                                if (saved.isSuccess) mutableDashboard.update { it.copy(statusMessage = message) }
+                val error = if (result.isFailure) "分流设置未能保存" else null
+                if (result.isSuccess && pending != null) {
+                    pending.publish()
+                    if (message != null) routingReloadMessage = message
+                }
+                if (error != null) mutableDashboard.update { it.copy(statusMessage = error) }
+
+                if (revision == routingWrite) {
+                    val reloadMessage = routingReloadMessage
+                    routingReloadMessage = null
+                    if (reloadMessage != null &&
+                        VpnRuntimeState.snapshot.value.state in setOf(ConnectionState.CONNECTED, ConnectionState.CONNECTING)
+                    ) {
+                        runCatching { WeaveVpnService.reload(getApplication()) }
+                            .onSuccess {
+                                if (error == null) mutableDashboard.update { it.copy(statusMessage = reloadMessage) }
                             }
-                            else -> Unit
-                        }
-                    }.onFailure {
-                        mutableDashboard.update { it.copy(statusMessage = "已保存，请重新连接以应用分流设置") }
+                            .onFailure {
+                                mutableDashboard.update { it.copy(statusMessage = "已保存，请重新连接以应用分流设置") }
+                            }
                     }
                 }
+                error
             }
+            onComplete(error)
         }
     }
 
-    fun setWeavePalette(palette: WeavePalette) {
-        if (mutableNetworkPreferences.value.weavePalette == palette) return
-        settingsStore.setWeavePalette(palette)
-        mutableNetworkPreferences.update { it.copy(weavePalette = palette) }
-    }
+    fun setWeavePalette(palette: WeavePalette) = saveNetworkPreferences(
+        null, { it.copy(weavePalette = palette) }, { settingsStore.setWeavePalette(palette) },
+    )
 
     /** Null follows the device language. */
     fun setLanguage(language: WeaveLanguage?) {
@@ -853,50 +894,59 @@ class AppViewModel internal constructor(application: Application, initialProfile
             ?: WeaveLanguage.fromSystem(android.content.res.Resources.getSystem().configuration.locales[0])
     }
 
-    fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
-        settingsStore.setSubscriptionAutoUpdate(hours, unmeteredOnly)
-        mutableNetworkPreferences.update {
-            it.copy(subscriptionAutoUpdateHours = hours, subscriptionAutoUpdateUnmeteredOnly = unmeteredOnly)
-        }
-        io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication())
-    }
+    fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) = saveNetworkPreferences(
+        message = null,
+        update = { it.copy(subscriptionAutoUpdateHours = hours, subscriptionAutoUpdateUnmeteredOnly = unmeteredOnly) },
+        write = { settingsStore.setSubscriptionAutoUpdate(hours, unmeteredOnly) },
+        onComplete = { error ->
+            if (error == null) viewModelScope.launch(Dispatchers.IO) {
+                runCatching { io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication()) }
+            }
+        },
+    )
 
-    fun setBypassDirectApps(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.bypassDirectApps == enabled) return
-        settingsStore.setBypassDirectApps(enabled)
-        mutableNetworkPreferences.update { it.copy(bypassDirectApps = enabled) }
-        reloadIfConnected("正在应用直连应用绕过设置")
-    }
+    fun setBypassDirectApps(enabled: Boolean) = saveNetworkPreferences(
+        "正在应用直连应用绕过设置", { it.copy(bypassDirectApps = enabled) },
+        { settingsStore.setBypassDirectApps(enabled) },
+    )
 
-    fun setBootstrapDns(value: io.weave.client.domain.BootstrapDns) {
-        if (mutableNetworkPreferences.value.bootstrapDns == value) return
-        settingsStore.setBootstrapDns(value)
-        mutableNetworkPreferences.update { it.copy(bootstrapDns = value) }
-        reloadIfConnected("正在应用引导 DNS")
-    }
+    fun setBootstrapDns(value: io.weave.client.domain.BootstrapDns) = saveNetworkPreferences(
+        "正在应用引导 DNS", { it.copy(bootstrapDns = value) }, { settingsStore.setBootstrapDns(value) },
+    )
 
-    fun setSystemHttpProxy(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.systemHttpProxy == enabled) return
-        settingsStore.setSystemHttpProxy(enabled)
-        mutableNetworkPreferences.update { it.copy(systemHttpProxy = enabled) }
-        reloadIfConnected(if (enabled) "正在启用系统 HTTP 代理" else "正在关闭系统 HTTP 代理")
-    }
+    fun setSystemHttpProxy(enabled: Boolean) = saveNetworkPreferences(
+        if (enabled) "正在启用系统 HTTP 代理" else "正在关闭系统 HTTP 代理",
+        { it.copy(systemHttpProxy = enabled) }, { settingsStore.setSystemHttpProxy(enabled) },
+    )
 
     fun setLanSharing(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.lanSharing == enabled) return
-        // Generate the credentials here, before the VPN process reads them.
-        if (enabled) mutableLanCredentials.value = settingsStore.lanProxyCredentials()
-        settingsStore.setLanSharing(enabled)
-        mutableNetworkPreferences.update { it.copy(lanSharing = enabled) }
-        reloadIfConnected(if (enabled) "正在开启局域网共享" else "正在关闭局域网共享")
+        val message = if (enabled) "正在开启局域网共享" else "正在关闭局域网共享"
+        enqueueRoutingSave(message) {
+            if (mutableNetworkPreferences.value.lanSharing == enabled) return@enqueueRoutingSave null
+            var credentials: Pair<String, String>? = null
+            SettingsChange(
+                write = {
+                    if (enabled) credentials = settingsStore.enableLanSharing() else settingsStore.setLanSharing(false)
+                },
+                publish = {
+                    mutableLanCredentials.value = credentials
+                    mutableNetworkPreferences.update { it.copy(lanSharing = enabled) }
+                },
+            )
+        }
     }
 
     private val mutableLanCredentials = MutableStateFlow<Pair<String, String>?>(null)
     val lanCredentials = mutableLanCredentials.asStateFlow()
 
     fun revealLanCredentials() {
+        if (!mutableNetworkPreferences.value.lanSharing) return
+        val epoch = profileEpoch
         viewModelScope.launch {
-            mutableLanCredentials.value = withContext(Dispatchers.IO) { settingsStore.lanProxyCredentials() }
+            val read = withContext(Dispatchers.IO) { probeSafely { settingsStore.lanProxyCredentials() } }
+            if (epoch != profileEpoch || !mutableNetworkPreferences.value.lanSharing) return@launch
+            read.onSuccess { mutableLanCredentials.value = it }
+                .onFailure { mutableDashboard.update { it.copy(statusMessage = "无法读取局域网共享凭据") } }
         }
     }
 
@@ -1054,6 +1104,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     }
 
     fun openSubscriptionEditor(subscriptionId: String) {
+        discardUpdatePreview()
         val read = ++subscriptionEditorRead
         val epoch = profileEpoch
         subscriptionEditorEpoch = epoch
@@ -1440,81 +1491,85 @@ class AppViewModel internal constructor(application: Application, initialProfile
         refreshRemoteSubscriptions(requestedIds = failedIds.takeIf { it.isNotEmpty() })
     }
 
+    private var subscriptionBatchJob: Job? = null
+
+    fun cancelSubscriptionBatch() {
+        if (!mutableSubscriptionRefreshState.value.canCancel) return
+        mutableSubscriptionRefreshState.update { it.copy(canCancel = false) }
+        subscriptionBatchJob?.cancel()
+    }
+
     private fun refreshRemoteSubscriptions(requestedIds: Set<String>?) {
         if (mutableSubscriptionRefreshState.value.running || mutableEditorState.value.running ||
             mutableUpdatePreview.value != null) return
         mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
             running = true,
+            canCancel = true,
             message = "正在检查 HTTPS 远程订阅",
         )
-        viewModelScope.launch {
-            val committed = linkedSetOf<String>()
+        subscriptionBatchJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val committed = linkedMapOf<String, String>()
+            var message = "没有可刷新的 HTTPS 远程订阅"
             try {
-                val remoteIds = withContext(Dispatchers.IO) {
-                    subscriptionRepository.loadRemoteIds()
-                }
-                val targets = SubscriptionRefreshBatch.selectTargets(
-                    mutableSubscriptions.value, remoteIds, requestedIds,
-                )
-                if (targets.isEmpty()) {
-                    mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
-                        message = "没有可刷新的 HTTPS 远程订阅",
-                    )
-                    return@launch
-                }
-                mutableSubscriptionRefreshState.update {
-                    it.copy(total = targets.size, message = null)
-                }
-                val finalProgress = SubscriptionRefreshBatch.run(
+                val remoteIds = withContext(Dispatchers.IO) { subscriptionRepository.loadRemoteIds() }
+                val targets = SubscriptionRefreshBatch.selectTargets(mutableSubscriptions.value, remoteIds, requestedIds)
+                if (targets.isEmpty()) return@launch
+                val names = targets.associate { it.id to it.name }
+                mutableSubscriptionRefreshState.update { it.copy(total = targets.size, message = null) }
+                val progress = SubscriptionRefreshBatch.run(
                     targets = targets,
-                    refresh = { subscriptionRepository.refreshRemote(it) },
-                    onUpdated = { committed.add(it) },
-                    onProgress = { current, finished ->
+                    refresh = { id ->
+                        // Capture the receipt before returning to Main. A tap on Cancel can
+                        // cancel that dispatcher handoff even after the write is durable.
+                        withContext(Dispatchers.IO) {
+                            subscriptionRepository.refreshRemote(id)
+                            committed[id] = names.getValue(id)
+                        }
+                    },
+                    onUpdated = {},
+                    onProgress = { current, outcome ->
                         mutableSubscriptionRefreshState.update {
                             it.copy(
-                                currentId = current?.id,
-                                currentName = current?.name,
-                                completed = finished.completed,
-                                failed = finished.failed,
-                                results = finished.results,
+                                currentId = current?.id, currentName = current?.name,
+                                completed = outcome.completed, failed = outcome.failed, results = outcome.results,
                             )
                         }
                     },
                 )
-                if (committed.isNotEmpty()) {
-                    refreshSubscriptionsAndReferences(committed)
-                }
-                val completed = finalProgress.completed
-                val failed = finalProgress.failed
-                val needsReview = finalProgress.reviewCount > 0
-                mutableSubscriptionRefreshState.update {
-                    it.copy(
-                        running = false,
-                        currentId = null,
-                        currentName = null,
-                        message = when {
-                            failed > 0 -> "已完成 $completed 个，$failed 个失败"
-                            needsReview -> "订阅节点有变化，请在详情中预览后更新"
-                            else -> "已刷新 $completed 个远程订阅"
-                        },
-                    )
-                }
-                mutableDashboard.update {
-                    it.copy(statusMessage = mutableSubscriptionRefreshState.value.message)
-                }
-                if (completed > 0) {
-                    reloadIfConnected("订阅刷新完成，正在安全更新运行配置")
+                val (completed, failed) = progress.completed to progress.failed
+                message = when {
+                    failed > 0 -> "已完成 $completed 个，$failed 个失败"
+                    progress.reviewCount > 0 -> "订阅节点有变化，请在详情中预览后更新"
+                    else -> "已刷新 $completed 个远程订阅"
                 }
             } catch (cancelled: CancellationException) {
+                message = "已停止订阅刷新"
                 throw cancelled
             } catch (_: Exception) {
-                mutableSubscriptionRefreshState.update {
-                    it.copy(failed = maxOf(1, it.failed), message = "订阅修改失败")
-                }
+                message = "订阅修改失败"
+                mutableSubscriptionRefreshState.update { it.copy(failed = maxOf(1, it.failed)) }
             } finally {
-                // Enumeration, reconciliation and cancellation cannot leave every action disabled.
-                mutableSubscriptionRefreshState.update {
-                    it.copy(running = false, currentId = null, currentName = null)
+                withContext(NonCancellable) {
+                    mutableSubscriptionRefreshState.update { it.copy(canCancel = false) }
+                    if (committed.isNotEmpty()) {
+                        val refreshed = probeSafely { refreshSubscriptionsAndReferences(committed.keys) }
+                        val reload = runCatching { reloadIfConnected("订阅刷新完成，正在安全更新运行配置") }
+                        message = when {
+                            refreshed.isFailure -> SavedDetailsRefreshWarning
+                            reload.isFailure -> ReloadRequestWarning
+                            else -> message
+                        }
+                    }
+                    mutableSubscriptionRefreshState.update { state ->
+                        val reported = state.results.mapTo(hashSetOf()) { it.subscriptionId }
+                        val missing = committed.entries.filterNot { it.key in reported }
+                        state.copy(
+                            running = false, currentId = null, currentName = null, message = message,
+                            completed = state.completed + missing.size,
+                            results = state.results + missing.map { (id, name) -> SubscriptionRefreshResult(id, name, true) },
+                        )
+                    }
+                    mutableDashboard.update { it.copy(statusMessage = message) }
                 }
             }
         }
@@ -1659,14 +1714,19 @@ class AppViewModel internal constructor(application: Application, initialProfile
             finishSubscriptionWrite(
                 save = { startupJob.join(); importer() },
                 refresh = { subscription ->
-                    mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
+                    refreshSubscriptionsAndReferences(subscription.id)
                     warning = ReloadRequestWarning
                     mutableDashboard.update { it.copy(statusMessage = "已安全导入「${subscription.name}」") }
                     reloadIfConnected("订阅已导入，正在安全更新运行配置")
                 },
                 onSaved = { subscription, refreshed ->
-                    mutableSubscriptions.update { current ->
-                        if (current.any { it.id == subscription.id }) current else current + subscription
+                    if (!refreshed) {
+                        mutableSubscriptions.update { current ->
+                            if (current.any { it.id == subscription.id }) current else current + subscription
+                        }
+                        mutableDashboard.update {
+                            it.copy(hasUsableSubscription = mutableSubscriptions.value.any { row -> row.hasRuntimePayload })
+                        }
                     }
                     mutableImportState.compareAndSet(active, active.copy(running = false, completedId = subscription.id))
                     if (!refreshed) mutableDashboard.update { it.copy(statusMessage = warning) }
@@ -1752,11 +1812,11 @@ class AppViewModel internal constructor(application: Application, initialProfile
         refreshSubscriptionsAndReferences(setOf(subscriptionId))
 
     private suspend fun refreshSubscriptionsAndReferences(ids: Set<String>) {
-        val epoch = profileEpoch ?: return
         profileOwner.withLock {
+            val epoch = profileEpoch
             val current = withContext(Dispatchers.IO) {
                 try {
-                    groupProfile.refreshReferences(epoch)
+                    if (epoch == null) groupProfile.read() else groupProfile.refreshReferences(epoch)
                 } catch (_: StaleProfileEditor) {
                     groupProfile.read()
                 }
@@ -1863,9 +1923,17 @@ class AppViewModel internal constructor(application: Application, initialProfile
         viewModelScope.launch {
             val result = try { withContext(Dispatchers.IO) {
                 probeSafely {
-                    val bytes = backup.export(passphrase)
-                    getApplication<Application>().contentResolver.openOutputStream(target, "wt")?.use { it.write(bytes) }
-                        ?: error("无法写入所选文件")
+                    val application = getApplication<Application>()
+                    val encrypted = java.io.File.createTempFile("backup-", ".pending", application.cacheDir)
+                    try {
+                        encrypted.outputStream().buffered().use { backup.exportTo(it, passphrase) }
+                        currentCoroutineContext().ensureActive()
+                        application.contentResolver.openOutputStream(target, "wt")?.use { destination ->
+                            encrypted.inputStream().use { it.copyTo(destination) }
+                        } ?: error("无法写入所选文件")
+                    } finally {
+                        encrypted.delete()
+                    }
                 }
             } } finally { passphrase.fill('\u0000') }
             if (generation != backupGeneration) return@launch
@@ -1946,12 +2014,14 @@ class AppViewModel internal constructor(application: Application, initialProfile
         }
         publishGroupProfile(profile)
         mutableNetworkPreferences.value = settings.routing.network
+        if (!settings.routing.network.lanSharing) mutableLanCredentials.value = null
         mutableFavoriteNodes.value = settings.favorites
         mutableDashboard.update { it.copy(routingMode = settings.routing.mode) }
         withContext(Dispatchers.IO) { io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication()) }
     }
 
     override fun onCleared() {
+        if (appUpdateOwner.isInitialized()) appUpdates.close()
         cancelForegroundDiagnostics()
         lanTransferServer.stop()
         super.onCleared()

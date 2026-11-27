@@ -1,6 +1,7 @@
 package io.weave.client.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -20,6 +21,39 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LiveConnectionUiTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun disconnectedSessionDiscardsRowsAndDoesNotPollAnIdleCore() {
+        val reads = AtomicInteger()
+        val revision = mutableStateOf<Long?>(1)
+        val host = mutableStateOf("old.fixture:443")
+        compose.setContent {
+            CompositionLocalProvider(LocalWeaveLanguage provides WeaveLanguage.SIMPLIFIED_CHINESE) {
+                WeaveTheme {
+                    ConnectionsScreen(
+                        onDismiss = {},
+                        read = {
+                            reads.incrementAndGet()
+                            CoreConnectionsSnapshot(listOf(CoreConnection("id", -1, "Fixture", "tcp",
+                                host.value, "", emptyList(), 0, 0, "")), 0, 0)
+                        },
+                        close = { false }, closeAll = { false }, sessionRevision = revision.value,
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("old.fixture:443").assertIsDisplayed()
+        compose.runOnIdle { revision.value = null }
+        compose.onNodeWithText("未连接").assertIsDisplayed()
+        compose.onNodeWithText("old.fixture:443").assertDoesNotExist()
+        val stopped = reads.get()
+        compose.mainClock.advanceTimeBy(6_000)
+        assertEquals(stopped, reads.get())
+        compose.runOnIdle {
+            host.value = "new.fixture:443"
+            revision.value = 2
+        }
+        compose.onNodeWithText("new.fixture:443").assertIsDisplayed()
+    }
 
     @Test fun pauseRetainsRowsAndBulkCloseRequiresConfirmation() {
         val attempts = AtomicInteger()

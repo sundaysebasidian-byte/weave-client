@@ -43,7 +43,7 @@ class FilmPlateExportTest {
             SettingsScreen(NetworkPreferences(), WeaveLanguage.SIMPLIFIED_CHINESE, DnsProbeState(), PaddingValues(0.dp),
                 onOpenVpnSettings = {}, onAutomaticStrategySelected = {}, onStrategyScopeSelected = {},
                 onDnsTransportSelected = {}, onDnsProfileSelected = {}, onDnsRoutingModeSelected = {},
-                onCustomDnsEndpointSaved = { true }, onProbeDnsProviders = {}, onIpv6ModeSelected = {},
+                onCustomDnsEndpointSaved = { _, done -> done(null) }, onProbeDnsProviders = {}, onIpv6ModeSelected = {},
                 onBlockUdpStunChanged = {}, onDomesticDirectChanged = {}, onPaletteSelected = {},
                 onLanguageSelected = {}, onShowVpnDisclosure = {}, onOpenPrivacyObservatory = {},
                 onOpenRecoveryCenter = {}, onOpenPolicyPacks = {}, onOpenLocalRouteRules = {})

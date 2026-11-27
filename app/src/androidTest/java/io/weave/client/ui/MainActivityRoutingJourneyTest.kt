@@ -2,6 +2,7 @@ package io.weave.client.ui
 
 import android.content.Intent
 import android.os.ParcelFileDescriptor
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.hasAnyAncestor
@@ -31,6 +32,7 @@ import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -78,6 +80,10 @@ class MainActivityRoutingJourneyTest {
                 app.performClick()
                 val policy = compose.onNodeWithText(localizeWeaveText("本地策略", language))
                 policy.assertIsDisplayed()
+                assertFalse(routes.load().any { it.packageName == packageName })
+                compose.onNode(hasText(localizeWeaveText("取消", language)) and hasAnyAncestor(isDialog())).performClick()
+                search.assert(hasText(packageName))
+                app.performClick()
                 assertFalse(routes.load().any { it.packageName == packageName })
                 policy.performClick()
                 compose.onNode(hasText(localizeWeaveText("直连", language)) and hasAnyAncestor(isDialog())).performClick()
@@ -153,10 +159,13 @@ class MainActivityRoutingJourneyTest {
                 chip.performClick()
                 compose.onNodeWithTag("home-mode-selector").performTouchInput { swipeRight() }
                 compose.waitUntil(10_000) { settings.routingMode() == RoutingMode.DIRECT }
+                lateinit var updates: io.weave.client.ui.update.NextUpdateController
+                scenario.onActivity { updates = ViewModelProvider(it)[AppViewModel::class.java].appUpdates }
                 scenario.recreate()
                 compose.waitUntil(30_000) { runCatching { chip.assertIsDisplayed() }.isSuccess }
                 scenario.onActivity {
                     val model = ViewModelProvider(it)[AppViewModel::class.java]
+                    assertSame(updates, model.appUpdates)
                     assertEquals(RoutingMode.DIRECT, model.dashboard.value.routingMode)
                     assertEquals(another.id, model.dashboard.value.defaultRouteTarget?.subscriptionId)
                 }

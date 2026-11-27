@@ -3,6 +3,7 @@ package io.weave.client.transfer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -50,6 +51,19 @@ object BackupCodec {
         random: SecureRandom = SecureRandom(),
         formatVersion: Int = 1,
     ): ByteArray {
+        val output = ByteArrayOutputStream()
+        encryptTo(output, entries, passphrase, iterations, random, formatVersion)
+        return output.toByteArray()
+    }
+
+    internal fun encryptTo(
+        destination: OutputStream,
+        entries: Map<String, String>,
+        passphrase: CharArray,
+        iterations: Int = DEFAULT_ITERATIONS,
+        random: SecureRandom = SecureRandom(),
+        formatVersion: Int = 1,
+    ) {
         requirePassphrase(passphrase)
         if (formatVersion !in 1..2 || iterations !in MIN_ITERATIONS..MAX_ITERATIONS) throw BackupException("不支持的备份参数")
         if (entries.isEmpty() || entries.size > MAX_ENTRIES || !entries.keys.all(ENTRY_NAME::matches)) throw BackupException("备份内容格式无效")
@@ -67,9 +81,8 @@ object BackupCodec {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt, iterations), GCMParameterSpec(128, iv))
         cipher.updateAAD(header)
-        // Keep only the bounded ciphertext in our output buffer. ZIP bytes flow into AES-GCM
-        // as they are produced, including the directory written when the ZIP stream closes.
-        val output = BoundedOutput(MAX_BACKUP_BYTES)
+        // The ZIP directory and payload stream through AES-GCM into the caller's bounded sink.
+        val output = BoundedOutput(destination, MAX_BACKUP_BYTES)
         output.write(header)
         ZipOutputStream(CipherOutputStream(output, cipher)).use { stream ->
             val writer = OutputStreamWriter(stream, Charsets.UTF_8.newEncoder()
@@ -81,7 +94,6 @@ object BackupCodec {
                 stream.closeEntry()
             }
         }
-        return output.toByteArray()
     }
 
     fun decrypt(data: ByteArray, passphrase: CharArray): Map<String, String> {
@@ -172,15 +184,25 @@ object BackupCodec {
             .toString()
     }
 
-    private class BoundedOutput(private val limit: Int) : ByteArrayOutputStream() {
+    private class BoundedOutput(private val sink: OutputStream, private val limit: Int) : OutputStream() {
+        private var written = 0
+
         override fun write(value: Int) {
-            if (count >= limit) throw BackupException("备份文件过大")
-            super.write(value)
+            if (written == limit) throw BackupException("备份文件过大")
+            sink.write(value)
+            written++
         }
+
         override fun write(bytes: ByteArray, offset: Int, length: Int) {
-            if (length > limit - count) throw BackupException("备份文件过大")
-            super.write(bytes, offset, length)
+            if (length > limit - written) throw BackupException("备份文件过大")
+            sink.write(bytes, offset, length)
+            written += length
         }
+
+        override fun flush() = sink.flush()
+
+        // The ZIP/cipher chain closes here. The destination belongs to the caller.
+        override fun close() = sink.flush()
     }
 
     fun requirePassphrase(passphrase: CharArray) {
