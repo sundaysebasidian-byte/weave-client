@@ -116,6 +116,19 @@ class RouteReferenceSanitizerTest {
         assertEquals(0, reads)
     }
 
+    @Test fun `metadata without a payload cannot resolve auto or fixed routes`() {
+        val saved = listOf(
+            route("pkg.auto", RouteTarget(RouteKind.AUTO, "old auto", subscription.id)),
+            route("pkg.fixed", RouteTarget(RouteKind.FIXED, "old fixed", subscription.id, node.id)),
+        )
+        val result = RouteReferenceSanitizer.routes(
+            saved, listOf(subscription.copy(hasRuntimePayload = false)), listOf(node),
+        )
+        assertEquals(listOf(RouteKind.BLOCK, RouteKind.BLOCK), result.map { it.target.kind })
+        assertEquals(saved.map { it.target.subscriptionId }, result.map { it.target.subscriptionId })
+        assertEquals(node.id, result.last().target.nodeId)
+    }
+
     private fun route(packageName: String, target: RouteTarget) = AppRoute(
         packageName = packageName,
         appName = packageName,

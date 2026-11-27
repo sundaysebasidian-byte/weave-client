@@ -87,8 +87,18 @@ class MihomoConfigAssembler(
         fun nodesOf(subscription: StoredSubscription) = nodesById.getOrPut(subscription.id) {
             buildMap { catalog.nodes(subscription.id).forEach { putIfAbsent(it.id, it) } }
         }
+        val checkedRoutes = if (mode != RoutingMode.RULE) emptyList() else routes.map { route ->
+            try {
+                validateTarget(route.appName, route.target, byId, customGroups, ::nodesOf)
+                route
+            } catch (_: IllegalArgumentException) {
+                // A stale rule must block that app without falling through to the default exit
+                // or preventing other applications from establishing the tunnel.
+                route.copy(target = route.target.copy(kind = RouteKind.BLOCK))
+            }
+        }
         val plan = MihomoRuntimePlanner.plan(
-            routes = routes,
+            routes = checkedRoutes,
             mode = mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
@@ -101,7 +111,6 @@ class MihomoConfigAssembler(
         val effectiveRoutes = plan.effectiveRoutes
 
         runCatching {
-            effectiveRoutes.forEach { validateTarget(it.appName, it.target, byId, customGroups, ::nodesOf) }
             effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId, customGroups, ::nodesOf) }
         }.onFailure { throw RuntimeFailureException(RuntimeFailure.SUBSCRIPTION_MISSING, it.message.orEmpty()) }
         val activeSubscriptions = usable.filter { it.id in plan.activeSubscriptionIds }

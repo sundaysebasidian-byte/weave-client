@@ -16,7 +16,7 @@ object RouteReferenceSanitizer {
         groups: Map<String, String> = emptyMap(),
     ): List<AppRoute> {
         if (routes.isEmpty()) return routes
-        val subscriptionIds: Set<String> = subscriptions.mapTo(hashSetOf()) { it.id }
+        val subscriptionIds = subscriptions.asSequence().filter { it.hasRuntimePayload }.map { it.id }.toSet()
         val fixedNodes = fixedNodeMatches(routes, subscriptionIds, nodes)
         val seenPackages = HashSet<String>()
         return routes.mapNotNull { route ->

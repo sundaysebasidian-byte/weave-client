@@ -91,6 +91,17 @@ class MihomoStartupConfigurationTest {
                 }
             }
             assertTrue(failures.joinToString("\n"), failures.isEmpty())
+            val stale = AppRoute("com.example.unavailable", "Unavailable", "U",
+                RouteTarget(RouteKind.FIXED, "Deleted", record.id, "unknown"), 0L)
+            val stillUsable = MihomoConfigAssembler(context, store).assemble(
+                routes = listOf(stale), mode = RoutingMode.RULE, defaultTarget = fixed,
+                packageUids = mapOf(stale.packageName to 10124),
+            )
+            engine.validate(stillUsable.yaml).getOrThrow()
+            assertTrue(stillUsable.yaml.contains("UID,10124,REJECT"))
+            assertTrue(runCatching {
+                MihomoConfigAssembler(context, store).assemble(emptyList(), RoutingMode.RULE, stale.target)
+            }.isFailure)
         } finally {
             engine.stop()
             store.list().forEach { store.delete(it.id) }
