@@ -6,7 +6,10 @@ import androidx.compose.runtime.remember
 import io.weave.client.domain.ProxyNode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+
+internal class RankedPickerNodes(val scope: Any, val rows: List<ProxyNode>)
 
 @Composable
 internal fun rememberRankedPickerNodes(
@@ -15,49 +18,65 @@ internal fun rememberRankedPickerNodes(
     favorites: Set<String> = emptySet(),
     favoritesOnly: Boolean = false,
     subscriptionId: String? = null,
-): List<ProxyNode>? {
+): RankedPickerNodes? {
+    // Updated latency can reorder the same selectable rows. A different provider, catalog,
+    // or favorites-only selection invalidates those rows immediately.
+    val scope = remember(nodes, subscriptionId, favoritesOnly, favorites.takeIf { favoritesOnly }) { Any() }
     val rank = remember(nodes, health, favorites, favoritesOnly, subscriptionId) {
-        {
-            val candidates = if (subscriptionId == null) nodes else nodes.filter { it.subscriptionId == subscriptionId }
-            orderRoutePickerNodes(candidates, favorites, favoritesOnly, "") { health[it]?.qualityScoreMs }
+        { checkActive: () -> Unit ->
+            val candidates = nodes.asSequence().filterIndexed { index, node ->
+                if (index % 128 == 0) checkActive()
+                subscriptionId == null || node.subscriptionId == subscriptionId
+            }
+            orderRoutePickerNodes(candidates.asIterable(), favorites, favoritesOnly, "") { health[it]?.qualityScoreMs }
         }
     }
-    return rememberNodeProjection(nodes.size, rank)
+    val ranked = rememberNodeProjection(nodes.size, scope, rank)
+    return remember(scope, ranked) { ranked?.let { RankedPickerNodes(scope, it) } }
 }
 
 @Composable
-internal fun rememberFilteredPickerNodes(ranked: List<ProxyNode>?, query: String): List<ProxyNode>? {
+internal fun rememberFilteredPickerNodes(ranked: RankedPickerNodes?, query: String): List<ProxyNode>? {
+    if (ranked == null) return null
     val term = query.trim()
-    if (ranked == null || term.isEmpty()) return ranked
+    if (term.isEmpty()) return ranked.rows
+    val scope = remember(ranked.scope, term) { Any() }
     val filter = remember(ranked, term) {
-        { ranked.filter { it.name.contains(term, ignoreCase = true) || it.protocol.contains(term, ignoreCase = true) } }
+        { checkActive: () -> Unit ->
+            ranked.rows.filterIndexed { index, node ->
+                if (index % 128 == 0) checkActive()
+                node.name.contains(term, ignoreCase = true) || node.protocol.contains(term, ignoreCase = true)
+            }
+        }
     }
-    return rememberNodeProjection(ranked.size, filter, debounceMillis = 90)
+    return rememberNodeProjection(ranked.rows.size, scope, filter, debounceMillis = 90)
 }
 
 @Composable
 private fun rememberNodeProjection(
     size: Int,
-    project: () -> List<ProxyNode>,
+    scope: Any,
+    project: (() -> Unit) -> List<ProxyNode>,
     debounceMillis: Long = 0,
 ): List<ProxyNode>? {
-    if (size <= 512) return remember(project) { project() }
-    val result = produceState<Pair<() -> List<ProxyNode>, List<ProxyNode>>?>(null, project) {
+    if (size <= 512) return remember(project) { project {} }
+    val result = produceState<Pair<Any, List<ProxyNode>>?>(null, scope, project) {
         if (debounceMillis > 0) delay(debounceMillis)
-        value = project to withContext(Dispatchers.Default) { project() }
+        val projected = withContext(Dispatchers.Default) { project { ensureActive() } }
+        value = scope to projected
     }
-    return result.value?.takeIf { it.first === project }?.second
+    return result.value?.takeIf { it.first === scope }?.second
 }
 
 /** Presentation only: compute each candidate's sort keys once, not on every comparison. */
 internal fun orderRoutePickerNodes(
-    nodes: List<ProxyNode>,
+    nodes: Iterable<ProxyNode>,
     favorites: Set<String>,
     favoritesOnly: Boolean,
     query: String,
     scoreFor: (rawName: String) -> Int?,
 ): List<ProxyNode> {
-    if (nodes.isEmpty() || (favoritesOnly && favorites.isEmpty())) return emptyList()
+    if (favoritesOnly && favorites.isEmpty()) return emptyList()
     val hasQuery = query.isNotBlank()
     val ranked = ArrayList<RankedPickerNode>()
     for (node in nodes) {
