@@ -50,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -205,7 +206,8 @@ internal fun ModeChip(
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val layoutDirection = LocalLayoutDirection.current
+    val rtl = layoutDirection == LayoutDirection.Rtl
     val current by rememberUpdatedState(selected)
     val choose by rememberUpdatedState(onModeSelected)
     var open by remember { mutableStateOf(false) }
@@ -461,26 +463,32 @@ internal fun ModeChip(
                                     transformOrigin = TransformOrigin(0.66f, 1f)
                                 },
                         ) {
-                            ModeDial(
-                                selected = selected,
-                                hover = hover,
-                                dragDegrees = { deg },
-                                dragging = dragging,
-                                compact = width < DialWidth.roundToPx(),
-                                onDrag = { base, travel ->
-                                    if (!dragging) closing?.cancel()
-                                    dragging = true
-                                    follow(base, travel)
-                                },
-                                onCancel = {
-                                    if (dragging) {
-                                        dragging = false
-                                        deg = null
-                                        hover = DialModes.indexOf(current)
-                                    }
-                                },
-                                onPick = ::pick,
-                            )
+                            // The popup window can supply its own density and layout direction.
+                            CompositionLocalProvider(
+                                LocalDensity provides density,
+                                LocalLayoutDirection provides layoutDirection,
+                            ) {
+                                ModeDial(
+                                    selected = selected,
+                                    hover = hover,
+                                    dragDegrees = { deg },
+                                    dragging = dragging,
+                                    compact = width < DialWidth.roundToPx(),
+                                    onDrag = { base, travel ->
+                                        if (!dragging) closing?.cancel()
+                                        dragging = true
+                                        follow(base, travel)
+                                    },
+                                    onCancel = {
+                                        if (dragging) {
+                                            dragging = false
+                                            deg = null
+                                            hover = DialModes.indexOf(current)
+                                        }
+                                    },
+                                    onPick = ::pick,
+                                )
+                            }
                         }
                     }
                 }
