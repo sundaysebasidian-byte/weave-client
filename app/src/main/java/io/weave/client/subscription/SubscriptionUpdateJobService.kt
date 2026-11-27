@@ -42,24 +42,23 @@ import kotlinx.coroutines.withContext
 object SubscriptionUpdateScheduler {
     private const val JOB_ID = 4107
 
-    fun sync(context: Context) {
+    @Synchronized fun sync(context: Context) {
         val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
-        val preferences = RuntimeSettingsStore(context).networkPreferences()
-        val hours = preferences.subscriptionAutoUpdateHours
+        val (hours, unmeteredOnly) = RuntimeSettingsStore(context).subscriptionAutoUpdateSchedule()
+        val pending = scheduler.getPendingJob(JOB_ID)
         if (hours <= 0) {
-            scheduler.cancel(JOB_ID)
+            if (pending != null) scheduler.cancel(JOB_ID)
             return
         }
         val job = JobInfo.Builder(JOB_ID, ComponentName(context, SubscriptionUpdateJobService::class.java))
             .setPeriodic(TimeUnit.HOURS.toMillis(hours.toLong()))
             .setRequiredNetworkType(
-                if (preferences.subscriptionAutoUpdateUnmeteredOnly) JobInfo.NETWORK_TYPE_UNMETERED
+                if (unmeteredOnly) JobInfo.NETWORK_TYPE_UNMETERED
                 else JobInfo.NETWORK_TYPE_ANY,
             )
             .setRequiresBatteryNotLow(true)
             .setPersisted(true)
             .build()
-        val pending = scheduler.getPendingJob(JOB_ID)
         // Rescheduling restarts the period, so only replace the job when its settings changed.
         @Suppress("DEPRECATION")
         if (pending == null || pending.intervalMillis != job.intervalMillis ||
@@ -142,13 +141,11 @@ internal class SubscriptionAutoUpdater(private val context: Context) {
     }
 
     suspend fun run() {
-        val hours = settings.networkPreferences().subscriptionAutoUpdateHours
+        val (hours) = settings.subscriptionAutoUpdateSchedule()
         if (hours <= 0) return
         val now = System.currentTimeMillis()
         val intervalMillis = TimeUnit.HOURS.toMillis(hours.toLong()) - EARLY_TOLERANCE_MS
-        val due = repository.loadMetadata().filter { subscription ->
-            subscription.remote && isScheduledRefreshDue(now, subscription.updatedAtMillis, intervalMillis)
-        }
+        val due = repository.loadDueRemoteMetadata(now, intervalMillis)
         if (due.isEmpty()) return
 
         // A background-only UI process has no mirrored VPN state until it binds to :vpn.

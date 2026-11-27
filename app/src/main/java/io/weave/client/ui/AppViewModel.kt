@@ -887,13 +887,16 @@ class AppViewModel internal constructor(application: Application, initialProfile
             ?: WeaveLanguage.fromSystem(android.content.res.Resources.getSystem().configuration.locales[0])
     }
 
-    fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
-        settingsStore.setSubscriptionAutoUpdate(hours, unmeteredOnly)
-        mutableNetworkPreferences.update {
-            it.copy(subscriptionAutoUpdateHours = hours, subscriptionAutoUpdateUnmeteredOnly = unmeteredOnly)
-        }
-        io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication())
-    }
+    fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) = saveNetworkPreferences(
+        message = null,
+        update = { it.copy(subscriptionAutoUpdateHours = hours, subscriptionAutoUpdateUnmeteredOnly = unmeteredOnly) },
+        write = { settingsStore.setSubscriptionAutoUpdate(hours, unmeteredOnly) },
+        onComplete = { error ->
+            if (error == null) viewModelScope.launch(Dispatchers.IO) {
+                runCatching { io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication()) }
+            }
+        },
+    )
 
     fun setBypassDirectApps(enabled: Boolean) = saveNetworkPreferences(
         "正在应用直连应用绕过设置", { it.copy(bypassDirectApps = enabled) },

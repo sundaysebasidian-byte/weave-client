@@ -199,6 +199,11 @@ class SubscriptionRepository(
     fun loadMetadata(): List<Subscription> = store.listWithRemoteStatus(includeNodes = false)
         .map { (record, remote) -> toDomain(record, remote) }
 
+    internal fun loadDueRemoteMetadata(now: Long, interval: Long): List<Subscription> =
+        store.listWithRemoteStatus(includeNodes = false) { record ->
+            isScheduledRefreshDue(now, record.updatedAtMillis, interval)
+        }.mapNotNull { (record, remote) -> if (remote) toDomain(record, remote = true) else null }
+
     /** One encrypted-index read for both UI lists; caller owns the IO dispatcher. */
     fun loadSnapshot(): Pair<List<Subscription>, List<ProxyNode>> {
         val records = store.listWithRemoteStatus(includeNodes = true)

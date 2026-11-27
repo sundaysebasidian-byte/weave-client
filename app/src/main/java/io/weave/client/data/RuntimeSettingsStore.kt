@@ -111,8 +111,7 @@ class RuntimeSettingsStore(context: Context) {
             blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
             domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
             weavePalette = weavePalette(preferences),
-            subscriptionAutoUpdateHours = preferences.getInt(KEY_AUTO_UPDATE_HOURS, 0)
-                .takeIf { it in AUTO_UPDATE_CHOICES } ?: 0,
+            subscriptionAutoUpdateHours = autoUpdateHours(preferences),
             subscriptionAutoUpdateUnmeteredOnly = preferences.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true),
             bypassDirectApps = preferences.getBoolean(KEY_BYPASS_DIRECT_APPS, false),
             bootstrapDns = enumPreference(preferences, KEY_BOOTSTRAP_DNS, BootstrapDns.MAINLAND),
@@ -120,6 +119,13 @@ class RuntimeSettingsStore(context: Context) {
             lanSharing = preferences.getBoolean(KEY_LAN_SHARING, false),
         )
     }
+
+    internal fun subscriptionAutoUpdateSchedule(): Pair<Int, Boolean> = preferences.let { snapshot ->
+        autoUpdateHours(snapshot) to snapshot.getBoolean(KEY_AUTO_UPDATE_UNMETERED, true)
+    }
+
+    private fun autoUpdateHours(snapshot: SharedPreferences): Int =
+        snapshot.getInt(KEY_AUTO_UPDATE_HOURS, 0).takeIf { it in AUTO_UPDATE_CHOICES } ?: 0
 
     fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) {
         require(supportsAutoUpdateHours(hours)) { "unsupported interval" }

@@ -65,6 +65,30 @@ class SubscriptionFocusedReadIntegrationTest {
         assertEquals(listOf("Bee", "Cherry", "Zulu"), store.list().map { it.name })
     }
 
+    @Test fun scheduledScanDecryptsOnlyDueSourcesWithoutReadingAnyNodeIndexes() = isolated { context ->
+        val delegate = AndroidKeystoreSecretBox()
+        val decrypted = mutableListOf<String>()
+        val store = SubscriptionSecretStore(context, object : SecretBox by delegate {
+            override fun decrypt(envelope: String, associatedData: ByteArray): ByteArray {
+                decrypted += associatedData.toString(Charsets.UTF_8)
+                return delegate.decrypt(envelope, associatedData)
+            }
+        })
+        val due = store.save("Due", "https://fixture.invalid/due", payload, parsed)
+        val cached = store.save("Fresh", "https://fixture.invalid/fresh", payload, parsed)
+        val local = store.save("Local", source, payload, parsed)
+        val index = context.crossProcessPreferences("encrypted_subscriptions_v1").edit()
+        assertTrue(index.putLong("subscription.${due.id}.updated_at", 100)
+            .putLong("subscription.${cached.id}.updated_at", 990)
+            .putLong("subscription.${local.id}.updated_at", 100).commit())
+
+        decrypted.clear()
+        val repository = SubscriptionRepository(context, store = store)
+        assertEquals(listOf(due.id), repository.loadDueRemoteMetadata(now = 1_000, interval = 200).map { it.id })
+        assertEquals(setOf(due.id, local.id), decrypted.toSet())
+        assertEquals(2, decrypted.size)
+    }
+
     @Test fun focusedReadDoesNotDecryptUnrelatedCorruptNodeEnvelope() = isolated { context ->
         val delegate = AndroidKeystoreSecretBox()
         val decryptions = mutableListOf<String>()
