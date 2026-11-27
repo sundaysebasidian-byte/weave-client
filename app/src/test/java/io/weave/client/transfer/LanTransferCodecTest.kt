@@ -58,6 +58,18 @@ class LanTransferCodecTest {
     }
 
     @Test
+    fun `bounded decoding rejects truncated overlong and invalid UTF8 fields`() {
+        val item = TransferSubscription("a", "inline://fixture", "📱".repeat(8193) + "끝")
+        val encoded = LanTransferCodec.encode(listOf(item))
+        assertEquals(listOf(item), LanTransferCodec.decode(encoded))
+        val malformed = encoded.copyOf().also { it[16] = 0xc0.toByte() }
+        val overlong = encoded.copyOf().also { java.nio.ByteBuffer.wrap(it).putInt(12, Int.MAX_VALUE) }
+        for (invalid in listOf(encoded.copyOf(15), encoded.copyOf(encoded.size - 1), malformed, overlong)) {
+            assertThrows(SubscriptionImportException::class.java) { LanTransferCodec.decode(invalid) }
+        }
+    }
+
+    @Test
     fun `rejects tampered packet and public endpoint`() {
         val key = ByteArray(32) { 7 }
         val packet = LanTransferCodec.seal(

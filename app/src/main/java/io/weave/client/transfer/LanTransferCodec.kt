@@ -1,11 +1,13 @@
 package io.weave.client.transfer
 
 import io.weave.client.subscription.SubscriptionImportException
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CharsetDecoder
+import java.nio.charset.CodingErrorAction
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.Locale
@@ -124,18 +126,24 @@ object LanTransferCodec {
 
     fun decode(data: ByteArray): List<TransferSubscription> {
         if (data.size > MAX_PLAINTEXT_BYTES) fail("传输内容过大")
-        val input = DataInputStream(ByteArrayInputStream(data))
-        if (!input.readExact(8).contentEquals(PLAIN_MAGIC)) fail("传输内容标识无效")
-        val count = input.readInt()
+        if (data.size < PLAIN_MAGIC.size + Int.SIZE_BYTES ||
+            PLAIN_MAGIC.indices.any { data[it] != PLAIN_MAGIC[it] }
+        ) fail("传输内容标识无效")
+        val input = ByteBuffer.wrap(data)
+        input.position(PLAIN_MAGIC.size)
+        val count = input.int
         if (count !in 1..MAX_SUBSCRIPTIONS) fail("订阅数量无效")
+        val utf8 = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+        val scratch = CharBuffer.allocate(minOf(4096, data.size))
         val result = List(count) {
             TransferSubscription(
-                name = input.readString(MAX_NAME_BYTES),
-                source = input.readString(MAX_SOURCE_BYTES),
-                payload = input.readString(MAX_PAYLOAD_BYTES),
+                name = input.readString(MAX_NAME_BYTES, utf8, scratch),
+                source = input.readString(MAX_SOURCE_BYTES, utf8, scratch),
+                payload = input.readString(MAX_PAYLOAD_BYTES, utf8, scratch),
             )
         }
-        if (input.available() != 0) fail("传输内容包含多余数据")
+        if (input.hasRemaining()) fail("传输内容包含多余数据")
         return result
     }
 
@@ -196,17 +204,25 @@ private fun DataOutputStream.writeString(value: String, maxBytes: Int) {
     write(bytes)
 }
 
-private fun DataInputStream.readString(maxBytes: Int): String {
-    val size = readInt()
+private fun ByteBuffer.readString(maxBytes: Int, utf8: CharsetDecoder, scratch: CharBuffer): String {
+    if (remaining() < Int.SIZE_BYTES) fail("传输内容标识无效")
+    val size = int
     if (size !in 0..maxBytes) fail("传输字段过大")
-    val bytes = readExact(size)
-    val value = bytes.toString(Charsets.UTF_8)
-    if (!value.toByteArray(Charsets.UTF_8).contentEquals(bytes)) fail("传输文本不是有效 UTF-8")
-    return value
+    if (size > remaining()) fail("传输内容标识无效")
+    val field = slice().apply { limit(size) }
+    // Validate with a bounded reusable buffer. Create the String from the original input
+    // only after validation, without a payload-sized byte or char array per field.
+    utf8.reset()
+    while (true) {
+        scratch.clear()
+        val result = utf8.decode(field, scratch, true)
+        if (result.isError) fail("传输文本不是有效 UTF-8")
+        if (result.isUnderflow) break
+    }
+    val offset = position()
+    position(offset + size)
+    return String(array(), arrayOffset() + offset, size, Charsets.UTF_8)
 }
-
-private fun DataInputStream.readExact(size: Int): ByteArray =
-    ByteArray(size).also { readFully(it) }
 
 private fun fail(message: String): Nothing = throw SubscriptionImportException(message)
 
