@@ -983,6 +983,8 @@ fun WeaveApp(
                     onSystemHttpProxyChanged = viewModel::setSystemHttpProxy,
                     onLanSharingChanged = viewModel::setLanSharing,
                     onRevealLanCredentials = viewModel::revealLanCredentials,
+                    onHideLanCredentials = viewModel::hideLanCredentials,
+                    onReconnectAfterBootChanged = viewModel::setReconnectAfterBoot,
                     onOpenConnections = { showConnections = true },
                     onOpenLogs = { showLogs = true },
                     onOpenRuleSets = {

@@ -60,6 +60,7 @@ import io.weave.client.ui.PackagedLanguageTap
 import io.weave.client.ui.PackagedLanguageTapResult
 import io.weave.client.ui.SystemPackagedLanguagePicker
 import io.weave.client.ui.PackagedAppLocale
+import io.weave.client.ui.PackagedLocaleChoice
 import io.weave.client.ui.ProfileRecoveryScreen
 import io.weave.client.ui.theme.WeaveTheme
 import kotlinx.coroutines.CancellationException
@@ -144,6 +145,7 @@ class MainActivity : ComponentActivity() {
                 PackagedLanguagePicker(
                     selected = ready.locale,
                     loadChoices = { loadPackagedLanguageChoices(ready.locale) },
+                    loadChoice = { choice -> readPackagedLanguageChoice(choice, ready.locale) },
                     applyTap = ::applyPackagedLanguageTap,
                     reconcile = ::reconcilePackagedLanguageTap,
                 )
@@ -213,8 +215,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun loadPackagedLanguageChoices(active: PackagedAppLocale?): List<PackagedAppLocale> =
+    private suspend fun loadPackagedLanguageChoices(active: PackagedAppLocale?): List<PackagedLocaleChoice> =
         withContext(Dispatchers.IO) { PackagedAppLocale.availableChoices(this@MainActivity, active) }
+
+    private suspend fun readPackagedLanguageChoice(
+        choice: PackagedLocaleChoice,
+        active: PackagedAppLocale?,
+    ): PackagedAppLocale? = if (active?.tag == choice.tag) active else withContext(Dispatchers.IO) {
+        PackagedAppLocale.readChoice(this@MainActivity, choice)
+    }
 
     private fun canHandleLanguageTap(): Boolean =
         readyProfile != null && !isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)

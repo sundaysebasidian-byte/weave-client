@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
 import io.weave.client.data.RuntimeSettingsStore
+import io.weave.client.data.StoredReleaseAppCopySelection
 import io.weave.client.domain.WeaveLanguage
 import java.util.Locale
 
@@ -20,14 +21,19 @@ object WeaveLocales {
     /** Resources context for system surfaces (notifications, tiles) in the app language. */
     fun wrap(base: Context): Context {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return base
-        val language = RuntimeSettingsStore(base).explicitLanguage() ?: return base
+        val store = RuntimeSettingsStore(base)
+        val regional = store.releaseAppCopySelection() as? StoredReleaseAppCopySelection.Selected
+        if (regional != null) return wrap(base, Locale.forLanguageTag(regional.canonicalTag))
+        val language = store.explicitLanguage() ?: return base
         return wrap(base, language)
     }
 
     /** Resource context after the profile has loaded; never reads or mutates storage. */
-    fun wrap(base: Context, language: WeaveLanguage): Context {
+    fun wrap(base: Context, language: WeaveLanguage): Context = wrap(base, locale(language))
+
+    private fun wrap(base: Context, locale: Locale): Context {
         val configuration = Configuration(base.resources.configuration)
-        configuration.setLocale(locale(language))
+        configuration.setLocale(locale)
         return base.createConfigurationContext(configuration)
     }
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="net_active_disclosure">Проверка HTTPS обращается к ipify, ipwho.is, Cloudflare, Google и указанным сайтам. Каждый сервис видит адрес выхода, с которого пришёл запрос. Браузерная проверка не использует внешние STUN-серверы.</string>
+    <string name="net_link_snapshot">Текущая сеть по умолчанию в Android</string>
+    <string name="net_seen">Обнаружено</string>
+    <string name="net_not_seen">Не обнаружено</string>
+    <string name="net_dns_count">Настроено DNS-серверов: %1$s</string>
+    <string name="net_link_scope">VPN обозначает тип подключения. IPv4 и IPv6 показывают локальные адреса. Это не проверяет маршрут отдельного запроса.</string>
+    <string name="net_download_scope">Тест скачивает 1 МиБ по HTTPS с Cloudflare. Время получения заголовков HTTPS отображается отдельно.</string>
+    <string name="net_download_phases">Ответ на заголовки %1$d мс · Загрузка данных %2$d мс</string>
+    <string name="net_latency_scope">По три запроса HTTPS 204 на сайт. Для трёх замеров P95 равен максимальному времени успешного запроса. Джиттер — среднее изменение между соседними успешными запросами. Неудачный запрос не равен потерянному пакету.</string>
+    <string name="net_reading_exit">Проверяется адрес выхода по HTTPS…</string>
+    <string name="net_run_exit">После подключения выполните проверку, чтобы узнать, какой адрес выхода видят сайты.</string>
+    <string name="net_route_scope">Проверки HTTPS используют правила маршрутизации Weave, в том числе правила прямого подключения. Ответ сайта не гарантирует доступ к контенту или учётной записи.</string>
+</resources>

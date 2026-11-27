@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">प्रॉक्सी कनेक्शन</string>
+    <string name="vpn_channel_description">Weave के प्रॉक्सी कनेक्शन की स्थिति दिखाता है</string>
+    <string name="updates_channel_name">सदस्यता अपडेट</string>
+    <string name="updates_channel_description">शेड्यूल किए गए सदस्यता अपडेट के नतीजे</string>
+    <string name="action_disconnect">डिस्कनेक्ट</string>
+    <string name="action_connect">कनेक्ट</string>
+    <string name="notification_speed">↑ %1$s/सेकंड · ↓ %2$s/सेकंड</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">कनेक्ट है</string>
+    <string name="tile_disconnected">कनेक्ट नहीं है</string>
+    <string name="tile_connecting">कनेक्ट हो रहा है…</string>
+    <string name="tile_needs_app">VPN की अनुमति देने के लिए Weave खोलें</string>
+    <string name="shortcut_connect_short">कनेक्ट करें</string>
+    <string name="shortcut_connect_long">Weave कनेक्ट करें</string>
+    <string name="shortcut_disconnect_short">डिस्कनेक्ट करें</string>
+    <string name="shortcut_disconnect_long">Weave डिस्कनेक्ट करें</string>
+    <string name="vpn_shortcut_confirmation">VPN कनेक्शन बदलने के लिए Weave में इस कार्रवाई की पुष्टि करें।</string>
+    <string name="shortcut_import_short">इम्पोर्ट करें</string>
+    <string name="shortcut_import_long">सदस्यता इम्पोर्ट करें</string>
+    <string name="update_applied_title">%1$s अपडेट हुआ</string>
+    <string name="update_applied_body">%1$d जोड़े गए · %2$d हटाए गए · %3$d रखे गए</string>
+    <string name="update_review_title">%1$s की समीक्षा ज़रूरी है</string>
+    <string name="update_review_body">अपडेट से नियमों वाले नोड बदलते हैं या सुरक्षा जाँच पूरी नहीं हुई। बदलाव देखने के लिए Weave खोलें।</string>
+    <string name="update_failed_title">सब्सक्रिप्शन अपडेट फेल हो गया</string>
+    <string name="notification_control_title">कनेक्शन नोटिफिकेशन</string>
+    <string name="notification_control_enabled">नोटिफ़िकेशन में डिस्कनेक्ट बटन के साथ दिखता है।</string>
+    <string name="notification_control_disabled">नोटिफ़िकेशन बंद हैं। टनल काम कर सकती है, लेकिन उसकी स्थिति और डिस्कनेक्ट बटन नहीं दिख सकते।</string>
+    <string name="notification_control_action">नोटिफिकेशन सेट करें</string>
+    <string name="action_choose_exit">आउटपुट चुनें</string>
+    <string name="widget_description">कनेक्शन की स्थिति और स्विच</string>
+    <plurals name="update_failed_body">
+        <item quantity="one">%1$d सदस्यता अपडेट नहीं हो सकी। पिछला वर्शन रखा गया है।</item>
+        <item quantity="other">%1$d सदस्यताएँ अपडेट नहीं हो सकीं। पिछले वर्शन रखे गए हैं।</item>
+    </plurals>
+    <string name="app_picker_title">ऐप चुनें</string>
+    <string name="app_picker_search">ऐप या पैकेज के नाम से खोजें</string>
+    <string name="app_picker_empty">मिलता-जुलता ऐप नहीं मिला</string>
+    <string name="app_picker_add">%1$s जोड़ें</string>
+    <string name="app_picker_close">बंद करें</string>
+    <string name="about_github_description">प्रोजेक्ट देखें और उसे स्टार देकर समर्थन करें।</string>
+    <string name="about_github_unavailable">GitHub की लिंक नहीं खुल सकी।</string>
+    <string name="migration_paste">लगाएं और इम्पोर्ट करें</string>
+    <string name="migration_paste_description">मूल ऐप से सदस्यता लिंक या कॉन्फ़िगरेशन कॉपी करें, फिर ‘पेस्ट और इंपोर्ट करें’ पर टैप करें।</string>
+    <string name="migration_empty_clipboard">क्लिपबोर्ड में कोई समर्थित टेक्स्ट नहीं है</string>
+    <string name="home_speed_test">स्पीड टेस्ट</string>
+    <string name="home_latency_measured">HTTPS का जवाब मिलने का समय</string>
+    <string name="home_download_measured">डाउनलोड नमूना</string>
+    <string name="home_measurement_starting">मेंसुरमेंट शुरू हो रहा है…</string>
+    <string name="privacy_check_external_requests">इस जाँच में सूची वाले सर्वर को अनुरोध भेजे जाते हैं।</string>
+</resources>

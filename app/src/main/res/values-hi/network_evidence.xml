@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="net_active_disclosure">HTTPS की जाँच ipify, ipwho.is, Cloudflare, Google और सूची वाली साइट को अनुरोध भेजती है। हर सेवा को अनुरोध का आउटबाउंड IP पता दिखता है। ब्राउज़र जाँच बाहरी STUN सर्वर से संपर्क नहीं करती।</string>
+    <string name="net_link_snapshot">Android को दिख रहा डिफ़ॉल्ट नेटवर्क</string>
+    <string name="net_seen">मिला</string>
+    <string name="net_not_seen">नहीं मिला</string>
+    <string name="net_dns_count">कॉन्फ़िगर किए गए DNS सर्वर %1$s</string>
+    <string name="net_link_scope">VPN कनेक्शन का प्रकार दिखाता है। IPv4 और IPv6 लोकल पते दिखाते हैं। इससे किसी खास अनुरोध का रूट साबित नहीं होता।</string>
+    <string name="net_download_scope">टेस्ट Cloudflare से HTTPS पर 1 MiB डाउनलोड करता है। HTTPS हेडर मिलने का समय अलग दिखता है।</string>
+    <string name="net_download_phases">हेडर का जवाब %1$d ms · डेटा पढ़ने में %2$d ms</string>
+    <string name="net_latency_scope">हर साइट को तीन HTTPS 204 अनुरोध भेजे जाते हैं। तीन नमूनों में P95 सबसे धीमे सफल अनुरोध का समय है। जिटर लगातार सफल अनुरोधों के समय का औसत बदलाव है। विफल अनुरोध से पैकेट लॉस साबित नहीं होता।</string>
+    <string name="net_reading_exit">HTTPS आउटबाउंड पता जाँचा जा रहा है…</string>
+    <string name="net_run_exit">कनेक्ट होने पर जाँचें कि साइट को कौन-सा आउटबाउंड पता दिखता है।</string>
+    <string name="net_route_scope">HTTPS की जाँच ऐप के रूटिंग नियमों के अनुसार होती है, जिनमें सीधे कनेक्शन भी शामिल हो सकते हैं। साइट का जवाब मिलने से सामग्री या खाते की उपलब्धता साबित नहीं होती।</string>
+</resources>

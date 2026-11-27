@@ -118,6 +118,12 @@
             android:process=":vpn"
             android:exported="false" />
 
+        <receiver android:name=".core.vpn.BootVpnReconnectReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".core.vpn.WeaveStatusWidget"
             android:process=":vpn"

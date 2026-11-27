@@ -2,9 +2,9 @@ package io.weave.client.security
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.util.Base64
 import java.nio.ByteBuffer
 import java.security.KeyStore
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -31,34 +31,32 @@ class AndroidKeystoreSecretBox : SecretBox {
             .put(iv)
             .put(ciphertext)
             .array()
-        return Base64.encodeToString(envelope, Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(envelope)
     }
 
     override fun decrypt(envelope: String, associatedData: ByteArray): ByteArray {
-        val bytes = runCatching { Base64.decode(envelope, Base64.NO_WRAP) }
+        val bytes = runCatching { Base64.getDecoder().decode(envelope) }
             .getOrElse { throw SecretEnvelopeException("Encrypted value is not valid Base64", it) }
         if (bytes.size < MIN_ENVELOPE_BYTES) {
             throw SecretEnvelopeException("Encrypted value is truncated")
         }
 
-        val buffer = ByteBuffer.wrap(bytes)
-        if (buffer.get() != VERSION) {
+        if (bytes[0] != VERSION) {
             throw SecretEnvelopeException("Unsupported encrypted value version")
         }
-        val ivSize = buffer.get().toInt() and 0xff
-        if (ivSize !in 12..16 || buffer.remaining() <= ivSize + GCM_TAG_BYTES) {
+        val ivSize = bytes[1].toInt() and 0xff
+        val ciphertextOffset = HEADER_BYTES + ivSize
+        if (ivSize !in 12..16 || bytes.size - ciphertextOffset < GCM_TAG_BYTES) {
             throw SecretEnvelopeException("Encrypted value has invalid lengths")
         }
 
-        val iv = ByteArray(ivSize).also(buffer::get)
-        val ciphertext = ByteArray(buffer.remaining()).also(buffer::get)
         return runCatching {
             Cipher.getInstance(TRANSFORMATION).run {
                 // Never create a key while decrypting: a new key cannot open existing ciphertext,
                 // and generating it from the VPN process could race the UI's first encryption.
-                init(Cipher.DECRYPT_MODE, existingKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+                init(Cipher.DECRYPT_MODE, existingKey(), GCMParameterSpec(GCM_TAG_BITS, bytes, HEADER_BYTES, ivSize))
                 updateAAD(associatedData)
-                doFinal(ciphertext)
+                doFinal(bytes, ciphertextOffset, bytes.size - ciphertextOffset)
             }
         }.getOrElse {
             throw SecretEnvelopeException("Encrypted value authentication failed", it)
@@ -100,7 +98,8 @@ class AndroidKeystoreSecretBox : SecretBox {
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val GCM_TAG_BITS = 128
         const val GCM_TAG_BYTES = GCM_TAG_BITS / 8
-        const val MIN_ENVELOPE_BYTES = 2 + 12 + GCM_TAG_BYTES
+        const val HEADER_BYTES = 2
+        const val MIN_ENVELOPE_BYTES = HEADER_BYTES + 12 + GCM_TAG_BYTES
         const val VERSION: Byte = 1
     }
 }

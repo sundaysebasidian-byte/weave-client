@@ -1,6 +1,7 @@
 package io.weave.client.core.engine
 
 import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.Ipv6Mode
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -22,7 +23,7 @@ interface EngineAdapter {
         protectSocket: (Int) -> Boolean,
         querySocketUid: (protocol: Int, source: String, target: String) -> Int,
         installedApps: List<Pair<Int, String>>,
-        ipv6Enabled: Boolean = true,
+        ipMode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
         requiredNodeGroups: Set<String> = emptySet(),
     ): Result<Unit>
 

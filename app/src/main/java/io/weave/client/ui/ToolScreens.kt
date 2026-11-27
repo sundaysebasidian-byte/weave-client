@@ -105,6 +105,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.channelFlow
@@ -239,15 +240,23 @@ internal fun LanProxySharingDialog(
     onReveal: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    LaunchedEffect(enabled) { if (enabled && credentials == null) onReveal() }
+    val app = LocalContext.current.applicationContext
+    val runtime by VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
+    var addresses by remember { mutableStateOf<List<String>>(emptyList()) }
+    var refresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(enabled, runtime.revision, refresh) {
+        if (enabled) addresses = withContext(Dispatchers.IO) {
+            runCatching { io.weave.client.core.vpn.LanProxyAddresses.current(app) }.getOrDefault(emptyList())
+        }
+    }
     WeaveDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
         title = { Text("局域网代理共享", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "开启后，同一 Wi‑Fi 或连接你热点的设备可以把这台手机当作 HTTP/SOCKS 代理。其他设备必须使用下方的用户名和密码；这些设备的流量会按你的默认出口转发。",
+                    "让同一 Wi-Fi 或热点下的设备用这台手机的默认出口。接收端可选择 HTTP 或 SOCKS5，并填写这台手机的地址、端口和凭据。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
@@ -256,19 +265,33 @@ internal fun LanProxySharingDialog(
                     Text("开启共享", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     WeaveSwitch(checked = enabled, onCheckedChange = onToggle)
                 }
-                if (enabled && credentials != null) {
+                if (enabled) {
+                    Text(if (runtime.state == ConnectionState.CONNECTED) "在接收设备上测试代理连通性" else "连接 Weave 后才会监听代理端口")
                     LiquidGlassPanel(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("手机地址", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (addresses.isEmpty()) {
+                                Text("在手机 Wi-Fi 详情查看 IP。使用热点时，可在接收端查看网关地址。", fontSize = 12.sp)
+                            }
+                            for (address in addresses) {
+                                Text(address, fontFamily = FontFamily.Monospace, translate = false)
+                            }
                             Text("端口", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${MihomoConfigAssembler.MIXED_PORT}", fontFamily = FontFamily.Monospace, translate = false)
-                            Text("用户名", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(credentials.first, fontFamily = FontFamily.Monospace, translate = false)
-                            Text("密码", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(credentials.second, fontFamily = FontFamily.Monospace, translate = false)
+                            if (credentials != null) {
+                                Text("用户名", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(credentials.first, fontFamily = FontFamily.Monospace, translate = false)
+                                Text("密码", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(credentials.second, fontFamily = FontFamily.Monospace, translate = false)
+                            }
                         }
                     }
+                    Row {
+                        TextButton(onClick = { refresh++ }) { Text("刷新地址") }
+                        if (credentials == null) TextButton(onClick = onReveal) { Text("查看共享凭据") }
+                    }
                     Text(
-                        "地址使用这台手机在当前 Wi‑Fi 或热点中的 IP。修改后需要重新连接才会生效。",
+                        "在可信局域网使用。代理认证没有加密局域网链路。用完请关闭共享。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                     )

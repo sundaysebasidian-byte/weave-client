@@ -80,7 +80,11 @@ object PrivacyObservatory {
                     ) {
                         "自定义配置为空"
                     } else {
-                        "${preferences.effectiveDnsTransport.label} · ${preferences.dnsProfile.label}；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验"
+                        if (preferences.bootstrapDns.encrypted) {
+                            "已选择加密引导 DNS，只解析加密 DNS 服务的地址"
+                        } else {
+                            "${preferences.effectiveDnsTransport.label} · ${preferences.dnsProfile.label}；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验"
+                        }
                     },
                 ),
             )
@@ -112,16 +116,16 @@ object PrivacyObservatory {
             add(
                 PrivacyObservation(
                     id = "ipv6",
-                    title = "IPv6 旁路",
-                    state = if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
+                    title = if (preferences.ipv6Mode == Ipv6Mode.IPV6_ONLY) "IPv4 旁路" else "IPv6 旁路",
+                    state = if (preferences.ipv6Mode != Ipv6Mode.DUAL_STACK) {
                         ObservatoryState.CONFIGURED
                     } else {
                         ObservatoryState.UNKNOWN
                     },
-                    detail = if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
-                        "已选择仅 IPv4；IPv6 实际阻断情况仍需核验"
-                    } else {
-                        "双栈模式；未执行外部 IPv6 泄漏测试"
+                    detail = when (preferences.ipv6Mode) {
+                        Ipv6Mode.IPV4_ONLY -> "已选择仅 IPv4；IPv6 实际阻断情况仍需核验"
+                        Ipv6Mode.IPV6_ONLY -> "已选择仅 IPv6；IPv4 实际阻断情况仍需核验"
+                        Ipv6Mode.DUAL_STACK -> "双栈模式；未执行外部 IPv6 泄漏测试"
                     },
                 ),
             )

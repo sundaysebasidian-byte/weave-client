@@ -12,8 +12,8 @@ class StagedComposeLocaleTest {
 
     @Test fun allStaticCatalogsRenderExactReviewedValues() {
         val source = (read("source-static", "en") + read("source-rc6-delta", "en")).keys
-        assertEquals(1342, source.size)
-        for (language in listOf("ar", "es", "ko")) {
+        assertEquals(1367, source.size)
+        for (language in listOf("ar", "es", "ko", "ru", "hi")) {
             val data = read(language, "text")
             val locale = StagedComposeLocale(language, data)
             for (key in source) assertEquals(key, data.getValue(key), localizeStagedWeaveText(key, locale))
@@ -45,7 +45,7 @@ class StagedComposeLocaleTest {
         val formats = readDynamic()
         assertEquals(146, formats.size)
         val named = Regex("""\{([A-Za-z_]\w*)}""")
-        for (language in listOf("ar", "es", "ko")) {
+        for (language in listOf("ar", "es", "ko", "ru", "hi")) {
             val locale = StagedComposeLocale(language, read(language, "text"))
             for ((id, english) in formats) {
                 val slots = named.findAll(english).map { it.groupValues[1] }.distinct().toList()

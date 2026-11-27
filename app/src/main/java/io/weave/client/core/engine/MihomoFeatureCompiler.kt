@@ -281,19 +281,12 @@ object MihomoFeatureCompiler {
      * mainland direct is enabled lets GEOIP,CN handle IP-only/QUIC clients as well as ordinary
      * domain connections. The TUN still captures these real addresses; this is not a VPN bypass.
      */
-    fun fakeIpFilter(preferences: NetworkPreferences): List<String> = buildList {
-        add("geosite:private")
-        add("*.lan")
-        add("*.local")
-        add("*.home.arpa")
-        if (preferences.domesticDirect) {
-            add("geosite:cn")
-        }
-    }
+    fun fakeIpFilter(preferences: NetworkPreferences): List<String> =
+        if (preferences.domesticDirect) domesticFakeIpFilter else localFakeIpFilter
 
     /** The endpoint used by a standalone DNS probe, without compiling a policy recursively. */
     fun probeEndpoints(preferences: NetworkPreferences): List<String> =
-        encryptedNameServers(preferences.copy(dnsRoutingMode = DnsRoutingMode.SINGLE))
+        encryptedNameServers(preferences)
 
     private fun smartDnsPreferences(
         preferences: NetworkPreferences,
@@ -334,14 +327,20 @@ object MihomoFeatureCompiler {
         require(uri.scheme == "https" || uri.scheme == "tls") {
             "自定义 DNS 仅支持 HTTPS DoH 或 TLS DoT"
         }
-        require(uri.userInfo.isNullOrBlank()) { "自定义 DNS 不允许携带用户名或密码" }
+        require(uri.rawUserInfo == null) { "自定义 DNS 不允许携带用户名或密码" }
         require(!uri.host.isNullOrBlank()) { "自定义 DNS 缺少主机名" }
-        require(uri.port in -1..65535) { "自定义 DNS 端口无效" }
+        require(uri.port == -1 || uri.port in 1..65535) { "自定义 DNS 端口无效" }
+        require(uri.scheme != "tls" || uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
+            "自定义 DNS 地址格式无效"
+        }
         require(uri.query == null && uri.fragment == null) {
             "自定义 DNS 不允许携带查询参数或片段"
         }
         return value
     }
+
+    internal fun resolverForMode(address: String, mode: Ipv6Mode): String =
+        if (mode.ipv4Enabled) address else "$address#disable-ipv4=true"
 
     fun leadingRules(preferences: NetworkPreferences): List<String> = buildList {
         // DNS requests made by applications must stay inside Mihomo.  The core's own DoH/DoT
@@ -349,10 +348,10 @@ object MihomoFeatureCompiler {
         // rules; these guards therefore cover only app-created resolver traffic.
         addAll(dnsLeakGuardRules())
         addAll(dnsFilterBypassRules(preferences))
-        if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
-            // The VpnService keeps ::/0 inside the TUN even in IPv4-only mode. Rejecting here
-            // prevents literal IPv6 destinations from escaping through the physical network.
-            add("IP-CIDR6,::/0,REJECT,no-resolve")
+        when (preferences.ipv6Mode) {
+            Ipv6Mode.IPV4_ONLY -> add("IP-CIDR6,::/0,REJECT,no-resolve")
+            Ipv6Mode.IPV6_ONLY -> add("IP-CIDR,0.0.0.0/0,REJECT,no-resolve")
+            Ipv6Mode.DUAL_STACK -> Unit
         }
         if (preferences.blockUdpStun) {
             add("AND,((NETWORK,UDP),(DST-PORT,3478-3479)),REJECT")
@@ -367,7 +366,9 @@ object MihomoFeatureCompiler {
      * Custom browser DoH endpoints cannot be enumerated and must be disabled in that browser if
      * the user needs an enforceable single-resolver policy.
      */
-    fun dnsLeakGuardRules(): List<String> = buildList {
+    fun dnsLeakGuardRules(): List<String> = leakGuardRules
+
+    private val leakGuardRules = buildList {
         add("AND,((NETWORK,TCP),(DST-PORT,53)),REJECT")
         add("AND,((NETWORK,UDP),(DST-PORT,53)),REJECT")
         add("AND,((NETWORK,TCP),(DST-PORT,853)),REJECT")
@@ -433,28 +434,27 @@ object MihomoFeatureCompiler {
     fun dnsFilterBypassRules(preferences: NetworkPreferences): List<String> = when (
         preferences.dnsProfile
     ) {
-        DnsProfile.AD_BLOCK, DnsProfile.FAMILY -> buildList {
-            localAdBlockDomains.forEach { domain ->
-                add("DOMAIN-SUFFIX,$domain,REJECT")
-            }
-            if (preferences.dnsProfile == DnsProfile.FAMILY) {
-                familyFilterDomains.forEach { domain ->
-                    add("DOMAIN-SUFFIX,$domain,REJECT")
-                }
-            }
-        }
+        DnsProfile.AD_BLOCK -> adBlockRules
+        DnsProfile.FAMILY -> familyRules
         else -> emptyList()
     }
 
     fun domesticDirectRules(preferences: NetworkPreferences): List<String> =
-        if (preferences.domesticDirect) {
-            listOf(
-                "GEOSITE,private,DIRECT",
-                "GEOIP,LAN,DIRECT,no-resolve",
-                "GEOSITE,cn,DIRECT",
-                "GEOIP,CN,DIRECT,no-resolve",
-            )
-        } else {
-            emptyList()
-        }
+        if (preferences.domesticDirect) directRules else emptyList()
+
+    private val adBlockRules = buildList(localAdBlockDomains.size) {
+        for (domain in localAdBlockDomains) add("DOMAIN-SUFFIX,$domain,REJECT")
+    }
+    private val familyRules = buildList(adBlockRules.size + familyFilterDomains.size) {
+        addAll(adBlockRules)
+        for (domain in familyFilterDomains) add("DOMAIN-SUFFIX,$domain,REJECT")
+    }
+    private val directRules = listOf(
+        "GEOSITE,private,DIRECT",
+        "GEOIP,LAN,DIRECT,no-resolve",
+        "GEOSITE,cn,DIRECT",
+        "GEOIP,CN,DIRECT,no-resolve",
+    )
+    private val localFakeIpFilter = listOf("geosite:private", "*.lan", "*.local", "*.home.arpa")
+    private val domesticFakeIpFilter = localFakeIpFilter + "geosite:cn"
 }

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vpn_channel_name">Подключение прокси</string>
+    <string name="vpn_channel_description">Показывает состояние подключения прокси Weave</string>
+    <string name="updates_channel_name">Обновление подписок</string>
+    <string name="updates_channel_description">Результаты запланированных обновлений подписок</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="action_connect">Подключиться</string>
+    <string name="notification_speed">↑ %1$s/с · ↓ %2$s/с</string>
+    <string name="tile_label">Weave</string>
+    <string name="tile_connected">Подключено</string>
+    <string name="tile_disconnected">Не подключено</string>
+    <string name="tile_connecting">Подключение…</string>
+    <string name="tile_needs_app">Откройте Weave, чтобы разрешить VPN</string>
+    <string name="shortcut_connect_short">Подключить</string>
+    <string name="shortcut_connect_long">Подключить Weave</string>
+    <string name="shortcut_disconnect_short">Отключить</string>
+    <string name="shortcut_disconnect_long">Отключить Weave</string>
+    <string name="vpn_shortcut_confirmation">Подтвердите действие в Weave, чтобы изменить подключение VPN.</string>
+    <string name="shortcut_import_short">Импорт</string>
+    <string name="shortcut_import_long">Импортировать подписку</string>
+    <string name="update_applied_title">Обновлено %1$s</string>
+    <string name="update_applied_body">Добавлено %1$d · Удалено %2$d · Сохранено %3$d</string>
+    <string name="update_review_title">Требуется проверка %1$s</string>
+    <string name="update_review_body">Обновление меняет узлы, от которых зависят правила, или не прошло проверки безопасности. Откройте Weave, чтобы посмотреть изменения.</string>
+    <string name="update_failed_title">Ошибка обновления подписки</string>
+    <string name="notification_control_title">Уведомление о подключении</string>
+    <string name="notification_control_enabled">Показывается в уведомлениях с кнопкой отключения.</string>
+    <string name="notification_control_disabled">Уведомления отключены. Туннель может работать, но его состояние и кнопка отключения могут быть скрыты.</string>
+    <string name="notification_control_action">Настроить уведомления</string>
+    <string name="action_choose_exit">Выбрать выходной маршрут</string>
+    <string name="widget_description">Состояние подключения и переключатель</string>
+    <plurals name="update_failed_body">
+        <item quantity="one">Не удалось обновить %1$d подписку. Предыдущая версия сохранена.</item>
+        <item quantity="few">Не удалось обновить %1$d подписки. Предыдущие версии сохранены.</item>
+        <item quantity="many">Не удалось обновить %1$d подписок. Предыдущие версии сохранены.</item>
+        <item quantity="other">Не удалось обновить %1$d подписки. Предыдущие версии сохранены.</item>
+    </plurals>
+    <string name="app_picker_title">Выбрать приложение</string>
+    <string name="app_picker_search">Поиск по имени или пакету приложения</string>
+    <string name="app_picker_empty">Подходящие приложения не найдены</string>
+    <string name="app_picker_add">Добавить %1$s</string>
+    <string name="app_picker_close">Закрыть</string>
+    <string name="about_github_description">Посмотрите проект и поставьте ему звезду.</string>
+    <string name="about_github_unavailable">Не удалось открыть ссылку GitHub.</string>
+    <string name="migration_paste">Вставить и импортировать</string>
+    <string name="migration_paste_description">Скопируйте ссылку на подписку или конфигурацию в исходном приложении, затем нажмите «Вставить и импортировать».</string>
+    <string name="migration_empty_clipboard">Буфер обмена не содержит поддерживаемого текста</string>
+    <string name="home_speed_test">Проверить скорость</string>
+    <string name="home_latency_measured">Время ответа HTTPS</string>
+    <string name="home_download_measured">Пробная загрузка</string>
+    <string name="home_measurement_starting">Начало измерения…</string>
+    <string name="privacy_check_external_requests">Для проверки отправляются запросы перечисленным сервисам.</string>
+</resources>

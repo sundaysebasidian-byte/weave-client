@@ -88,9 +88,12 @@ enum class DnsRoutingMode(
 enum class Ipv6Mode(
     val label: String,
     val description: String,
+    val ipv4Enabled: Boolean,
+    val ipv6Enabled: Boolean,
 ) {
-    DUAL_STACK("IPv4 + IPv6", "完整接管 IPv4 与 IPv6 流量"),
-    IPV4_ONLY("仅 IPv4", "停用 IPv6 解析并在隧道内拒绝 IPv6，防止旁路"),
+    DUAL_STACK("IPv4 + IPv6", "完整接管 IPv4 与 IPv6 流量", true, true),
+    IPV4_ONLY("仅 IPv4", "停用 IPv6 解析并在隧道内拒绝 IPv6，防止旁路", true, false),
+    IPV6_ONLY("仅 IPv6", "仅接管 IPv6，阻止应用 IPv4 流量并停用应用绕过", false, true),
 }
 
 enum class WeaveAppearanceGroup(val label: String) {
@@ -186,6 +189,8 @@ data class NetworkPreferences(
     val systemHttpProxy: Boolean = false,
     /** Lets other LAN/hotspot devices use the authenticated mixed proxy. */
     val lanSharing: Boolean = false,
+    /** Best effort after device unlock, when Android's own Always-on setting is unavailable. */
+    val reconnectAfterBoot: Boolean = false,
 ) {
     val effectiveDnsTransport: DnsTransport
         get() = if (dnsProfile == DnsProfile.CUSTOM && customDnsEndpoint.isNotBlank()) {
@@ -193,10 +198,24 @@ data class NetworkPreferences(
         } else dnsTransport
 }
 
-/** Plain-DNS resolvers used only to resolve the encrypted DNS hostnames themselves. */
-enum class BootstrapDns(val label: String, val servers: List<String>) {
-    MAINLAND("中国大陆（阿里 / 腾讯）", listOf("223.5.5.5", "119.29.29.29")),
-    GLOBAL("海外（Cloudflare / Quad9）", listOf("1.1.1.1", "9.9.9.9")),
+/** Resolvers used only to resolve the encrypted DNS hostnames themselves. */
+enum class BootstrapDns(
+    val label: String,
+    val servers: List<String>,
+    val ipv6Servers: List<String>,
+    val encrypted: Boolean = false,
+) {
+    MAINLAND("中国大陆（阿里 / 腾讯）", listOf("223.5.5.5", "119.29.29.29"), listOf("2400:3200::1", "2402:4e00::")),
+    GLOBAL("海外（Cloudflare / Quad9）", listOf("1.1.1.1", "9.9.9.9"), listOf("2606:4700:4700::1111", "2620:fe::fe")),
+    ENCRYPTED(
+        "加密引导（Cloudflare）",
+        listOf("tls://1.1.1.1", "tls://1.0.0.1"),
+        listOf("tls://[2606:4700:4700::1111]", "tls://[2606:4700:4700::1001]"),
+        encrypted = true,
+    ),
+    ;
+
+    fun serversFor(mode: Ipv6Mode): List<String> = if (mode.ipv4Enabled) servers else ipv6Servers
 }
 
 enum class RouteKind {

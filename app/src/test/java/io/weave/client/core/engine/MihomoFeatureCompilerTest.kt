@@ -1,6 +1,7 @@
 package io.weave.client.core.engine
 
 import io.weave.client.domain.AutomaticStrategy
+import io.weave.client.domain.BootstrapDns
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
@@ -223,12 +224,33 @@ class MihomoFeatureCompilerTest {
             "https://dns.example/dns-query",
             MihomoFeatureCompiler.validateCustomDnsEndpoint(" https://dns.example/dns-query "),
         )
-        listOf("udp://1.1.1.1", "http://dns.example/dns-query", "https://user:pass@dns.example/dns-query")
+        listOf(
+            "udp://1.1.1.1", "http://dns.example/dns-query", "https://user:pass@dns.example/dns-query",
+            "https://@dns.example/dns-query", "https://dns.example:0/dns-query",
+            "tls://dns.example/dns-query",
+        )
             .forEach { endpoint ->
                 org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
                     MihomoFeatureCompiler.validateCustomDnsEndpoint(endpoint)
                 }
             }
+    }
+
+    @Test
+    fun `ipv6 only rejects literal IPv4 and filters resolver IPv4 answers`() {
+        val ipv6 = Ipv6Mode.IPV6_ONLY
+        val address = "https://dns.example/dns-query"
+        assertEquals(
+            MihomoFeatureCompiler.dnsLeakGuardRules() + "IP-CIDR,0.0.0.0/0,REJECT,no-resolve",
+            MihomoFeatureCompiler.leadingRules(NetworkPreferences(ipv6Mode = ipv6)),
+        )
+        assertEquals("$address#disable-ipv4=true", MihomoFeatureCompiler.resolverForMode(address, ipv6))
+        assertEquals(address, MihomoFeatureCompiler.resolverForMode(address, Ipv6Mode.DUAL_STACK))
+        assertEquals(listOf("2400:3200::1", "2402:4e00::"), BootstrapDns.MAINLAND.serversFor(ipv6))
+        assertEquals(
+            listOf("tls://[2606:4700:4700::1111]", "tls://[2606:4700:4700::1001]"),
+            BootstrapDns.ENCRYPTED.serversFor(ipv6),
+        )
     }
 
     @Test

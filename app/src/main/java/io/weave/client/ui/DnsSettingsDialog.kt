@@ -358,7 +358,7 @@ internal fun DnsSettingsDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("测速与可用性", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "仅测 TLS / HTTPS 端点，不发送域名查询",
+                                "检测使用当前物理网络，只向受测 DNS 发送 example.com",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                             )
@@ -404,7 +404,7 @@ private fun DnsProbePanel(
             .verticalScroll(rememberScrollState()),
     ) {
         Text(
-            "结果是当前网络到加密 DNS 服务端点的实测 RTT；不代表节点延迟，也不会伪造 65553ms 之类的无效值。",
+            "耗时包括加密连接和 DNS 回包。只有收到有效地址才算通过。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             lineHeight = 17.sp,

@@ -1,8 +1,9 @@
 # Android Compose localization workbench
 
-These catalogs are review data, not Android resources. They are not packaged in
-the app and do not enable Korean, Spanish or Arabic in the language picker.
-Translation state must not be inferred from the native resource folders.
+These catalogs are the source for the sealed Compose assets in the Android app.
+The language picker offers Arabic, Spanish, Korean, Russian and Hindi when the
+matching APK catalog passes its integrity check. Native Android surfaces use
+the string resources in the corresponding locale.
 
 - `source-static.jsonl`: 1,309 distinct source phrases from the merged English
   catalog on the selected RC6 baseline. The ID is the exact legacy Simplified
@@ -16,7 +17,7 @@ Translation state must not be inferred from the native resource folders.
   family if the Kotlin branch structure changes. Existing precedence is untouched.
   One duplicate ordered matcher is unreachable and excluded. Recheck via
   `python3 tools/inventory-android-dynamic-copy.py --check`.
-- `ar.jsonl`, `es.jsonl`, `ko.jsonl`: UTF-8 lines with `id` and `text`, in the
+- `ar.jsonl`, `es.jsonl`, `ko.jsonl`, `ru.jsonl`, `hi.jsonl`: UTF-8 lines with `id` and `text`, in the
   order of the source files above. Different languages can be edited independently.
   No empty/English filler rows. The reference text in a source file is never
   substituted for a missing entry.
@@ -50,7 +51,7 @@ The host-only preview bridge is `localizeStagedWeaveText` backed by
 `StagedComposeLocale`. It retains the existing ordered recognizers and nested
 composition, renders named placeholders in a single pass, and throws on a
 missing recognized key rather than returning English. Its tests load the actual
-JSONL files, format the complete static/dynamic inventory for all three target
+JSONL files, format the complete static/dynamic inventory for all five target
 locales and exercise registry precedence with representative real inputs.
 Existing locale paths still use their original definitions. This does not
 establish Compose layout or device-level locale correctness.

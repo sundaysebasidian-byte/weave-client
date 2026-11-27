@@ -121,9 +121,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
@@ -236,6 +238,8 @@ internal fun SettingsScreen(
     onSystemHttpProxyChanged: (Boolean) -> Unit = {},
     onLanSharingChanged: (Boolean) -> Unit = {},
     onRevealLanCredentials: () -> Unit = {},
+    onHideLanCredentials: () -> Unit = {},
+    onReconnectAfterBootChanged: (Boolean) -> Unit = {},
     onOpenConnections: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenRuleSets: () -> Unit = {},
@@ -263,6 +267,7 @@ internal fun SettingsScreen(
     var showAutoUpdate by remember { mutableStateOf(false) }
     var showBootstrapDns by remember { mutableStateOf(false) }
     var showLanProxy by remember { mutableStateOf(false) }
+    var showAlwaysOn by remember { mutableStateOf(false) }
     // Advanced groups start collapsed; their open state survives rotation and tab switches.
     var connectionAdvancedExpanded by rememberSaveable { mutableStateOf(false) }
     var routingExpanded by rememberSaveable { mutableStateOf(false) }
@@ -314,7 +319,7 @@ internal fun SettingsScreen(
                 LinkEntry(Icons.Rounded.Speed, "自动节点策略", preferences.automaticStrategy.label) {
                     showAutomaticStrategy = true
                 },
-                LinkEntry(Icons.Rounded.Bolt, "Always-on 与断网保护", null, onOpenVpnSettings),
+                LinkEntry(Icons.Rounded.Bolt, "Always-on 与断网保护", null) { showAlwaysOn = true },
             ),
         ),
         SettingsSection(
@@ -548,7 +553,7 @@ internal fun SettingsScreen(
     if (showLanguage) {
         val picker = packagedLanguages
         // The ordinary choices render immediately. This read belongs only to the open dialog.
-        val verifiedChoices by produceState<List<PackagedAppLocale>?>(null, picker) {
+        val verifiedChoices by produceState<List<PackagedLocaleChoice>?>(null, picker) {
             value = null
             value = picker?.loadChoices?.invoke().orEmpty()
         }
@@ -561,6 +566,8 @@ internal fun SettingsScreen(
         }
         var failed by remember { mutableStateOf(false) }
         var pending by remember { mutableStateOf<PackagedLanguageTap?>(null) }
+        var loadingChoice by remember { mutableStateOf(false) }
+        val choiceScope = rememberCoroutineScope()
         fun submit(tap: PackagedLanguageTap) {
             if (!showLanguage || pending != null || picker == null) return
             failed = false
@@ -568,6 +575,19 @@ internal fun SettingsScreen(
                 PackagedLanguageTapResult.APPLIED -> showLanguage = false
                 PackagedLanguageTapResult.NOT_APPLIED -> failed = true
                 PackagedLanguageTapResult.UNCONFIRMED -> pending = tap
+            }
+        }
+        fun submitRegional(option: PackagedLocaleChoice) {
+            if (!showLanguage || pending != null || loadingChoice || picker == null) return
+            loadingChoice = true
+            failed = false
+            choiceScope.launch {
+                try {
+                    val chosen = picker.loadChoice(option)
+                    if (chosen != null) submit(PackagedLanguageTap.Regional(chosen)) else failed = true
+                } finally {
+                    loadingChoice = false
+                }
             }
         }
         LaunchedEffect(pending, picker) {
@@ -592,9 +612,9 @@ internal fun SettingsScreen(
                 }
             },
             showSelected = picker?.selected == null,
-            choicesEnabled = pending == null,
+            choicesEnabled = pending == null && !loadingChoice,
             extraChoices = {
-                if (deferredLoading) {
+                if (deferredLoading || loadingChoice) {
                     CircularProgressIndicator(modifier = Modifier.padding(8.dp).size(16.dp), strokeWidth = 2.dp)
                 }
                 verifiedChoices.orEmpty().forEach { option ->
@@ -602,9 +622,9 @@ internal fun SettingsScreen(
                         title = option.nativeLabel,
                         translateTitle = false,
                         selected = option.tag == picker?.selected?.tag,
-                        enabled = pending == null,
+                        enabled = pending == null && !loadingChoice,
                         modifier = Modifier.padding(vertical = 1.dp),
-                        onClick = { submit(PackagedLanguageTap.Regional(option)) },
+                        onClick = { submitRegional(option) },
                     )
                 }
                 when {
@@ -631,7 +651,11 @@ internal fun SettingsScreen(
             options = BootstrapDns.entries,
             selected = preferences.bootstrapDns,
             label = BootstrapDns::label,
-            description = { it.servers.joinToString(" · ") + " · " + localizeWeaveText("明文，仅解析 DoH/DoT 服务器域名", language) },
+            description = {
+                val explanation = if (it.encrypted) "加密，仅解析 DoH/DoT 服务器域名"
+                    else "明文，仅解析 DoH/DoT 服务器域名"
+                it.serversFor(preferences.ipv6Mode).joinToString(" · ") + " · " + localizeWeaveText(explanation, language)
+            },
             onDismiss = { showBootstrapDns = false },
             onSelect = {
                 onBootstrapDnsSelected(it)
@@ -640,12 +664,31 @@ internal fun SettingsScreen(
         )
     }
     if (showLanProxy) {
+        DisposableEffect(Unit) { onDispose(onHideLanCredentials) }
         LanProxySharingDialog(
             enabled = preferences.lanSharing,
             credentials = lanCredentials,
             onToggle = onLanSharingChanged,
             onReveal = onRevealLanCredentials,
             onDismiss = { showLanProxy = false },
+        )
+    }
+    if (showAlwaysOn) {
+        WeaveDialog(
+            onDismissRequest = { showAlwaysOn = false },
+            title = { Text("Always-on 与断网保护") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("在 Android 的 VPN 设置中选择 Weave 和始终开启。可同时启用无 VPN 时阻止连接。")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("重启解锁后尝试重连", modifier = Modifier.weight(1f))
+                        WeaveSwitch(checked = preferences.reconnectAfterBoot, onCheckedChange = onReconnectAfterBootChanged)
+                    }
+                    Text("系统没有始终开启选项时，可尝试恢复上次连接。手动断开后不会恢复。系统限制重连时，也不会阻止其他网络流量。")
+                }
+            },
+            confirmButton = { TextButton(onClick = onOpenVpnSettings) { Text("打开 VPN 设置") } },
+            dismissButton = { TextButton(onClick = { showAlwaysOn = false }) { Text("完成") } },
         )
     }
     if (showDnsSettings) {

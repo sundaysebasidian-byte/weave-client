@@ -2,6 +2,7 @@ package io.weave.client.core.engine
 
 import android.content.Context
 import io.weave.client.core.vpn.RuntimeFailure
+import io.weave.client.core.vpn.LanProxyAddresses
 import io.weave.client.core.vpn.RuntimeFailureException
 import io.weave.client.core.vpn.fail
 import io.weave.client.domain.AppRoute
@@ -25,7 +26,6 @@ import io.weave.client.routing.LocalRouteRuleStore
 import io.weave.client.routing.RemoteRuleSetStore
 import io.weave.client.routing.RuleSetCompiler
 import io.weave.client.routing.LocalRuleCompiler
-import java.io.File
 
 data class AssembledMihomoConfig(
     val yaml: String,
@@ -36,7 +36,7 @@ data class AssembledMihomoConfig(
 /**
  * Builds a minimal Mihomo control plane around encrypted Clash providers.
  *
- * Provider payloads are decrypted only into the app-private Mihomo home while the service runs.
+ * Provider payloads are decrypted only for the inline configuration passed to the core.
  * URI lists, sing-box JSON and basic V2Ray JSON are normalized at the import boundary (and lazily for records from
  * older builds) so a stale pre-converter subscription cannot silently enter the runtime.
  */
@@ -47,7 +47,6 @@ class MihomoConfigAssembler(
 ) {
     private val payloadParser = SubscriptionPayloadParser()
     private val appContext = context.applicationContext
-    private val providerDirectory = File(context.cacheDir, "mihomo-runtime/providers")
     private val policyPackStore = PolicyPackStore(context)
     private val localRuleStore = LocalRouteRuleStore(context)
     private val settingsStore = io.weave.client.data.RuntimeSettingsStore(context)
@@ -158,13 +157,14 @@ class MihomoConfigAssembler(
             )
         }
         val ruleSets = ruleSetStore.active()
-        val ipv6Enabled = networkPreferences.ipv6Mode == Ipv6Mode.DUAL_STACK
+        val ipMode = networkPreferences.ipv6Mode
+        val ipv6Enabled = ipMode.ipv6Enabled
         val automaticGroupConfig = MihomoFeatureCompiler.automaticGroup(
             networkPreferences.automaticStrategy,
         )
         val dnsPolicy = MihomoFeatureCompiler.nameserverPolicy(networkPreferences)
         val dnsCompatibilityFallbacks = MihomoFeatureCompiler.dnsCompatibilityFallbacks(networkPreferences)
-        val fakeIpFilter = MihomoFeatureCompiler.fakeIpFilter(networkPreferences)
+        val policyServers = MihomoFeatureCompiler.encryptedNameServers(networkPreferences) + dnsCompatibilityFallbacks
         val leadingRules = MihomoFeatureCompiler.leadingRules(networkPreferences)
         val domesticDirectRules = MihomoFeatureCompiler.domesticDirectRules(networkPreferences)
         val offlinePolicyRules = PolicyPackCompiler.compile(policyPackStore.active())
@@ -186,6 +186,8 @@ class MihomoConfigAssembler(
                 val (user, password) = lanCredentials()
                 appendLine("allow-lan: true")
                 appendLine("bind-address: '*'")
+                appendLine("lan-allowed-ips:")
+                LanProxyAddresses.allowedNetworks.forEach { appendLine("  - $it") }
                 appendLine("authentication:")
                 appendLine("  - ${yamlString("$user:$password")}")
                 appendLine("skip-auth-prefixes:")
@@ -219,12 +221,22 @@ class MihomoConfigAssembler(
             appendLine("dns:")
             appendLine("  enable: true")
             appendLine("  ipv6: $ipv6Enabled")
-            appendLine("  enhanced-mode: fake-ip")
-            appendLine("  fake-ip-range: 198.18.0.1/16")
-            appendLine("  fake-ip-filter-mode: blacklist")
-            appendLine("  fake-ip-filter:")
-            fakeIpFilter.forEach { entry ->
-                appendLine("    - ${yamlString(entry)}")
+            if (ipMode.ipv4Enabled) {
+                appendLine("  enhanced-mode: fake-ip")
+                appendLine("  fake-ip-range: 198.18.0.1/16")
+                appendLine("  fake-ip-filter-mode: blacklist")
+                appendLine("  fake-ip-filter:")
+                MihomoFeatureCompiler.fakeIpFilter(networkPreferences).forEach { entry ->
+                    appendLine("    - ${yamlString(entry)}")
+                }
+            } else {
+                // Fake-IP would synthesize IPv4 answers independently of the upstream filter.
+                appendLine("  enhanced-mode: redir-host")
+            }
+            fun dnsServers(servers: List<String>, indent: String = "    ") {
+                for (server in servers) {
+                    appendLine("$indent- " + yamlString(MihomoFeatureCompiler.resolverForMode(server, ipMode)))
+                }
             }
             // Keep private/local discovery and (when enabled) mainland domains on real addresses.
             // With a fake destination such as 198.18.x.x, GEOIP,CN cannot classify an IP-only or
@@ -235,39 +247,34 @@ class MihomoConfigAssembler(
                 appendLine("  nameserver-policy:")
                 dnsPolicy.forEach { (rule, endpoints) ->
                     appendLine("    $rule:")
-                    endpoints.forEach { appendLine("      - $it") }
+                    dnsServers(endpoints, "      ")
                 }
                 appendLine("  direct-nameserver:")
-                (dnsPolicy.values.firstOrNull()
-                    ?: MihomoFeatureCompiler.policyNameServers(networkPreferences))
-                    .forEach { appendLine("    - $it") }
+                dnsServers(dnsPolicy.values.first())
                 appendLine("  direct-nameserver-follow-policy: true")
             }
             appendLine("  default-nameserver:")
-            networkPreferences.bootstrapDns.servers.forEach { appendLine("    - $it") }
+            networkPreferences.bootstrapDns.serversFor(ipMode).forEach { appendLine("    - ${yamlString(it)}") }
             appendLine("  nameserver:")
             // Keep the selected resolver first, but make the mainland-compatible encrypted
             // resolvers available to every query class (including TXT/PTR). Mihomo's separate
             // fallback block is geo-aware and does not always participate in those queries;
             // putting the same safe set here prevents a non-critical Quad9/Cloudflare timeout
             // from delaying WebView bootstrap or proxy health checks.
-            MihomoFeatureCompiler.policyNameServers(networkPreferences)
-                .forEach { appendLine("    - $it") }
+            dnsServers(policyServers)
             if (dnsCompatibilityFallbacks.isNotEmpty()) {
                 // Overseas encrypted endpoints are not reliably reachable from every mainland
                 // carrier. Mihomo queries these encrypted fallbacks when the selected resolver
                 // times out; local reject rules continue to cover the bundled ad/family set.
                 appendLine("  fallback:")
-                dnsCompatibilityFallbacks.forEach { appendLine("    - $it") }
+                dnsServers(dnsCompatibilityFallbacks)
                 appendLine("  fallback-filter:")
                 appendLine("    geoip: true")
                 appendLine("    geoip-code: CN")
             }
-            // Proxy hostnames must also use encrypted upstreams. Plain default-nameserver is now
-            // limited to bootstrapping the DoH/DoT hostnames, preventing per-proxy DNS leakage.
+            // Only resolver hostnames use the configured bootstrap addresses.
             appendLine("  proxy-server-nameserver:")
-            MihomoFeatureCompiler.policyNameServers(networkPreferences)
-                .forEach { appendLine("    - $it") }
+            dnsServers(policyServers)
             // Preserve the original host for fake-IP connections and recover SNI/HTTP hosts for
             // clients that connect using a literal address. This is local inspection only; no
             // sniffed host is exported from the app.
@@ -464,10 +471,6 @@ class MihomoConfigAssembler(
         }
 
         AssembledMihomoConfig(yaml, activeSubscriptions.size, requiredNodeGroups)
-    }
-
-    fun cleanRuntimeFiles() {
-        providerDirectory.parentFile?.deleteRecursively()
     }
 
     private fun validateTarget(

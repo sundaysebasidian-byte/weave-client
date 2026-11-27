@@ -15,6 +15,8 @@ final class ReleaseAppCopySelection {
     private static final ReleaseAppCopySelection ARABIC = new ReleaseAppCopySelection(State.SELECTED, "ar-EG");
     private static final ReleaseAppCopySelection SPANISH = new ReleaseAppCopySelection(State.SELECTED, "es-MX");
     private static final ReleaseAppCopySelection KOREAN = new ReleaseAppCopySelection(State.SELECTED, "ko-KR");
+    private static final ReleaseAppCopySelection RUSSIAN = new ReleaseAppCopySelection(State.SELECTED, "ru-RU");
+    private static final ReleaseAppCopySelection HINDI = new ReleaseAppCopySelection(State.SELECTED, "hi-IN");
 
     final State state;
     final String canonicalTag;
@@ -34,6 +36,8 @@ final class ReleaseAppCopySelection {
             case "ar-EG": return ARABIC;
             case "es-MX": return SPANISH;
             case "ko-KR": return KOREAN;
+            case "ru-RU": return RUSSIAN;
+            case "hi-IN": return HINDI;
             default: return UNSUPPORTED;
         }
     }

@@ -23,12 +23,14 @@ class ComposeLocaleGateTest(unittest.TestCase):
         self.write("es", {"id": "连接 VPN", "text": "Conectar la VPN"}, {"id": "dynamic:count", "text": "Conectado a {name}"})
         self.write("ko", {"id": "连接 VPN", "text": "VPN 연결"}, {"id": "dynamic:count", "text": "{name}에 연결됨"})
         self.write("ar", {"id": "连接 VPN", "text": "الاتصال عبر VPN"}, {"id": "dynamic:count", "text": "متصل بـ \u2068{name}\u2069"})
+        self.write("ru", {"id": "连接 VPN", "text": "Подключить VPN"}, {"id": "dynamic:count", "text": "Подключено к {name}"})
+        self.write("hi", {"id": "连接 VPN", "text": "VPN कनेक्ट करें"}, {"id": "dynamic:count", "text": "{name} से कनेक्ट है"})
 
     def write(self, typ, *rows):
         (self.root / (typ + ".jsonl")).write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
     def test_complete_valid_catalogs(self):
-        self.assertEqual(checker.run(self.root, release=True), ([], dict.fromkeys(["ar", "es", "ko"], (1, 1))))
+        self.assertEqual(checker.run(self.root, release=True), ([], dict.fromkeys(checker.SCRIPT, (1, 1))))
 
     def test_missing_key_blocks_release_only(self):
         self.write("ar", {"id": "连接 VPN", "text": "الاتصال عبر VPN"})

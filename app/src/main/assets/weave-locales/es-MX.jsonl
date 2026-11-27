@@ -1324,7 +1324,47 @@
 {"id":"请在系统设置中允许 Weave 安装应用，然后返回点「安装更新」。","text":"Permite que Weave instale apps en la configuración del sistema y luego vuelve y toca Instalar actualización."}
 {"id":"正在打开系统安装确认。","text":"Abriendo la confirmación de instalación de Android."}
 {"id":"安装未完成。可以重试，或保存安装包后手动安装。","text":"No se completó la instalación. Vuelve a intentarlo o guarda el paquete e instálalo manualmente."}
+{"id":"活动连接会立即断开。","text":"Las conexiones activas se cerrarán de inmediato."}
+{"id":"没有匹配的规则","text":"No hay reglas coincidentes"}
+{"id":"连接列表已暂停","text":"Lista de conexiones en pausa"}
+{"id":"断开全部连接？","text":"¿Cerrar todas las conexiones?"}
+{"id":"断开连接失败","text":"No se pudo cerrar la conexión"}
+{"id":"跳到最新日志","text":"Ir a los registros más recientes"}
+{"id":"已复制脱敏日志","text":"Se copiaron los registros anonimizados"}
+{"id":"策略组","text":"Grupos"}
+{"id":"分流设置未能保存","text":"No se pudieron guardar los ajustes de enrutamiento"}
+{"id":"已保存，请重新连接以应用分流设置","text":"Guardado. Vuelve a conectarte para aplicar los ajustes de enrutamiento"}
+{"id":"无法读取应用列表","text":"No se pudieron cargar las aplicaciones"}
+{"id":"收藏已达到上限","text":"Se alcanzó el límite de favoritos"}
+{"id":"无法保存收藏","text":"No se pudieron guardar los favoritos"}
+{"id":"已停止订阅刷新","text":"Se detuvo la actualización de suscripciones"}
+{"id":"无法读取局域网共享凭据","text":"No se pudieron leer las credenciales de uso compartido en la red local"}
 {"id":"传输完成","text":"Transferencia completada"}
+{"id":"仅 IPv6","text":"Solo IPv6"}
+{"id":"仅接管 IPv6，阻止应用 IPv4 流量并停用应用绕过","text":"Enruta IPv6, bloquea el tráfico IPv4 de las apps y desactiva la omisión"}
+{"id":"IPv4 旁路","text":"Omisión IPv4"}
+{"id":"已选择仅 IPv6；IPv4 实际阻断情况仍需核验","text":"Está seleccionado Solo IPv6. Verifica el bloqueo real de IPv4 por separado."}
+{"id":"IPv4 已在运行规则中拒绝","text":"Las reglas activas bloquean IPv4"}
+{"id":"加密引导（Cloudflare）","text":"Arranque cifrado (Cloudflare)"}
+{"id":"加密，仅解析 DoH/DoT 服务器域名","text":"Cifrado, solo resuelve nombres de servidores DoH/DoT"}
+{"id":"已选择加密引导 DNS，只解析加密 DNS 服务的地址","text":"El DNS de arranque cifrado resuelve las direcciones de los resolutores cifrados."}
+{"id":"在 Android 的 VPN 设置中选择 Weave 和始终开启。可同时启用无 VPN 时阻止连接。","text":"En los ajustes de VPN de Android selecciona Weave y activa VPN siempre activa. También puedes bloquear las conexiones sin VPN."}
+{"id":"重启解锁后尝试重连","text":"Intentar reconectar después de reiniciar y desbloquear"}
+{"id":"系统没有始终开启选项时，可尝试恢复上次连接。手动断开后不会恢复。系统限制重连时，也不会阻止其他网络流量。","text":"Si VPN siempre activa no está disponible, intenta restaurar la última conexión. Desconectar manualmente cancela la restauración. Si Android impide la reconexión, se permite el resto del tráfico."}
+{"id":"打开 VPN 设置","text":"Abrir ajustes de VPN"}
+{"id":"让同一 Wi-Fi 或热点下的设备用这台手机的默认出口。接收端可选择 HTTP 或 SOCKS5，并填写这台手机的地址、端口和凭据。","text":"Los dispositivos en la misma red Wi-Fi o zona Wi-Fi pueden usar la ruta predeterminada del teléfono. En el otro dispositivo elige HTTP o SOCKS5 e introduce la dirección, el puerto y las credenciales."}
+{"id":"在接收设备上测试代理连通性","text":"Prueba el proxy desde el dispositivo receptor"}
+{"id":"连接 Weave 后才会监听代理端口","text":"Conecta Weave para abrir el puerto del proxy"}
+{"id":"手机地址","text":"Dirección del teléfono"}
+{"id":"在手机 Wi-Fi 详情查看 IP。使用热点时，可在接收端查看网关地址。","text":"Consulta la IP en los detalles de Wi-Fi del teléfono. Si usas una zona Wi-Fi, revisa la dirección de la puerta de enlace en el otro dispositivo."}
+{"id":"刷新地址","text":"Actualizar direcciones"}
+{"id":"查看共享凭据","text":"Mostrar credenciales del proxy"}
+{"id":"在可信局域网使用。代理认证没有加密局域网链路。用完请关闭共享。","text":"Usa una red local de confianza. El inicio de sesión del proxy no cifra el enlace local. Desactiva el uso compartido al terminar."}
+{"id":"检测使用当前物理网络，只向受测 DNS 发送 example.com","text":"La prueba usa la red física actual y solo envía example.com a cada servicio DNS probado."}
+{"id":"耗时包括加密连接和 DNS 回包。只有收到有效地址才算通过。","text":"El tiempo incluye la conexión cifrada y la respuesta de DNS. Hace falta una dirección válida para aprobar."}
+{"id":"DNS 应答已验证","text":"Respuesta de DNS verificada"}
+{"id":"DNS 未返回有效地址","text":"El DNS no devolvió una dirección válida"}
+{"id":"没有可检测的网络","text":"No hay ninguna red disponible para la prueba"}
 {"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","text":"{message} [{code}]"}
 {"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","text":"Protección frente al tráfico DNS fuera del túnel"}
 {"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","text":"{transport} · {profile} · {explanation}"}

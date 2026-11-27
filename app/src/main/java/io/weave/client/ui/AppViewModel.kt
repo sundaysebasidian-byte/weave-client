@@ -264,7 +264,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     internal val groupProfileEpoch = mutableGroupProfileEpoch.asStateFlow()
     private val profileEpoch get() = mutableGroupProfileEpoch.value
     private val backup by lazy { io.weave.client.transfer.WeaveBackup(application, subscriptionRepository) }
-    private val dnsProviderProbe by lazy { DnsProviderProbe() }
+    private val dnsProviderProbe by lazy { DnsProviderProbe(getApplication()) }
     private val qrCodeImageReader = QrCodeImageReader(application)
     private val lanTransferServer = OneTimeLanTransferServer()
 
@@ -725,12 +725,13 @@ class AppViewModel internal constructor(application: Application, initialProfile
         val preferences = mutableNetworkPreferences.value
         mutableDnsProbeState.value = DnsProbeState(running = true)
         dnsProbeJob = viewModelScope.launch {
+            val probeSession = dnsProviderProbe.session(this, preferences)
             val profiles = DnsProfile.entries.filter { it != DnsProfile.CUSTOM || preferences.customDnsEndpoint.isNotBlank() }
             var failures = 0
             publishDnsProbeResults(
                 profiles,
                 dnsProbePermits,
-                probe = { profile -> probeSafely { dnsProviderProbe.probe(profile, preferences) } },
+                probe = { profile -> probeSafely { probeSession.probe(profile) } },
                 publish = { profile, result ->
                     if (generation == dnsGeneration) {
                         result.onSuccess { probeResult ->
@@ -919,6 +920,10 @@ class AppViewModel internal constructor(application: Application, initialProfile
         "正在应用引导 DNS", { it.copy(bootstrapDns = value) }, { settingsStore.setBootstrapDns(value) },
     )
 
+    fun setReconnectAfterBoot(enabled: Boolean) = saveNetworkPreferences(
+        null, { it.copy(reconnectAfterBoot = enabled) }, { settingsStore.setReconnectAfterBoot(enabled) },
+    )
+
     fun setSystemHttpProxy(enabled: Boolean) = saveNetworkPreferences(
         if (enabled) "正在启用系统 HTTP 代理" else "正在关闭系统 HTTP 代理",
         { it.copy(systemHttpProxy = enabled) }, { settingsStore.setSystemHttpProxy(enabled) },
@@ -928,13 +933,12 @@ class AppViewModel internal constructor(application: Application, initialProfile
         val message = if (enabled) "正在开启局域网共享" else "正在关闭局域网共享"
         enqueueRoutingSave(message) {
             if (mutableNetworkPreferences.value.lanSharing == enabled) return@enqueueRoutingSave null
-            var credentials: Pair<String, String>? = null
             SettingsChange(
                 write = {
-                    if (enabled) credentials = settingsStore.enableLanSharing() else settingsStore.setLanSharing(false)
+                    if (enabled) settingsStore.enableLanSharing() else settingsStore.setLanSharing(false)
                 },
                 publish = {
-                    mutableLanCredentials.value = credentials
+                    hideLanCredentials()
                     mutableNetworkPreferences.update { it.copy(lanSharing = enabled) }
                 },
             )
@@ -943,13 +947,20 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     private val mutableLanCredentials = MutableStateFlow<Pair<String, String>?>(null)
     val lanCredentials = mutableLanCredentials.asStateFlow()
+    private var lanCredentialRequest = 0L
+
+    fun hideLanCredentials() {
+        lanCredentialRequest++
+        mutableLanCredentials.value = null
+    }
 
     fun revealLanCredentials() {
         if (!mutableNetworkPreferences.value.lanSharing) return
         val epoch = profileEpoch
+        val request = ++lanCredentialRequest
         viewModelScope.launch {
             val read = withContext(Dispatchers.IO) { probeSafely { settingsStore.lanProxyCredentials() } }
-            if (epoch != profileEpoch || !mutableNetworkPreferences.value.lanSharing) return@launch
+            if (request != lanCredentialRequest || epoch != profileEpoch || !mutableNetworkPreferences.value.lanSharing) return@launch
             read.onSuccess { mutableLanCredentials.value = it }
                 .onFailure { mutableDashboard.update { it.copy(statusMessage = "无法读取局域网共享凭据") } }
         }

@@ -10,10 +10,6 @@ import io.weave.client.core.vpn.RuntimeFailure
 import io.weave.client.core.vpn.RuntimeFailureException
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
-import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
@@ -119,9 +115,8 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
     // NativeBridge is process-global, so all adapter instances (service and UI probe) must share
     // one lifecycle gate. Per-instance mutexes would allow health checks to race a config reload.
     private val lifecycleMutex = CORE_LIFECYCLE_MUTEX
-    private val runtimeDirectory = File(appContext.cacheDir, "mihomo-runtime")
-    private val configFile = File(runtimeDirectory, "config.yaml")
-    private var validatedDigest: ByteArray? = null
+    private val profileFile = NativeProfileFile(appContext.cacheDir)
+    private var validatedConfig: String? = null
 
     override val state: StateFlow<ConnectionState> = mutableState.asStateFlow()
     // A lightweight install check is enough for the UI. Loading libclash here would map the
@@ -132,22 +127,18 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
 
     override suspend fun validate(config: String): Result<Unit> = lifecycleMutex.withLock {
         // A failed replacement must invalidate the previous validation token.
-        validatedDigest = null
+        validatedConfig = null
         if (!isAvailable) {
             return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
         runCatching {
             NativeBridge.initialize(appContext).getOrThrow()
-            runtimeDirectory.mkdirs()
-            val pending = File(runtimeDirectory, "config.yaml.pending")
-            pending.writeText(config, Charsets.UTF_8)
-            moveReplace(pending, configFile)
-        }.mapCatching {
-            // CMFA's load() accepts a profile directory and appends config.yaml itself.
-            withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
-                NativeBridge.validateConfiguration(runtimeDirectory.absolutePath).getOrThrow()
+            profileFile.withProfile(config) { directory ->
+                withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
+                    NativeBridge.validateConfiguration(directory).getOrThrow()
+                }
             }
-            validatedDigest = digest(config)
+            validatedConfig = config
         }
     }
 
@@ -157,14 +148,16 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         protectSocket: (Int) -> Boolean,
         querySocketUid: (protocol: Int, source: String, target: String) -> Int,
         installedApps: List<Pair<Int, String>>,
-        ipv6Enabled: Boolean,
+        ipMode: io.weave.client.domain.Ipv6Mode,
         requiredNodeGroups: Set<String>,
     ): Result<Unit> = lifecycleMutex.withLock {
         if (!isAvailable) {
             mutableState.value = ConnectionState.ERROR
             return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
-        if (!digest(config).contentEquals(validatedDigest)) {
+        val validated = validatedConfig
+        validatedConfig = null
+        if (config != validated) {
             mutableState.value = ConnectionState.ERROR
             return@withLock Result.failure(
                 IllegalStateException("配置在校验后发生变化，已拒绝建立 TUN"),
@@ -176,13 +169,10 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         runCatching {
             // Other adapter instances share this directory. Check the actual file under the
             // lifecycle lock, not only the caller's copy of the configuration.
-            check(digest(configFile.readText(Charsets.UTF_8)).contentEquals(validatedDigest)) {
-                "配置在校验后发生变化，已拒绝建立 TUN"
-            }
-            // Validation deliberately has no side effects. Apply the exact validated profile only
-            // after the service has committed to starting/restarting this candidate.
-            withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
-                NativeBridge.loadConfiguration(runtimeDirectory.absolutePath).getOrThrow()
+            profileFile.withProfile(config) { directory ->
+                withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
+                    NativeBridge.loadConfiguration(directory).getOrThrow()
+                }
             }
             // Inline providers are validated and loaded synchronously by the pinned core.
             // Never present COMPATIBLE (a synthetic DIRECT fallback) as a connected proxy.
@@ -198,30 +188,19 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
                     .joinToString(",") { "${it.first}:${it.second}" },
             )
             nativeStartAttempted = true
+            val addresses = MihomoTunDefaults.addresses(ipMode)
             val result = NativeBridge.startTun(
                 fd = tunFd,
                 // Match CMFA's Android default. The system stack avoids the extra userspace
                 // translation layer on Android and follows the platform's socket lifecycle
                 // during Wi-Fi/cellular handover.
                 stack = MihomoTunDefaults.STACK,
-                gateway = if (ipv6Enabled) {
-                    "172.19.0.1/30,fdfe:dcba:9876::1/126"
-                } else {
-                    "172.19.0.1/30"
-                },
-                portal = if (ipv6Enabled) {
-                    "172.19.0.2,fdfe:dcba:9876::2"
-                } else {
-                    "172.19.0.2"
-                },
+                gateway = addresses.joinToString(",") { "${it.gateway}/${it.prefix}" },
+                portal = addresses.joinToString(",") { it.dns },
                 // CMFA enables DNS hijacking for any resolver destination. Restricting this to
                 // only the virtual Android DNS address lets raw/private DNS packets hit Weave's
                 // port-53 reject rules instead of reaching Mihomo's resolver.
-                dns = if (ipv6Enabled) {
-                    MihomoTunDefaults.DNS_HIJACK
-                } else {
-                    MihomoTunDefaults.DNS_HIJACK_IPV4_ONLY
-                },
+                dns = addresses.joinToString(",") { it.defaultRoute },
                 callback = object : NativeTunCallback {
                     override fun markSocket(fd: Int) {
                         if (!protectSocket(fd) && protectFailed.compareAndSet(false, true)) {
@@ -490,32 +469,12 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         return latest
     }
 
-    /** Android OEM filesystems do not all implement ATOMIC_MOVE. */
-    private fun moveReplace(source: File, target: File) {
-        runCatching {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        }.recoverCatching {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        }.getOrElse {
-            check(source.renameTo(target)) { "无法替换 Mihomo 配置文件" }
-        }
-    }
+    override suspend fun stop() = stopNative(preserveValidation = false)
 
-    override suspend fun stop() = stopInternal(clearRuntimeFiles = true)
+    /** Candidate configuration was validated immediately before stopping the previous tunnel. */
+    internal suspend fun stopForReconfiguration() = stopNative(preserveValidation = true)
 
-    /** Reuses the exact validated profile during a physical-network recovery, not new settings. */
-    internal suspend fun stopForRestart() = stopInternal(clearRuntimeFiles = false)
-
-    private suspend fun stopInternal(clearRuntimeFiles: Boolean) = lifecycleMutex.withLock {
+    private suspend fun stopNative(preserveValidation: Boolean) = lifecycleMutex.withLock {
         if (NativeBridge.isLoaded) {
             runCatching { NativeBridge.stopTun() }
             // DNS and fake-IP caches live in the process-wide Mihomo core. Clear them between
@@ -523,12 +482,11 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
             // created by the previous DNS profile.
             runCatching { NativeBridge.reset() }
         }
-        // Automatic recovery starts from lastSuccessfulRuntime, whose YAML refers to these
-        // provider files. Deleting them here leaves every restarted group empty. A real stop
-        // still removes all plaintext; reload transactions retain their own candidate snapshot.
-        if (clearRuntimeFiles) runtimeDirectory.deleteRecursively()
-        validatedDigest = null
+        if (!preserveValidation) validatedConfig = null
         mutableState.value = ConnectionState.DISCONNECTED
+        runCatching { profileFile.cleanStale() }
+            .onFailure { Log.w(LOG_TAG, "Unable to remove legacy or incomplete runtime profiles") }
+        Unit
     }
 
     private companion object {
@@ -547,8 +505,6 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         val CORE_LIFECYCLE_MUTEX = Mutex()
         val LIVE_EXIT_CACHE = LiveExitCache<LiveExit>(SystemClock::elapsedRealtime, maxAgeMs = 2_500)
 
-        fun digest(value: String): ByteArray =
-            MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
 
         fun automaticGroup(subscriptionId: String) = "sub.$subscriptionId.auto"
 

@@ -117,6 +117,7 @@ class RuntimeSettingsStore(context: Context) {
             bootstrapDns = enumPreference(preferences, KEY_BOOTSTRAP_DNS, BootstrapDns.MAINLAND),
             systemHttpProxy = preferences.getBoolean(KEY_SYSTEM_HTTP_PROXY, false),
             lanSharing = preferences.getBoolean(KEY_LAN_SHARING, false),
+            reconnectAfterBoot = preferences.getBoolean(KEY_BOOT_RECONNECT, false),
         )
     }
 
@@ -153,6 +154,22 @@ class RuntimeSettingsStore(context: Context) {
         preferences.edit(commit = true) { putBoolean(KEY_LAN_SHARING, enabled) }
     }
 
+    fun setReconnectAfterBoot(enabled: Boolean) {
+        preferences.edit(commit = true) { putBoolean(KEY_BOOT_RECONNECT, enabled) }
+    }
+
+    internal fun canResumeAfterBoot(): Boolean = preferences.let {
+        it.getBoolean(KEY_BOOT_RECONNECT, false) && it.getBoolean(KEY_RESUMABLE_CONNECTION, false)
+    }
+
+    internal fun setResumableConnection(running: Boolean, stillCurrent: () -> Boolean = { true }): Unit =
+        ProfileStorage.access(appContext) {
+            val snapshot = preferences
+            if (stillCurrent() && snapshot.getBoolean(KEY_RESUMABLE_CONNECTION, false) != running) {
+                snapshot.edit(commit = true) { putBoolean(KEY_RESUMABLE_CONNECTION, running) }
+            }
+        }
+
     /**
      * Random credentials for the LAN-shared proxy, generated once and kept encrypted. They are
      * shown to the user so other devices can authenticate; loopback clients skip auth.
@@ -164,12 +181,18 @@ class RuntimeSettingsStore(context: Context) {
     private fun prepareLanCredentials(enableSharing: Boolean): Pair<String, String> =
         ProfileStorage.access(appContext) {
             val snapshot = preferences
-            val existing = snapshot.getString(KEY_LAN_CREDENTIALS, null)?.let { encrypted ->
+            val encrypted = snapshot.getString(KEY_LAN_CREDENTIALS, null)
+            val existing = encrypted?.let {
                 runCatching {
-                    secretBox.decrypt(encrypted, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
-                }.getOrNull()?.split(':', limit = 2)?.takeIf { it.size == 2 && it.all(String::isNotEmpty) }
+                    secretBox.decrypt(it, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
+                }.getOrNull()?.split(':', limit = 2)?.takeIf { parts ->
+                    parts.size == 2 && parts[0].startsWith("weave-") &&
+                        parts[0].drop(6).length == 4 && parts[0].drop(6).all { c -> c in CREDENTIAL_ALPHABET } &&
+                        parts[1].length in setOf(16, 24) && parts[1].all { c -> c in CREDENTIAL_ALPHABET }
+                }
                     ?.let { it[0] to it[1] }
             }
+            check(enableSharing || encrypted == null || existing != null) { "局域网代理凭据无法解密" }
             val credentials = existing ?: newLanCredentials()
             if (existing == null || enableSharing) snapshot.edit(commit = true) {
                 if (existing == null) putString(
@@ -186,7 +209,7 @@ class RuntimeSettingsStore(context: Context) {
         fun token(length: Int) = buildString {
             repeat(length) { append(CREDENTIAL_ALPHABET[random.nextInt(CREDENTIAL_ALPHABET.length)]) }
         }
-        return "weave-${token(4)}" to token(16)
+        return "weave-${token(4)}" to token(24)
     }
 
     /** Null means the UI follows the system language. */
@@ -396,6 +419,8 @@ class RuntimeSettingsStore(context: Context) {
         const val KEY_LAN_SHARING = "lan_sharing"
         const val KEY_LOCALE_MIGRATED = "system_locale_migrated_v1"
         const val KEY_LAN_CREDENTIALS = "lan_proxy_credentials_encrypted"
+        const val KEY_BOOT_RECONNECT = "reconnect_after_boot"
+        const val KEY_RESUMABLE_CONNECTION = "resumable_vpn_connection"
         const val CREDENTIAL_ALPHABET = "abcdefghjkmnpqrstuvwxyzACDEFGHJKLMNPQRTUVWXY346789"
         val AUTO_UPDATE_CHOICES = setOf(0, 6, 12, 24)
         val LAN_CREDENTIALS_AAD = "weave.settings.lan-proxy.v1".toByteArray(Charsets.UTF_8)

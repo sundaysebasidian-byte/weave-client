@@ -28,6 +28,8 @@ SCRIPT = {
     "ar": re.compile(r"[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]"),
     "ko": re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]"),
     "es": re.compile(r"[A-Za-zÁÉÍÓÚáéíóúñÑüÜ]"),
+    "ru": re.compile(r"[А-Яа-яЁё]"),
+    "hi": re.compile(r"[\u0900-\u097f]"),
 }
 INVARIANTS = {
     "QUIC", "UDP / QUIC", "UDP / WebRTC", "WebRTC / STUN", "UUID",

@@ -1,21 +1,26 @@
 package io.weave.client.core.dns
 
+import android.content.Context
 import android.os.SystemClock
+import io.weave.client.core.diagnostics.DiagnosticNetwork
+import java.io.DataOutputStream
 import io.weave.client.core.engine.MihomoFeatureCompiler
 import io.weave.client.domain.DnsProfile
-import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
 import io.weave.client.domain.NetworkPreferences
 import java.net.InetSocketAddress
-import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import java.util.concurrent.ConcurrentHashMap
 
 data class DnsProbeResult(
     val profile: DnsProfile,
@@ -28,113 +33,136 @@ data class DnsProbeResult(
 
 /**
  * Performs a small, user-initiated reachability probe for the configured encrypted DNS
- * providers. It never sends a domain query: DoH uses HEAD and DoT only completes a TLS
- * handshake. The probe therefore measures the resolver endpoint, not a made-up DNS score.
+ * providers. Sends only a fixed example.com question and verifies the DNS message over TLS.
  */
-class DnsProviderProbe(
+internal class DnsProviderProbe(
+    context: Context,
     private val timeoutMs: Int = DEFAULT_TIMEOUT_MS,
 ) {
-    suspend fun probe(
-        profile: DnsProfile,
-        preferences: NetworkPreferences,
-    ): DnsProbeResult = withContext(Dispatchers.IO) {
-        val endpoints = MihomoFeatureCompiler.probeEndpoints(
-            preferences.copy(
-                dnsProfile = profile,
-                dnsRoutingMode = DnsRoutingMode.SINGLE,
-            ),
-        )
-        require(endpoints.isNotEmpty()) { "没有可检测的 DNS 端点" }
-        var first: EndpointSample? = null
-        var fastest: EndpointSample? = null
-        var availableCount = 0
-        for (endpoint in endpoints) {
-            ensureActive()
-            val sample = probeEndpoint(endpoint)
-            if (first == null) first = sample
-            if (sample.available) {
-                availableCount++
-                if (fastest == null || (sample.latencyMs ?: Int.MAX_VALUE) < (fastest.latencyMs ?: Int.MAX_VALUE)) {
-                    fastest = sample
+    private val application = context.applicationContext
+
+    fun session(scope: CoroutineScope, preferences: NetworkPreferences): Session =
+        Session(scope, DiagnosticNetwork.capturePhysical(application), preferences)
+
+    inner class Session internal constructor(
+        private val scope: CoroutineScope,
+        private val network: DiagnosticNetwork?,
+        private val preferences: NetworkPreferences,
+    ) {
+        private val shared = ConcurrentHashMap<String, Deferred<EndpointSample>>()
+
+        suspend fun probe(profile: DnsProfile): DnsProbeResult {
+            val chosen = if (profile == preferences.dnsProfile) preferences else preferences.copy(dnsProfile = profile)
+            val endpoints = MihomoFeatureCompiler.probeEndpoints(chosen)
+            require(endpoints.isNotEmpty()) { "没有可检测的 DNS 端点" }
+            val samples = endpoints.map { endpoint ->
+                shared.computeIfAbsent(endpoint) {
+                    scope.async(Dispatchers.IO) { probeEndpoint(network, endpoint, ipv6 = !preferences.ipv6Mode.ipv4Enabled) }
                 }
+            }.awaitAll()
+            var fastest: EndpointSample? = null
+            var availableCount = 0
+            for (sample in samples) {
+                val delay = sample.latencyMs ?: continue
+                availableCount++
+                if (fastest == null || delay < checkNotNull(fastest.latencyMs)) fastest = sample
             }
+            val best = fastest ?: samples.first()
+            return DnsProbeResult(
+                profile = profile,
+                transport = chosen.effectiveDnsTransport,
+                endpoint = best.endpoint,
+                latencyMs = fastest?.latencyMs,
+                available = fastest != null,
+                detail = if (availableCount > 0 && endpoints.size > 1) {
+                    "$availableCount/${endpoints.size} 个上游可达"
+                } else best.detail,
+            )
         }
-        val best = fastest ?: checkNotNull(first)
-        DnsProbeResult(
-            profile = profile,
-            transport = preferences.dnsTransport,
-            endpoint = best.endpoint,
-            latencyMs = fastest?.latencyMs,
-            available = fastest != null,
-            detail = if (availableCount > 0 && endpoints.size > 1) {
-                "$availableCount/${endpoints.size} 个上游可达"
-            } else best.detail,
-        )
     }
 
-    private fun probeEndpoint(endpoint: String): EndpointSample {
+    private fun probeEndpoint(network: DiagnosticNetwork?, endpoint: String, ipv6: Boolean): EndpointSample {
+        if (network == null) return EndpointSample(endpoint, null, "没有可检测的网络")
         val started = SystemClock.elapsedRealtime()
         return runCatching {
             val uri = URI(endpoint)
-            val latency = {
-                (SystemClock.elapsedRealtime() - started)
-                    .coerceIn(1L, Int.MAX_VALUE.toLong())
-                    .toInt()
-            }
-            when (uri.scheme) {
+            val message = DnsProbeMessage(ipv6)
+            val answered = when (uri.scheme) {
                 "https" -> {
-                    val connection = (URL(endpoint).openConnection() as HttpsURLConnection).apply {
+                    val connection = (network.open(URL(endpoint)) as HttpsURLConnection).apply {
                         connectTimeout = timeoutMs
                         readTimeout = timeoutMs
-                        requestMethod = "HEAD"
+                        requestMethod = "POST"
                         instanceFollowRedirects = false
                         useCaches = false
-                        setRequestProperty("Cache-Control", "no-cache")
+                        doOutput = true
+                        setFixedLengthStreamingMode(message.bytes.size)
+                        setRequestProperty("Content-Type", DNS_MEDIA_TYPE)
+                        setRequestProperty("Accept", DNS_MEDIA_TYPE)
                     }
                     try {
-                        val code = connection.responseCode
-                        EndpointSample(
-                            endpoint = endpoint,
-                            latencyMs = latency(),
-                            available = code in 200..499,
-                            detail = if (code in 200..499) {
-                                "HTTPS $code · 端点可达"
-                            } else {
-                                "HTTPS $code · 服务端错误"
-                            },
-                        )
+                        connection.outputStream.use { it.write(message.bytes) }
+                        connection.responseCode == 200 &&
+                            connection.contentType?.substringBefore(';')?.trim()
+                                .equals(DNS_MEDIA_TYPE, ignoreCase = true) &&
+                            connection.inputStream.use(message::readHttp)
                     } finally {
                         connection.disconnect()
                     }
                 }
                 "tls" -> {
-                    val host = requireNotNull(uri.host) { "DoT 缺少主机名" }
+                    val host = requireNotNull(uri.host) { "DoT 缺少主机名" }.removeSurrounding("[", "]")
                     val port = uri.port.takeIf { it > 0 } ?: DOT_PORT
-                    Socket().use { connection ->
-                        connection.soTimeout = timeoutMs
-                        connection.connect(InetSocketAddress(host, port), timeoutMs)
+                    connect(network, host, port, started).use { connection ->
                         val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
                         (factory.createSocket(connection, host, port, true) as SSLSocket).use { socket ->
                             socket.soTimeout = timeoutMs
                             socket.sslParameters = socket.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
                             socket.startHandshake()
+                            val output = DataOutputStream(socket.outputStream)
+                            output.writeShort(message.bytes.size)
+                            output.write(message.bytes)
+                            output.flush()
+                            message.readTls(socket.inputStream)
                         }
                     }
-                    EndpointSample(
-                        endpoint = endpoint, latencyMs = latency(), available = true,
-                        detail = "TLS 握手成功 · 端点可达",
-                    )
                 }
                 else -> error("不支持的 DNS 协议")
             }
+            EndpointSample(
+                endpoint,
+                if (answered) (SystemClock.elapsedRealtime() - started).coerceAtLeast(1).toInt() else null,
+                if (answered) "DNS 应答已验证" else "DNS 未返回有效地址",
+            )
         }.getOrElse { error ->
             EndpointSample(
                 endpoint = endpoint,
                 latencyMs = null,
-                available = false,
                 detail = error.safeDnsProbeMessage(),
             )
         }
+    }
+
+    private fun connect(network: DiagnosticNetwork, host: String, port: Int, started: Long): java.net.Socket {
+        var failure: java.io.IOException = java.net.UnknownHostException()
+        val addresses = network.resolve(host).take(4)
+        for ((index, address) in addresses.withIndex()) {
+            val remaining = timeoutMs - (SystemClock.elapsedRealtime() - started)
+            if (remaining <= 0) throw SocketTimeoutException()
+            val socket = network.socket()
+            try {
+                val attempt = (remaining / (addresses.size - index)).coerceAtLeast(1).toInt()
+                socket.connect(InetSocketAddress(address, port), attempt)
+                return socket
+            } catch (error: java.io.IOException) {
+                socket.close()
+                failure = error
+            } catch (error: RuntimeException) {
+                socket.close()
+                throw error
+            }
+        }
+        throw failure
     }
 
     private fun Throwable.safeDnsProbeMessage(): String = when (this) {
@@ -148,12 +176,12 @@ class DnsProviderProbe(
     private data class EndpointSample(
         val endpoint: String,
         val latencyMs: Int?,
-        val available: Boolean,
         val detail: String,
     )
 
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 2_500
         const val DOT_PORT = 853
+        const val DNS_MEDIA_TYPE = "application/dns-message"
     }
 }

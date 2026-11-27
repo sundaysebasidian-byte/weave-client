@@ -273,20 +273,21 @@ class MihomoProviderIntegrationTest {
         }
     }
 
-    @Test fun restartRetainsProvidersAndFullStopRemovesThem() = runBlocking {
+    @Test fun inlineProfileCanBeRevalidatedAfterStopWithoutLeavingPlaintext() = runBlocking {
         val testCache = Files.createTempDirectory(context.cacheDir.toPath(), "recovery-test-").toFile()
         val isolatedContext = object : ContextWrapper(context) {
             override fun getApplicationContext(): Context = this
             override fun getCacheDir(): File = testCache
         }
         val active = File(testCache, "mihomo-runtime")
-        val provider = File(active, "providers/recovery-fixture.yaml")
         try {
-            provider.parentFile!!.mkdirs()
-            provider.writeText("proxies: []")
+            val config = "mode: rule\nproxies:\n  - { name: local-test, type: direct }\nrules:\n  - MATCH,DIRECT\n"
             val engine = MihomoEngineAdapter(isolatedContext)
-            engine.stopForRestart()
-            assertEquals("proxies: []", provider.readText())
+            engine.validate(config).getOrThrow()
+            assertFalse(active.exists())
+            engine.stop()
+            engine.validate(config).getOrThrow()
+            assertFalse(active.exists())
             engine.stop()
             assertFalse(active.exists())
         } finally {

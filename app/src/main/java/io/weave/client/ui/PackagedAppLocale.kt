@@ -48,8 +48,8 @@ internal class PackagedAppLocale private constructor(
             return candidate
         }
 
-        /** IO; an absent normal package offers no new picker rows. */
-        fun availableChoices(context: Context, active: PackagedAppLocale?): List<PackagedAppLocale> =
+        /** Verify sealed bytes on IO; only a selected catalog needs to be decoded. */
+        fun availableChoices(context: Context, active: PackagedAppLocale?): List<PackagedLocaleChoice> =
             PackagedReleaseCopyAsset.optionalObservation {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     context.getSystemService(LocaleManager::class.java) == null
@@ -60,13 +60,16 @@ internal class PackagedAppLocale private constructor(
                     return@optionalObservation emptyList()
                 }
                 PackagedReleaseCopyAsset.Seal.values().mapNotNull { seal ->
-                    when {
-                        "${seal.tag}.jsonl" !in assets -> null
-                        active?.tag == seal.tag -> active
-                        else -> verified(context, Locale.forLanguageTag(seal.tag))
-                    }
+                    if ("${seal.tag}.jsonl" !in assets) return@mapNotNull null
+                    val valid = active?.tag == seal.tag || PackagedReleaseCopyAsset.readIfPackaged(
+                        seal.tag, { path -> context.assets.open(path) }, ReleaseCopyCatalog::verifySeal,
+                    ) == true
+                    if (valid) PackagedLocaleChoice(seal.tag, seal.label) else null
                 }
             }.orEmpty()
+
+        fun readChoice(context: Context, choice: PackagedLocaleChoice): PackagedAppLocale? =
+            verified(context, Locale.forLanguageTag(choice.tag))
 
         private fun verified(context: Context, locale: Locale): PackagedAppLocale? {
             val tag = locale.toLanguageTag()
@@ -81,6 +84,7 @@ internal class PackagedAppLocale private constructor(
     }
 }
 
+internal data class PackagedLocaleChoice(val tag: String, val nativeLabel: String)
 
 internal sealed interface PackagedLanguageTap {
     val tag: String
@@ -126,7 +130,8 @@ internal object SystemPackagedLanguagePicker {
 
 internal class PackagedLanguagePicker(
     val selected: PackagedAppLocale?,
-    val loadChoices: suspend () -> List<PackagedAppLocale>,
+    val loadChoices: suspend () -> List<PackagedLocaleChoice>,
+    val loadChoice: suspend (PackagedLocaleChoice) -> PackagedAppLocale?,
     val applyTap: (PackagedLanguageTap) -> PackagedLanguageTapResult,
     val reconcile: suspend (PackagedLanguageTap) -> Boolean,
 )

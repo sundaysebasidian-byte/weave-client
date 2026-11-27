@@ -119,16 +119,16 @@ object RouteLens {
             add(udpCheck(query, preferences))
             add(
                 RouteLensCheck(
-                    title = "IPv6 旁路",
-                    state = if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
+                    title = if (preferences.ipv6Mode == Ipv6Mode.IPV6_ONLY) "IPv4 旁路" else "IPv6 旁路",
+                    state = if (preferences.ipv6Mode != Ipv6Mode.DUAL_STACK) {
                         LensState.VERIFIED
                     } else {
                         LensState.UNKNOWN
                     },
-                    detail = if (preferences.ipv6Mode == Ipv6Mode.IPV4_ONLY) {
-                        "IPv6 已在运行规则中拒绝"
-                    } else {
-                        "双栈已开启；此解释器不执行外部 IPv6 泄漏测试"
+                    detail = when (preferences.ipv6Mode) {
+                        Ipv6Mode.IPV4_ONLY -> "IPv6 已在运行规则中拒绝"
+                        Ipv6Mode.IPV6_ONLY -> "IPv4 已在运行规则中拒绝"
+                        Ipv6Mode.DUAL_STACK -> "双栈已开启；此解释器不执行外部 IPv6 泄漏测试"
                     },
                 ),
             )
