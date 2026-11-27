@@ -283,7 +283,10 @@ class BackupRestoreIntegrationTest {
         val epoch = editor.read().epoch
         val plan = f.backup.prepareRestore(f.entries())
         val edited = f.group.copy(name = "Committed")
-        editor.change(epoch, f.group.id, f.group, edited)
+        val submitted = edited.copy(name = "  Committed  ", members = edited.members + edited.members)
+        val committed = editor.change(epoch, f.group.id, f.group, submitted)
+        assertEquals(edited, committed.groups.single())
+        assertEquals(committed, editor.read())
         val after = f.fingerprint()
         assertTrue(runCatching { f.backup.restore(plan) }.isFailure)
         assertTrue(runCatching { editor.change(epoch, f.group.id, f.group, f.group.copy(name = "Other draft")) }.isFailure)

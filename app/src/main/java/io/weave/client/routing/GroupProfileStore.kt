@@ -43,15 +43,22 @@ internal class GroupProfileStore(
             require(replacement == null || replacement.id == id)
             val current = groups.snapshot()
             check(current.firstOrNull { it.id == id } == previous) { "本机配置已变化，请关闭后重新编辑" }
-            val changed = current.filterNot { it.id == id } + listOfNotNull(replacement)
-            val nodes = subscriptions.loadNodes()
-            if (replacement != null) {
-                val available = nodes.mapTo(hashSetOf()) { NodeRef(it.subscriptionId, it.id) }
-                require(replacement.members.all { it in available } &&
-                    (replacement.entry == null || replacement.entry in available)) { "策略组引用的节点已不存在" }
+            val prepared = replacement?.let(CustomProxyGroupValidator::normalize)
+            val changed = current.filterNot { it.id == id } + listOfNotNull(prepared)
+            val catalog = subscriptions.loadSnapshot()
+            if (prepared != null) {
+                val missing = (prepared.members + listOfNotNull(prepared.entry))
+                    .groupBy({ it.subscriptionId }, { it.nodeId })
+                    .mapValues { (_, ids) -> ids.toMutableSet() }
+                val usable = catalog.first.asSequence().filter { it.hasRuntimePayload }.map { it.id }.toSet()
+                catalog.second.forEach { node ->
+                    if (node.subscriptionId in usable) missing[node.subscriptionId]?.remove(node.id)
+                }
+                require(missing.values.all { it.isEmpty() }) { "策略组引用的节点已不存在" }
             }
             if (changed != current) groups.save(changed)
-            readLocked().also(::publishRoutes)
+            val saved = routes.snapshot()
+            readLocked(saved, changed, catalog).also { if (it.routes != saved) routes.save(it.routes) }
         }
 
     /** Single store commits are atomic already; combine live read and write under the profile lock. */
@@ -88,7 +95,10 @@ internal class GroupProfileStore(
 
     /** Refresh labels/removed node references from the live profile, not cached UI rows. */
     fun refreshReferences(epoch: String): Snapshot =
-        ProfileStorage.withCurrentEpoch(context, epoch) { readLocked().also(::publishRoutes) }
+        ProfileStorage.withCurrentEpoch(context, epoch) {
+            val saved = routes.snapshot()
+            readLocked(saved).also { if (it.routes != saved) routes.save(it.routes) }
+        }
 
     fun deleteSubscription(epoch: String, id: String) = ProfileStorage.pruneSubscriptionProfile(context, epoch) {
         val deleted = subscriptions.deleteLocal(id)
@@ -100,31 +110,27 @@ internal class GroupProfileStore(
         }
         if (pruned != current) groups.save(pruned)
         val defaultTarget = settings.defaultRouteTarget()
-        val reconciled = SubscriptionDeletionReconciler.reconcile(
-            id, routes.snapshot(), defaultTarget, subscriptions.loadMetadata(),
-        )
+        val catalog = subscriptions.loadSnapshot()
+        val saved = routes.snapshot()
+        val reconciled = SubscriptionDeletionReconciler.reconcile(id, saved, defaultTarget, catalog.first)
         if (reconciled.defaultTarget != defaultTarget) {
             reconciled.defaultTarget?.let(settings::setDefaultRouteTarget) ?: settings.clearDefaultRouteTarget()
         }
-        deleted to readLocked(reconciled.routes).also(::publishRoutes)
+        deleted to readLocked(reconciled.routes, pruned, catalog)
+            .also { if (it.routes != saved) routes.save(it.routes) }
     }
 
     private fun readLocked(
         selectedRoutes: List<AppRoute> = routes.snapshot(),
         savedGroups: List<CustomProxyGroup> = groups.snapshot(),
+        catalog: Pair<List<Subscription>, List<ProxyNode>> = subscriptions.loadSnapshot(),
     ): Snapshot {
-        val (subscribers, nodes) = subscriptions.loadSnapshot()
+        val (subscribers, nodes) = catalog
         val names = savedGroups.associate { it.id to it.name }
         return Snapshot(
             ProfileStorage.restoreEpoch(context), savedGroups, subscribers, nodes,
             RouteReferenceSanitizer.routes(selectedRoutes, subscribers, nodes, names),
             RouteReferenceSanitizer.defaultTarget(settings.defaultRouteTarget(), subscribers, nodes, names),
         )
-    }
-
-    private fun publishRoutes(snapshot: Snapshot) {
-        if (snapshot.routes != routes.load()) routes.save(snapshot.routes)
-        // The default-target label is projected from its IDs; RuntimeSettingsStore does not
-        // persist labels. A deleted group retains its invalid ID, rather than selecting another exit.
     }
 }
