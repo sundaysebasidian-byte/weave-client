@@ -81,7 +81,8 @@ class MihomoConfigAssembler(
             )
         }
         val byId = usable.associateBy(StoredSubscription::id)
-        val customGroups = customGroupStore.list().associateBy(CustomProxyGroup::id)
+        val customGroups = if (mode == RoutingMode.DIRECT) emptyMap()
+            else customGroupStore.list().associateBy(CustomProxyGroup::id)
         val nodesById = HashMap<String, Map<String, StoredNode>>()
         fun nodesOf(subscription: StoredSubscription) = nodesById.getOrPut(subscription.id) {
             buildMap { catalog.nodes(subscription.id).forEach { putIfAbsent(it.id, it) } }
@@ -91,14 +92,9 @@ class MihomoConfigAssembler(
             mode = mode,
             defaultTarget = defaultTarget,
             usableSubscriptionIds = usable.map(StoredSubscription::id),
-            additionalSubscriptionIds = additionalSubscriptionIds + if (
-                networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
-            ) {
-                usable.mapTo(linkedSetOf(), StoredSubscription::id)
-            } else {
-                emptySet()
-            },
+            additionalSubscriptionIds = additionalSubscriptionIds,
             groupSubscriptions = customGroups.mapValues { it.value.subscriptionIds },
+            strategyScope = networkPreferences.strategyScope,
         )
         val activeGroups = plan.activeGroupIds.mapNotNull(customGroups::get)
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
@@ -326,7 +322,7 @@ class MihomoConfigAssembler(
                 }
                 appendLine("    lazy: true")
             }
-            if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
+            if (plan.usesCrossSubscriptionGroup) {
                 requiredNodeGroups += CROSS_SUBSCRIPTION_GROUP
                 appendLine("  - name: ${yamlString(CROSS_SUBSCRIPTION_GROUP)}")
                 appendLine("    type: ${automaticGroupConfig.type}")
@@ -409,7 +405,7 @@ class MihomoConfigAssembler(
             appendLine("    proxies:")
             val requestedDefaultProxy = when (effectiveDefaultTarget?.kind) {
                 RouteKind.AUTO -> if (
-                    networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
+                    plan.usesCrossSubscriptionGroup
                 ) {
                     CROSS_SUBSCRIPTION_GROUP
                 } else {
@@ -424,7 +420,7 @@ class MihomoConfigAssembler(
                 mode = mode,
                 requestedProxy = requestedDefaultProxy,
                 fallbackAutomaticProxy = if (
-                    networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION
+                    plan.usesCrossSubscriptionGroup
                 ) {
                     CROSS_SUBSCRIPTION_GROUP.takeIf { activeSubscriptions.isNotEmpty() }
                 } else {
@@ -445,7 +441,7 @@ class MihomoConfigAssembler(
                     leadingRules,
                     offlinePolicyRules + localRules + RuleSetCompiler.rules(ruleSets) + domesticDirectRules,
                     automaticGroupName = { subscriptionId ->
-                        if (networkPreferences.strategyScope == io.weave.client.domain.StrategyScope.CROSS_SUBSCRIPTION) {
+                        if (plan.usesCrossSubscriptionGroup) {
                             CROSS_SUBSCRIPTION_GROUP
                         } else {
                             autoGroup(subscriptionId)

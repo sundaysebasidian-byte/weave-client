@@ -11,6 +11,7 @@ import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -73,6 +74,16 @@ class MihomoStartupConfigurationTest {
                                 networkPreferences = settings,
                             )
                             engine.validate(assembled.yaml).getOrThrow()
+                            if (mode == RoutingMode.DIRECT) {
+                                assertEquals("Direct mode must not load subscriptions", 0, assembled.usableSubscriptions)
+                                assertTrue(assembled.requiredNodeGroups.isEmpty())
+                            }
+                            if (settings.strategyScope == StrategyScope.CROSS_SUBSCRIPTION &&
+                                mode != RoutingMode.DIRECT && target.kind == RouteKind.FIXED
+                            ) {
+                                assertTrue("Fixed exits do not start an automatic group",
+                                    "WEAVE-CROSS-AUTO" !in assembled.requiredNodeGroups)
+                            }
                         }
                         if (result.isFailure) failures += "case=$index mode=$mode target=${target.kind}: " +
                             result.exceptionOrNull().toString()
