@@ -3,7 +3,7 @@ package io.weave.client.ui
 import androidx.compose.material3.Text
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import io.weave.client.core.engine.NodeHealthSnapshot
 import io.weave.client.domain.ProxyNode
