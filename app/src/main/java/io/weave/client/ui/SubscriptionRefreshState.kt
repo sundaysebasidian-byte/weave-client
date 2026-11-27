@@ -21,6 +21,7 @@ data class SubscriptionRefreshState(
     val message: String? = null,
     val currentId: String? = null,
     val results: List<SubscriptionRefreshResult> = emptyList(),
+    val canCancel: Boolean = false,
 ) {
     val failedIds: Set<String> get() = buildSet {
         for (result in results) {

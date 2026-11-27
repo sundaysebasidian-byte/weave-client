@@ -1337,6 +1337,7 @@
 {"id":"无法读取应用列表","text":"앱 목록을 불러오지 못했습니다"}
 {"id":"收藏已达到上限","text":"즐겨찾기 한도에 도달했습니다"}
 {"id":"无法保存收藏","text":"즐겨찾기를 저장하지 못했습니다"}
+{"id":"已停止订阅刷新","text":"구독 새로고침을 중지했습니다"}
 {"id": "dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose", "text": "{message} [{code}]"}
 {"id": "dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1", "text": "DNS 우회 방지"}
 {"id": "dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose", "text": "{transport} · {profile} · {explanation}"}

@@ -216,6 +216,7 @@ internal fun SubscriptionsScreen(
     onRetryFailed: () -> Unit = onRefresh,
     nowMillis: Long? = null,
     onAddFrom: (io.weave.client.domain.SubscriptionSourceKind) -> Unit = { onAdd() },
+    onCancelRefresh: (() -> Unit)? = null,
 ) {
     val language = LocalWeaveLanguage.current
     val empty = subscriptions.isEmpty()
@@ -268,7 +269,7 @@ internal fun SubscriptionsScreen(
 
         if (refreshState.running || refreshState.message != null || hasOutcomes) {
             item(key = "refresh-status") {
-                RefreshStatus(refreshState = refreshState, onRetry = onRefresh, onRetryFailed = onRetryFailed)
+                RefreshStatus(refreshState, onRefresh, onRetryFailed, onCancelRefresh)
             }
         }
 
@@ -519,6 +520,7 @@ private fun RefreshStatus(
     refreshState: SubscriptionRefreshState,
     onRetry: () -> Unit,
     onRetryFailed: () -> Unit,
+    onCancelRefresh: (() -> Unit)?,
 ) {
     val language = LocalWeaveLanguage.current
     val modifier = Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)
@@ -574,6 +576,11 @@ private fun RefreshStatus(
                         )
                     } else {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(CircleShape))
+                    }
+                    if (refreshState.canCancel && onCancelRefresh != null) {
+                        TextButton(onClick = onCancelRefresh, modifier = Modifier.align(Alignment.End)) {
+                            Text("取消")
+                        }
                     }
                 }
             }

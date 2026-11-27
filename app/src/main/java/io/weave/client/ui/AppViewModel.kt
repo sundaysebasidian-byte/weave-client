@@ -70,6 +70,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -1471,81 +1472,85 @@ class AppViewModel internal constructor(application: Application, initialProfile
         refreshRemoteSubscriptions(requestedIds = failedIds.takeIf { it.isNotEmpty() })
     }
 
+    private var subscriptionBatchJob: Job? = null
+
+    fun cancelSubscriptionBatch() {
+        if (!mutableSubscriptionRefreshState.value.canCancel) return
+        mutableSubscriptionRefreshState.update { it.copy(canCancel = false) }
+        subscriptionBatchJob?.cancel()
+    }
+
     private fun refreshRemoteSubscriptions(requestedIds: Set<String>?) {
         if (mutableSubscriptionRefreshState.value.running || mutableEditorState.value.running ||
             mutableUpdatePreview.value != null) return
         mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
             running = true,
+            canCancel = true,
             message = "正在检查 HTTPS 远程订阅",
         )
-        viewModelScope.launch {
-            val committed = linkedSetOf<String>()
+        subscriptionBatchJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val committed = linkedMapOf<String, String>()
+            var message = "没有可刷新的 HTTPS 远程订阅"
             try {
-                val remoteIds = withContext(Dispatchers.IO) {
-                    subscriptionRepository.loadRemoteIds()
-                }
-                val targets = SubscriptionRefreshBatch.selectTargets(
-                    mutableSubscriptions.value, remoteIds, requestedIds,
-                )
-                if (targets.isEmpty()) {
-                    mutableSubscriptionRefreshState.value = SubscriptionRefreshState(
-                        message = "没有可刷新的 HTTPS 远程订阅",
-                    )
-                    return@launch
-                }
-                mutableSubscriptionRefreshState.update {
-                    it.copy(total = targets.size, message = null)
-                }
-                val finalProgress = SubscriptionRefreshBatch.run(
+                val remoteIds = withContext(Dispatchers.IO) { subscriptionRepository.loadRemoteIds() }
+                val targets = SubscriptionRefreshBatch.selectTargets(mutableSubscriptions.value, remoteIds, requestedIds)
+                if (targets.isEmpty()) return@launch
+                val names = targets.associate { it.id to it.name }
+                mutableSubscriptionRefreshState.update { it.copy(total = targets.size, message = null) }
+                val progress = SubscriptionRefreshBatch.run(
                     targets = targets,
-                    refresh = { subscriptionRepository.refreshRemote(it) },
-                    onUpdated = { committed.add(it) },
-                    onProgress = { current, finished ->
+                    refresh = { id ->
+                        // Capture the receipt before returning to Main. A tap on Cancel can
+                        // cancel that dispatcher handoff even after the write is durable.
+                        withContext(Dispatchers.IO) {
+                            subscriptionRepository.refreshRemote(id)
+                            committed[id] = names.getValue(id)
+                        }
+                    },
+                    onUpdated = {},
+                    onProgress = { current, outcome ->
                         mutableSubscriptionRefreshState.update {
                             it.copy(
-                                currentId = current?.id,
-                                currentName = current?.name,
-                                completed = finished.completed,
-                                failed = finished.failed,
-                                results = finished.results,
+                                currentId = current?.id, currentName = current?.name,
+                                completed = outcome.completed, failed = outcome.failed, results = outcome.results,
                             )
                         }
                     },
                 )
-                if (committed.isNotEmpty()) {
-                    refreshSubscriptionsAndReferences(committed)
-                }
-                val completed = finalProgress.completed
-                val failed = finalProgress.failed
-                val needsReview = finalProgress.reviewCount > 0
-                mutableSubscriptionRefreshState.update {
-                    it.copy(
-                        running = false,
-                        currentId = null,
-                        currentName = null,
-                        message = when {
-                            failed > 0 -> "已完成 $completed 个，$failed 个失败"
-                            needsReview -> "订阅节点有变化，请在详情中预览后更新"
-                            else -> "已刷新 $completed 个远程订阅"
-                        },
-                    )
-                }
-                mutableDashboard.update {
-                    it.copy(statusMessage = mutableSubscriptionRefreshState.value.message)
-                }
-                if (completed > 0) {
-                    reloadIfConnected("订阅刷新完成，正在安全更新运行配置")
+                val (completed, failed) = progress.completed to progress.failed
+                message = when {
+                    failed > 0 -> "已完成 $completed 个，$failed 个失败"
+                    progress.reviewCount > 0 -> "订阅节点有变化，请在详情中预览后更新"
+                    else -> "已刷新 $completed 个远程订阅"
                 }
             } catch (cancelled: CancellationException) {
+                message = "已停止订阅刷新"
                 throw cancelled
             } catch (_: Exception) {
-                mutableSubscriptionRefreshState.update {
-                    it.copy(failed = maxOf(1, it.failed), message = "订阅修改失败")
-                }
+                message = "订阅修改失败"
+                mutableSubscriptionRefreshState.update { it.copy(failed = maxOf(1, it.failed)) }
             } finally {
-                // Enumeration, reconciliation and cancellation cannot leave every action disabled.
-                mutableSubscriptionRefreshState.update {
-                    it.copy(running = false, currentId = null, currentName = null)
+                withContext(NonCancellable) {
+                    mutableSubscriptionRefreshState.update { it.copy(canCancel = false) }
+                    if (committed.isNotEmpty()) {
+                        val refreshed = probeSafely { refreshSubscriptionsAndReferences(committed.keys) }
+                        val reload = runCatching { reloadIfConnected("订阅刷新完成，正在安全更新运行配置") }
+                        message = when {
+                            refreshed.isFailure -> SavedDetailsRefreshWarning
+                            reload.isFailure -> ReloadRequestWarning
+                            else -> message
+                        }
+                    }
+                    mutableSubscriptionRefreshState.update { state ->
+                        val reported = state.results.mapTo(hashSetOf()) { it.subscriptionId }
+                        val missing = committed.entries.filterNot { it.key in reported }
+                        state.copy(
+                            running = false, currentId = null, currentName = null, message = message,
+                            completed = state.completed + missing.size,
+                            results = state.results + missing.map { (id, name) -> SubscriptionRefreshResult(id, name, true) },
+                        )
+                    }
+                    mutableDashboard.update { it.copy(statusMessage = message) }
                 }
             }
         }

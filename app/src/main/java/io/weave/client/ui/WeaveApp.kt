@@ -923,6 +923,7 @@ fun WeaveApp(
                     onTransfer = { showLanTransferDialog = true },
                     refreshState = subscriptionRefreshState,
                     onRefresh = viewModel::refreshAllRemoteSubscriptions,
+                    onCancelRefresh = viewModel::cancelSubscriptionBatch,
                     onRefreshSubscription = viewModel::refreshRemoteSubscription,
                     onRetryFailed = viewModel::retryFailedRemoteSubscriptions,
                     onSubscriptionClick = { subscriptionId ->

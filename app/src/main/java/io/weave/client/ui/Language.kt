@@ -2184,6 +2184,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "正在应用新的自动节点策略" to SupplementalTranslation("Applying the new automatic node strategy", "正在套用新的自動節點策略", "新しい自動ノード戦略を適用中", "Application de la nouvelle stratégie automatique", "Neue automatische Knotenstrategie wird angewendet"),
     "正在应用新的订阅策略组范围" to SupplementalTranslation("Applying the new subscription group scope", "正在套用新的訂閱策略群組範圍", "新しい購読グループ範囲を適用中", "Application de la portée des groupes d’abonnements", "Neuer Abonnement-Gruppenbereich wird angewendet"),
     "正在应用自定义加密 DNS" to SupplementalTranslation("Applying custom encrypted DNS", "正在套用自訂加密 DNS", "カスタム暗号化 DNS を適用中", "Application du DNS chiffré personnalisé", "Benutzerdefiniertes verschlüsseltes DNS wird angewendet"),
+    "已停止订阅刷新" to SupplementalTranslation("Subscription refresh stopped", "已停止訂閱重新整理", "購読の更新を停止しました", "Actualisation des abonnements arrêtée", "Abonnementaktualisierung gestoppt"),
     "正在检查 HTTPS 远程订阅" to SupplementalTranslation("Checking HTTPS remote subscriptions", "正在檢查 HTTPS 遠端訂閱", "HTTPS リモート購読を確認中", "Vérification des abonnements HTTPS distants", "HTTPS-Abonnements werden geprüft"),
     "正在申请 VPN 权限" to SupplementalTranslation("Requesting VPN permission", "正在申請 VPN 權限", "VPN 権限を要求中", "Demande d’autorisation VPN", "VPN-Berechtigung wird angefordert"),
     "没有可刷新的 HTTPS 远程订阅" to SupplementalTranslation("No HTTPS remote subscriptions to refresh", "沒有可重新整理的 HTTPS 遠端訂閱", "更新できる HTTPS リモート購読はありません", "Aucun abonnement HTTPS distant à actualiser", "Keine HTTPS-Abonnements zum Aktualisieren"),

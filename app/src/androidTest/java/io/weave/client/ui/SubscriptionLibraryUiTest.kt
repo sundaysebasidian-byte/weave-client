@@ -49,6 +49,7 @@ class SubscriptionLibraryUiTest {
     private val language = mutableStateOf(WeaveLanguage.ENGLISH)
     private val refresh = mutableStateOf(SubscriptionRefreshState())
     private var bulk = 0
+    private var stopped = 0
     private var failedOnly = 0
     private val rows = mutableListOf<String>()
     private val opened = mutableListOf<String>()
@@ -65,13 +66,32 @@ class SubscriptionLibraryUiTest {
             WeaveTheme {
                 Box(Modifier.requiredWidth(widthDp.dp).fillMaxHeight().testTag("harness")) {
                     SubscriptionsScreen(LIBRARY, emptyList(), {}, {}, {}, refresh.value, { bulk++ },
-                        { opened += it }, PaddingValues(0.dp), { rows += it }, { failedOnly++ }, now.value)
+                        { opened += it }, PaddingValues(0.dp), { rows += it }, { failedOnly++ }, now.value,
+                        onCancelRefresh = {
+                            stopped++
+                            refresh.value = refresh.value.copy(running = false, canCancel = false, message = "已停止订阅刷新")
+                        },
+                    )
                 }
             }
         }
     }
 
     private fun start() = compose.setContent { Harness() }
+
+    @Test fun bulkRefreshCanStopWithoutClearingCommittedRows() {
+        refresh.value = SubscriptionRefreshState(running = true, total = 2, completed = 1,
+            results = listOf(result("a", "Alpha Cloud", true)), canCancel = true)
+        start()
+        compose.onNodeWithText(en("取消")).performClick()
+        compose.runOnIdle {
+            assertEquals(1, stopped)
+            assertEquals(1, refresh.value.completed)
+            assertTrue(refresh.value.results.single().succeeded)
+        }
+        compose.onNodeWithText(en("已停止订阅刷新")).assertIsDisplayed()
+        compose.onNodeWithText(en("取消")).assertDoesNotExist()
+    }
 
     @Test fun reviewRequiredIsNotAnUpdateFailureAndTheRefreshActionRemainsReachable() {
         refresh.value = SubscriptionRefreshState(total = 1, results = listOf(
