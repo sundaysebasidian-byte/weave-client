@@ -53,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -87,12 +88,15 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.diagnostics.CoreConnection
 import io.weave.client.core.diagnostics.CoreConnectionsSnapshot
 import io.weave.client.core.diagnostics.CoreLogLine
 import io.weave.client.core.diagnostics.LogRedactor
 import io.weave.client.core.engine.MihomoConfigAssembler
+import io.weave.client.core.vpn.VpnRuntimeState
+import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.TrafficFormat
 import io.weave.client.subscription.ExternalImport
 import kotlinx.coroutines.Dispatchers
@@ -261,11 +265,34 @@ internal fun LanProxySharingDialog(
 internal fun ConnectionsScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val api = remember(context.applicationContext) { CoreApi(context.applicationContext) }
-    ConnectionsScreen(onDismiss, { api.connections(latestFirst = true) }, api::close, api::closeAll)
+    val runtime by VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
+    ConnectionsScreen(
+        onDismiss, { api.connections(latestFirst = true) }, api::close, api::closeAll,
+        sessionRevision = runtime.revision.takeIf { runtime.state == ConnectionState.CONNECTED },
+        connecting = runtime.state == ConnectionState.CONNECTING,
+    )
 }
 
 @Composable
 internal fun ConnectionsScreen(
+    onDismiss: () -> Unit,
+    read: suspend () -> CoreConnectionsSnapshot,
+    close: suspend (String) -> Boolean,
+    closeAll: suspend () -> Boolean,
+    sessionRevision: Long? = 0L,
+    connecting: Boolean = false,
+) {
+    if (sessionRevision == null) {
+        WeaveToolScreen(title = "实时连接", onDismiss = onDismiss, secure = true) {
+            WeaveStateBlock(title = if (connecting) "正在连接" else "未连接", loading = connecting)
+        }
+        return
+    }
+    key(sessionRevision) { ConnectedSessionScreen(onDismiss, read, close, closeAll) }
+}
+
+@Composable
+private fun ConnectedSessionScreen(
     onDismiss: () -> Unit,
     read: suspend () -> CoreConnectionsSnapshot,
     close: suspend (String) -> Boolean,
@@ -288,7 +315,8 @@ internal fun ConnectionsScreen(
     var loaded by remember { mutableStateOf(false) }
     var labels by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
     val displayReads = remember { ConnectionDisplayReads() }
-    val reading = !paused && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    val listState = rememberLazyListState()
+    val reading = !paused && !listState.isScrollInProgress && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     fun refresh() {
         paused = false
         readRevision++
@@ -312,6 +340,7 @@ internal fun ConnectionsScreen(
         }
     }
     LaunchedEffect(reading, readRevision) {
+        if (reading && loaded) delay(180)
         while (reading) {
             displayReads.read(
                 load = read,
@@ -386,6 +415,7 @@ internal fun ConnectionsScreen(
                 tone = WeaveStatusTone.CRITICAL, actionLabel = "重试", onAction = ::refresh)
         }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
