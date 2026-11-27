@@ -914,20 +914,33 @@ class AppViewModel internal constructor(application: Application, initialProfile
     )
 
     fun setLanSharing(enabled: Boolean) {
-        if (mutableNetworkPreferences.value.lanSharing == enabled) return
-        // Generate the credentials here, before the VPN process reads them.
-        if (enabled) mutableLanCredentials.value = settingsStore.lanProxyCredentials()
-        settingsStore.setLanSharing(enabled)
-        mutableNetworkPreferences.update { it.copy(lanSharing = enabled) }
-        reloadIfConnected(if (enabled) "正在开启局域网共享" else "正在关闭局域网共享")
+        val message = if (enabled) "正在开启局域网共享" else "正在关闭局域网共享"
+        enqueueRoutingSave(message) {
+            if (mutableNetworkPreferences.value.lanSharing == enabled) return@enqueueRoutingSave null
+            var credentials: Pair<String, String>? = null
+            SettingsChange(
+                write = {
+                    if (enabled) credentials = settingsStore.enableLanSharing() else settingsStore.setLanSharing(false)
+                },
+                publish = {
+                    mutableLanCredentials.value = credentials
+                    mutableNetworkPreferences.update { it.copy(lanSharing = enabled) }
+                },
+            )
+        }
     }
 
     private val mutableLanCredentials = MutableStateFlow<Pair<String, String>?>(null)
     val lanCredentials = mutableLanCredentials.asStateFlow()
 
     fun revealLanCredentials() {
+        if (!mutableNetworkPreferences.value.lanSharing) return
+        val epoch = profileEpoch
         viewModelScope.launch {
-            mutableLanCredentials.value = withContext(Dispatchers.IO) { settingsStore.lanProxyCredentials() }
+            val read = withContext(Dispatchers.IO) { probeSafely { settingsStore.lanProxyCredentials() } }
+            if (epoch != profileEpoch || !mutableNetworkPreferences.value.lanSharing) return@launch
+            read.onSuccess { mutableLanCredentials.value = it }
+                .onFailure { mutableDashboard.update { it.copy(statusMessage = "无法读取局域网共享凭据") } }
         }
     }
 
@@ -1987,6 +2000,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
         }
         publishGroupProfile(profile)
         mutableNetworkPreferences.value = settings.routing.network
+        if (!settings.routing.network.lanSharing) mutableLanCredentials.value = null
         mutableFavoriteNodes.value = settings.favorites
         mutableDashboard.update { it.copy(routingMode = settings.routing.mode) }
         withContext(Dispatchers.IO) { io.weave.client.subscription.SubscriptionUpdateScheduler.sync(getApplication()) }

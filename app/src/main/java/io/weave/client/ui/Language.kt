@@ -2095,6 +2095,7 @@ private val SUPPLEMENTAL_TRANSLATIONS = mapOf(
     "本地导入、哈希校验、可回滚启停" to SupplementalTranslation("Local import, hash verification and rollback", "本機匯入、雜湊校驗、可回滾啟停", "端末内インポート、ハッシュ検証、ロールバック", "Import local, vérification du hachage et retour arrière", "Lokaler Import, Hashprüfung und Rollback"),
     "本地策略" to SupplementalTranslation("Local policy", "本機策略", "ローカルポリシー", "Politique locale", "Lokale Richtlinie"),
     "策略组" to SupplementalTranslation("Groups", "策略組", "グループ", "Groupes", "Gruppen"),
+    "无法读取局域网共享凭据" to SupplementalTranslation("Could not load LAN sharing credentials", "無法讀取區域網路共享憑證", "LAN 共有の認証情報を読み込めませんでした", "Impossible de lire les identifiants du partage local", "Zugangsdaten der LAN-Freigabe konnten nicht geladen werden"),
     "无法读取应用列表" to SupplementalTranslation("Could not load apps", "無法讀取應用程式清單", "アプリ一覧を読み込めませんでした", "Impossible de charger les applications", "Apps konnten nicht geladen werden"),
     "收藏已达到上限" to SupplementalTranslation("Favorites are full", "收藏已達上限", "お気に入りが上限に達しました", "Limite de favoris atteinte", "Favoritenlimit erreicht"),
     "无法保存收藏" to SupplementalTranslation("Could not save favorites", "無法儲存收藏", "お気に入りを保存できませんでした", "Impossible d’enregistrer les favoris", "Favoriten konnten nicht gespeichert werden"),

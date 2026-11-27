@@ -1338,6 +1338,7 @@
 {"id":"收藏已达到上限","text":"Se alcanzó el límite de favoritos"}
 {"id":"无法保存收藏","text":"No se pudieron guardar los favoritos"}
 {"id":"已停止订阅刷新","text":"Se detuvo la actualización de suscripciones"}
+{"id":"无法读取局域网共享凭据","text":"No se pudieron leer las credenciales de uso compartido en la red local"}
 {"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","text":"{message} [{code}]"}
 {"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","text":"Protección frente al tráfico DNS fuera del túnel"}
 {"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","text":"{transport} · {profile} · {explanation}"}

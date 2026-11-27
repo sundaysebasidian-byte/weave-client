@@ -157,24 +157,36 @@ class RuntimeSettingsStore(context: Context) {
      * Random credentials for the LAN-shared proxy, generated once and kept encrypted. They are
      * shown to the user so other devices can authenticate; loopback clients skip auth.
      */
-    fun lanProxyCredentials(): Pair<String, String> {
-        preferences.getString(KEY_LAN_CREDENTIALS, null)?.let { encrypted ->
-            runCatching {
-                secretBox.decrypt(encrypted, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
-            }.getOrNull()?.split(':', limit = 2)?.takeIf { it.size == 2 }?.let { return it[0] to it[1] }
+    fun lanProxyCredentials(): Pair<String, String> = prepareLanCredentials(enableSharing = false)
+
+    internal fun enableLanSharing(): Pair<String, String> = prepareLanCredentials(enableSharing = true)
+
+    private fun prepareLanCredentials(enableSharing: Boolean): Pair<String, String> =
+        ProfileStorage.access(appContext) {
+            val snapshot = preferences
+            val existing = snapshot.getString(KEY_LAN_CREDENTIALS, null)?.let { encrypted ->
+                runCatching {
+                    secretBox.decrypt(encrypted, LAN_CREDENTIALS_AAD).toString(Charsets.UTF_8)
+                }.getOrNull()?.split(':', limit = 2)?.takeIf { it.size == 2 && it.all(String::isNotEmpty) }
+                    ?.let { it[0] to it[1] }
+            }
+            val credentials = existing ?: newLanCredentials()
+            if (existing == null || enableSharing) snapshot.edit(commit = true) {
+                if (existing == null) putString(
+                    KEY_LAN_CREDENTIALS,
+                    secretBox.encrypt("${credentials.first}:${credentials.second}".toByteArray(Charsets.UTF_8), LAN_CREDENTIALS_AAD),
+                )
+                if (enableSharing) putBoolean(KEY_LAN_SHARING, true)
+            }
+            credentials
         }
+
+    private fun newLanCredentials(): Pair<String, String> {
         val random = java.security.SecureRandom()
         fun token(length: Int) = buildString {
             repeat(length) { append(CREDENTIAL_ALPHABET[random.nextInt(CREDENTIAL_ALPHABET.length)]) }
         }
-        val credentials = "weave-${token(4)}" to token(16)
-        preferences.edit(commit = true) {
-            putString(
-                KEY_LAN_CREDENTIALS,
-                secretBox.encrypt("${credentials.first}:${credentials.second}".toByteArray(Charsets.UTF_8), LAN_CREDENTIALS_AAD),
-            )
-        }
-        return credentials
+        return "weave-${token(4)}" to token(16)
     }
 
     /** Null means the UI follows the system language. */
