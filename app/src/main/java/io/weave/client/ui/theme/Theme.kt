@@ -356,6 +356,19 @@ fun WeaveTheme(
         else -> darkTheme
     }
     val tokens = paletteTokens(palette, resolvedDarkTheme)
+    // System bar icons follow the app's palette, not the system theme: a dark palette on a light
+    // system would otherwise leave dark icons on a dark canvas.
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            val window = generateSequence(view.context) { (it as? android.content.ContextWrapper)?.baseContext }
+                .filterIsInstance<android.app.Activity>().firstOrNull()?.window ?: return@SideEffect
+            androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !resolvedDarkTheme
+                isAppearanceLightNavigationBars = !resolvedDarkTheme
+            }
+        }
+    }
     CompositionLocalProvider(LocalWeavePalette provides palette) {
         MaterialTheme(
             colorScheme = materialColors(
@@ -372,8 +385,21 @@ fun WeaveTheme(
                 // A transparent Scaffold/custom glass Box has no Surface to supply this.
                 // Without an explicit root content color, uncolored titles/icons stay black
                 // even when the color scheme itself correctly switches to dark mode.
+                // One press language everywhere: custom clickables get Weave's soft light, and
+                // Material components keep their ripple but in the palette's own ink, quieter.
+                val ink = MaterialTheme.colorScheme.primary
                 CompositionLocalProvider(
                     LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                    androidx.compose.foundation.LocalIndication provides io.weave.client.ui.WeaveIndication,
+                    androidx.compose.material3.LocalRippleConfiguration provides androidx.compose.material3.RippleConfiguration(
+                        color = ink,
+                        rippleAlpha = androidx.compose.material.ripple.RippleAlpha(
+                            draggedAlpha = 0.10f,
+                            focusedAlpha = 0.10f,
+                            hoveredAlpha = 0.06f,
+                            pressedAlpha = 0.10f,
+                        ),
+                    ),
                     content = content,
                 )
             },

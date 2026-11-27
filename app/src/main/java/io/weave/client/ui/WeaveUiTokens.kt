@@ -48,5 +48,6 @@ internal object WeaveUiTokens {
     val capsuleHorizontal: Dp = 16.dp
     val capsuleButton: Dp = 48.dp
     /** Height of the woven status line under the headline. */
-    val weaveHeight: Dp = 150.dp
+    val weaveMinHeight: Dp = 168.dp
+    val weaveMaxHeight: Dp = 400.dp
 }

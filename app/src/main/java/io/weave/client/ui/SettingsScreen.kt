@@ -441,7 +441,7 @@ internal fun SettingsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(WeaveUiTokens.sectionGap),
     ) {
-        item(key = "header") {
+        entranceItem("settings", "header", 0) {
             Column(modifier = Modifier.padding(top = WeaveUiTokens.headerActionSize + 12.dp)) {
                 Text(
                     "设置",
@@ -455,8 +455,8 @@ internal fun SettingsScreen(
                 SettingsSearchField(query = query, onQueryChange = { query = it.take(60) })
             }
         }
-        shown.forEach { section ->
-            item(key = section.key) {
+        shown.forEachIndexed { index, section ->
+            entranceItem("settings", section.key, index + 1) {
                 if (section.icon != null) {
                     ExpandableSettingsGroup(
                         icon = section.icon,
@@ -471,7 +471,7 @@ internal fun SettingsScreen(
             }
         }
         if (!searching) {
-            item(key = "notifications") {
+            entranceItem("settings", "notifications", shown.size + 1) {
                 Box(Modifier.padding(horizontal = WeaveUiTokens.screenHorizontal)) {
                     NotificationStatusCard(notificationsEnabled, onRequestNotifications)
                 }
@@ -1118,7 +1118,7 @@ private fun ToggleSetting(
             )
         }
         Spacer(Modifier.width(8.dp))
-        Switch(
+        WeaveSwitch(
             checked = checked,
             onCheckedChange = null,
         )

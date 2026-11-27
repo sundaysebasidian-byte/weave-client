@@ -54,7 +54,7 @@ internal fun WeaveDialog(
                 scaleY = scale
                 translationY = (1f - p) * 12.dp.toPx()
             }
-            .border(WeaveUiTokens.panelBorderWidth, colors.outlineVariant.copy(alpha = 0.6f), shape),
+            .border(WeaveUiTokens.panelBorderWidth, weaveRimBrush(), shape),
         shape = shape,
         containerColor = colors.surface,
         tonalElevation = 0.dp,

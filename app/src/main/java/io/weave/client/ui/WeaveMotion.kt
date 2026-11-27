@@ -61,8 +61,9 @@ import io.weave.client.ui.theme.LocalWeavePalette
 
 /**
  * The app's motion vocabulary. Motion is reserved for feedback: a state changed, a choice was
- * made, a group opened or a screen moved. Every spec here is finite; nothing loops in the
- * background, so an idle screen draws no frames.
+ * made, a group opened or a screen moved. Every spec here is finite. The one exception is the
+ * home weave, whose threads drift and carry traffic while the home page is on screen; it runs on
+ * infinite-animation frames, stops with the page and stays still when system animations are off.
  */
 internal object WeaveMotion {
     /** Press, toggle and selection feedback. */

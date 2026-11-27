@@ -235,10 +235,9 @@ internal fun HeaderActionButton(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = CircleShape,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
-        ),
+        // Light catches the top of the rim and fades into the outline below, like the dock.
+        border = androidx.compose.foundation.BorderStroke(1.dp, weaveRimBrush()),
+        shadowElevation = 1.dp,
     ) {
         Icon(
             icon,
@@ -484,4 +483,14 @@ internal fun InformationDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
+}
+
+/** A rim that is bright where light falls on it and settles into the outline below. */
+@Composable
+internal fun weaveRimBrush(): androidx.compose.ui.graphics.Brush {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.background.luminance() < 0.35f
+    val top = Color.White.copy(alpha = if (dark) 0.16f else 0.95f)
+    val bottom = scheme.outlineVariant.copy(alpha = if (dark) 0.7f else 0.62f)
+    return remember(top, bottom) { androidx.compose.ui.graphics.Brush.verticalGradient(listOf(top, bottom)) }
 }

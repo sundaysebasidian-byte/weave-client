@@ -43,6 +43,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -257,7 +258,7 @@ internal fun SubscriptionsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item(key = "header") {
+        entranceItem("subscriptions", "header", 0) {
             SubscriptionsHeader(
                 empty = empty,
                 hasRemote = hasRemote,
@@ -268,13 +269,13 @@ internal fun SubscriptionsScreen(
         }
 
         if (refreshState.running || refreshState.message != null || hasOutcomes) {
-            item(key = "refresh-status") {
+            entranceItem("subscriptions", "refresh-status", 1) {
                 RefreshStatus(refreshState, onRefresh, onRetryFailed, onCancelRefresh)
             }
         }
 
         if (empty) {
-            item(key = "empty") {
+            entranceItem("subscriptions", "empty", 2) {
                 EmptySubscriptions(
                     migrationSubtitle = migrationSubtitle,
                     onAdd = onAdd,
@@ -283,7 +284,7 @@ internal fun SubscriptionsScreen(
                 )
             }
         } else {
-            item(key = "summary") {
+            entranceItem("subscriptions", "summary", 3) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -306,7 +307,7 @@ internal fun SubscriptionsScreen(
                     )
                 }
             }
-            item(key = "find", contentType = "subscription-find") {
+            entranceItem("subscriptions", "find", 4, contentType = "subscription-find") {
                 SubscriptionFindControls(
                     query = query,
                     onQueryChange = { query = it.take(MAX_QUERY_LENGTH) },
@@ -315,19 +316,20 @@ internal fun SubscriptionsScreen(
                 )
             }
             if (visible.isEmpty()) {
-                item(key = "no-match", contentType = "subscription-no-match") {
+                entranceItem("subscriptions", "no-match", 5, contentType = "subscription-no-match") {
                     NoMatchingSubscriptions(onClear = {
                         query = ""
                         sourceName = SubscriptionSourceFilter.ALL.name
                     })
                 }
             }
-            items(
+            itemsIndexed(
                 items = visible,
-                key = { it.id },
-                contentType = { "subscription-card" },
-            ) { subscription ->
+                key = { _, it -> it.id },
+                contentType = { _, _ -> "subscription-card" },
+            ) { index, subscription ->
                 SubscriptionCard(
+                    modifier = Modifier.weaveEntrance("subscriptions/${subscription.id}", 5 + index, enabled = index < 6),
                     subscription = subscription,
                     nowMillis = now,
                     refreshResult = refreshResultsById[subscription.id],
@@ -753,6 +755,7 @@ private fun SubscriptionCard(
     refreshEnabled: Boolean,
     onClick: () -> Unit,
     onRefresh: (() -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val quota = subscription.quota
@@ -771,7 +774,7 @@ private fun SubscriptionCard(
     val failed = outcome == false && refreshResult?.reviewRequired != true
 
     LiquidGlassPanel(
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = WeaveUiTokens.screenHorizontal)
             .fillMaxWidth()
             .testTag("subscription-card-${subscription.id}"),

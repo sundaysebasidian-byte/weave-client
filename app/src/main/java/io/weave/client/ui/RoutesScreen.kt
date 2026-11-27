@@ -240,7 +240,7 @@ internal fun RoutesScreen(
             bottom = 24.dp,
         ),
     ) {
-        item(key = "header") {
+        entranceItem("routes", "header", 0) {
             RoutesHeader(
                 routingMode = routingMode,
                 domesticDirect = domesticDirect,
@@ -250,7 +250,7 @@ internal fun RoutesScreen(
             )
         }
         if (!searching && onDefaultTarget != null) {
-            item(key = "default-exit") {
+            entranceItem("routes", "default-exit", 1) {
                 RouteGroupPanel {
                     val language = LocalWeaveLanguage.current
                     val label = defaultTarget?.label.orEmpty()
@@ -274,11 +274,11 @@ internal fun RoutesScreen(
                 }
             }
         }
-        item(key = "counts") {
+        entranceItem("routes", "counts", 2) {
             RouteCounts(visible.proxied.size, visible.direct.size, visible.blocked.size)
         }
         if (routes.isNotEmpty() || searching) {
-            item(key = "route-search") {
+            entranceItem("routes", "route-search", 3) {
                 OutlinedTextField(
                     value = routeQuery,
                     onValueChange = { routeQuery = it.take(100) },
@@ -295,32 +295,34 @@ internal fun RoutesScreen(
             }
         }
         if (!rulesApply) {
-            item(key = "mode-notice") {
+            entranceItem("routes", "mode-notice", 4) {
                 ModeNotice(routingMode = routingMode, onBackToRules = { onModeSelected(RoutingMode.RULE) })
             }
         }
         if (searching && visible.isEmpty) {
-            item(key = "routes-no-match") {
+            entranceItem("routes", "routes-no-match", 5) {
                 WeaveStateBlock(title = "没有匹配的规则", actionLabel = "清除搜索", onAction = { routeQuery = "" })
             }
         } else if (routes.isEmpty()) {
-            item(key = "empty") {
+            entranceItem("routes", "empty", 6) {
                 RouteGroupPanel(modifier = Modifier.padding(top = 24.dp)) {
                     RouteActionRow(icon = Icons.Rounded.Add, label = "添加规则", onClick = onAdd)
                 }
             }
         }
         if (proxied.isNotEmpty()) {
-            item(key = "proxy-label") { RouteGroupLabel("代理", Modifier.graphicsLayer { alpha = listAlpha }) }
+            entranceItem("routes", "proxy-label", 7) { RouteGroupLabel("代理", Modifier.graphicsLayer { alpha = listAlpha }) }
             itemsIndexed(
                 items = proxied,
                 key = { _, route -> routeItemKey(route.packageName) },
                 contentType = { _, _ -> "app-route" },
             ) { index, route ->
+                // The rows of one panel rise together so the panel never splits mid-motion.
                 RoutePanelPiece(
                     first = index == 0,
                     last = index == proxied.lastIndex,
                     panelAlpha = listAlpha,
+                    modifier = Modifier.weaveEntrance("routes/${route.packageName}", 7, enabled = index < 14),
                 ) {
                     AppRouteRow(route = route, onClick = { onRouteClick(route.packageName) })
                 }
@@ -648,6 +650,7 @@ private fun RoutePanelPiece(
     last: Boolean,
     panelAlpha: Float,
     topSpacing: Dp = 0.dp,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val top = if (first) WeaveUiTokens.panelRadius else 0.dp
@@ -655,7 +658,7 @@ private fun RoutePanelPiece(
     val shape = RoundedCornerShape(top, top, bottom, bottom)
     val scheme = MaterialTheme.colorScheme
     Column(
-        Modifier
+        modifier
             .padding(start = WeaveUiTokens.screenHorizontal, end = WeaveUiTokens.screenHorizontal, top = topSpacing)
             .fillMaxWidth()
             .graphicsLayer { alpha = panelAlpha }
