@@ -1232,14 +1232,16 @@ fun WeaveApp(
                     if (defaultAffected) item { Text("默认出口将失效，需要重新选择。", color = MaterialTheme.colorScheme.error) }
                     if (preview.audit.blocked) item {
                         Text(preview.audit.summary, color = MaterialTheme.colorScheme.error)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accepted, onCheckedChange = { accepted = it })
-                            Text("我已核对异常数量变化，允许本次更新")
+                        if (preview.audit.requiresNodeCountConfirmation) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = accepted, onCheckedChange = { accepted = it })
+                                Text("我已核对异常数量变化，允许本次更新")
+                            }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(enabled = !preview.audit.blocked || accepted,
+            confirmButton = { TextButton(enabled = preview.audit.canApply(accepted),
                 onClick = { viewModel.confirmUpdatePreview(accepted) }) { Text("确认更新") } },
             dismissButton = { TextButton(onClick = viewModel::discardUpdatePreview) { Text("取消") } })
     }

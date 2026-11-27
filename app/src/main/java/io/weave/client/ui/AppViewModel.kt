@@ -327,12 +327,15 @@ class AppViewModel internal constructor(application: Application, initialProfile
     val updatePreview = mutableUpdatePreview.asStateFlow()
 
     fun discardUpdatePreview() {
+        val preview = mutableUpdatePreview.value ?: return
         mutableUpdatePreview.value = null
-        subscriptionRepository.discardReview()
+        subscriptionRepository.discardReview(preview.token)
     }
 
     fun confirmUpdatePreview(acceptCountChange: Boolean) {
         val preview = mutableUpdatePreview.value ?: return
+        val editor = mutableEditorState.value
+        if (editor.running || editor.subscriptionId != preview.subscriptionId || !preview.audit.canApply(acceptCountChange)) return
         mutableUpdatePreview.value = null
         runSubscriptionMutation(preview.subscriptionId, { "订阅已安全更新" }) {
             subscriptionRepository.applyReview(preview.token, acceptCountChange)
@@ -341,22 +344,31 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     private fun prepareUpdatePreview(id: String, onComplete: (Boolean) -> Unit = {},
         prepare: suspend () -> io.weave.client.subscription.SubscriptionUpdatePreview) {
-        if (mutableEditorState.value.running) return
-        mutableEditorState.update { it.copy(running = true, error = null) }
+        val current = mutableEditorState.value
+        if (current.running || current.subscriptionId != id) return
+        val active = current.copy(running = true, error = null)
+        mutableEditorState.value = active
         viewModelScope.launch {
             var offered = false
-            probeSafely { prepare() }.onSuccess { preview ->
-                if (mutableEditorState.value.subscriptionId == id) {
-                    mutableUpdatePreview.value = preview
-                    offered = true
-                    launch {
-                        delay(300_000)
-                        if (mutableUpdatePreview.value?.token == preview.token) discardUpdatePreview()
-                    }
-                } else subscriptionRepository.discardReview()
-            }.onFailure { error -> mutableEditorState.update { it.copy(error = error.message) } }
-            mutableEditorState.update { it.copy(running = false) }
-            onComplete(offered)
+            var error: String? = null
+            try {
+                probeSafely { prepare() }.onSuccess { preview ->
+                    if (mutableEditorState.value === active) {
+                        mutableUpdatePreview.value = preview
+                        offered = true
+                        val token = preview.token
+                        viewModelScope.launch {
+                            delay(300_000)
+                            if (mutableUpdatePreview.value?.token == token) discardUpdatePreview()
+                        }
+                    } else subscriptionRepository.discardReview(preview.token)
+                }.onFailure { error = it.message ?: "订阅修改失败" }
+            } finally {
+                if (mutableEditorState.value === active) {
+                    mutableEditorState.value = active.copy(running = false, error = error)
+                }
+                onComplete(offered)
+            }
         }
     }
 
@@ -1069,6 +1081,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
     }
 
     fun openSubscriptionEditor(subscriptionId: String) {
+        discardUpdatePreview()
         val read = ++subscriptionEditorRead
         val epoch = profileEpoch
         subscriptionEditorEpoch = epoch

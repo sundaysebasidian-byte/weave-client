@@ -175,13 +175,18 @@ class SubscriptionRepository(
 
     fun discardReview() { beginReview() }
 
+    internal fun discardReview(token: String) {
+        synchronized(reviewGate) {
+            if (pendingUpdate?.preview?.token == token) beginReview()
+        }
+    }
+
     suspend fun applyReview(token: String, acceptCountChange: Boolean): SubscriptionUpdate = withContext(Dispatchers.IO) {
         val pending = pendingUpdate
         require(pending != null && pending.preview.token == token && pending.expiresAtNanos - System.nanoTime() > 0L) {
             "预览已失效，请重新获取"
         }
-        val blockers = pending.preview.audit.findings.filter { it.severity == SubscriptionAuditSeverity.BLOCKED }
-        require(blockers.isEmpty() || (acceptCountChange && blockers.all { it.code in setOf("node_drop", "large_removal", "node_spike") })) {
+        require(pending.preview.audit.canApply(acceptCountChange)) {
             "请先核对异常节点数量变化"
         }
         val saved = store.saveReviewed(pending.preview.subscriptionId, pending.revision, pending.name,

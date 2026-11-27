@@ -68,6 +68,10 @@ class SubscriptionRefreshReviewIntegrationTest {
         assertEquals(1, preview.addedNames.size); assertEquals(1, preview.removedNames.size)
         assertFalse(preview.audit.blocked)
         assertFalse(preview.toString().contains("synthetic-token"))
+        val replacement = f.repo.previewRemoteRefresh(f.old.id)
+        f.repo.discardReview(preview.token)
+        assertTrue(runCatching { f.repo.applyReview(preview.token, false) }.isFailure)
+        assertEquals(f.old.id, f.repo.applyReview(replacement.token, false).subscription.id)
     } }
     @Test fun confirmationUsesExactlyTheReviewedCandidateWithNoSecondRequest() = isolated { f -> runBlocking {
         val oldNodes = f.repo.loadNodes()
@@ -113,6 +117,13 @@ class SubscriptionRefreshReviewIntegrationTest {
         f.body = payload(count = 1)
         val preview = f.repo.previewRemoteRefresh(f.old.id)
         assertTrue(preview.audit.blocked)
+        assertTrue(preview.audit.requiresNodeCountConfirmation)
+        assertFalse(preview.audit.canApply(false))
+        assertTrue(preview.audit.canApply(true))
+        val hardBlocked = preview.audit.copy(findings = preview.audit.findings +
+            SubscriptionAuditFinding("empty", "invalid preview", "", SubscriptionAuditSeverity.BLOCKED))
+        assertFalse(hardBlocked.requiresNodeCountConfirmation)
+        assertFalse(hardBlocked.canApply(true))
         assertTrue(runCatching { f.repo.applyReview(preview.token, false) }.isFailure)
         assertEquals(original, f.store.readPayload(f.old.id))
     } }
