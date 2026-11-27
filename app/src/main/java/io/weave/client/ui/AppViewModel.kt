@@ -91,6 +91,7 @@ import kotlinx.coroutines.withContext
 /** Work handed to the UI by shortcuts, the Quick Settings tile, deep links or the share sheet. */
 sealed interface ExternalRequest {
     data object Connect : ExternalRequest
+    data object Disconnect : ExternalRequest
     data object OpenImport : ExternalRequest
     data object ChooseExit : ExternalRequest
     data class Import(val value: io.weave.client.subscription.ExternalImport) : ExternalRequest
@@ -103,7 +104,9 @@ internal suspend fun claimExternalRequest(
     mayClaim: () -> Boolean = { true },
     awaitReady: suspend () -> Unit,
 ): Boolean {
-    if (request == ExternalRequest.Connect || request == ExternalRequest.ChooseExit) awaitReady()
+    if (request == ExternalRequest.Connect || request == ExternalRequest.Disconnect || request == ExternalRequest.ChooseExit) {
+        awaitReady()
+    }
     currentCoroutineContext().ensureActive()
     return mayClaim() && pending.compareAndSet(request, null)
 }

@@ -135,6 +135,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.res.stringResource
+import io.weave.client.R
 import io.weave.client.BuildConfig
 import io.weave.client.apps.InstalledApp
 import io.weave.client.core.diagnostics.LensState
@@ -513,4 +515,25 @@ private fun PolicyPackRow(
             }
         }
     }
+}
+
+@Composable
+internal fun VpnShortcutConfirmation(connect: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    WeaveDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("vpn-shortcut-confirmation"),
+        title = {
+            Text(stringResource(if (connect) R.string.shortcut_connect_long else R.string.shortcut_disconnect_long),
+                translate = false)
+        },
+        text = { Text(stringResource(R.string.vpn_shortcut_confirmation), translate = false) },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("vpn-shortcut-cancel")) { Text("取消") }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(if (connect) R.string.action_connect else R.string.action_disconnect), translate = false)
+            }
+        },
+    )
 }

@@ -502,6 +502,7 @@ fun WeaveApp(
     val appUpdates = viewModel.appUpdates
     var showAppUpdates by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var shortcutVpnRequest by remember { mutableStateOf<ExternalRequest?>(null) }
     var importStartWith by remember { mutableStateOf<io.weave.client.domain.SubscriptionSourceKind?>(null) }
     var showProxyMigration by remember { mutableStateOf(false) }
     var showConnectionActions by remember { mutableStateOf(false) }
@@ -598,10 +599,10 @@ fun WeaveApp(
         showImportDialog = true
     }
 
-    fun requestConnect() {
+    fun requestConnect(allowDisconnect: Boolean = true) {
         val dashboard = viewModel.dashboard.value
         when (dashboard.connectionState) {
-            ConnectionState.CONNECTED -> onRequestDisconnection()
+            ConnectionState.CONNECTED -> if (allowDisconnect) onRequestDisconnection()
             ConnectionState.CONNECTING -> Unit
             ConnectionState.DISCONNECTED, ConnectionState.ERROR -> {
                 val action = heroModel(dashboard).action
@@ -630,13 +631,9 @@ fun WeaveApp(
         quickStartExternalLaunch = true
         if (quickStart.visible) closeQuickStart()
         when (request) {
-            ExternalRequest.Connect -> {
+            ExternalRequest.Connect, ExternalRequest.Disconnect -> {
                 destination = Destination.HOME
-                if (viewModel.dashboard.value.connectionState == ConnectionState.DISCONNECTED ||
-                    viewModel.dashboard.value.connectionState == ConnectionState.ERROR
-                ) {
-                    requestConnect()
-                }
+                shortcutVpnRequest = request
             }
             ExternalRequest.OpenImport -> {
                 destination = Destination.SUBSCRIPTIONS
@@ -877,7 +874,7 @@ fun WeaveApp(
                     onScrolling = { scrolling -> dashboardScroll.list = scrolling },
                     state = dashboard,
                     trafficHistory = trafficHistory,
-                    onConnect = ::requestConnect,
+                    onConnect = { requestConnect() },
                     onModeSelected = viewModel::selectMode,
                     onDefaultRouteClick = { openDefaultRoutePicker() },
                     onMoreClick = { showConnectionActions = true },
@@ -1096,6 +1093,18 @@ fun WeaveApp(
                 },
             )
         }
+    }
+
+    shortcutVpnRequest?.let { request ->
+        val connect = request == ExternalRequest.Connect
+        VpnShortcutConfirmation(
+            connect = connect,
+            onDismiss = { shortcutVpnRequest = null },
+            onConfirm = {
+                shortcutVpnRequest = null
+                if (connect) requestConnect(allowDisconnect = false) else onRequestDisconnection()
+            },
+        )
     }
 
     disclosureMode?.let { mode ->

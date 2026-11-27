@@ -620,6 +620,7 @@
 {"id":"新手模式","en":"Beginner mode"}
 {"id":"新配置与原配置均无法启动，VPN 已安全关闭","en":"Neither the new nor original configuration could start; the VPN was safely stopped"}
 {"id":"新配置已安全生效","en":"The new configuration is active safely"}
+{"id":"无应用规则时，国内流量直连","en":"Direct mainland traffic for apps without a rule"}
 {"id":"无效","en":"Invalid"}
 {"id":"无法保存本地路由规则","en":"Unable to save local routing rules"}
 {"id":"无法保存检查时间，未连接 GitHub。","en":"Could not save the check time, so no request was made to GitHub."}
@@ -701,7 +702,6 @@
 {"id":"未找到可用的局域网 IPv4 地址","en":"No usable LAN IPv4 address was found"}
 {"id":"未找到适用的 Android 生产签名发布包。","en":"No compatible Android package with a production signature was found."}
 {"id":"未指定应用","en":"Unspecified app"}
-{"id":"未指定应用的 CN 流量直连","en":"Direct mainland traffic for apps without a rule"}
 {"id":"未提供流量信息","en":"No traffic information"}
 {"id":"未检测","en":"Not tested"}
 {"id":"未检测到","en":"Not detected"}
@@ -1305,5 +1305,5 @@
 {"id":"默认出口将切换到其他订阅；没有其他订阅时保持断开，避免静默直连。","en":"The default exit will switch to another subscription; with none available, Weave stays disconnected to avoid silent direct access."}
 {"id":"默认出口将失效，需要重新选择。","en":"Default exit will become invalid. Select it again."}
 {"id":"默认出口或应用分流若在使用它，将改为阻止联网，直到你重新选择出口。","en":"If the default exit or an app route uses it, that traffic is blocked until you choose a new exit."}
-{"id":"默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先","en":"On by default · direct mainland traffic without an app rule · app routing wins"}
+{"id":"默认开启 · 无应用规则时，国内流量直连 · 应用分流优先","en":"On by default · direct mainland traffic without an app rule · app routing wins"}
 {"id":"鼠尾草、奶油纸与柔珊瑚","en":"Sage, cream paper and soft coral"}

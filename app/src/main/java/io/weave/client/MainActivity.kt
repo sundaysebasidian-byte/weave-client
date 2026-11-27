@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
     private val readyModel get() = readyProfile?.model
     private var startupFailed by mutableStateOf(false)
     private var startupJob: Job? = null
-    private var pendingIntent: Intent? = null
+    private var pendingRequest: ExternalRequest? = null
     private var coreAttached = false
     private var started = false
     private val vpnServiceStarts = object : BroadcastReceiver() {
@@ -173,11 +173,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // Retain only an unconsumed launch request across recreation; never replay one the
-        // model already received. A newer intent replaces the pending request, as in the UI.
-        @Suppress("DEPRECATION")
-        val launchIntent = if (savedInstanceState == null) intent else savedInstanceState.getParcelable<Intent>("startup_request")
-        handleIntent(launchIntent)
+        if (savedInstanceState == null) {
+            handleIntent(intent)
+        } else {
+            // Preserve pending shares during an in-process recreation without writing them to disk.
+            @Suppress("DEPRECATION")
+            pendingRequest = lastCustomNonConfigurationInstance as? ExternalRequest
+                ?: startupShortcutRequest(savedInstanceState.getString("startup_shortcut"))
+            forgetImportIntent(intent)
+        }
         loadProfile()
     }
 
@@ -203,9 +207,8 @@ class MainActivity : ComponentActivity() {
             }
             readyProfile = ready
             attachCoreIfReady()
-            val request = pendingIntent
-            pendingIntent = null
-            handleIntent(request)
+            pendingRequest?.let(ready.model::offerExternalRequest)
+            pendingRequest = null
             startGrantedConnectionWhenReady()
         }
     }
@@ -254,8 +257,11 @@ class MainActivity : ComponentActivity() {
         return true
     }
 
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun onRetainCustomNonConfigurationInstance(): Any? = pendingRequest
+
     override fun onSaveInstanceState(outState: Bundle) {
-        pendingIntent?.let { outState.putParcelable("startup_request", it) }
+        pendingRequest?.startupShortcutAction()?.let { outState.putString("startup_shortcut", it) }
         outState.putString("vpn_permission_attempt", vpnPermissionAttempt.name)
         super.onSaveInstanceState(outState)
     }
@@ -336,24 +342,25 @@ class MainActivity : ComponentActivity() {
     /** Shortcuts, the Quick Settings tile, deep links and share-sheet content. */
     private fun handleIntent(intent: Intent?) {
         if (intent == null || isReplayedExitChoice(intent.action, intent.flags)) return
-        if (intent.action == ACTION_DISCONNECT) {
-            if (pendingIntent?.action == ACTION_CONNECT) pendingIntent = null
-            disconnectVpn()
-            return
-        }
         val request = when (intent.action) {
-            ACTION_CONNECT -> ExternalRequest.Connect
-            ACTION_IMPORT -> ExternalRequest.OpenImport
-            ACTION_CHOOSE_EXIT -> ExternalRequest.ChooseExit
             Intent.ACTION_VIEW -> intent.data?.let(::importFromUri)?.let(ExternalRequest::Import)
             Intent.ACTION_SEND -> sharedImport(intent)?.let(ExternalRequest::Import)
-            else -> null
-        } ?: return
+            else -> startupShortcutRequest(intent.action)
+        }
+        forgetImportIntent(intent)
+        if (request == null) return
         val model = readyModel
         if (model == null) {
-            pendingIntent = intent
+            pendingRequest = request
         } else {
             model.offerExternalRequest(request)
+        }
+    }
+
+    private fun forgetImportIntent(request: Intent?) {
+        if (request?.action == Intent.ACTION_VIEW || request?.action == Intent.ACTION_SEND) {
+            // Remove the Activity's additional reference to the original URI, extras and ClipData.
+            setIntent(Intent(Intent.ACTION_MAIN))
         }
     }
 
@@ -448,3 +455,15 @@ class MainActivity : ComponentActivity() {
 // A task restored from Recents may carry its original notification intent.
 internal fun isReplayedExitChoice(action: String?, flags: Int): Boolean =
     action == MainActivity.ACTION_CHOOSE_EXIT && flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+
+private val STARTUP_SHORTCUTS = mapOf(
+    MainActivity.ACTION_CONNECT to ExternalRequest.Connect,
+    MainActivity.ACTION_DISCONNECT to ExternalRequest.Disconnect,
+    MainActivity.ACTION_IMPORT to ExternalRequest.OpenImport,
+    MainActivity.ACTION_CHOOSE_EXIT to ExternalRequest.ChooseExit,
+)
+
+internal fun startupShortcutRequest(action: String?): ExternalRequest? = STARTUP_SHORTCUTS[action]
+
+internal fun ExternalRequest.startupShortcutAction(): String? =
+    STARTUP_SHORTCUTS.entries.firstOrNull { it.value == this }?.key

@@ -16,6 +16,7 @@
     <string name="shortcut_connect_long">Weave 연결</string>
     <string name="shortcut_disconnect_short">연결 해제</string>
     <string name="shortcut_disconnect_long">Weave 연결 해제</string>
+    <string name="vpn_shortcut_confirmation">VPN 연결을 변경하려면 Weave에서 바로가기 동작을 확인하세요.</string>
     <string name="shortcut_import_short">가져오기</string>
     <string name="shortcut_import_long">구독 가져오기</string>
     <string name="update_applied_title">구독 업데이트 완료: %1$s</string>

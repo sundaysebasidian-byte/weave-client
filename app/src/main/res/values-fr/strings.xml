@@ -16,6 +16,7 @@
     <string name="shortcut_connect_long">Connecter Weave</string>
     <string name="shortcut_disconnect_short">Déconnecter</string>
     <string name="shortcut_disconnect_long">Déconnecter Weave</string>
+    <string name="vpn_shortcut_confirmation">Confirmez ce raccourci dans Weave pour modifier la connexion VPN.</string>
     <string name="shortcut_import_short">Importer</string>
     <string name="shortcut_import_long">Importer un abonnement</string>
     <string name="update_applied_title">« %1$s » mis à jour</string>

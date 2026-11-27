@@ -389,7 +389,7 @@ internal fun SettingsScreen(
             entries = listOf(
                 LinkEntry(Icons.Rounded.Tune, "高级路由", null) { showRoutingDetails = true },
                 ToggleEntry(
-                    Icons.Rounded.Language, "国内智能直连", "未指定应用的 CN 流量直连",
+                    Icons.Rounded.Language, "国内智能直连", "无应用规则时，国内流量直连",
                     preferences.domesticDirect, onDomesticDirectChanged,
                 ),
                 LinkEntry(Icons.Rounded.Tune, "本地域名 / IP 规则", null, onOpenLocalRouteRules),

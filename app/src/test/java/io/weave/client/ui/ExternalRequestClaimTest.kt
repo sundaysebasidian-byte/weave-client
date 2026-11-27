@@ -3,6 +3,8 @@ package io.weave.client.ui
 import android.content.Intent
 import io.weave.client.MainActivity
 import io.weave.client.isReplayedExitChoice
+import io.weave.client.startupShortcutAction
+import io.weave.client.startupShortcutRequest
 import io.weave.client.subscription.ExternalImport
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -12,6 +14,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -28,6 +31,24 @@ class ExternalRequestClaimTest {
         for (action in listOf(Intent.ACTION_MAIN, MainActivity.ACTION_CONNECT, MainActivity.ACTION_IMPORT, null)) {
             assertFalse(isReplayedExitChoice(action, restored))
         }
+    }
+
+    @Test
+    fun onlyKnownNonSecretRequestsEnterStartupState() {
+        val sensitive = listOf(
+            ExternalImport.Remote("https://example.invalid/?token=private-token", "example.invalid", "private-name"),
+            ExternalImport.Document("content://example.invalid/private-path", "private-file"),
+            ExternalImport.Inline("private-inline"),
+        )
+        for (value in sensitive) {
+            assertNull(ExternalRequest.Import(value).startupShortcutAction())
+            assertFalse("private" in value.toString() || "example.invalid" in value.toString())
+        }
+        for (shortcut in listOf(ExternalRequest.Connect, ExternalRequest.Disconnect, ExternalRequest.OpenImport, ExternalRequest.ChooseExit)) {
+            assertEquals(shortcut, startupShortcutRequest(shortcut.startupShortcutAction()))
+        }
+        assertNull(startupShortcutRequest(Intent.ACTION_SEND))
+        assertNull(startupShortcutRequest(Intent.ACTION_VIEW))
     }
 
     @Test
