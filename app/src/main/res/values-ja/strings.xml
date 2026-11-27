@@ -16,6 +16,7 @@
     <string name="shortcut_connect_long">Weave に接続</string>
     <string name="shortcut_disconnect_short">切断</string>
     <string name="shortcut_disconnect_long">Weave を切断</string>
+    <string name="vpn_shortcut_confirmation">VPN 接続を変更するには、Weave でこのショートカットを確認してください。</string>
     <string name="shortcut_import_short">インポート</string>
     <string name="shortcut_import_long">購読をインポート</string>
     <string name="update_applied_title">「%1$s」を更新しました</string>

@@ -11,13 +11,19 @@ import java.util.Locale
  */
 sealed interface ExternalImport {
     /** A remote subscription; [url] is always HTTPS. */
-    data class Remote(val url: String, val host: String, val suggestedName: String?) : ExternalImport
+    data class Remote(val url: String, val host: String, val suggestedName: String?) : ExternalImport {
+        override fun toString() = "ExternalImport.Remote"
+    }
 
     /** Inline content (node URIs, Base64, YAML/JSON text) shared as text. */
-    data class Inline(val text: String) : ExternalImport
+    data class Inline(val text: String) : ExternalImport {
+        override fun toString() = "ExternalImport.Inline"
+    }
 
     /** A content:// document; read only after confirmation. */
-    data class Document(val uri: String, val displayName: String?) : ExternalImport
+    data class Document(val uri: String, val displayName: String?) : ExternalImport {
+        override fun toString() = "ExternalImport.Document"
+    }
 }
 
 object ExternalImportParser {

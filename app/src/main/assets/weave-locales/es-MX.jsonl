@@ -620,6 +620,7 @@
 {"id":"新手模式","text":"Modo Principiante"}
 {"id":"新配置与原配置均无法启动，VPN 已安全关闭","text":"No se pudo iniciar ni con la configuración nueva ni con la anterior. La VPN se cerró de forma segura"}
 {"id":"新配置已安全生效","text":"La nueva configuración se aplicó correctamente"}
+{"id":"无应用规则时，国内流量直连","text":"Conexión directa a China continental para las aplicaciones sin regla"}
 {"id":"无效","text":"No válido"}
 {"id":"无法保存本地路由规则","text":"No se pudieron guardar las reglas de enrutamiento local"}
 {"id":"无法保存检查时间，未连接 GitHub。","text":"No se pudo guardar la hora de comprobación. No se hizo ninguna solicitud a GitHub."}
@@ -701,7 +702,6 @@
 {"id":"未找到可用的局域网 IPv4 地址","text":"No se encontró ninguna dirección IPv4 utilizable en la red local"}
 {"id":"未找到适用的 Android 生产签名发布包。","text":"No se encontró ningún paquete Android compatible con firma de producción."}
 {"id":"未指定应用","text":"Aplicación sin especificar"}
-{"id":"未指定应用的 CN 流量直连","text":"Conexión directa a China continental para las aplicaciones sin regla"}
 {"id":"未提供流量信息","text":"No hay datos de tráfico"}
 {"id":"未检测","text":"Sin comprobar"}
 {"id":"未检测到","text":"No detectado"}
@@ -1305,7 +1305,7 @@
 {"id":"默认出口将切换到其他订阅；没有其他订阅时保持断开，避免静默直连。","text":"La salida predeterminada cambiará a otra suscripción. Si no hay ninguna disponible, Weave seguirá desconectado para evitar usar la conexión directa sin avisar."}
 {"id":"默认出口将失效，需要重新选择。","text":"La salida predeterminada dejará de ser válida. Elige otra."}
 {"id":"默认出口或应用分流若在使用它，将改为阻止联网，直到你重新选择出口。","text":"Si la salida predeterminada o la ruta de una aplicación la usan, ese tráfico quedará bloqueado hasta que elijas otra salida."}
-{"id":"默认开启 · 未指定应用的 CN 流量直连 · 应用分流优先","text":"Activado por defecto: conexión directa para el tráfico de China continental sin regla de aplicación. Las reglas de aplicaciones tienen prioridad."}
+{"id":"默认开启 · 无应用规则时，国内流量直连 · 应用分流优先","text":"Activado por defecto: conexión directa para el tráfico de China continental sin regla de aplicación. Las reglas de aplicaciones tienen prioridad."}
 {"id":"鼠尾草、奶油纸与柔珊瑚","text":"Verde salvia, papel crema y coral suave"}
 {"id":"从加密订阅文件导入","text":"Importar desde un archivo cifrado de suscripción"}
 {"id":"保存为加密订阅文件","text":"Guardar como archivo cifrado de suscripción"}
@@ -1324,6 +1324,7 @@
 {"id":"请在系统设置中允许 Weave 安装应用，然后返回点「安装更新」。","text":"Permite que Weave instale apps en la configuración del sistema y luego vuelve y toca Instalar actualización."}
 {"id":"正在打开系统安装确认。","text":"Abriendo la confirmación de instalación de Android."}
 {"id":"安装未完成。可以重试，或保存安装包后手动安装。","text":"No se completó la instalación. Vuelve a intentarlo o guarda el paquete e instálalo manualmente."}
+{"id":"传输完成","text":"Transferencia completada"}
 {"id":"dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose","text":"{message} [{code}]"}
 {"id":"dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1","text":"Protección frente al tráfico DNS fuera del túnel"}
 {"id":"dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose","text":"{transport} · {profile} · {explanation}"}
@@ -1470,4 +1471,3 @@
 {"id":"dynamic:v2:^每个策略组最多 (\\d+) 个节点$","text":"Cada grupo puede contener hasta {first} nodos"}
 {"id":"dynamic:v2:^没有比当前 Build ${RELEASE_BUILD_CAPTURE} 更新的适用版本。$","text":"No hay ninguna versión compatible posterior a la compilación actual ({first})."}
 {"id":"dynamic:v2:^规则集条目超过 (\\d+) 条上限$","text":"El conjunto de reglas supera el límite de {first} entradas"}
-{"id":"传输完成","text":"Transferencia completada"}

@@ -16,6 +16,7 @@
     <string name="shortcut_connect_long">连接 Weave</string>
     <string name="shortcut_disconnect_short">断开</string>
     <string name="shortcut_disconnect_long">断开 Weave</string>
+    <string name="vpn_shortcut_confirmation">请在 Weave 内确认快捷操作，再更改 VPN 连接。</string>
     <string name="shortcut_import_short">导入</string>
     <string name="shortcut_import_long">导入订阅</string>
     <string name="update_applied_title">「%1$s」已更新</string>

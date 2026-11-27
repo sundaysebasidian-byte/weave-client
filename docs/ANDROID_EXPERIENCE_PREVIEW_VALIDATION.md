@@ -5,7 +5,7 @@ Tested implementation commit: `5db7649` on `local/weave-experience-upgrade`.
 
 ## Provenance and protected work
 
-The original project is `/Users/sebasidian/Documents/Codex/2026-07-29-cmfa-ui-karing-github`, original HEAD `d35b06ba477457d88e0952d9a3d904256c89348e`.
+The preview was validated against commit `d35b06ba477457d88e0952d9a3d904256c89348e`.
 Its 77 tracked modifications plus relevant untracked source were preserved as a 175-file local snapshot, commit `633441f` on `local/weave-uncommitted-baseline`. All 175 original-file hashes still match. No original file was overwritten.
 
 The candidate Android baseline is `57d665851a2bfa55146ca9794fbb8f2a391b85a0` (September 28 UTC), integrated locally as `b6efd6f`. The newer modular Android implementation replaces overlapping Android files; the original local Android edits remain recoverable in the frozen snapshot. Local Windows/macOS sources were retained rather than replaced with an older desktop branch. The old PR12 draft head `6e0390f0f1d39fc3c175e29658c79a37c4c52dd5` is not evidence of an October upgrade.
