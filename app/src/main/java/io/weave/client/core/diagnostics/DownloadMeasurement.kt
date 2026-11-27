@@ -16,4 +16,7 @@ data class DownloadMeasurement(
     val bodyMillis: Long get() = (elapsedNanos - headersNanos) / 1_000_000L
     // Decimal megabits, using the actual monotonic interval rather than rounded display units.
     val megabitsPerSecond: Double get() = bytes * 8_000.0 / elapsedNanos
+    /** Payload throughput. HTTPS setup and the wait for response headers are reported separately. */
+    val bodyMegabitsPerSecond: Double?
+        get() = (elapsedNanos - headersNanos).takeIf { it > 0 }?.let { bytes * 8_000.0 / it }
 }

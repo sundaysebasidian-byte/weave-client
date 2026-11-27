@@ -42,4 +42,14 @@
     <string name="app_picker_empty">لا توجد تطبيقات مطابقة في مشغّل التطبيقات</string>
     <string name="app_picker_add">إضافة ⁨%1$s⁩</string>
     <string name="app_picker_close">إغلاق</string>
+    <string name="about_github_description">اعرض المشروع وادعمه بنجمة</string>
+    <string name="about_github_unavailable">لا يوجد تطبيق يمكنه فتح رابط GitHub هذا</string>
+    <string name="migration_paste">لصق واستيراد</string>
+    <string name="migration_paste_description">انسخ رابط الاشتراك أو ملف التهيئة من التطبيق المصدر، ثم اضغط على لصق واستيراد.</string>
+    <string name="migration_empty_clipboard">لا تحتوي الحافظة على نص مدعوم</string>
+    <string name="home_speed_test">اختبار سرعة الشبكة</string>
+    <string name="home_latency_measured">زمن استجابة HTTPS</string>
+    <string name="home_download_measured">عينة سرعة التنزيل</string>
+    <string name="home_measurement_starting">جارٍ بدء القياس…</string>
+    <string name="privacy_check_external_requests">يرسل الاختبار طلبات إلى الخدمات الموضّحة.</string>
 </resources>

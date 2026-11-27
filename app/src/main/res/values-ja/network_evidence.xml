@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="net_active_disclosure">実行すると ipify、ipwho.is、Cloudflare、Google（STUN を含む）と下記のサイトに接続します。各サービスにはそのリクエストの出口が見えます。</string>
+    <string name="net_active_disclosure">HTTPS 検査は ipify、ipwho.is、Cloudflare、Google と下記のサイトに接続します。各サービスにはリクエストの出口が見えます。ブラウザー検査は外部 STUN サーバーを使用しません。</string>
     <string name="net_link_snapshot">Android から見たアプリの既定ネットワーク</string>
     <string name="net_seen">あり</string>
     <string name="net_not_seen">なし</string>
     <string name="net_dns_count">設定済みの DNS サーバー：%1$s</string>
     <string name="net_link_scope">VPN はネットワーク種別、IPv4・IPv6 はローカルアドレスの有無です。実際の DNS やプロキシの経路は示しません。</string>
-    <string name="net_download_scope">アプリの経路で Cloudflare から 1 回ダウンロードします。接続時間を含み、回線の最高速度ではありません。</string>
+    <string name="net_download_scope">Cloudflare から 1 MiB の HTTPS サンプルを取得します。速度は本文の読み取り時間で算出し、HTTPS 応答時間は別に表示します。</string>
     <string name="net_download_phases">応答ヘッダーまで：%1$d ms · 本文の読み取り：%2$d ms</string>
     <string name="net_latency_scope">各サイトに HTTPS 204 を 3 回要求します。少数標本の P95 は成功時の最大値、ジッターは連続して成功した要求の所要時間の差の平均です。要求失敗はパケット損失ではありません。</string>
     <string name="net_reading_exit">HTTPS リクエストの出口を確認中…</string>

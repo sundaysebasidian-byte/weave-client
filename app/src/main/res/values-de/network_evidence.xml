@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="net_active_disclosure">Der Test kontaktiert ipify, ipwho.is, Cloudflare, Google (einschließlich STUN) und die unten genannten Websites. Sie sehen den Ausgang der jeweiligen Anfrage.</string>
+    <string name="net_active_disclosure">Die HTTPS-Tests kontaktieren ipify, ipwho.is, Cloudflare, Google und die aufgeführten Websites. Jeder Dienst sieht den Ausgang seiner Anfrage. Der Browsertest nutzt keinen externen STUN-Server.</string>
     <string name="net_link_snapshot">Standardnetz der App laut Android</string>
     <string name="net_seen">Erkannt</string>
     <string name="net_not_seen">Nicht erkannt</string>
     <string name="net_dns_count">Konfigurierte DNS-Server: %1$s</string>
     <string name="net_link_scope">VPN bezeichnet den Netztyp, IPv4 und IPv6 lokale Adressen. Daraus lässt sich der tatsächliche DNS- oder Proxy-Pfad einer Anfrage nicht ableiten.</string>
-    <string name="net_download_scope">Ein HTTPS-Download von Cloudflare über die Route dieser App. Einschließlich Verbindungsaufbau; keine Messung der maximalen Bandbreite.</string>
+    <string name="net_download_scope">Ein HTTPS-Download von 1 MiB über Cloudflare. Die Rate beruht auf der Lesezeit des Antwortinhalts. Die HTTPS-Antwortzeit wird separat angezeigt.</string>
     <string name="net_download_phases">Bis zu den Antwortheadern: %1$d ms · Lesen der Daten: %2$d ms</string>
     <string name="net_latency_scope">Drei HTTPS-204-Anfragen pro Website. P95 ist bei so wenigen Werten die langsamste erfolgreiche Anfrage; Jitter ist die mittlere Zeitdifferenz aufeinanderfolgender Erfolge. Eine fehlgeschlagene Anfrage bedeutet keinen Paketverlust.</string>
     <string name="net_reading_exit">HTTPS-Ausgang wird ermittelt…</string>

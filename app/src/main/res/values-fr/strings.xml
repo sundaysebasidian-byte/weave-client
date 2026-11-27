@@ -39,4 +39,14 @@
     <string name="app_picker_empty">Aucune application correspondante</string>
     <string name="app_picker_add">Ajouter %1$s</string>
     <string name="app_picker_close">Fermer</string>
+    <string name="about_github_description">Voir le projet et le soutenir avec une étoile</string>
+    <string name="about_github_unavailable">Aucune application ne peut ouvrir ce lien GitHub</string>
+    <string name="migration_paste">Coller et importer</string>
+    <string name="migration_paste_description">Copiez un lien d’abonnement ou une configuration dans l’application source, puis touchez Coller et importer.</string>
+    <string name="migration_empty_clipboard">Le presse-papiers ne contient aucun texte pris en charge</string>
+    <string name="home_speed_test">Test de débit</string>
+    <string name="home_latency_measured">Temps de réponse HTTPS</string>
+    <string name="home_download_measured">Échantillon de débit descendant</string>
+    <string name="home_measurement_starting">Démarrage de la mesure…</string>
+    <string name="privacy_check_external_requests">Le test envoie des requêtes aux services indiqués.</string>
 </resources>

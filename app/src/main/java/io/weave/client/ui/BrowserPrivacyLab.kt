@@ -331,6 +331,7 @@ internal fun PrivacyProbeWebView(
                 settings.setGeolocationEnabled(false)
                 settings.mediaPlaybackRequiresUserGesture = true
                 settings.blockNetworkImage = true
+                settings.blockNetworkLoads = true
                 settings.cacheMode = WebSettings.LOAD_NO_CACHE
                 settings.setSupportMultipleWindows(false)
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -402,7 +403,7 @@ internal class PrivacyProbeClient(
     override fun shouldOverrideUrlLoading(
         view: WebView,
         request: WebResourceRequest,
-    ): Boolean = request.url.scheme != "https" || request.url.host != "weave.invalid"
+    ): Boolean = true
 
     override fun onPageFinished(view: WebView, url: String) {
         if (pollingStarted || !isActive(view)) return
@@ -553,7 +554,7 @@ private val PRIVACY_PROBE_HTML = """
   try {
     if (!window.RTCPeerConnection) throw new Error('RTCPeerConnection unavailable');
     r.webrtcSupported = true;
-    const pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+    const pc = new RTCPeerConnection({iceServers:[]});
     pc.createDataChannel('audit');
     pc.onicecandidate = e => {
       if (!e.candidate) return;

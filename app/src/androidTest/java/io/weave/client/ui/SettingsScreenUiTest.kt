@@ -7,6 +7,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
@@ -37,10 +39,17 @@ class SettingsScreenUiTest {
     @Test fun searchNarrowsEveryGroupAndSwatchesApplyAPalette() {
         val palettes = mutableListOf<WeavePalette>()
         var openedAppUpdates = 0
+        val openedLinks = mutableListOf<String>()
         val root = InstrumentationRegistry.getInstrumentation().targetContext
         val output = File(root.getExternalFilesDir(null), "qa/settings").apply { mkdirs() }
         compose.setContent {
-            CompositionLocalProvider(LocalWeaveLanguage provides WeaveLanguage.SIMPLIFIED_CHINESE) {
+            val links = object : UriHandler {
+                override fun openUri(uri: String) { openedLinks += uri }
+            }
+            CompositionLocalProvider(
+                LocalWeaveLanguage provides WeaveLanguage.SIMPLIFIED_CHINESE,
+                LocalUriHandler provides links,
+            ) {
                 WeaveTheme {
                     Surface(Modifier.fillMaxSize().testTag("qa-viewport")) {
                         SettingsScreen(NetworkPreferences(), WeaveLanguage.SIMPLIFIED_CHINESE, DnsProbeState(), PaddingValues(0.dp),
@@ -79,6 +88,10 @@ class SettingsScreenUiTest {
         compose.onNodeWithText("应用更新").assertExists()
             .performSemanticsAction(SemanticsActions.OnClick) { action -> check(action()) }
         compose.runOnIdle { assertEquals(1, openedAppUpdates) }
+        compose.onNodeWithTag("settings-search").performTextClearance()
+        compose.onNodeWithTag("settings-search").performTextInput("GitH")
+        compose.onNodeWithText("GitHub").performSemanticsAction(SemanticsActions.OnClick) { action -> check(action()) }
+        compose.runOnIdle { assertEquals(listOf("https://github.com/sundaysebasidian-byte/weave-client"), openedLinks) }
         compose.onNodeWithTag("settings-search").performTextClearance()
         compose.onNodeWithTag("settings-search").performTextInput("外观与语")
         compose.onNodeWithText("减弱引导动画").assertExists()

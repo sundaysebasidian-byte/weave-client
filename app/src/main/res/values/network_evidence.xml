@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="net_active_disclosure">Run sends requests to ipify, ipwho.is, Cloudflare, Google (including STUN) and the sites listed below. They can see the exit used for their request.</string>
+    <string name="net_active_disclosure">HTTPS checks contact ipify, ipwho.is, Cloudflare, Google and the listed sites. Each can see the exit used for its request. The browser check uses no external STUN server.</string>
     <string name="net_link_snapshot">Default network seen by Android</string>
     <string name="net_seen">Seen</string>
     <string name="net_not_seen">Not seen</string>
     <string name="net_dns_count">Configured DNS servers: %1$s</string>
     <string name="net_link_scope">VPN indicates the transport type; IPv4 and IPv6 indicate local addresses. These settings do not prove which resolver or proxy a request used.</string>
-    <string name="net_download_scope">One HTTPS download from Cloudflare via this app’s route. Includes connection time; not peak line speed.</string>
+    <string name="net_download_scope">One 1 MiB HTTPS download from Cloudflare. The rate covers reading the response body. HTTPS response time is shown separately.</string>
     <string name="net_download_phases">To response headers: %1$d ms · Read body: %2$d ms</string>
     <string name="net_latency_scope">Three HTTPS 204 requests per site. With three samples P95 is the slowest success; jitter is the mean change between adjacent successful requests. A failed request is not a lost packet.</string>
     <string name="net_reading_exit">Reading the HTTPS exit…</string>

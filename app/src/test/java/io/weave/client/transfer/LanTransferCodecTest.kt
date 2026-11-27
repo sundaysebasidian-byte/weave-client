@@ -3,6 +3,7 @@ package io.weave.client.transfer
 import io.weave.client.subscription.SubscriptionImportException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.security.MessageDigest
@@ -55,6 +56,8 @@ class LanTransferCodecTest {
         assertArrayEquals(key, parsed.key)
         assertEquals(link.confirmationCode(), parsed.confirmationCode())
         assertEquals(6, parsed.confirmationCode().length)
+        parsed.requireConfirmation(parsed.confirmationCode().map { ('٠'.code + it.digitToInt()).toChar() }.joinToString(""))
+        assertFalse(parsed.toString().contains(parsed.token))
     }
 
     @Test
@@ -97,12 +100,23 @@ class LanTransferCodecTest {
         val token = "0123456789abcdef0123456789abcdef"
         listOf(
             "weave://lan/v1/$token?host=8.8.8.8&port=443#$key",
+            "weave://lan/v1/$token?host=127.0.0.1&port=443#$key",
+            "weave://lan/v1/$token?host=169.254.169.254&port=443#$key",
+            "weave://lan/v1/$token?host=10.a.0.0.1&port=443#$key",
+            "weave://lan/v1/$token?host=192.168.01.2&port=443#$key",
+            "weave://lan/v1/$token?host=192.168.1.2&host=192.168.1.3&port=443#$key",
             "weave://lan/v1/$token?host=192.168.1.2&port=0#$key",
             "weave://lan/v1/$token?host=192.168.1.2&port=443#bad",
         ).forEach { raw ->
             assertThrows(SubscriptionImportException::class.java) {
                 LanTransferLink.parse(raw)
             }
+        }
+    }
+
+    @Test fun malformedUtf16CannotBeReplacedSilentlyBeforeSharing() {
+        assertThrows(SubscriptionImportException::class.java) {
+            LanTransferCodec.encode(listOf(TransferSubscription("name", "inline://fixture", "\uD800")))
         }
     }
 }

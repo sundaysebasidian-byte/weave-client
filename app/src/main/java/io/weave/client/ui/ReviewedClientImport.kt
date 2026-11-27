@@ -17,7 +17,7 @@ internal suspend fun finishReviewedClientImport(
     batch: Boolean,
     save: suspend () -> List<Subscription>,
     onSaved: (List<Subscription>) -> Unit,
-    readNodes: suspend () -> List<ProxyNode>,
+    readNodes: suspend (List<Subscription>) -> List<ProxyNode>,
     onNodes: (List<ProxyNode>) -> Unit,
     requestReload: () -> Unit,
 ) {
@@ -39,7 +39,7 @@ internal suspend fun finishReviewedClientImport(
         if (state.value !== active) return
         onSaved(subscriptions)
         val nodes = try {
-            readNodes()
+            readNodes(subscriptions)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

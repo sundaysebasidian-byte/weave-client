@@ -7,7 +7,7 @@ import java.util.Map;
  * per-app setting, the six released choices, or isolated preview preferences.
  */
 final class ReleaseAppCopySelection {
-    private static final String KEY = "release_app_copy_locale_v1";
+    static final String KEY = "release_app_copy_locale_v1";
     enum State { ABSENT, UNSUPPORTED, SELECTED }
 
     private static final ReleaseAppCopySelection ABSENT = new ReleaseAppCopySelection(State.ABSENT, null);

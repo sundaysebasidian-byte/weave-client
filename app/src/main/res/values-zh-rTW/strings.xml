@@ -37,4 +37,14 @@
     <string name="app_picker_empty">沒有符合的啟動器應用程式</string>
     <string name="app_picker_add">新增 %1$s</string>
     <string name="app_picker_close">關閉</string>
+    <string name="about_github_description">查看專案儲存庫，歡迎點 Star 支持</string>
+    <string name="about_github_unavailable">沒有應用程式可以開啟 GitHub 連結</string>
+    <string name="migration_paste">貼上並匯入</string>
+    <string name="migration_paste_description">在來源用戶端複製訂閱連結或設定，然後點「貼上並匯入」。</string>
+    <string name="migration_empty_clipboard">剪貼簿沒有可匯入的文字</string>
+    <string name="home_speed_test">網路測速</string>
+    <string name="home_latency_measured">HTTPS 回應耗時</string>
+    <string name="home_download_measured">下載取樣</string>
+    <string name="home_measurement_starting">正在開始測量…</string>
+    <string name="privacy_check_external_requests">檢測會向列出的服務傳送請求。</string>
 </resources>

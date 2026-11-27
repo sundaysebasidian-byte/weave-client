@@ -1,5 +1,8 @@
 package io.weave.client.ui
 
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.SecureFlagPolicy
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -378,6 +381,9 @@ internal fun LanTransferDialog(
     var importDraft by remember {
         mutableStateOf(LanImportDraft().acceptValidatedScan(state.pendingLinkRevision, state.pendingLink))
     }
+    LaunchedEffect(state.imported) {
+        if (state.imported) importDraft = LanImportDraft()
+    }
     fun visibleDraft() = importDraft.acceptValidatedScan(state.pendingLinkRevision, state.pendingLink)
     var selectedIds by remember {
         mutableStateOf<Set<String>>(emptySet())
@@ -438,6 +444,7 @@ internal fun LanTransferDialog(
 
     WeaveDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
         title = {
             Text("订阅互传", fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.headlineSmall.copy(

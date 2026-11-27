@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="net_active_disclosure">Ce test contacte ipify, ipwho.is, Cloudflare, Google (STUN compris) et les sites indiqués ci-dessous. Chacun voit la sortie de sa requête.</string>
+    <string name="net_active_disclosure">Les tests HTTPS contactent ipify, ipwho.is, Cloudflare, Google et les sites indiqués. Chacun voit la sortie de sa requête. Le test du navigateur ne contacte aucun serveur STUN externe.</string>
     <string name="net_link_snapshot">Réseau par défaut de l’application selon Android</string>
     <string name="net_seen">Présent</string>
     <string name="net_not_seen">Non observé</string>
     <string name="net_dns_count">Serveurs DNS configurés : %1$s</string>
     <string name="net_link_scope">VPN indique le type de réseau ; IPv4 et IPv6 signalent des adresses locales. Ces réglages ne prouvent pas quel DNS ou proxy a traité une requête.</string>
-    <string name="net_download_scope">Un téléchargement HTTPS depuis Cloudflare via la route de cette application. Le temps de connexion est inclus ; ce n’est pas le débit maximal de la ligne.</string>
+    <string name="net_download_scope">Un téléchargement HTTPS de 1 Mio depuis Cloudflare. Le débit mesure la lecture du corps de réponse. Le temps de réponse HTTPS est affiché séparément.</string>
     <string name="net_download_phases">En-têtes reçus : %1$d ms · Lecture du corps : %2$d ms</string>
     <string name="net_latency_scope">Trois requêtes HTTPS 204 par site. Sur ce petit échantillon, P95 est la durée maximale des succès ; la gigue est la variation moyenne entre deux succès consécutifs. Un échec ne signifie pas une perte de paquet.</string>
     <string name="net_reading_exit">Lecture de la sortie HTTPS…</string>

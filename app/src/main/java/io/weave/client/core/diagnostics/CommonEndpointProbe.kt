@@ -78,6 +78,8 @@ class CommonEndpointProbe(
     private val transport: CommonEndpointHttpTransport = UrlConnectionCommonEndpointTransport(),
     private val timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
 ) {
+    internal constructor(network: DiagnosticNetwork) : this(UrlConnectionCommonEndpointTransport(network::open))
+
     suspend fun run(
         now: Long = System.currentTimeMillis(),
         onResult: suspend (CommonEndpointResult) -> Unit = {},
@@ -200,12 +202,14 @@ class CommonEndpointProbe(
     }
 }
 
-private class UrlConnectionCommonEndpointTransport : CommonEndpointHttpTransport {
+private class UrlConnectionCommonEndpointTransport(
+    private val open: (java.net.URL) -> java.net.URLConnection = java.net.URL::openConnection,
+) : CommonEndpointHttpTransport {
     override fun get(url: String, timeoutMillis: Int): CommonEndpointHttpResponse {
         val uri = URI(url)
         require(uri.scheme.equals("https", ignoreCase = true)) { "探测端点必须使用 HTTPS" }
         val startedAtNanos = System.nanoTime()
-        val connection = (uri.toURL().openConnection() as? HttpURLConnection)
+        val connection = (open(uri.toURL()) as? HttpURLConnection)
             ?: error("无法创建 HTTPS 连接")
         return try {
             // Do not follow redirects (especially HTTPS → HTTP). A 3xx response already proves

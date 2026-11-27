@@ -12,9 +12,11 @@ internal object ClashSubscriptionDocument {
         text: String,
         key: String,
         read: (String) -> Map<String, Any?> = ClashYamlCodec::read,
-    ): Map<String, Any?>? {
+    ): Map<String, Any?>? = readRoot(text, read)?.takeIf { it.containsKey(key) }
+
+    fun readRoot(text: String, read: (String) -> Map<String, Any?> = ClashYamlCodec::read): Map<String, Any?>? {
         if (!marker.containsMatchIn(text)) return null
-        return read(text).takeIf { it.containsKey(key) }
+        return read(text)
     }
 
     fun unwrap(input: String): String {

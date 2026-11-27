@@ -43,6 +43,7 @@ import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.core.vpn.WeaveVpnService
 import io.weave.client.data.VpnDisclosureStore
 import io.weave.client.data.ProfileStorage
+import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.WeaveLanguage
 import io.weave.client.subscription.ExternalImport
@@ -140,13 +141,12 @@ class MainActivity : ComponentActivity() {
                 LayoutDirection.Ltr
             }
             val languagePicker = remember(ready.locale) {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) null else
-                    PackagedLanguagePicker(
-                        selected = ready.locale,
-                        loadChoices = { loadPackagedLanguageChoices(ready.locale) },
-                        applyTap = ::applyPackagedLanguageTap,
-                        reconcile = ::reconcilePackagedLanguageTap,
-                    )
+                PackagedLanguagePicker(
+                    selected = ready.locale,
+                    loadChoices = { loadPackagedLanguageChoices(ready.locale) },
+                    applyTap = ::applyPackagedLanguageTap,
+                    reconcile = ::reconcilePackagedLanguageTap,
+                )
             }
             CompositionLocalProvider(
                 LocalWeaveLanguage provides language,
@@ -218,7 +218,11 @@ class MainActivity : ComponentActivity() {
 
     private fun applyPackagedLanguageTap(choice: PackagedLanguageTap): PackagedLanguageTapResult {
         if (!canHandleLanguageTap()) return PackagedLanguageTapResult.NOT_APPLIED
-        val result = SystemPackagedLanguagePicker.apply(this, choice)
+        val result = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (choice is PackagedLanguageTap.Regional &&
+                !RuntimeSettingsStore(application).setReleaseAppCopyLanguage(choice.tag)
+            ) PackagedLanguageTapResult.NOT_APPLIED else PackagedLanguageTapResult.APPLIED
+        } else SystemPackagedLanguagePicker.apply(this, choice)
         if (result != PackagedLanguageTapResult.APPLIED) return result
         return if (publishConfirmedLanguageTap(choice)) PackagedLanguageTapResult.APPLIED
         else PackagedLanguageTapResult.UNCONFIRMED

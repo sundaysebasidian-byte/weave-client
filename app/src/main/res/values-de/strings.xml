@@ -38,4 +38,14 @@
     <string name="app_picker_empty">Keine passende App gefunden</string>
     <string name="app_picker_add">%1$s hinzufügen</string>
     <string name="app_picker_close">Schließen</string>
+    <string name="about_github_description">Projekt ansehen und mit einem Stern unterstützen</string>
+    <string name="about_github_unavailable">Keine App kann diesen GitHub-Link öffnen</string>
+    <string name="migration_paste">Einfügen und importieren</string>
+    <string name="migration_paste_description">Kopiere einen Abo-Link oder eine Konfiguration in der Quell-App und tippe auf Einfügen und importieren.</string>
+    <string name="migration_empty_clipboard">Die Zwischenablage enthält keinen unterstützten Text</string>
+    <string name="home_speed_test">Geschwindigkeitstest</string>
+    <string name="home_latency_measured">HTTPS-Antwortzeit</string>
+    <string name="home_download_measured">Download-Messwert</string>
+    <string name="home_measurement_starting">Messung startet…</string>
+    <string name="privacy_check_external_requests">Der Test sendet Anfragen an die aufgeführten Dienste.</string>
 </resources>

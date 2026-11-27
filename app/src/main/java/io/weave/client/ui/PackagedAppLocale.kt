@@ -6,6 +6,8 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
 import androidx.compose.runtime.staticCompositionLocalOf
+import io.weave.client.data.RuntimeSettingsStore
+import io.weave.client.data.StoredReleaseAppCopySelection
 import io.weave.client.domain.WeaveLanguage
 import java.util.Locale
 
@@ -30,7 +32,11 @@ internal class PackagedAppLocale private constructor(
             PackagedReleaseCopyAsset.optionalObservation { readObservedLocale(context) }
 
         private fun readObservedLocale(context: Context): PackagedAppLocale? {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                val selected = RuntimeSettingsStore(context).releaseAppCopySelection()
+                    as? StoredReleaseAppCopySelection.Selected ?: return null
+                return verified(context, Locale.forLanguageTag(selected.canonicalTag))
+            }
             val manager = context.getSystemService(LocaleManager::class.java) ?: return null
             val explicit = manager.applicationLocales
             if (explicit.isEmpty) return null
@@ -45,7 +51,7 @@ internal class PackagedAppLocale private constructor(
         /** IO; an absent normal package offers no new picker rows. */
         fun availableChoices(context: Context, active: PackagedAppLocale?): List<PackagedAppLocale> =
             PackagedReleaseCopyAsset.optionalObservation {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     context.getSystemService(LocaleManager::class.java) == null
                 ) return@optionalObservation emptyList()
                 val assets = try {
