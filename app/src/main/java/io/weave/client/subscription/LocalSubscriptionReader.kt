@@ -13,13 +13,19 @@ class LocalSubscriptionReader(
         val buffer = ByteArray(8 * 1024)
         var total = 0
         while (true) {
-            val read = input.read(buffer)
+            var read = input.read(buffer)
             if (read < 0) break
-            total += read
-            if (total > maxBytes) {
+            if (read == 0) {
+                val next = input.read()
+                if (next < 0) break
+                buffer[0] = next.toByte()
+                read = 1
+            }
+            if (read > maxBytes - total) {
                 throw SubscriptionImportException("订阅内容超过 ${maxBytes / 1024} KiB 限制")
             }
             output.write(buffer, 0, read)
+            total += read
         }
         return runCatching {
             output.decodeUtf8().removePrefix("\uFEFF")

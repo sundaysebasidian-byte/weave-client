@@ -68,7 +68,7 @@ class SubscriptionPreparationTest {
     }
 
     @Test fun `nested decoy proxies are not interpreted as root Clash config`() {
-        assertFalse(ClashSubscriptionDocument.hasRootKey("""{"meta":{"proxies":[]}}""", "proxies"))
+        org.junit.Assert.assertNull(ClashSubscriptionDocument.readRootWithKey("""{"meta":{"proxies":[]}}""", "proxies"))
     }
 
     @Test fun `all HTTP nodes with same endpoint and distinct names survive normalization`() = runBlocking<Unit> {

@@ -53,7 +53,7 @@ class SubscriptionPayloadParser {
         // JSON document in Base64 even when the selected target is Clash.  Decode once, then run
         // the same structured detectors again; treating the decoded document as a URI list would
         // otherwise report "no usable nodes" despite a valid `proxies:` section.
-        val uriPayload = if (payload.lineSequence().any(::looksLikeProxyUri)) {
+        val uriPayload = if (':' in payload && payload.lineSequence().any(::looksLikeProxyUri)) {
             payload
         } else {
             decodeBase64(payload).also { decoded ->
@@ -61,21 +61,19 @@ class SubscriptionPayloadParser {
             }
         }
 
+        val protocols = sortedSetOf<String>()
         val nodes = uriPayload.lineSequence()
             .map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
             .mapNotNull { value ->
-                val scheme = proxyScheme(value) ?: run {
-                    if (runCatching { URI(value).scheme }.getOrNull() != null) {
-                        throw SubscriptionImportException("订阅包含暂不支持的节点协议，未导入任何节点")
-                    }
-                    return@mapNotNull null
+                val uri = runCatching { URI(value) }.getOrNull()
+                val scheme = uri?.scheme?.lowercase() ?: return@mapNotNull null
+                if (scheme !in SUPPORTED_URI_SCHEMES) {
+                    throw SubscriptionImportException("订阅包含暂不支持的节点协议，未导入任何节点")
                 }
+                protocols.add(scheme)
                 ParsedNode(
-                    name = runCatching { URI(value).rawFragment }
-                        .getOrNull()
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "${scheme.uppercase()} 节点",
+                    name = uri.rawFragment?.takeIf { it.isNotBlank() } ?: "${scheme.uppercase()} 节点",
                     protocol = scheme,
                 )
             }
@@ -88,7 +86,7 @@ class SubscriptionPayloadParser {
         return ParsedSubscription(
             format = SubscriptionFormat.URI_LIST,
             nodeCount = nodes.size,
-            protocols = nodes.mapTo(sortedSetOf()) { it.protocol },
+            protocols = protocols,
             nodes = nodes,
         )
     }
@@ -352,18 +350,12 @@ class SubscriptionPayloadParser {
 
     private fun decodeBase64(payload: String): String {
         val compact = payload.withoutSubscriptionWhitespace()
-        val decoded = runCatching {
-            Base64.getDecoder().decode(padBase64(compact))
-        }.recoverCatching {
-            Base64.getUrlDecoder().decode(padBase64(compact))
-        }.getOrElse {
+        return try {
+            decodeSubscriptionEnvelope(compact)
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            throw SubscriptionImportException("订阅文本不是有效 UTF-8")
+        } catch (_: IllegalArgumentException) {
             throw SubscriptionImportException("订阅既不是配置，也不是有效的 Base64 节点列表")
-        }
-
-        return decoded.toString(Charsets.UTF_8).also {
-            if (it.toByteArray(Charsets.UTF_8).size != decoded.size) {
-                throw SubscriptionImportException("订阅文本不是有效 UTF-8")
-            }
         }
     }
 
@@ -384,7 +376,7 @@ class SubscriptionPayloadParser {
         .filter { it.isNotEmpty() && !it.startsWith("#") }
         .map { value ->
             val scheme = proxyScheme(value)
-                ?: throw SubscriptionImportException("发现未支持的节点格式：${value.take(24)}")
+                ?: throw SubscriptionImportException("订阅包含暂不支持的节点协议，未导入任何节点")
             parseUriSpec(value, scheme)
         }
         .toList()

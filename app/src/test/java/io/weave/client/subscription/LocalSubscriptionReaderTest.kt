@@ -44,6 +44,20 @@ class LocalSubscriptionReaderTest {
     }
 
     @Test
+    fun `bulk reads that cannot make progress use the provider single byte path`() {
+        val payload = "台湾".toByteArray()
+        val input = object : ByteArrayInputStream(payload) {
+            private var reads = 0
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                check(++reads <= payload.size + 1)
+                return 0
+            }
+        }
+        assertEquals("台湾", LocalSubscriptionReader(maxBytes = payload.size).read(input))
+    }
+
+    @Test
     fun `rejects oversized input`() {
         val reader = LocalSubscriptionReader(maxBytes = 4)
 

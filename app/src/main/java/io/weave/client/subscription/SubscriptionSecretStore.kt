@@ -262,7 +262,7 @@ class SubscriptionSecretStore(
             .putLong(key(entry.id, "updated_at"), updated)
         entry.metadata?.let { writeRemoteMetadata(editor, entry.id, it) }
         val record = StoredSubscription(entry.id, name, entry.parsed.nodeCount, entry.parsed.format,
-            nodes.sortedBy { it.name.lowercase() }, true,
+            nodes.sortedByFoldedName { it.name }, true,
             if (entry.metadata != null) entry.metadata.usage else old?.usage, updated,
             if (entry.metadata != null) entry.metadata.updateIntervalHours else old?.updateIntervalHours)
         return StagedSave(record, payload, previousPayload)
@@ -315,7 +315,7 @@ class SubscriptionSecretStore(
 
     internal inner class RuntimeSnapshot(private val values: SharedPreferences) {
         fun records(): List<StoredSubscription> = readRecords(values, includeNodes = false)
-        fun nodes(id: String): List<StoredNode> = readNodeMetadata(id, values).sortedBy { it.name.lowercase() }
+        fun nodes(id: String): List<StoredNode> = readNodeMetadata(id, values).sortedByFoldedName { it.name }
         fun payload(id: String): String = readPayload(id, values)
     }
 
@@ -334,7 +334,7 @@ class SubscriptionSecretStore(
     private fun readRecords(snapshot: SharedPreferences, includeNodes: Boolean = true): List<StoredSubscription> =
         snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty()
             .mapNotNull { id -> readRecord(id, snapshot, includeNodes) }
-            .sortedBy { it.name.lowercase() }
+            .sortedByFoldedName { it.name }
 
     private fun readRecord(id: String, snapshot: SharedPreferences, includeNodes: Boolean): StoredSubscription? {
         val name = snapshot.getString(key(id, "name"), null) ?: return null
@@ -346,7 +346,7 @@ class SubscriptionSecretStore(
             name = name,
             nodeCount = snapshot.getInt(key(id, "nodes"), 0),
             format = format,
-            nodes = if (includeNodes) readNodeMetadata(id, snapshot).sortedBy { it.name.lowercase() } else emptyList(),
+            nodes = if (includeNodes) readNodeMetadata(id, snapshot).sortedByFoldedName { it.name } else emptyList(),
             hasPayload = payloadFile(id, snapshot).isFile,
             usage = SubscriptionUsage.decode(snapshot.getString(key(id, "usage"), null)),
             updatedAtMillis = snapshot.getLong(key(id, "updated_at"), 0L).takeIf { it > 0L },

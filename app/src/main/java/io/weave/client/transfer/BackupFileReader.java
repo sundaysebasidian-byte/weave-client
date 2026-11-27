@@ -20,7 +20,13 @@ public final class BackupFileReader {
             while (used < chunk.length) {
                 int count = input.read(chunk, used, chunk.length - used);
                 if (count < 0) break;
-                used += count;
+                if (count == 0) {
+                    int next = input.read();
+                    if (next < 0) break;
+                    chunk[used++] = (byte) next;
+                } else {
+                    used += count;
+                }
             }
             if (used == 0) break;
             chunks.add(chunk);

@@ -7,6 +7,19 @@ import org.junit.Test
 
 class LocalRouteRuleTest {
     @Test
+    fun `hexadecimal hostnames cannot invoke DNS during IPv6 validation`() {
+        var attempted = false
+        val lookup: (String) -> java.net.InetAddress = {
+            attempted = true
+            throw java.net.UnknownHostException("fixture")
+        }
+        for (host in listOf("deadbeef", "FACE", "2001db8", "1.2.3.4")) {
+            org.junit.Assert.assertNull(LocalRouteRuleValidator.parseIpv6Address(host, lookup))
+        }
+        org.junit.Assert.assertFalse(attempted)
+    }
+
+    @Test
     fun `compiler emits deterministic mihomo rules`() {
         val suffix = LocalRouteRule(
             type = LocalRuleType.DOMAIN_SUFFIX,

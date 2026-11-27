@@ -124,13 +124,8 @@ object LocalRouteRuleValidator {
         val slash = value.lastIndexOf('/')
         if (slash <= 0 || slash == value.lastIndex) return null
         val prefix = value.substring(slash + 1).toIntOrNull() ?: return null
-        if (prefix !in 0..128 || value.substring(0, slash).any { it.isLetter() && it !in 'a'..'f' }) {
-            return null
-        }
-        val address = runCatching { InetAddress.getByName(value.substring(0, slash)) }.getOrNull()
-            ?: return null
-        if (address.address.size != 16) return null
-        val bytes = address.address.copyOf()
+        if (prefix !in 0..128) return null
+        val bytes = parseIpv6Address(value.substring(0, slash)) ?: return null
         val mask = ByteArray(16) { index ->
             val remaining = prefix - index * 8
             when {
@@ -141,6 +136,12 @@ object LocalRouteRuleValidator {
         }
         for (index in bytes.indices) bytes[index] = (bytes[index].toInt() and mask[index].toInt()).toByte()
         return Ipv6Cidr(bytes, mask)
+    }
+
+    internal fun parseIpv6Address(literal: String, lookup: (String) -> InetAddress = InetAddress::getByName): ByteArray? {
+        // A hex-looking hostname without a colon would otherwise reach the system DNS resolver.
+        if (':' !in literal || literal.any { it.isLetter() && it.lowercaseChar() !in 'a'..'f' }) return null
+        return runCatching { lookup(literal).address }.getOrNull()?.takeIf { it.size == 16 }
     }
 
     private val UUID_REGEX = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}")
@@ -157,40 +158,50 @@ object LocalRuleMatcher {
         val normalizedIp = ip?.trim().orEmpty()
         var ipv4Checked = false
         var ipv4: Int? = null
-        return rules.asSequence()
-            .filter { it.enabled }
-            .mapNotNull { rule ->
-                val matches = when (rule.type) {
-                    LocalRuleType.DOMAIN -> normalizedHost == rule.value
-                    LocalRuleType.DOMAIN_SUFFIX -> normalizedHost == rule.value ||
-                        normalizedHost.endsWith(".${rule.value}")
-                    LocalRuleType.DOMAIN_KEYWORD -> normalizedHost.contains(rule.value)
-                    LocalRuleType.IP_CIDR -> {
-                        if (!ipv4Checked) {
-                            ipv4Checked = true
-                            val end = normalizedIp.indexOf('/').let { if (it < 0) normalizedIp.length else it }
-                            ipv4 = LocalRouteRuleValidator.parseIpv4Address(normalizedIp, end)
-                        }
-                        val host = ipv4
-                        val cidr = if (host != null) LocalRouteRuleValidator.parseIpv4Cidr(rule.value) else null
-                        host != null && cidr != null && host and cidr.mask == cidr.network
+        var ipv6Checked = false
+        var ipv6: ByteArray? = null
+        for (rule in rules) {
+            if (!rule.enabled) continue
+            val matches = when (rule.type) {
+                LocalRuleType.DOMAIN -> normalizedHost == rule.value
+                LocalRuleType.DOMAIN_SUFFIX -> domainSuffixMatches(normalizedHost, rule.value)
+                LocalRuleType.DOMAIN_KEYWORD -> normalizedHost.contains(rule.value)
+                LocalRuleType.IP_CIDR -> {
+                    if (!ipv4Checked) {
+                        ipv4Checked = true
+                        val end = normalizedIp.indexOf('/').let { if (it < 0) normalizedIp.length else it }
+                        ipv4 = LocalRouteRuleValidator.parseIpv4Address(normalizedIp, end)
                     }
-                    LocalRuleType.IP_CIDR6 -> normalizedIpv6Matches(normalizedIp, rule.value)
+                    val address = ipv4
+                    val cidr = if (address != null) LocalRouteRuleValidator.parseIpv4Cidr(rule.value) else null
+                    address != null && cidr != null && address and cidr.mask == cidr.network
                 }
-                rule.takeIf { matches }
+                LocalRuleType.IP_CIDR6 -> {
+                    if (!ipv6Checked) {
+                        ipv6Checked = true
+                        ipv6 = LocalRouteRuleValidator.parseIpv6Address(normalizedIp.substringBefore('/'))
+                    }
+                    ipv6?.let { ipv6Matches(it, rule.value) } == true
+                }
             }
-            .firstOrNull()
+            if (matches) return rule
+        }
+        return null
     }
 
-    private fun normalizedIpv6Matches(ip: String, cidr: String): Boolean {
-        val address = ip.substringBefore('/').takeIf { it.contains(':') } ?: return false
+    private fun domainSuffixMatches(host: String, suffix: String): Boolean {
+        if (host == suffix) return true
+        val boundary = host.length - suffix.length - 1
+        return boundary >= 0 && host[boundary] == '.' && host.endsWith(suffix)
+    }
+
+    private fun ipv6Matches(address: ByteArray, cidr: String): Boolean {
         val parsed = LocalRouteRuleValidator.parseIpv6Cidr(cidr) ?: return false
-        val host = LocalRouteRuleValidator.parseIpv6Cidr("$address/128") ?: return false
-        return host.network.indices.all { index ->
-            (host.network[index].toInt() and parsed.mask[index].toInt()) ==
-                (parsed.network[index].toInt() and parsed.mask[index].toInt())
+        return address.indices.all { index ->
+            (address[index].toInt() and parsed.mask[index].toInt()) == parsed.network[index].toInt()
         }
     }
+
 }
 
 object LocalRuleCompiler {

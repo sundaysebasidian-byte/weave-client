@@ -1,5 +1,6 @@
 package io.weave.client.subscription
 
+import io.weave.client.data.utf8SizeUpTo
 import java.net.URI
 import java.util.Base64
 import java.util.Collections
@@ -31,8 +32,9 @@ internal class ClashProviderResolver(
 
     suspend fun resolveDetailed(input: String, source: String): Resolution {
         currentCoroutineContext().ensureActive()
-        val document = documentWithProviders(input) ?: return Resolution(input, null, 0, 0)
-        val root = ClashYamlCodec.read(document)
+        val document = ClashSubscriptionDocument.unwrap(input)
+        val root = ClashSubscriptionDocument.readRootWithKey(document, "proxy-providers")
+            ?: return Resolution(input, null, 0, 0)
         val providers = root["proxy-providers"] as? Map<*, *>
             ?: throw SubscriptionImportException("订阅节点集合格式无效")
         if (providers.isEmpty()) return Resolution(input, null, 0, 0)
@@ -41,7 +43,8 @@ internal class ClashProviderResolver(
         val rootCount = output.size
         var providerCount = 0
         val downloaded = mutableMapOf<URI, List<Map<String, Any?>>>()
-        var totalBytes = document.toByteArray(Charsets.UTF_8).size
+        var remainingBytes = MAX_TOTAL_BYTES - (utf8SizeUpTo(document, MAX_TOTAL_BYTES)
+            ?: throw SubscriptionImportException("节点集合总大小超过限制"))
 
         providers.values.forEach { value ->
             currentCoroutineContext().ensureActive()
@@ -67,8 +70,8 @@ internal class ClashProviderResolver(
                     requireImport(uri.toString() != source, "节点集合不能引用订阅自身")
                     downloaded.getOrPut(uri) {
                         val response = fetch(uri.toString())
-                        totalBytes += response.body.toByteArray(Charsets.UTF_8).size
-                        requireImport(totalBytes <= MAX_TOTAL_BYTES, "节点集合总大小超过限制")
+                        remainingBytes -= utf8SizeUpTo(response.body, remainingBytes)
+                            ?: throw SubscriptionImportException("节点集合总大小超过限制")
                         // Providers may wrap the YAML/JSON node file in Base64, just like main
                         // subscriptions. Resolve that envelope before reading the data map.
                         val child = ClashYamlCodec.read(ClashSubscriptionDocument.unwrap(response.body))
@@ -83,18 +86,21 @@ internal class ClashProviderResolver(
             }
             val overrides = provider["override"] as? Map<*, *> ?: emptyMap<Any, Any>()
             providerCount += nodes.size
-            val allowed = setOf("additional-prefix", "additional-suffix", "udp", "skip-cert-verify", "ip-version")
-            requireImport(overrides.keys.all { it in allowed }, "节点集合包含暂不支持的覆盖字段，请导入完整节点文件")
-            nodes.forEach { original ->
-                val node = original.toMutableMap()
-                val name = node["name"]?.toString()
-                    ?: throw SubscriptionImportException("节点集合中有节点缺少名称")
-                node["name"] = overrides["additional-prefix"]?.toString().orEmpty() + name +
-                    overrides["additional-suffix"]?.toString().orEmpty()
-                for (key in listOf("udp", "skip-cert-verify", "ip-version")) {
-                    if (overrides.containsKey(key)) node[key] = overrides[key]
+            requireImport(overrides.keys.all { it in ALLOWED_OVERRIDES }, "节点集合包含暂不支持的覆盖字段，请导入完整节点文件")
+            val namePrefix = overrides["additional-prefix"]?.toString().orEmpty()
+            val nameSuffix = overrides["additional-suffix"]?.toString().orEmpty()
+            val flags = NODE_FLAG_OVERRIDES.filter { overrides.containsKey(it) }
+            val overridesNodes = namePrefix.isNotEmpty() || nameSuffix.isNotEmpty() || flags.isNotEmpty()
+            for (original in nodes) {
+                val name = original["name"] ?: throw SubscriptionImportException("节点集合中有节点缺少名称")
+                if (!overridesNodes && name is String) {
+                    output.add(original)
+                } else {
+                    val node = original.toMutableMap()
+                    node["name"] = namePrefix + name + nameSuffix
+                    for (key in flags) node[key] = overrides[key]
+                    output.add(node)
                 }
-                output += node
             }
             requireImport(output.size <= MAX_NODES, "订阅节点数量超过限制")
         }
@@ -104,16 +110,13 @@ internal class ClashProviderResolver(
         return Resolution(ClashYamlCodec.write(mapOf("proxies" to output.distinct())), rootCount, providerCount, providers.size)
     }
 
-    private fun documentWithProviders(input: String): String? {
-        val plain = ClashSubscriptionDocument.unwrap(input)
-        return plain.takeIf { ClashSubscriptionDocument.hasRootKey(it, "proxy-providers") }
-    }
-
     private fun requireImport(value: Boolean, message: String) {
         if (!value) throw SubscriptionImportException(message)
     }
 
     private companion object {
+        val NODE_FLAG_OVERRIDES = listOf("udp", "skip-cert-verify", "ip-version")
+        val ALLOWED_OVERRIDES = NODE_FLAG_OVERRIDES.toSet() + setOf("additional-prefix", "additional-suffix")
         const val MAX_PROVIDERS = 16
         const val MAX_NODES = 10_000
         const val MAX_TOTAL_BYTES = 5 * 1024 * 1024

@@ -7,6 +7,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubscriptionPayloadParserTest {
+    @Test
+    fun `malformed UTF8 of the same replacement length is rejected in encoded subscriptions`() {
+        val malformed = "socks5://192.0.2.1:1080#sample".toByteArray() +
+            byteArrayOf(0xF0.toByte(), 0x90.toByte(), 0x80.toByte())
+        val base64 = java.util.Base64.getEncoder().encodeToString(malformed)
+        val failure = org.junit.Assert.assertThrows(SubscriptionImportException::class.java) {
+            SubscriptionPayloadParser().parse(base64)
+        }
+        assertEquals("订阅文本不是有效 UTF-8", failure.message)
+    }
+
+    @Test
+    fun `unrecognized provider text is excluded from runtime normalization errors`() {
+        val text = "socks5://192.0.2.1:1080#sample\nprivate-marker-with-credentials"
+        val failure = org.junit.Assert.assertThrows(SubscriptionImportException::class.java) {
+            SubscriptionPayloadParser().normalizeForMihomo(text)
+        }
+        org.junit.Assert.assertFalse(failure.message.orEmpty().contains("private-marker"))
+    }
+
     @Test fun `all 65 clash nodes survive metadata and normalization including native-only types`() {
         val payload = "proxies:\n" + (1..65).joinToString("\n") { index ->
             val type = if (index <= 23) "http" else "snell"

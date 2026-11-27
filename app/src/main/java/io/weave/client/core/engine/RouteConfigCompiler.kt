@@ -19,57 +19,50 @@ class RouteConfigCompiler {
             "sub.$subscriptionId.auto"
         },
     ): List<String> {
-        val rules = routes
-            .sortedBy { it.packageName }
-            .flatMap { route ->
-                val target = when (route.target.kind) {
+        val capacity = leadingRules.size + trailingRules.size + 1 +
+            routes.size * if (packageUids.isEmpty()) 1 else 2
+        return buildList(capacity) {
+            addAll(leadingRules)
+            for (route in routes.sortedBy(AppRoute::packageName)) {
+                val target = route.target
+                val outlet = when (target.kind) {
                     RouteKind.DIRECT -> "DIRECT"
                     RouteKind.BLOCK -> "REJECT"
                     RouteKind.AUTO -> {
-                        val subscriptionId = requireNotNull(route.target.subscriptionId) {
+                        val subscriptionId = requireNotNull(target.subscriptionId) {
                             "An automatic route requires a subscription target"
                         }
                         automaticGroupName(subscriptionId)
                     }
                     RouteKind.FIXED -> {
-                        val subscriptionId = requireNotNull(route.target.subscriptionId) {
+                        val subscriptionId = requireNotNull(target.subscriptionId) {
                             "A fixed route requires a subscription target"
                         }
-                        val nodeId = requireNotNull(route.target.nodeId) {
+                        val nodeId = requireNotNull(target.nodeId) {
                             "A fixed route requires a node target"
                         }
                         "node.$subscriptionId.$nodeId"
                     }
                     RouteKind.GROUP -> {
-                        val groupId = requireNotNull(route.target.groupId) {
+                        val groupId = requireNotNull(target.groupId) {
                             "A group route requires a group target"
                         }
                         "group.$groupId"
                     }
                 }
-                buildList {
-                    val uid = packageUids[route.packageName]
-                        ?.takeIf { it > 0 }
-                    uid?.let {
-                        // UID matching is reliable for Android UDP/QUIC, while PROCESS-NAME
-                        // remains as a compatibility fallback for TCP and older cores.
-                        add("UID,$it,${escape(target)}")
-                    }
-                    add("PROCESS-NAME,${escape(route.packageName)},${escape(target)}")
-                    if (route.target.kind in PROXY_KINDS) {
-                        uid?.let {
-                            // Mihomo continues down the rule list when a proxy cannot carry UDP.
-                            // Keep that path fail-closed for proxy targets instead of allowing a
-                            // QUIC/HTTP3 packet to reach the default outlet. DIRECT already has
-                            // native UDP support, so adding this guard there would break app
-                            // WebViews that prefer QUIC (for example Binance's embedded pages).
-                            add("AND,((NETWORK,UDP),(UID,$it)),REJECT")
-                        }
-                    }
+                val escapedOutlet = escape(outlet)
+                val uid = packageUids[route.packageName]?.takeIf { it > 0 }
+                // UID matching catches Android UDP/QUIC before the process-name fallback.
+                if (uid != null) add("UID,$uid,$escapedOutlet")
+                add("PROCESS-NAME,${escape(route.packageName)},$escapedOutlet")
+                if (uid != null && target.kind in PROXY_KINDS) {
+                    // A proxy without UDP support must never fall through to the default outlet.
+                    add("AND,((NETWORK,UDP),(UID,$uid)),REJECT")
                 }
             }
-
-        return leadingRules + rules + trailingRules + "MATCH,DEFAULT"
+            addAll(trailingRules)
+            add("MATCH,DEFAULT")
+        }
     }
 
     private companion object {

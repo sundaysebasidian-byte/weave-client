@@ -7,6 +7,24 @@ import org.junit.Test
 import kotlinx.coroutines.runBlocking
 
 class ClashProviderResolverTest {
+    @Test fun `provider names keep the same canonical string with or without overrides`() = runBlocking<Unit> {
+        val resolver = ClashProviderResolver(fetch = { error("Inline providers must not use HTTPS") })
+        val manifest = """
+            proxy-providers:
+              plain:
+                type: inline
+                payload: [{name: 42, type: socks5, server: 192.0.2.1, port: 1080}]
+              custom:
+                type: inline
+                override: {additional-prefix: 'Imported ', udp: false}
+                payload: [{name: 'Edge', type: socks5, server: 192.0.2.2, port: 1080}]
+        """.trimIndent()
+        val result = resolver.resolve(manifest, "")
+        val records = ClashYamlCodec.nodes(ClashYamlCodec.read(result))
+        assertEquals(listOf("42", "Imported Edge"), records.map { it["name"] })
+        assertEquals(false, records.last()["udp"])
+    }
+
     @Test fun `23 root proxies plus 42 provider proxies retain all 65`() = runBlocking<Unit> {
         fun proxies(range: IntRange) = range.joinToString("\n") {
             "  - {name: fixture-$it, type: http, server: 127.0.0.1, port: 443}"

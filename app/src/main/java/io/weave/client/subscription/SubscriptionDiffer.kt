@@ -19,14 +19,15 @@ object SubscriptionDiffer {
         previous: List<StoredNode>,
         candidate: List<ParsedNode>,
     ): SubscriptionDiff {
-        val counts = HashMap<String, Count>()
-        for (node in previous) {
-            counts.getOrPut(key(node.name, node.protocol)) { Count() }.oldRemaining++
-        }
+        val counts = HashMap<String, MutableMap<String, Count>>()
+        fun count(name: String, protocol: String): Count =
+            counts.getOrPut(protocol.trim().lowercase()) { HashMap() }
+                .getOrPut(name.trim()) { Count() }
+        for (node in previous) count(node.name, node.protocol).oldRemaining++
         var unchanged = 0
         var possibleDuplicates = 0
         for (node in candidate) {
-            val count = counts.getOrPut(key(node.name, node.protocol)) { Count() }
+            val count = count(node.name, node.protocol)
             if (count.seenCandidate) possibleDuplicates++ else count.seenCandidate = true
             if (count.oldRemaining > 0) {
                 count.oldRemaining--
@@ -43,6 +44,4 @@ object SubscriptionDiffer {
 
     private class Count(var oldRemaining: Int = 0, var seenCandidate: Boolean = false)
 
-    private fun key(name: String, protocol: String) =
-        "${protocol.trim().lowercase()}\u0000${name.trim()}"
 }

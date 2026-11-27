@@ -31,6 +31,24 @@ public final class BackupFileReaderTest {
         assertArrayEquals(data, BackupFileReader.read(stream, data.length + 20));
     }
 
+    @Test public void zeroBulkReadsStillConsumeBytesAndEnforceTheLimit() throws IOException {
+        byte[] data = new byte[] { 9, 1, 42 };
+        assertArrayEquals(data, BackupFileReader.read(singleByteOnly(data), data.length));
+        assertThrows(IllegalStateException.class,
+                () -> BackupFileReader.read(singleByteOnly(data), data.length - 1));
+    }
+
+    private static InputStream singleByteOnly(byte[] data) {
+        return new ByteArrayInputStream(data) {
+            private int attempts;
+
+            @Override public int read(byte[] buffer, int offset, int count) {
+                if (++attempts > data.length + 1) throw new AssertionError("No read progress");
+                return 0;
+            }
+        };
+    }
+
     @Test public void midstreamReadFailurePropagatesUnchanged() {
         IOException failure = new IOException("local provider closed the stream");
         InputStream stream = new InputStream() {
