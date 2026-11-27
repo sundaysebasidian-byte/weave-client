@@ -529,14 +529,16 @@ class AppViewModel internal constructor(application: Application, initialProfile
             readiness.complete(Unit)
         }
         viewModelScope.launch {
+            var previousRevision: Long? = null
             combine(
                 VpnRuntimeState.snapshot,
                 mutableDashboardVisible,
                 mutableDashboardScrolling,
             ) { runtime, visible, scrolling ->
-                runtime.state to (visible && !scrolling)
-            }.distinctUntilChanged().collectLatest { (connectionState, visible) ->
-                if (connectionState != ConnectionState.CONNECTED) {
+                runtime.dashboardTrafficRevision() to (visible && !scrolling)
+            }.distinctUntilChanged().collectLatest { (revision, visible) ->
+                if (revision != previousRevision) {
+                    previousRevision = revision
                     mutableTrafficHistory.value = emptyList()
                     mutableDashboard.update {
                         it.copy(
@@ -546,9 +548,8 @@ class AppViewModel internal constructor(application: Application, initialProfile
                             attributedAppConnections = 0,
                         )
                     }
-                    return@collectLatest
                 }
-                if (!visible) return@collectLatest
+                if (revision == null || !visible) return@collectLatest
                 // A fling can briefly report idle between gestures. collectLatest cancels
                 // this settling window if scrolling/covering/backgrounding resumes.
                 delay(DashboardRefreshPolicy.RESUME_SETTLE_MS)
@@ -557,6 +558,9 @@ class AppViewModel internal constructor(application: Application, initialProfile
                     val runtime = withContext(Dispatchers.IO) {
                         CoreClient.queryRuntime()
                     }
+                    if (VpnRuntimeState.snapshot.value.dashboardTrafficRevision() != revision ||
+                        !mutableDashboardVisible.value || mutableDashboardScrolling.value
+                    ) return@collectLatest
                     if (runtime != null) {
                         mutableDashboard.update { it.withRuntime(runtime) }
                         mutableTrafficHistory.update { history ->

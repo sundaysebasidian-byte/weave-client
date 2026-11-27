@@ -1,7 +1,10 @@
 package io.weave.client.ui
 
 import io.weave.client.core.engine.EngineRuntimeSnapshot
+import io.weave.client.core.vpn.VpnRuntimeSnapshot
+import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.DashboardState
+import io.weave.client.domain.NetworkPathStatus
 import io.weave.client.domain.ProxyNode
 
 /** UI statistics only. Never schedules VPN recovery, health checks, DNS or keepalives. */
@@ -27,6 +30,12 @@ internal class DashboardRefreshPolicy {
         const val IDLE_INTERVAL_MS = 15_000L
     }
 }
+
+internal fun VpnRuntimeSnapshot.dashboardTrafficRevision(): Long? =
+    revision.takeIf {
+        state == ConnectionState.CONNECTED &&
+            (pathStatus == NetworkPathStatus.TUN_READY || pathStatus == NetworkPathStatus.VERIFIED)
+    }
 
 /** Retain identical state/node instances so idle samples do not redraw glass surfaces. */
 internal fun DashboardState.withRuntime(runtime: EngineRuntimeSnapshot): DashboardState {
