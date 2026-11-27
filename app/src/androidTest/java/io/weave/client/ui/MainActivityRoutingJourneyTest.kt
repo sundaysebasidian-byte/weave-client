@@ -2,6 +2,7 @@ package io.weave.client.ui
 
 import android.content.Intent
 import android.os.ParcelFileDescriptor
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.hasAnyAncestor
@@ -78,6 +79,10 @@ class MainActivityRoutingJourneyTest {
                 app.performClick()
                 val policy = compose.onNodeWithText(localizeWeaveText("本地策略", language))
                 policy.assertIsDisplayed()
+                assertFalse(routes.load().any { it.packageName == packageName })
+                compose.onNode(hasText(localizeWeaveText("取消", language)) and hasAnyAncestor(isDialog())).performClick()
+                search.assert(hasText(packageName))
+                app.performClick()
                 assertFalse(routes.load().any { it.packageName == packageName })
                 policy.performClick()
                 compose.onNode(hasText(localizeWeaveText("直连", language)) and hasAnyAncestor(isDialog())).performClick()

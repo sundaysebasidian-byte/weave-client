@@ -506,6 +506,7 @@ fun WeaveApp(
     // Picker events must carry the profile revision when the picker was opened, even if a
     // restored profile has the same route IDs or the chosen target is the generic DIRECT option.
     var appPickerEpoch by remember { mutableStateOf<String?>(null) }
+    val appPickerState = rememberSaveableStateHolder()
     var editingRoute by remember { mutableStateOf<AppRouteSelection?>(null) }
     var defaultRoutePickerEpoch by remember { mutableStateOf<String?>(null) }
     val showAppPicker = appPickerEpoch != null
@@ -711,8 +712,9 @@ fun WeaveApp(
         onSensitiveSurfaceChanged(sensitiveSurfaceVisible)
     }
 
-    LaunchedEffect(destination, showAppPicker, showProxyMigration) {
-        if (showAppPicker || showProxyMigration || destination == Destination.SUBSCRIPTIONS) {
+    val appPickerSessionOpen = showAppPicker || editingRoute?.app != null
+    LaunchedEffect(destination, appPickerSessionOpen, showProxyMigration) {
+        if (appPickerSessionOpen || showProxyMigration || destination == Destination.SUBSCRIPTIONS) {
             viewModel.ensureInstalledAppsLoaded()
         } else {
             viewModel.releaseInstalledAppsWhenIdle()
@@ -894,7 +896,10 @@ fun WeaveApp(
                             }
                         }
                     },
-                    onAdd = { appPickerEpoch = viewModel.groupProfileEpoch.value },
+                    onAdd = {
+                        appPickerState.removeState("route-app-picker")
+                        appPickerEpoch = viewModel.groupProfileEpoch.value
+                    },
                     onRouteLens = { showRouteLens = true },
                     contentPadding = innerPadding,
                     routingMode = routingMode,
@@ -1380,19 +1385,26 @@ fun WeaveApp(
         val unroutedApps = remember(installedApps, routes) {
             AppPickerFilter.unrouted(installedApps, routes, { it.packageName }, { it.packageName })
         }
-        AppPickerDialog(
-            apps = unroutedApps,
-            status = installedAppsStatus,
-            onRetry = { viewModel.ensureInstalledAppsLoaded(forceRefresh = true) },
-            onDismiss = { if (!routePickerSaving) appPickerEpoch = null },
-            onSelect = onSelectApp@{ packageName ->
-                if (!routePickerSaving) {
-                    val app = unroutedApps.firstOrNull { it.packageName == packageName } ?: return@onSelectApp
-                    appPickerEpoch = null
-                    editingRoute = AppRouteSelection(epoch, app.packageName, app.label, app = app)
-                }
-            },
-        )
+        appPickerState.SaveableStateProvider("route-app-picker") {
+            AppPickerDialog(
+                apps = unroutedApps,
+                status = installedAppsStatus,
+                onRetry = { viewModel.ensureInstalledAppsLoaded(forceRefresh = true) },
+                onDismiss = {
+                    if (!routePickerSaving) {
+                        appPickerState.removeState("route-app-picker")
+                        appPickerEpoch = null
+                    }
+                },
+                onSelect = onSelectApp@{ packageName ->
+                    if (!routePickerSaving) {
+                        val app = unroutedApps.firstOrNull { it.packageName == packageName } ?: return@onSelectApp
+                        appPickerEpoch = null
+                        editingRoute = AppRouteSelection(epoch, app.packageName, app.label, app = app)
+                    }
+                },
+            )
+        }
     }
 
     editingRoute?.let { route ->
@@ -1426,7 +1438,10 @@ fun WeaveApp(
                 if (!routePickerSaving) {
                     routePickerSaving = true
                     val completed: (Result<Unit>) -> Unit = { result ->
-                        finishRouteChoice(result) { editingRoute = null }
+                        finishRouteChoice(result) {
+                            if (route.app != null) appPickerState.removeState("route-app-picker")
+                            editingRoute = null
+                        }
                     }
                     val app = route.app
                     if (app == null) viewModel.setRouteTarget(route.epoch, route.packageName, target, completed)
