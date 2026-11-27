@@ -1,5 +1,6 @@
 package io.weave.client.ui
 
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import androidx.lifecycle.Lifecycle
@@ -74,11 +75,15 @@ class MainActivityVpnLifecycleTest {
                     }
                     assertEquals(connected.message, ConnectionState.CONNECTED, connected.state)
                     assertNotNull(CoreClient.queryRuntime())
+                    val network = context.getSystemService(ConnectivityManager::class.java)
+                    val tunnel = checkNotNull(network.activeNetwork)
                     scenario.onActivity { WeaveVpnService.start(it) }
-                    val duplicate = withTimeoutOrNull(2_000) {
-                        VpnRuntimeState.snapshot.first { it.revision != connected.revision }
+                    // Validation of the physical path can advance the revision without a restart.
+                    val disconnected = withTimeoutOrNull(2_000) {
+                        VpnRuntimeState.snapshot.first { it.state != ConnectionState.CONNECTED }
                     }
-                    assertEquals("An already connected session should not restart", null, duplicate)
+                    assertEquals("An already connected session should not restart", null, disconnected)
+                    assertEquals("A duplicate start must leave the same Android tunnel running", tunnel, network.activeNetwork)
                     scenario.moveToState(Lifecycle.State.CREATED)
                     assertFalse(CoreClient.awaitConnected(200))
                     scenario.moveToState(Lifecycle.State.RESUMED)

@@ -73,15 +73,19 @@ routing_classes+=,io.weave.client.ui.MainActivityRoutingJourneyTest#addingAnAppl
 routing_classes+=,io.weave.client.ui.MainActivityRoutingJourneyTest#notificationEntryAndDialPersistTheUserChoicesAcrossActivityRecreation
 routing_classes+=,io.weave.client.ui.WeaveAdaptiveControlsTest
 routing_classes+=,io.weave.client.ui.ProductFlowVisualTest#bodySwipeStepsAndDockFollowsTheFingerWithoutCommittingCancelledDrags
+routing_classes+=,io.weave.client.ui.NetworkSettingsSaveIntegrationTest
+routing_classes+=,io.weave.client.ui.FirstImportIntegrationTest
+routing_classes+=,io.weave.client.ui.LargeNodePickerIntegrationTest
 "${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
   "$component" > "$results/routing-instrumentation.txt" 2>&1
-grep -Fx 'OK (9 tests)' "$results/routing-instrumentation.txt"
-awk '
+expected_routing_tests=12
+grep -Fx "OK ($expected_routing_tests tests)" "$results/routing-instrumentation.txt"
+awk -v expected="$expected_routing_tests" '
   /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
   /^INSTRUMENTATION_STATUS_CODE: 0\r?$/ { passed++ }
   /^INSTRUMENTATION_STATUS_CODE: -[0-9]+\r?$/ { unsuccessful++ }
   END {
     printf "Routing journeys: %d started, %d passed, %d unsuccessful\n", started, passed, unsuccessful
-    exit !(started == 9 && passed == 9 && unsuccessful == 0)
+    exit !(started == expected && passed == expected && unsuccessful == 0)
   }
 ' "$results/routing-instrumentation.txt"

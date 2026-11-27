@@ -10,11 +10,11 @@ import io.weave.client.MainActivity
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.RoutingMode
 import io.weave.client.subscription.SubscriptionSecretStore
+import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -29,6 +29,7 @@ class FirstImportIntegrationTest {
         check(store.list().isEmpty()) { "First import requires the empty, disposable emulator library" }
         val settings = RuntimeSettingsStore(context)
         val beforeMode = settings.routingMode()
+        val fixtureName = "QA first import ${UUID.randomUUID()}"
         settings.setRoutingMode(RoutingMode.RULE)
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -39,18 +40,17 @@ class FirstImportIntegrationTest {
                 scenario.onActivity { model = ViewModelProvider(it)[AppViewModel::class.java] }
                 runBlocking { withTimeout(10_000) { model.dashboard.first { it.coreAvailable } } }
                 assertEquals(HeroAction.IMPORT, heroModel(model.dashboard.value).action)
-                scenario.onActivity { model.importSubscriptionQr("First import", "socks5://127.0.0.1:1080#Fixture") }
-                val receipt = runBlocking {
-                    withTimeout(15_000) { model.importState.first { it.completedId != null || it.error != null } }
+                scenario.onActivity { model.importSubscriptionQr(fixtureName, "socks5://127.0.0.1:1080#Fixture") }
+                compose.waitUntil(15_000) {
+                    model.subscriptions.value.singleOrNull()?.name == fixtureName &&
+                        model.dashboard.value.hasUsableSubscription == true
                 }
-                val id = checkNotNull(receipt.completedId) { receipt.error ?: "No import receipt" }
+                val id = model.subscriptions.value.single().id
                 assertEquals(id, model.nodes.value.single().subscriptionId)
-                assertEquals(id, model.subscriptions.value.single().id)
-                assertTrue("Home must recognize the new live provider", model.dashboard.value.hasUsableSubscription == true)
                 assertEquals(HeroAction.CONNECT, heroModel(model.dashboard.value).action)
             }
         } finally {
-            store.list().forEach { store.delete(it.id) }
+            store.list().filter { it.name == fixtureName }.forEach { store.delete(it.id) }
             settings.setRoutingMode(beforeMode)
         }
     }
