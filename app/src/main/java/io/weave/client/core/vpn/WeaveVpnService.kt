@@ -169,20 +169,23 @@ class WeaveVpnService : VpnService() {
             serviceScope.launch { shutdown("已断开") }
             return START_NOT_STICKY
         }
-        if (intent?.action == ACTION_RELOAD_IF_RUNNING) {
-            val current = VpnRuntimeState.snapshot.value.state
-            if (current != ConnectionState.CONNECTED && !startInProgress) {
-                // Delivered to an idle service instance: nothing to reload.
-                if (current == ConnectionState.DISCONNECTED) stopSelf(startId)
-                return START_NOT_STICKY
-            }
+        val reloading = intent?.action == ACTION_RELOAD || intent?.action == ACTION_RELOAD_IF_RUNNING
+        val connected = lastSuccessfulRuntime != null &&
+            VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED
+        if (reloading && (shutdownRequested || (!connected && !startInProgress))) {
+            // A settings write can finish after a disconnect. Never turn its reload into a start.
+            if (!shutdownRequested) stopSelf(startId)
+            return START_NOT_STICKY
         }
-        shutdownRequested = false
+        if (!reloading && !shutdownRequested && (connected || startInProgress)) return START_STICKY
+
+        if (!reloading) {
+            shutdownRequested = false
+            outboundRecoveryJob?.cancel()
+        }
         sendBroadcast(Intent(ACTION_SERVICE_STARTED).setPackage(packageName))
 
         createNotificationChannel()
-        val reloading = intent?.action == ACTION_RELOAD || intent?.action == ACTION_RELOAD_IF_RUNNING
-        if (!reloading) outboundRecoveryJob?.cancel()
         if (reloading) {
             intent.getStringExtra(EXTRA_PROBE_SUBSCRIPTION_ID)
                 ?.takeIf(String::isNotBlank)
@@ -989,10 +992,8 @@ class WeaveVpnService : VpnService() {
             probeSubscriptionId
                 ?.takeIf(String::isNotBlank)
                 ?.let { intent.putExtra(EXTRA_PROBE_SUBSCRIPTION_ID, it) }
-            ContextCompat.startForegroundService(
-                context,
-                intent,
-            )
+            // Reload an existing service without asking Android to start a new foreground session.
+            context.startService(intent)
         }
 
         /**
