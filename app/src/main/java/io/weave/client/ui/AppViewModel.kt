@@ -1919,9 +1919,17 @@ class AppViewModel internal constructor(application: Application, initialProfile
         viewModelScope.launch {
             val result = try { withContext(Dispatchers.IO) {
                 probeSafely {
-                    val bytes = backup.export(passphrase)
-                    getApplication<Application>().contentResolver.openOutputStream(target, "wt")?.use { it.write(bytes) }
-                        ?: error("无法写入所选文件")
+                    val application = getApplication<Application>()
+                    val encrypted = java.io.File.createTempFile("backup-", ".pending", application.cacheDir)
+                    try {
+                        encrypted.outputStream().buffered().use { backup.exportTo(it, passphrase) }
+                        currentCoroutineContext().ensureActive()
+                        application.contentResolver.openOutputStream(target, "wt")?.use { destination ->
+                            encrypted.inputStream().use { it.copyTo(destination) }
+                        } ?: error("无法写入所选文件")
+                    } finally {
+                        encrypted.delete()
+                    }
                 }
             } } finally { passphrase.fill('\u0000') }
             if (generation != backupGeneration) return@launch
