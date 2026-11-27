@@ -44,17 +44,15 @@ object CoreClient {
 
     @Volatile var lockdownEnabled: Boolean? = null
         private set
-    private var appContext: Context? = null
     private var bindCount = 0
+    private var connection: ControlConnection? = null
 
-    private val connection = object : ServiceConnection {
+    private class ControlConnection(val context: Context) : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            if (bindCount == 0 || binder == null) return
+            if (connection !== this || binder == null) return
             if (binding.current != null) {
                 send(CoreIpc.MSG_UNREGISTER)
-                binding.clear()
-                connected.value = false
-                failPending()
+                resetMirror()
             }
             binding.replace { token ->
                 val reply = Messenger(Handler(Looper.getMainLooper()) { message ->
@@ -67,55 +65,78 @@ object CoreClient {
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            // The :vpn process died. Android restarts a sticky VPN service and reconnects this
-            // binding; until then never keep presenting a tunnel that no longer exists.
-            binding.clear()
-            connected.value = false
-            failPending()
-            val current = VpnRuntimeState.snapshot.value
-            if (current.state != ConnectionState.DISCONNECTED) {
-                VpnRuntimeState.update(ConnectionState.DISCONNECTED, "VPN 进程已停止，请重新连接")
-            }
+            if (connection !== this) return
+            // Android may reconnect this same binding when the process restarts.
+            lostConnection(processDied = true)
         }
 
         override fun onBindingDied(name: ComponentName?) {
-            val context = appContext ?: return
-            runCatching { context.unbindService(this) }
-            binding.clear()
-            connected.value = false
-            failPending()
+            if (connection !== this) return
+            releaseBinding(this)
+            lostConnection(processDied = false)
             if (bindCount > 0) bind(context)
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            if (connection !== this) return
+            releaseBinding(this)
+            lostConnection(processDied = false)
         }
     }
 
     /** Main thread only. */
     fun attach(context: Context) {
-        val application = context.applicationContext
-        appContext = application
         VpnRuntimeState.reachabilityForwarder = { revision ->
             send(CoreIpc.MSG_CONFIRM_REACHABLE, Bundle().apply { putLong(CoreIpc.KEY_REVISION, revision) })
         }
-        if (bindCount++ == 0) bind(application)
+        bindCount++
+        if (connection == null) bind(context.applicationContext)
     }
 
     /** Main thread only. */
     fun detach() {
-        if (bindCount == 0) return
-        if (--bindCount > 0) return
+        if (bindCount == 0 || --bindCount > 0) return
         send(CoreIpc.MSG_UNREGISTER)
-        appContext?.let { context -> runCatching { context.unbindService(connection) } }
-        binding.clear()
-        connected.value = false
-        failPending()
+        connection?.let(::releaseBinding)
+        VpnRuntimeState.reachabilityForwarder = null
+        resetMirror()
     }
 
     private fun bind(context: Context) {
-        val bound = context.bindService(
-            Intent(context, CoreControlService::class.java),
-            connection,
-            Context.BIND_AUTO_CREATE,
-        )
-        if (!bound) Log.w(LOG_TAG, "Unable to bind the VPN control service")
+        val next = ControlConnection(context)
+        connection = next
+        val bound = try {
+            context.bindService(Intent(context, CoreControlService::class.java), next, Context.BIND_AUTO_CREATE)
+        } catch (_: IllegalStateException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+        if (!bound) {
+            releaseBinding(next)
+            lostConnection(processDied = false)
+            Log.w(LOG_TAG, "Unable to bind the VPN control service")
+        }
+    }
+
+    private fun releaseBinding(retired: ControlConnection) {
+        connection = null
+        runCatching { retired.context.unbindService(retired) }
+    }
+
+    private fun resetMirror() {
+        binding.clear()
+        connected.value = false
+        lockdownEnabled = null
+        failPending()
+    }
+
+    private fun lostConnection(processDied: Boolean) {
+        resetMirror()
+        if (VpnRuntimeState.snapshot.value.state != ConnectionState.DISCONNECTED) {
+            if (processDied) VpnRuntimeState.update(ConnectionState.DISCONNECTED, "VPN 进程已停止，请重新连接")
+            else VpnRuntimeState.update(ConnectionState.ERROR)
+        }
     }
 
     /** True once the `:vpn` control service is bound and has sent its first state. */
@@ -164,11 +185,12 @@ object CoreClient {
     /** Returns null when the control service is unreachable or does not answer in time. */
     private suspend fun request(what: Int, data: Bundle = Bundle(), timeoutMs: Long): Result<Bundle>? {
         if (!awaitConnected()) return null
+        val recipient = binding.current ?: return null
         val requestId = nextRequestId.getAndIncrement()
         val deferred = CompletableDeferred<Bundle>()
         pending[requestId] = deferred
         try {
-            if (!send(what, data, requestId)) return null
+            if (binding.current !== recipient || !send(what, data, requestId, recipient)) return null
             val bundle = withTimeoutOrNull(timeoutMs) { deferred.await() } ?: return null
             val error = bundle.getString(CoreIpc.KEY_ERROR)
             return if (error != null) Result.failure(IllegalStateException(error)) else Result.success(bundle)
@@ -177,8 +199,13 @@ object CoreClient {
         }
     }
 
-    private fun send(what: Int, data: Bundle = Bundle(), requestId: Int = 0): Boolean {
-        val messengers = binding.current ?: return false
+    private fun send(
+        what: Int,
+        data: Bundle = Bundle(),
+        requestId: Int = 0,
+        messengers: Messengers? = binding.current,
+    ): Boolean {
+        if (messengers == null) return false
         return try {
             messengers.service.send(Message.obtain(null, what, requestId, 0).apply {
                 this.data = data
@@ -205,7 +232,8 @@ object CoreClient {
 
     private fun failPending() {
         val failed = Bundle().apply { putString(CoreIpc.KEY_ERROR, "VPN 进程已停止，请重新连接") }
-        pending.values.forEach { it.complete(failed) }
-        pending.clear()
+        pending.forEach { (requestId, response) ->
+            if (pending.remove(requestId, response)) response.complete(failed)
+        }
     }
 }
