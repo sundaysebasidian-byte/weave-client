@@ -1695,14 +1695,19 @@ class AppViewModel internal constructor(application: Application, initialProfile
             finishSubscriptionWrite(
                 save = { startupJob.join(); importer() },
                 refresh = { subscription ->
-                    mutableNodes.value = withContext(Dispatchers.IO) { subscriptionRepository.loadNodes() }
+                    refreshSubscriptionsAndReferences(subscription.id)
                     warning = ReloadRequestWarning
                     mutableDashboard.update { it.copy(statusMessage = "已安全导入「${subscription.name}」") }
                     reloadIfConnected("订阅已导入，正在安全更新运行配置")
                 },
                 onSaved = { subscription, refreshed ->
-                    mutableSubscriptions.update { current ->
-                        if (current.any { it.id == subscription.id }) current else current + subscription
+                    if (!refreshed) {
+                        mutableSubscriptions.update { current ->
+                            if (current.any { it.id == subscription.id }) current else current + subscription
+                        }
+                        mutableDashboard.update {
+                            it.copy(hasUsableSubscription = mutableSubscriptions.value.any { row -> row.hasRuntimePayload })
+                        }
                     }
                     mutableImportState.compareAndSet(active, active.copy(running = false, completedId = subscription.id))
                     if (!refreshed) mutableDashboard.update { it.copy(statusMessage = warning) }
@@ -1788,11 +1793,11 @@ class AppViewModel internal constructor(application: Application, initialProfile
         refreshSubscriptionsAndReferences(setOf(subscriptionId))
 
     private suspend fun refreshSubscriptionsAndReferences(ids: Set<String>) {
-        val epoch = profileEpoch ?: return
         profileOwner.withLock {
+            val epoch = profileEpoch
             val current = withContext(Dispatchers.IO) {
                 try {
-                    groupProfile.refreshReferences(epoch)
+                    if (epoch == null) groupProfile.read() else groupProfile.refreshReferences(epoch)
                 } catch (_: StaleProfileEditor) {
                     groupProfile.read()
                 }
