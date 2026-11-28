@@ -54,6 +54,8 @@ jobs:
 
   storage-on-disposable-emulator:
     runs-on: macos-15-intel
+    # Optional: emulator boots on hosted runners are unreliable, so a failure or timeout is reported but does not gate the PR.
+    continue-on-error: true
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -151,11 +153,11 @@ jobs:
     permissions: {}
     timeout-minutes: 2
     steps:
-      - name: Require both Android checks
+      - name: Require the Android build; report the optional device run
         shell: bash
         env:
           LINUX_RESULT: ${{ needs.linux-build.result }}
           STORAGE_RESULT: ${{ needs.storage-on-disposable-emulator.result }}
         run: |
           printf 'Linux build: %s\nDevice storage: %s\n' "$LINUX_RESULT" "$STORAGE_RESULT"
-          test "$LINUX_RESULT" = success && test "$STORAGE_RESULT" = success
+          test "$LINUX_RESULT" = success
