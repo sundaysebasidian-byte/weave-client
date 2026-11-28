@@ -59,7 +59,7 @@ object MihomoRuntimePlanner {
         }
         effectiveRoutes.forEach { visit(it.target) }
         effectiveDefaultTarget?.let(::visit)
-        if (mode != RoutingMode.DIRECT) sharedFixedTargets.forEach(::visit)
+        sharedFixedTargets.forEach(::visit)
         val usesCrossSubscriptionGroup = strategyScope == StrategyScope.CROSS_SUBSCRIPTION &&
             (fallsBackToAutomatic || automaticTarget)
         val activeIds = buildSet {

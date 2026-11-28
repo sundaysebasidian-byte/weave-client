@@ -12,6 +12,14 @@ import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.RoutingMode
+import io.weave.client.routing.NodeRef
+import io.weave.client.subscription.SubscriptionPayloadParser
+import io.weave.client.subscription.SubscriptionSecretStore
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.Socket
@@ -44,7 +52,39 @@ class LanProxyDeviceTest {
         profile.setIpv6Mode(Ipv6Mode.DUAL_STACK)
         val (user, password) = profile.enableLanSharing()
         val grants = LanShareGrantStore(target)
-        val grant = grants.create(null, 240_000, 32 * 1024)
+        val subscriptions = SubscriptionSecretStore(target)
+        val local = InetAddress.getByName("127.0.0.1")
+        val relay = ServerSocket(0, 1, local)
+        val worker = Executors.newSingleThreadExecutor()
+        val upstream = worker.submit {
+            relay.soTimeout = 20_000
+            repeat(16) {
+                relay.accept().use { peer ->
+                    peer.soTimeout = 5_000
+                    val input = peer.getInputStream().bufferedReader()
+                    val requestLine = input.readLine()
+                    assertTrue((0..20).any { input.readLine().isNullOrEmpty() })
+                    val output = peer.getOutputStream()
+                    if (!requestLine.startsWith("CONNECT 10.0.2.2:$fixture ")) {
+                        // Automatic health checks also reach the relay. Keep them isolated.
+                        output.write("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n".encodeToByteArray())
+                        output.flush()
+                        return@use
+                    }
+                    output.write("HTTP/1.1 200 Connected\r\n\r\n".encodeToByteArray())
+                    output.flush()
+                    assertEquals('x'.code, input.read())
+                    output.write("weave-device-exit\n".encodeToByteArray())
+                    output.flush()
+                    return@submit
+                }
+            }
+            error("The chosen device exit received no fixture connection")
+        }
+        val relayYaml = "proxies: [{name: shared-device, type: http, server: 127.0.0.1, port: ${relay.localPort}}]"
+        val saved = subscriptions.save("LAN test", "inline://${UUID.randomUUID()}", relayYaml,
+            SubscriptionPayloadParser().parse(relayYaml))
+        val grant = grants.create(NodeRef(saved.id, saved.nodes.single().id), 240_000, 32 * 1024)
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { WeaveVpnService.start(it) }
@@ -58,8 +98,9 @@ class LanProxyDeviceTest {
                     assertEquals(200 to "weave-fixture", request(address, fixture, "$user:$password"))
                     assertEquals(200 to "weave-fixture", request("127.0.0.1", fixture, credential = null))
                     assertEquals(407, request(address, fixture, null, LanShareGrantStore.PORT).first)
-                    assertEquals(200 to "weave-fixture",
-                        request(address, fixture, "${grant.user}:${grant.password}", LanShareGrantStore.PORT))
+                    assertEquals(200 to "weave-device-exit",
+                        request(address, fixture, "${grant.user}:${grant.password}", LanShareGrantStore.PORT, sendProbe = true))
+                    upstream.get(5, TimeUnit.SECONDS)
                     verifySocksAndDisconnect(address, fixture, user, password, CoreApi(target))
                 } finally {
                     scenario.onActivity { WeaveVpnService.stop(it) }
@@ -67,7 +108,10 @@ class LanProxyDeviceTest {
                 }
             }
         } finally {
+            relay.close()
+            worker.shutdownNow()
             grants.remove(grant.user)
+            subscriptions.delete(saved.id)
             profile.setLanSharing(previous.lanSharing)
             profile.setIpv6Mode(previous.ipv6Mode)
             profile.setRoutingMode(mode)
@@ -118,6 +162,7 @@ class LanProxyDeviceTest {
         fixture: Int,
         credential: String?,
         proxyPort: Int = MihomoConfigAssembler.MIXED_PORT,
+        sendProbe: Boolean = false,
     ): Pair<Int, String?> = withContext(Dispatchers.IO) {
             Socket(Proxy.NO_PROXY).use { socket ->
                 socket.soTimeout = 3_000
@@ -136,6 +181,7 @@ class LanProxyDeviceTest {
                 val status = reader.readLine().split(' ')[1].toInt()
                 if (status != 200) return@withContext status to null
                 assertTrue((0..20).any { reader.readLine().isNullOrEmpty() })
+                if (sendProbe) socket.getOutputStream().write('x'.code)
                 status to reader.readLine()
             }
         }

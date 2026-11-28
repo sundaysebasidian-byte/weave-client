@@ -61,6 +61,22 @@ class MihomoRuntimePlannerTest {
     }
 
     @Test
+    fun directPhoneModeLoadsOnlyTheExplicitSharedDeviceExit() {
+        val plan = MihomoRuntimePlanner.plan(
+            routes = listOf(route("app.auto", target(RouteKind.AUTO, "phone-provider"))),
+            mode = RoutingMode.DIRECT,
+            defaultTarget = target(RouteKind.FIXED, "phone-provider", "phone-node"),
+            usableSubscriptionIds = listOf("phone-provider", "share-provider"),
+            sharedFixedTargets = listOf(target(RouteKind.FIXED, "share-provider", "share-node")),
+        )
+
+        assertEquals(setOf("share-provider"), plan.activeSubscriptionIds)
+        assertTrue(plan.effectiveRoutes.isEmpty())
+        assertNull(plan.effectiveDefaultTarget)
+        assertTrue(plan.automaticSubscriptionIds.isEmpty())
+    }
+
+    @Test
     fun missingDefaultUsesOnlyFirstSubscriptionAsAutomaticFallback() {
         val plan = MihomoRuntimePlanner.plan(
             routes = emptyList(),

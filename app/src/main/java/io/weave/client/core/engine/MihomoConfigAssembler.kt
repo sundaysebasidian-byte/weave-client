@@ -109,7 +109,7 @@ class MihomoConfigAssembler(
         }
         val shareTargets = shareGrants.associate { grant ->
             val target = grant.node?.let { RouteTarget(RouteKind.FIXED, "", it.subscriptionId, it.nodeId) }
-            grant.user to if (mode == RoutingMode.DIRECT || target == null) null
+            grant.user to if (target == null) null
             else runCatching { validateTarget("", target, byId, customGroups, ::nodesOf); target }
                 .getOrElse { RouteTarget(RouteKind.BLOCK, "") }
         }
@@ -519,7 +519,7 @@ class MihomoConfigAssembler(
                     },
                 )
                 RoutingMode.GLOBAL -> leadingRules + offlinePolicyRules + shareRules + "MATCH,DEFAULT"
-                RoutingMode.DIRECT -> leadingRules + offlinePolicyRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
+                RoutingMode.DIRECT -> leadingRules + offlinePolicyRules + shareRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
             }
             rules.forEach { appendLine("  - ${yamlString(it)}") }
         }
