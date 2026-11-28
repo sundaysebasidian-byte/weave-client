@@ -12,7 +12,7 @@ class StagedComposeLocaleTest {
 
     @Test fun allStaticCatalogsRenderExactReviewedValues() {
         val source = (read("source-static", "en") + read("source-rc6-delta", "en")).keys
-        assertEquals(1383, source.size)
+        assertEquals(1384, source.size)
         for (language in listOf("ar", "es", "ko", "ru", "hi")) {
             val data = read(language, "text")
             val locale = StagedComposeLocale(language, data)

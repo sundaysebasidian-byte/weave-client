@@ -17,7 +17,7 @@ import java.util.Map;
 
 /** Admission for package-owned app-copy catalogs; loading does not choose or persist a locale. */
 final class ReleaseCopyCatalog {
-    private static final int ROW_COUNT = 1529;
+    private static final int ROW_COUNT = 1530;
     private ReleaseCopyCatalog() {}
 
     static String assetPath(String languageTag) {

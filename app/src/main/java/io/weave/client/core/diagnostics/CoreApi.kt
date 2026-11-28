@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.os.SystemClock
+import io.weave.client.data.LanShareGrantStore
 import androidx.compose.runtime.Immutable
 import java.io.IOException
 import java.io.InputStream
@@ -89,11 +90,16 @@ class CoreApi(private val context: Context) {
     }
 
     internal suspend fun sharedDevices(): List<SharedDevice> = withContext(Dispatchers.IO) {
-        LanShareTopology.read(JSONObject(request("GET", "/connections", MAX_RESPONSE_BYTES)))
+        LanShareTopology.read(JSONObject(request("GET", "/connections/share", MAX_RESPONSE_BYTES)))
     }
 
-    internal suspend fun disconnectSharedDevice(address: String): Boolean = withContext(Dispatchers.IO) {
-        val device = sharedDevices().firstOrNull { it.address == address } ?: return@withContext true
+    internal suspend fun revokeSharedGrant(user: String): Boolean = withContext(Dispatchers.IO) {
+        require(LanShareGrantStore.USER.matches(user))
+        closePath("/connections/share/$user")
+    }
+
+    internal suspend fun disconnectSharedDevice(key: SharedDeviceKey): Boolean = withContext(Dispatchers.IO) {
+        val device = sharedDevices().firstOrNull { it.key == key } ?: return@withContext true
         coroutineScope {
             val slots = Semaphore(4)
             device.connectionIds.map { id -> async { slots.withPermit { close(id) } } }

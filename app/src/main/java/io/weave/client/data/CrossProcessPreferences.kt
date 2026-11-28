@@ -161,6 +161,9 @@ private class TransactionalPreferences(context: Context, name: String) : SharedP
 
     private companion object {
         val LOCKS = ConcurrentHashMap<String, Any>()
-        val STORES = setOf("runtime_settings_v1", "app_routes_v1", "recovery_vault_v1", "offline_policy_packs_v1", "encrypted_subscriptions_v1")
+        val STORES = setOf(
+            "runtime_settings_v1", "app_routes_v1", "recovery_vault_v1",
+            "offline_policy_packs_v1", "encrypted_subscriptions_v1", LanShareGrantStore.PREFERENCES,
+        )
     }
 }

@@ -72,3 +72,4 @@
 {"id":"链路节点数量超出限制","en":"The chain has too many nodes"}
 {"id":"解析路径","en":"Resolution path"}
 {"id":"检测当前解析","en":"Test active resolution"}
+{"id":"临时授权","en":"Temporary access"}

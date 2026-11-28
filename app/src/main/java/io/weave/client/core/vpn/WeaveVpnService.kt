@@ -597,6 +597,7 @@ class WeaveVpnService : VpnService() {
         }
 
         try {
+            val sharingDisabled = previous.lanSharing && !settingsStore.networkPreferences().lanSharing
             val candidate = try {
                 prepareCurrentRuntime().also { prepared ->
                     // All providers are inline; validation does not modify the running core.
@@ -605,6 +606,10 @@ class WeaveVpnService : VpnService() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
+                if (sharingDisabled) {
+                    stopAfterSharingDisabled(error)
+                    return
+                }
                 recoveryVault.recordFailure("candidate_validation_failed:${safeFailureCode(error)}")
                 VpnRuntimeState.update(
                     ConnectionState.CONNECTED,
@@ -629,6 +634,10 @@ class WeaveVpnService : VpnService() {
                 return
             }
 
+            if (previous.lanSharing && !candidate.lanSharing) {
+                stopAfterSharingDisabled(candidateFailure)
+                return
+            }
             val rollbackSucceeded = try {
                 engine.stop()
                 launchPreparedRuntime(previous)
@@ -658,6 +667,16 @@ class WeaveVpnService : VpnService() {
         } finally {
             finishOperation()
         }
+    }
+
+    private suspend fun stopAfterSharingDisabled(error: Throwable) {
+        // Rolling back would reopen the previous listeners after the user turned them off.
+        engine.stop()
+        lastSuccessfulRuntime = null
+        recoveryVault.recordFailure("disabled_sharing_reload_failed:${safeFailureCode(error)}")
+        VpnRuntimeState.update(ConnectionState.ERROR, safeError(error))
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun finishOperation() {
@@ -713,6 +732,7 @@ class WeaveVpnService : VpnService() {
                 emptyList()
             },
             httpProxyPort = MihomoConfigAssembler.MIXED_PORT.takeIf { networkPreferences.systemHttpProxy },
+            lanSharing = networkPreferences.lanSharing,
         )
     }
 
@@ -1137,5 +1157,6 @@ class WeaveVpnService : VpnService() {
         val ipMode: Ipv6Mode,
         val bypassPackages: List<String> = emptyList(),
         val httpProxyPort: Int? = null,
+        val lanSharing: Boolean = false,
     )
 }

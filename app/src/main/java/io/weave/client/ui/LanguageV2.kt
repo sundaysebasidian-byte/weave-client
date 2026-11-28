@@ -8,6 +8,7 @@ import io.weave.client.domain.WeaveLanguage
  * the rest of the table; merged after the older supplemental entries.
  */
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
+    "临时授权" to SupplementalTranslation("Temporary access", "臨時授權", "一時アクセス", "Accès temporaire", "Temporärer Zugriff"),
     "到此跳的链路" to SupplementalTranslation("Path to this hop", "到此跳的路徑", "このホップまでの経路", "Chemin jusqu’à ce saut", "Pfad bis zu diesem Hop"),
     "单跳检测" to SupplementalTranslation("Single-hop test", "單跳測試", "単一ホップのテスト", "Test d’un seul saut", "Einzelner Hop-Test"),
     "备用入口" to SupplementalTranslation("Backup entry", "備用入口", "予備の入口", "Entrée de secours", "Reserve-Einstieg"),

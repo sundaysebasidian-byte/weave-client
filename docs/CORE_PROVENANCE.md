@@ -9,6 +9,7 @@ Weave 0.3 已携带由锁定源码本地复现的原生内核；`core-lock.prope
 | CMFA 版本 | `2.11.32` |
 | Weave CMFA 补丁 | `core-patches/cmfa-weave-runtime.patch` |
 | 补丁 SHA-256 | `8ac691f191bfa3d1368a231fbcbc6cf8e6d0d953f23a0786cc53bab956906590` |
+| Android Weave Share 补丁 | `core-patches/mihomo-weave-share.patch`，SHA-256 见 `core-lock.properties` |
 | Mihomo submodule | `e26714a181ac0e2fa803453c0a8e9a9ce94e31cb` |
 | Mihomo commit archive SHA-256 | `a75220bf11ab56ef0d304c14c4d4c407edffe700761cdcc5b06105dfd8305168` |
 | Go | `1.26.5` |
@@ -21,7 +22,8 @@ Weave 0.3 已携带由锁定源码本地复现的原生内核；`core-lock.prope
 这些值来自 2026-07-29 对 CMFA 上游源码、submodule tree 和构建插件字节码的核对。Weave
 补丁包含三个窄改动：把 Android 已查询到的连接所有者 UID 写入 Mihomo `Metadata.Uid`；
 导出只解析、不应用配置的 `validateConfiguration`；在手动健康检查完成后释放跨语言回调
-对象。构建脚本会同时校验补丁文件哈希并确认全部改动已应用。Go
+对象。Android Mihomo 补丁为临时共享账户实现原生连接到期、撤销和双向限速。
+构建脚本校验两个补丁的 SHA-256 并确认均已应用。Go
 依赖先由 `go.sum` 与 Go checksum database 校验，再以 `GOPROXY=off` 编译。当前桥接层由
 Weave 自行维护，只开放配置解析/加载、TUN、socket protect、UID 查询、运行组/健康检查和
 流量计数。
@@ -33,9 +35,14 @@ CMFA 固定 commit 的 gitlink 确实指向该 Mihomo commit。archive 与最终
 
 ## 本地复现
 
-先初始化锁定的 Mihomo submodule，并准备 Go 模块缓存。随后在断网模式执行：
+先初始化锁定的 Mihomo submodule，并准备 Go 模块缓存。在锁定的工作树应用补丁后执行构建：
 
 ```bash
+weave_root="$(pwd)"
+cmfa_checkout=/path/to/ClashMetaForAndroid
+git -C "$cmfa_checkout" apply "$weave_root/core-patches/cmfa-weave-runtime.patch"
+git -C "$cmfa_checkout/core/src/foss/golang/clash" \
+  apply "$weave_root/core-patches/mihomo-weave-share.patch"
 GOPROXY=off bash tools/build-core.sh \
   /path/to/ClashMetaForAndroid \
   /path/to/android-sdk/ndk/29.0.14206865

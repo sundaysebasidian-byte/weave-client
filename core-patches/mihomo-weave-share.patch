@@ -1,0 +1,567 @@
+diff --git a/component/auth/auth.go b/component/auth/auth.go
+index 11078a0..618a0e8 100644
+--- a/component/auth/auth.go
++++ b/component/auth/auth.go
+@@ -1,5 +1,7 @@
+ package auth
+ 
++import "github.com/metacubex/mihomo/internal/weaveshare"
++
+ type Authenticator interface {
+ 	Verify(user string, pass string) bool
+ 	Users() []string
+@@ -22,7 +24,7 @@ type inMemoryAuthenticator struct {
+ 
+ func (au *inMemoryAuthenticator) Verify(user string, pass string) bool {
+ 	realPass, ok := au.storage[user]
+-	return ok && realPass == pass
++	return ok && realPass == pass && weaveshare.Authorized(user)
+ }
+ 
+ func (au *inMemoryAuthenticator) Users() []string { return au.usernames }
+diff --git a/hub/route/connections.go b/hub/route/connections.go
+index ddfa6c5..6330f46 100644
+--- a/hub/route/connections.go
++++ b/hub/route/connections.go
+@@ -3,9 +3,11 @@ package route
+ import (
+ 	"bytes"
+ 	"encoding/json"
++	"net/netip"
+ 	"strconv"
+ 	"time"
+ 
++	"github.com/metacubex/mihomo/internal/weaveshare"
+ 	"github.com/metacubex/mihomo/tunnel/statistic"
+ 
+ 	"github.com/metacubex/chi"
+@@ -18,9 +20,71 @@ func connectionRouter() http.Handler {
+ 	r.Get("/", getConnections)
+ 	r.Delete("/", closeAllConnections)
+ 	r.Delete("/{id}", closeConnection)
++	if embedMode {
++		r.Get("/share", getSharedConnections)
++		r.Delete("/share/{user}", revokeShare)
++	}
+ 	return r
+ }
+ 
++// Share polling only needs active authenticated source endpoints and their counters.
++type sharedMetadata struct {
++	Address netip.Addr `json:"sourceIP"`
++	User    string     `json:"inboundUser"`
++	Port    uint16     `json:"inboundPort"`
++}
++
++type sharedConnection struct {
++	ID         string         `json:"id"`
++	Metadata   sharedMetadata `json:"metadata"`
++	Uploaded   int64          `json:"upload"`
++	Downloaded int64          `json:"download"`
++	Exits      []string       `json:"chains,omitempty"`
++}
++
++func sharedConnections(manager *statistic.Manager) []sharedConnection {
++	rows := make([]sharedConnection, 0)
++	manager.Range(func(tracker statistic.Tracker) bool {
++		info := tracker.Info()
++		metadata := info.Metadata
++		if metadata.InUser == "" || (metadata.InPort != 7890 && metadata.InPort != 7891) {
++			return true
++		}
++		address := metadata.SrcIP.Unmap()
++		if !address.IsPrivate() && !(address.Is4() && address.IsLinkLocalUnicast()) {
++			return true
++		}
++		var exit []string
++		if len(info.Chain) > 0 {
++			first := info.Chain[0]
++			if len(first) > 240 {
++				first = first[:240]
++			}
++			exit = []string{first}
++		}
++		rows = append(rows, sharedConnection{
++			ID: tracker.ID(), Uploaded: info.UploadTotal.Load(), Downloaded: info.DownloadTotal.Load(),
++			Metadata: sharedMetadata{Address: address, User: metadata.InUser, Port: metadata.InPort},
++			Exits:    exit,
++		})
++		return len(rows) < 1000
++	})
++	return rows
++}
++
++func getSharedConnections(w http.ResponseWriter, r *http.Request) {
++	render.JSON(w, r, render.M{"connections": sharedConnections(statistic.DefaultManager)})
++}
++
++func revokeShare(w http.ResponseWriter, r *http.Request) {
++	if err := weaveshare.Revoke(chi.URLParam(r, "user")); err != nil {
++		render.Status(r, http.StatusBadRequest)
++		render.JSON(w, r, ErrBadRequest)
++		return
++	}
++	render.NoContent(w, r)
++}
++
+ func getConnections(w http.ResponseWriter, r *http.Request) {
+ 	if !(r.Header.Get("Upgrade") == "websocket") {
+ 		snapshot := statistic.DefaultManager.Snapshot()
+diff --git a/hub/route/share_connections_test.go b/hub/route/share_connections_test.go
+new file mode 100644
+index 0000000..e0a944d
+--- /dev/null
++++ b/hub/route/share_connections_test.go
+@@ -0,0 +1,81 @@
++package route
++
++import (
++	"encoding/json"
++	"net/netip"
++	"testing"
++
++	"github.com/metacubex/mihomo/common/atomic"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/tunnel/statistic"
++
++	"github.com/gofrs/uuid/v5"
++)
++
++type shareFixtureTracker struct {
++	statistic.Tracker
++	data *statistic.TrackerInfo
++}
++
++func (t shareFixtureTracker) ID() string                   { return t.data.UUID.String() }
++func (t shareFixtureTracker) Info() *statistic.TrackerInfo { return t.data }
++
++func addShareFixture(b testing.TB, port uint16, user, ip string) {
++	b.Helper()
++	tracker := shareFixtureTracker{data: &statistic.TrackerInfo{
++		UUID: uuid.Must(uuid.NewV4()),
++		Metadata: &C.Metadata{
++			SrcIP: netip.MustParseAddr(ip), InPort: port, InUser: user,
++			Host: "must-never-be-present-in-a-share-snapshot.example",
++		},
++		UploadTotal: atomic.NewInt64(23), DownloadTotal: atomic.NewInt64(47), Chain: C.Chain{"test-exit"},
++	}}
++	statistic.DefaultManager.Join(tracker)
++	b.Cleanup(func() { statistic.DefaultManager.Leave(tracker) })
++}
++
++func TestSharedConnectionsExcludeUnrelatedMetadata(t *testing.T) {
++	addShareFixture(t, 7890, "authenticated", "192.168.3.7")
++	addShareFixture(t, 7891, "grant", "169.254.3.7")
++	addShareFixture(t, 7891, "grant", "8.8.8.8")
++	addShareFixture(t, 7890, "", "192.168.3.8")
++	addShareFixture(t, 7892, "unrelated", "192.168.3.9")
++	rows := sharedConnections(statistic.DefaultManager)
++	if len(rows) != 2 {
++		t.Fatalf("got %d shared connections, want 2", len(rows))
++	}
++	for _, row := range rows {
++		if row.Uploaded != 23 || row.Downloaded != 47 || len(row.Exits) != 1 {
++			t.Fatal("shared counters or exit lost")
++		}
++	}
++}
++
++func BenchmarkShareSnapshot(b *testing.B) {
++	for i := 0; i < 5000; i++ {
++		addShareFixture(b, 0, "", "10.0.0.1")
++	}
++	for i := 0; i < 20; i++ {
++		addShareFixture(b, 7890, "authenticated", "192.168.3.7")
++	}
++	b.Run("FullConnections", func(b *testing.B) {
++		b.ReportAllocs()
++		for i := 0; i < b.N; i++ {
++			result, err := json.Marshal(statistic.DefaultManager.Snapshot())
++			if err != nil {
++				b.Fatal(err)
++			}
++			b.ReportMetric(float64(len(result)), "payload-B")
++		}
++	})
++	b.Run("ShareConnections", func(b *testing.B) {
++		b.ReportAllocs()
++		for i := 0; i < b.N; i++ {
++			result, err := json.Marshal(map[string]any{"connections": sharedConnections(statistic.DefaultManager)})
++			if err != nil {
++				b.Fatal(err)
++			}
++			b.ReportMetric(float64(len(result)), "payload-B")
++		}
++	})
++}
+diff --git a/internal/weaveshare/clock_android.go b/internal/weaveshare/clock_android.go
+new file mode 100644
+index 0000000..c3942bb
+--- /dev/null
++++ b/internal/weaveshare/clock_android.go
+@@ -0,0 +1,9 @@
++package weaveshare
++
++import "golang.org/x/sys/unix"
++
++func bootMillis() (int64, error) {
++	var now unix.Timespec
++	err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &now)
++	return int64(now.Sec)*1000 + int64(now.Nsec)/1_000_000, err
++}
+diff --git a/internal/weaveshare/clock_other.go b/internal/weaveshare/clock_other.go
+new file mode 100644
+index 0000000..328467c
+--- /dev/null
++++ b/internal/weaveshare/clock_other.go
+@@ -0,0 +1,9 @@
++//go:build !android
++
++package weaveshare
++
++import "errors"
++
++func bootMillis() (int64, error) {
++	return 0, errors.New("sharing authorization requires Android")
++}
+diff --git a/internal/weaveshare/policy.go b/internal/weaveshare/policy.go
+new file mode 100644
+index 0000000..2968678
+--- /dev/null
++++ b/internal/weaveshare/policy.go
+@@ -0,0 +1,265 @@
++package weaveshare
++
++import (
++	"context"
++	"encoding/hex"
++	"errors"
++	"io"
++	"net"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/metacubex/sing/common"
++	"github.com/metacubex/sing/common/network"
++	"golang.org/x/time/rate"
++)
++
++const userPrefix = "weavepeer-"
++
++type policy struct {
++	expiry         int64
++	bytesPerSecond int
++}
++
++func parse(user string) (policy, bool, error) {
++	if !strings.HasPrefix(user, userPrefix) {
++		return policy{}, false, nil
++	}
++	parts := strings.Split(strings.TrimPrefix(user, userPrefix), "-")
++	if len(parts) != 3 || len(parts[0]) != 32 {
++		return policy{}, true, errors.New("invalid sharing account")
++	}
++	if _, err := hex.DecodeString(parts[0]); err != nil {
++		return policy{}, true, errors.New("invalid sharing account")
++	}
++	expiry, expiryErr := strconv.ParseInt(parts[1], 10, 64)
++	bps, bpsErr := strconv.Atoi(parts[2])
++	if expiryErr != nil || expiry <= 0 || bpsErr != nil || bps < 1024 || bps > 20*1024*1024 {
++		return policy{}, true, errors.New("invalid sharing account")
++	}
++	return policy{expiry: expiry, bytesPerSecond: bps}, true, nil
++}
++
++func Authorized(user string) bool {
++	p, managed, err := parse(user)
++	if !managed {
++		return true
++	}
++	if err != nil || p.expired() {
++		return false
++	}
++	peers.Lock()
++	defer peers.Unlock()
++	return peers.revoked[user] == 0
++}
++
++// Every check uses the clock that advances while Android sleeps.
++func (p policy) expired() bool {
++	now, err := bootMillis()
++	return err != nil || p.expiry <= now || p.expiry-now > 3_600_000
++}
++
++func smaller[T ~int | ~int64](first, second T) T {
++	if first < second {
++		return first
++	}
++	return second
++}
++
++type peer struct {
++	policy
++	up, down *rate.Limiter
++	refs     int
++	ctx      context.Context
++	cancel   context.CancelFunc
++}
++
++var peers = struct {
++	sync.Mutex
++	items   map[string]*peer
++	revoked map[string]int64
++}{items: make(map[string]*peer), revoked: make(map[string]int64)}
++
++// Revoke also cancels relays that crossed authentication just before revocation.
++func Revoke(user string) error {
++	p, managed, err := parse(user)
++	if !managed || err != nil {
++		return errors.New("invalid sharing account")
++	}
++	now, clockErr := bootMillis()
++	if clockErr != nil {
++		return clockErr
++	}
++	if p.expiry <= now {
++		return nil
++	}
++	if p.expiry-now > 3_600_000 {
++		return errors.New("invalid sharing deadline")
++	}
++	peers.Lock()
++	defer peers.Unlock()
++	for name, expiry := range peers.revoked {
++		if expiry <= now {
++			delete(peers.revoked, name)
++		}
++	}
++	if len(peers.revoked) >= 256 && peers.revoked[user] == 0 {
++		return errors.New("too many unexpired revocations")
++	}
++	peers.revoked[user] = p.expiry
++	if state := peers.items[user]; state != nil {
++		state.cancel()
++		delete(peers.items, user)
++	}
++	return nil
++}
++
++// May return a nil guard for an ordinary connection. Managed accounts fail closed.
++func Begin(user string) (*Guard, error) {
++	p, managed, err := parse(user)
++	if !managed || err != nil {
++		return nil, err
++	}
++	if p.expired() {
++		return nil, errors.New("sharing account expired")
++	}
++	peers.Lock()
++	defer peers.Unlock()
++	if peers.revoked[user] != 0 {
++		return nil, errors.New("sharing account revoked")
++	}
++	for name, peer := range peers.items {
++		if peer.refs == 0 && peer.expired() {
++			delete(peers.items, name)
++			peer.cancel()
++		}
++	}
++	state := peers.items[user]
++	if state == nil {
++		if len(peers.items) >= 64 {
++			return nil, errors.New("sharing quota reached")
++		}
++		burst := smaller(32768, p.bytesPerSecond/10)
++		if burst < 1024 {
++			burst = 1024
++		}
++		ctx, cancel := context.WithCancel(context.Background())
++		state = &peer{policy: p, up: rate.NewLimiter(rate.Limit(p.bytesPerSecond), burst), down: rate.NewLimiter(rate.Limit(p.bytesPerSecond), burst), ctx: ctx, cancel: cancel}
++		peers.items[user] = state
++	}
++	state.refs++
++	return &Guard{state: state}, nil
++}
++
++type Guard struct {
++	state *peer
++}
++
++func (g *Guard) End() {
++	if g == nil {
++		return
++	}
++	peers.Lock()
++	g.state.refs--
++	peers.Unlock()
++}
++
++func (g *Guard) WriteUpload(ctx context.Context, writer io.Writer, data []byte) (int, error) {
++	if g == nil || len(data) == 0 {
++		return writer.Write(data)
++	}
++	written := 0
++	for len(data) > 0 {
++		part := smaller(len(data), g.state.up.Burst())
++		if err := g.wait(ctx, g.state.up, part); err != nil {
++			return written, err
++		}
++		n, err := writer.Write(data[:part])
++		written += n
++		if err != nil {
++			return written, err
++		}
++		if n < part {
++			return written, io.ErrShortWrite
++		}
++		data = data[n:]
++	}
++	return written, nil
++}
++
++func (g *Guard) wait(ctx context.Context, limiter *rate.Limiter, n int) error {
++	for n > 0 {
++		now, err := bootMillis()
++		if err != nil || g.state.expiry <= now {
++			return errors.New("sharing account expired")
++		}
++		remaining := time.Duration(smaller(g.state.expiry-now, 60_000)) * time.Millisecond
++		bounded, cancel := context.WithTimeout(ctx, remaining)
++		cancelOnRevoke := context.AfterFunc(g.state.ctx, cancel)
++		part := smaller(n, limiter.Burst())
++		err = limiter.WaitN(bounded, part)
++		cancelOnRevoke()
++		cancel()
++		if err != nil {
++			return err
++		}
++		n -= part
++	}
++	if g.state.expired() || g.state.ctx.Err() != nil {
++		return errors.New("sharing account expired")
++	}
++	return nil
++}
++
++func (g *Guard) Wrap(conn net.Conn) net.Conn {
++	if g == nil {
++		return conn
++	}
++	now, err := bootMillis()
++	if err != nil || g.state.expiry <= now {
++		_ = conn.Close()
++		return conn
++	}
++	ctx, done := context.WithTimeout(g.state.ctx, time.Duration(g.state.expiry-now)*time.Millisecond)
++	context.AfterFunc(ctx, func() { _ = conn.Close() })
++	return &limitedConn{Conn: conn, ctx: ctx, done: done, guard: g}
++}
++
++type limitedConn struct {
++	net.Conn
++	ctx   context.Context
++	done  context.CancelFunc
++	guard *Guard
++}
++
++func (c *limitedConn) Close() error {
++	c.done()
++	return c.Conn.Close()
++}
++
++func (c *limitedConn) CloseWrite() error {
++	if writer, ok := common.Cast[network.WriteCloser](c.Conn); ok {
++		return writer.CloseWrite()
++	}
++	return c.Close()
++}
++
++func (c *limitedConn) Read(p []byte) (int, error) {
++	if c.guard.state.expired() {
++		return 0, errors.New("sharing account expired")
++	}
++	n, err := c.Conn.Read(p[:smaller(len(p), c.guard.state.down.Burst())])
++	if n == 0 {
++		return n, err
++	}
++	if waitErr := c.guard.wait(c.ctx, c.guard.state.down, n); waitErr != nil {
++		return 0, waitErr
++	}
++	return n, err
++}
++
++func (c *limitedConn) Write(p []byte) (int, error) {
++	return c.guard.WriteUpload(c.ctx, c.Conn, p)
++}
+diff --git a/listener/http/proxy.go b/listener/http/proxy.go
+index 4cc03f4..354524c 100644
+--- a/listener/http/proxy.go
++++ b/listener/http/proxy.go
+@@ -43,7 +43,6 @@ func HandleConn(c net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...
+ 	conn := N.NewBufferedConn(c)
+ 
+ 	authenticator := store.Authenticator()
+-	trusted := authenticator == nil // disable authenticate if lru is nil
+ 	lastUser := ""
+ 
+ 	for {
+@@ -58,13 +57,9 @@ func HandleConn(c net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...
+ 
+ 		keepAlive := strings.TrimSpace(strings.ToLower(request.Header.Get("Proxy-Connection"))) == "keep-alive"
+ 
+-		resp, user := authenticate(request, authenticator) // always call authenticate function to get user
++		resp, user := authenticate(request, authenticator)
+ 		if resp == nil {
+-			trusted = true
+-		}
+-		additions[inUserIdx] = inbound.WithInUser(user)
+-
+-		if trusted {
++			additions[inUserIdx] = inbound.WithInUser(user)
+ 			if request.Method == http.MethodConnect {
+ 				// Manual writing to support CONNECT for http 1.0 (workaround for uplay client)
+ 				if _, err = fmt.Fprintf(conn, "HTTP/%d.%d %03d %s\r\n\r\n", request.ProtoMajor, request.ProtoMinor, http.StatusOK, "Connection established"); err != nil {
+diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
+index 86dbc14..927eb89 100644
+--- a/tunnel/tunnel.go
++++ b/tunnel/tunnel.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"github.com/metacubex/mihomo/internal/weaveshare"
+ 	"net"
+ 	"net/netip"
+ 	"path/filepath"
+@@ -510,6 +511,11 @@ func handleTCPConn(connCtx C.ConnContext) {
+ 	}(connCtx.Conn())
+ 
+ 	metadata := connCtx.Metadata()
++	guard, guardError := weaveshare.Begin(metadata.InUser)
++	if guardError != nil {
++		return
++	}
++	defer guard.End()
+ 	if !metadata.Valid() {
+ 		log.Warnln("[Metadata] not valid: %#v", metadata)
+ 		return
+@@ -595,7 +601,7 @@ func handleTCPConn(connCtx C.ConnContext) {
+ 			peekMutex.Lock()
+ 			defer peekMutex.Unlock()
+ 			peekBytes, _ = conn.Peek(conn.Buffered())
+-			_, err = remoteConn.Write(peekBytes)
++			_, err = guard.WriteUpload(ctx, remoteConn, peekBytes)
+ 			if err != nil {
+ 				return
+ 			}
+@@ -621,7 +627,7 @@ func handleTCPConn(connCtx C.ConnContext) {
+ 	peekMutex.Lock()
+ 	defer peekMutex.Unlock()
+ 	_ = conn.SetReadDeadline(time.Time{}) // reset
+-	handleSocket(conn, remoteConn)
++	handleSocket(conn, guard.Wrap(remoteConn))
+ }
+ 
+ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err error) {

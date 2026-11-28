@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.MainActivity
 import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.engine.MihomoConfigAssembler
+import io.weave.client.data.LanShareGrantStore
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.Ipv6Mode
@@ -42,6 +43,8 @@ class LanProxyDeviceTest {
         profile.setRoutingMode(RoutingMode.DIRECT)
         profile.setIpv6Mode(Ipv6Mode.DUAL_STACK)
         val (user, password) = profile.enableLanSharing()
+        val grants = LanShareGrantStore(target)
+        val grant = grants.create(null, 240_000, 32 * 1024)
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { WeaveVpnService.start(it) }
@@ -54,6 +57,9 @@ class LanProxyDeviceTest {
                     assertEquals(403, request(address, fixture, "$user:incorrect").first)
                     assertEquals(200 to "weave-fixture", request(address, fixture, "$user:$password"))
                     assertEquals(200 to "weave-fixture", request("127.0.0.1", fixture, credential = null))
+                    assertEquals(407, request(address, fixture, null, LanShareGrantStore.PORT).first)
+                    assertEquals(200 to "weave-fixture",
+                        request(address, fixture, "${grant.user}:${grant.password}", LanShareGrantStore.PORT))
                     verifySocksAndDisconnect(address, fixture, user, password, CoreApi(target))
                 } finally {
                     scenario.onActivity { WeaveVpnService.stop(it) }
@@ -61,6 +67,7 @@ class LanProxyDeviceTest {
                 }
             }
         } finally {
+            grants.remove(grant.user)
             profile.setLanSharing(previous.lanSharing)
             profile.setIpv6Mode(previous.ipv6Mode)
             profile.setRoutingMode(mode)
@@ -101,16 +108,20 @@ class LanProxyDeviceTest {
             assertEquals("weave-fixture", input.bufferedReader().readLine())
             val before = api.sharedDevices().single { it.address == address }
             assertTrue(before.downloaded > 0)
-            assertTrue(api.disconnectSharedDevice(address))
+            assertTrue(api.disconnectSharedDevice(before.key))
             assertTrue(api.sharedDevices().none { it.address == address })
         }
     }
 
-    private suspend fun request(address: String, fixture: Int, credential: String?): Pair<Int, String?> =
-        withContext(Dispatchers.IO) {
+    private suspend fun request(
+        address: String,
+        fixture: Int,
+        credential: String?,
+        proxyPort: Int = MihomoConfigAssembler.MIXED_PORT,
+    ): Pair<Int, String?> = withContext(Dispatchers.IO) {
             Socket(Proxy.NO_PROXY).use { socket ->
                 socket.soTimeout = 3_000
-                socket.connect(InetSocketAddress(address, MihomoConfigAssembler.MIXED_PORT), 3_000)
+                socket.connect(InetSocketAddress(address, proxyPort), 3_000)
                 val header = buildString {
                     append("CONNECT 10.0.2.2:$fixture HTTP/1.1\r\nHost: 10.0.2.2:$fixture\r\n")
                     if (credential != null) {

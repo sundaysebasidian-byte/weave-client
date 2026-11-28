@@ -162,6 +162,8 @@ import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
 import io.weave.client.core.engine.MihomoFeatureCompiler
+import io.weave.client.core.dns.DnsProbeQuality
+import io.weave.client.core.dns.dnsQualityOrder
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
 import io.weave.client.domain.NavigationItem
@@ -411,6 +413,7 @@ private fun DnsProbePanel(
     state: DnsProbeState,
     onProbe: () -> Unit,
 ) {
+    val copy = rememberAppOwnedCopy()
     Column(
         modifier = Modifier
             .heightIn(max = 520.dp)
@@ -444,9 +447,14 @@ private fun DnsProbePanel(
         }
         // Bars compare only endpoints measured in this same run; the exact RTT stays as text.
         val slowestMs = state.results.values.filter { it.available }.mapNotNull { it.latencyMs }.maxOrNull()
-        DnsProfile.entries
-            .filter { it != DnsProfile.CUSTOM || state.results.containsKey(it) }
-            .forEach { profile ->
+        val profiles = DnsProfile.entries.filter { it != DnsProfile.CUSTOM || state.results.containsKey(it) }
+        val ordered = if (state.running) profiles else profiles.sortedWith { left, right ->
+            fun quality(profile: DnsProfile): DnsProbeQuality = state.results[profile]?.let {
+                DnsProbeQuality(it.attempts, it.answered, it.latencyMs, it.jitterMs)
+            } ?: DnsProbeQuality(0, 0, null, null)
+            dnsQualityOrder.compare(quality(left), quality(right))
+        }
+        ordered.forEach { profile ->
                 val result = state.results[profile]
                 WeaveDivider()
                 Column(
@@ -483,6 +491,10 @@ private fun DnsProbePanel(
                                 style = MaterialTheme.typography.bodyMedium.merge(TabularNumbers),
                             )
                         }
+                    }
+                    if (result != null && result.attempts > 0) {
+                        val jitter = result.jitterMs?.let { " · ${copy("抖动")} $it ms" }.orEmpty()
+                        Text("${copy("成功")} ${result.answered}/${result.attempts}$jitter", translate = false, fontSize = 12.sp)
                     }
                     val latency = result?.takeIf { it.available }?.latencyMs
                     if (latency != null && slowestMs != null && slowestMs > 0) {

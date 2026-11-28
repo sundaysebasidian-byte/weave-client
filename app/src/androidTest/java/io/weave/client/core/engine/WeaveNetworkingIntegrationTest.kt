@@ -98,4 +98,20 @@ class WeaveNetworkingIntegrationTest {
         assertEquals(Long.MAX_VALUE, devices.last().uploaded)
     }
 
+    @Test fun shareTopologySeparatesConcurrentGrantsFromOneAddress() {
+        val address = "192.168.1.7"
+        val first = "weavepeer-${"1".repeat(32)}-10000-1024"
+        val second = "weavepeer-${"2".repeat(32)}-10000-1024"
+        val records = listOf(first to 7891, second to 7891, "legacy" to 7890)
+        val rows = JSONArray(records.mapIndexed { index, (user, port) ->
+            JSONObject().put("id", "socket-$index").put("upload", index + 1).put(
+                "metadata", JSONObject().put("sourceIP", address).put("inboundUser", user).put("inboundPort", port),
+            )
+        })
+        val byGrant = LanShareTopology.read(JSONObject().put("connections", rows)).associateBy { it.key.grantUser }
+        assertEquals(listOf("socket-0"), byGrant.getValue(first).connectionIds)
+        assertEquals(listOf("socket-1"), byGrant.getValue(second).connectionIds)
+        assertEquals(3L, byGrant.getValue(null).uploaded)
+    }
+
 }

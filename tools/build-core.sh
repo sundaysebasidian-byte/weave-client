@@ -55,6 +55,13 @@ if ! git -C "$cmfa_root" apply --check --reverse "$patch_path"; then
   exit 1
 fi
 
+mihomo_patch="$project_root/$(read_property mihomo.patch)"
+require_equal "Mihomo patch" "$(shasum -a 256 "$mihomo_patch" | awk '{print $1}')" "$(read_property mihomo.patch.sha256)"
+if ! git -C "$cmfa_root/core/src/foss/golang/clash" apply --check --reverse "$mihomo_patch"; then
+  echo "required Mihomo patch is not applied to checkout" >&2
+  exit 1
+fi
+
 require_equal \
   "Go version" \
   "$(go env GOVERSION)" \

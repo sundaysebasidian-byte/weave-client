@@ -23,6 +23,7 @@ import io.weave.client.routing.CustomProxyGroup
 import io.weave.client.routing.CustomProxyGroupStore
 import io.weave.client.routing.CustomProxyGroupValidator
 import io.weave.client.routing.NodeRef
+import io.weave.client.data.LanShareGrantStore
 import io.weave.client.routing.LocalRouteRuleStore
 import io.weave.client.routing.RemoteRuleSetStore
 import io.weave.client.routing.RuleSetCompiler
@@ -97,6 +98,16 @@ class MihomoConfigAssembler(
                 route.copy(target = route.target.copy(kind = RouteKind.BLOCK))
             }
         }
+        val shareAddresses = if (networkPreferences.lanSharing) LanProxyAddresses.current(appContext).take(8) else emptyList()
+        val shareGrants = if (shareAddresses.isEmpty()) emptyList() else {
+            runCatching { LanShareGrantStore(appContext).active() }.getOrDefault(emptyList())
+        }
+        val shareTargets = shareGrants.associate { grant ->
+            val target = grant.node?.let { RouteTarget(RouteKind.FIXED, "", it.subscriptionId, it.nodeId) }
+            grant.user to if (mode == RoutingMode.DIRECT || target == null) null
+            else runCatching { validateTarget("", target, byId, customGroups, ::nodesOf); target }
+                .getOrElse { RouteTarget(RouteKind.BLOCK, "") }
+        }
         val plan = MihomoRuntimePlanner.plan(
             routes = checkedRoutes,
             mode = mode,
@@ -105,6 +116,7 @@ class MihomoConfigAssembler(
             additionalSubscriptionIds = additionalSubscriptionIds,
             groupSubscriptions = customGroups.mapValues { it.value.subscriptionIds },
             strategyScope = networkPreferences.strategyScope,
+            sharedFixedTargets = shareTargets.values.filterNotNull(),
         )
         val activeGroups = plan.activeGroupIds.mapNotNull(customGroups::get)
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
@@ -114,7 +126,7 @@ class MihomoConfigAssembler(
             effectiveDefaultTarget?.let { validateTarget("默认出口", it, byId, customGroups, ::nodesOf) }
         }.onFailure { throw RuntimeFailureException(RuntimeFailure.SUBSCRIPTION_MISSING, it.message.orEmpty()) }
         val activeSubscriptions = usable.filter { it.id in plan.activeSubscriptionIds }
-        val fixedTargets = (effectiveRoutes.map(AppRoute::target) + listOfNotNull(effectiveDefaultTarget))
+        val fixedTargets = (effectiveRoutes.map(AppRoute::target) + listOfNotNull(effectiveDefaultTarget) + shareTargets.values.filterNotNull())
             .filter { it.kind == RouteKind.FIXED }
             .distinctBy(::fixedGroup)
         val selectedRefs = buildList {
@@ -186,6 +198,13 @@ class MihomoConfigAssembler(
         val dnsCompatibilityFallbacks = MihomoFeatureCompiler.dnsCompatibilityFallbacks(networkPreferences)
         val policyServers = MihomoFeatureCompiler.encryptedNameServers(networkPreferences) + dnsCompatibilityFallbacks
         val leadingRules = MihomoFeatureCompiler.leadingRules(networkPreferences)
+        val shareRules = shareTargets.mapNotNull { (user, target) ->
+            when (target?.kind) {
+                RouteKind.FIXED -> "IN-USER,$user,${fixedGroup(target)}"
+                RouteKind.BLOCK -> "IN-USER,$user,REJECT"
+                else -> null
+            }
+        }
         val domesticDirectRules = MihomoFeatureCompiler.domesticDirectRules(networkPreferences)
         val offlinePolicyRules = PolicyPackCompiler.compile(policyPackStore.active())
         val localRules = LocalRuleCompiler.compile(localRuleStore.list())
@@ -216,6 +235,14 @@ class MihomoConfigAssembler(
             } else {
                 appendLine("allow-lan: false")
                 appendLine("bind-address: 127.0.0.1")
+            }
+            if (shareGrants.isNotEmpty()) {
+                val users = shareGrants.map { mapOf("username" to it.user, "password" to it.password) }
+                val listeners = shareAddresses.distinct().mapIndexed { index, address ->
+                    mapOf("name" to "weave-share-grants-$index", "type" to "mixed", "listen" to address,
+                        "port" to LanShareGrantStore.PORT, "udp" to false, "users" to users)
+                }
+                appendLine(ClashYamlCodec.write(mapOf("listeners" to listeners)).trimEnd())
             }
             appendLine("external-controller-unix: '${io.weave.client.core.diagnostics.PrivateCoreConnections.socketPath(appContext)}'")
             appendLine("ipv6: $ipv6Enabled")
@@ -477,7 +504,7 @@ class MihomoConfigAssembler(
                     effectiveRoutes,
                     packageUids,
                     leadingRules,
-                    offlinePolicyRules + localRules + RuleSetCompiler.rules(ruleSets) + domesticDirectRules,
+                    offlinePolicyRules + shareRules + localRules + RuleSetCompiler.rules(ruleSets) + domesticDirectRules,
                     automaticGroupName = { subscriptionId ->
                         if (plan.usesCrossSubscriptionGroup) {
                             CROSS_SUBSCRIPTION_GROUP
@@ -486,7 +513,7 @@ class MihomoConfigAssembler(
                         }
                     },
                 )
-                RoutingMode.GLOBAL -> leadingRules + offlinePolicyRules + "MATCH,DEFAULT"
+                RoutingMode.GLOBAL -> leadingRules + offlinePolicyRules + shareRules + "MATCH,DEFAULT"
                 RoutingMode.DIRECT -> leadingRules + offlinePolicyRules + "MATCH,$EXPLICIT_DIRECT_PROXY"
             }
             rules.forEach { appendLine("  - ${yamlString(it)}") }

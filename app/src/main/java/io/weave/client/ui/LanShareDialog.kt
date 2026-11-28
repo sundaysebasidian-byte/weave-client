@@ -43,6 +43,7 @@ import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.core.vpn.LanProxyAddresses
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.ProxyNode
 import io.weave.client.transfer.QrCodeGenerator
 import java.net.URI
 import kotlinx.coroutines.CancellationException
@@ -59,6 +60,7 @@ internal fun LanProxySharingDialog(
     onToggle: (Boolean) -> Unit,
     onReveal: () -> Unit,
     onDismiss: () -> Unit,
+    nodes: List<ProxyNode> = emptyList(),
 ) {
     val context = LocalContext.current
     val app = context.applicationContext
@@ -74,7 +76,8 @@ internal fun LanProxySharingDialog(
     var protocol by remember { mutableStateOf("socks5") }
     var devices by remember { mutableStateOf<List<SharedDevice>?>(null) }
     var failed by remember { mutableStateOf(false) }
-    var disconnecting by remember { mutableStateOf<String?>(null) }
+    var disconnecting by remember { mutableStateOf(false) }
+    var grantAddress by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(active) {
         addresses = emptyList()
@@ -137,6 +140,9 @@ internal fun LanProxySharingDialog(
                             }
                         }
                         Text("Mixed · HTTP / SOCKS5 · ${MihomoConfigAssembler.MIXED_PORT}", translate = false)
+                        if (active && address != null) {
+                            TextButton(onClick = { grantAddress = address }) { Text("临时授权") }
+                        }
                         if (credentials == null) TextButton(onClick = onReveal) { Text("查看共享凭据") }
                         else {
                             Text("${copy("用户名")} · ${credentials.first}", translate = false)
@@ -166,26 +172,27 @@ internal fun LanProxySharingDialog(
                         if (devices?.isEmpty() == true) Text("暂无连接")
                         if (connected && devices == null) Text("等待连接数据")
                     }
-                    items(devices.orEmpty(), key = SharedDevice::address) { device ->
+                    items(devices.orEmpty(), key = { it.key.listKey }) { device ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Text("${device.address} → Weave → ${device.exits.joinToString(" / ")}", translate = false)
+                            val source = listOfNotNull(device.address, device.key.grantLabel).joinToString(" · ")
+                            Text("$source → Weave → ${device.exits.joinToString(" / ")}", translate = false)
                             Text(
                                 "↑ ${Formatter.formatShortFileSize(context, device.uploaded)}   ↓ " +
                                     Formatter.formatShortFileSize(context, device.downloaded),
                                 translate = false,
                             )
-                            TextButton(enabled = disconnecting == null, onClick = {
-                                disconnecting = device.address
+                            TextButton(enabled = !disconnecting, onClick = {
+                                disconnecting = true
                                 failed = false
                                 scope.launch {
                                     try {
-                                        failed = !api.disconnectSharedDevice(device.address)
+                                        failed = !api.disconnectSharedDevice(device.key)
                                     } catch (cancelled: CancellationException) {
                                         throw cancelled
                                     } catch (_: Exception) {
                                         failed = true
                                     } finally {
-                                        disconnecting = null
+                                        disconnecting = false
                                     }
                                 }
                             }) { Text("断开") }
@@ -196,10 +203,18 @@ internal fun LanProxySharingDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
+    grantAddress?.takeIf { enabled }?.let { host ->
+        ShareGrantDialog(address ?: host, nodes, connected = connected, onDismiss = { grantAddress = null })
+    }
 }
 
-internal fun lanShareUri(address: String, credentials: Pair<String, String>, protocol: String): String {
+internal fun lanShareUri(
+    address: String,
+    credentials: Pair<String, String>,
+    protocol: String,
+    port: Int = MihomoConfigAssembler.MIXED_PORT,
+): String {
     require(protocol == "http" || protocol == "socks5")
     return URI(protocol, "${credentials.first}:${credentials.second}", address,
-        MihomoConfigAssembler.MIXED_PORT, null, null, "Weave Share").toASCIIString()
+        port, null, null, "Weave Share").toASCIIString()
 }

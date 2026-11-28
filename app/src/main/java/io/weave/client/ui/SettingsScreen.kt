@@ -232,6 +232,7 @@ internal fun SettingsScreen(
     onOpenLocalRouteRules: () -> Unit,
     languageFollowsSystem: Boolean = false,
     lanCredentials: Pair<String, String>? = null,
+    lanNodes: List<io.weave.client.domain.ProxyNode> = emptyList(),
     onSubscriptionAutoUpdateChanged: (hours: Int, unmeteredOnly: Boolean) -> Unit = { _, _ -> },
     onBypassDirectAppsChanged: (Boolean) -> Unit = {},
     onBootstrapDnsSelected: (BootstrapDns) -> Unit = {},
@@ -674,6 +675,7 @@ internal fun SettingsScreen(
             credentials = lanCredentials,
             onToggle = onLanSharingChanged,
             onReveal = onRevealLanCredentials,
+            nodes = lanNodes,
             onDismiss = { showLanProxy = false },
         )
     }
