@@ -32,7 +32,7 @@ object MihomoRuntimePlanner {
         /** Subscriptions each custom group draws nodes from (members and chain entry). */
         groupSubscriptions: Map<String, Set<String>> = emptyMap(),
         strategyScope: StrategyScope = StrategyScope.PER_SUBSCRIPTION,
-        sharedFixedTargets: Collection<RouteTarget> = emptyList(),
+        sharedTargets: Collection<RouteTarget> = emptyList(),
     ): MihomoRuntimePlan {
         val effectiveRoutes = routes.takeIf { mode == RoutingMode.RULE }.orEmpty()
         val effectiveDefaultTarget = defaultTarget.takeUnless { mode == RoutingMode.DIRECT }
@@ -59,7 +59,7 @@ object MihomoRuntimePlanner {
         }
         effectiveRoutes.forEach { visit(it.target) }
         effectiveDefaultTarget?.let(::visit)
-        sharedFixedTargets.forEach(::visit)
+        sharedTargets.forEach(::visit)
         val usesCrossSubscriptionGroup = strategyScope == StrategyScope.CROSS_SUBSCRIPTION &&
             (fallsBackToAutomatic || automaticTarget)
         val activeIds = buildSet {

@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // New install identity: never presented as an in-place update to io.weave.client.
-        versionCode = 117
-        versionName = "0.4.0-rc11"
+        versionCode = 118
+        versionName = "0.4.0-rc12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

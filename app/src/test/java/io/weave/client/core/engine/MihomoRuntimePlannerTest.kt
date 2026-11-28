@@ -67,7 +67,7 @@ class MihomoRuntimePlannerTest {
             mode = RoutingMode.DIRECT,
             defaultTarget = target(RouteKind.FIXED, "phone-provider", "phone-node"),
             usableSubscriptionIds = listOf("phone-provider", "share-provider"),
-            sharedFixedTargets = listOf(target(RouteKind.FIXED, "share-provider", "share-node")),
+            sharedTargets = listOf(target(RouteKind.FIXED, "share-provider", "share-node")),
         )
 
         assertEquals(setOf("share-provider"), plan.activeSubscriptionIds)

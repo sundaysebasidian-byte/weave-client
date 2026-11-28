@@ -122,6 +122,9 @@ build_one() {
   fi
 }
 
+mkdir -p "$output_root"
+output_root="$(cd "$output_root" && pwd)"
+
 build_one arm64-v8a aarch64-linux-android arm64 ""
 build_one armeabi-v7a armv7a-linux-androideabi arm 7
 build_one x86 i686-linux-android 386 ""

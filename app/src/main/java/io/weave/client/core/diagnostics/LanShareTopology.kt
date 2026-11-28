@@ -25,6 +25,7 @@ internal data class SharedDevice(
 internal object LanShareTopology {
     private const val MAX_CONNECTIONS = 1_000
     private const val MAX_EXITS = 4
+    private val deviceOrder = compareBy<SharedDevice> { it.address }.thenBy { it.key.grantUser.orEmpty() }
 
     fun read(snapshot: JSONObject): List<SharedDevice> {
         val rows = snapshot.optJSONArray("connections") ?: return emptyList()
@@ -55,7 +56,7 @@ internal object LanShareTopology {
         }
         return devices.map { (key, device) ->
             SharedDevice(key, device.ids, device.upload, device.download, device.exits.toList())
-        }.sortedBy { it.key.listKey }
+        }.sortedWith(deviceOrder)
     }
 
     private fun privateLiteral(value: String): String? {

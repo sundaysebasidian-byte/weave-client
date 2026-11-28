@@ -1,6 +1,12 @@
 package io.weave.client.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.os.Build
 import android.text.format.Formatter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,6 +23,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -41,9 +49,16 @@ import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.diagnostics.SharedDevice
 import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.core.vpn.LanProxyAddresses
+import io.weave.client.core.vpn.TrustedWifiLink
+import io.weave.client.core.vpn.TrustedWifiWatcher
+import io.weave.client.core.vpn.WeaveVpnService
+import io.weave.client.core.vpn.trustedShareLink
+import io.weave.client.data.TrustedLanPolicy
+import io.weave.client.data.TrustedLanStore
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.ProxyNode
+import io.weave.client.routing.CustomProxyGroup
 import io.weave.client.transfer.QrCodeGenerator
 import java.net.URI
 import kotlinx.coroutines.CancellationException
@@ -61,6 +76,7 @@ internal fun LanProxySharingDialog(
     onReveal: () -> Unit,
     onDismiss: () -> Unit,
     nodes: List<ProxyNode> = emptyList(),
+    groups: List<CustomProxyGroup> = emptyList(),
 ) {
     val context = LocalContext.current
     val app = context.applicationContext
@@ -68,9 +84,37 @@ internal fun LanProxySharingDialog(
     val runtime by VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
     val connected = runtime.state == ConnectionState.CONNECTED
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
-    val active = lifecycle.isAtLeast(Lifecycle.State.STARTED) && enabled && connected
+    val foreground = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     val scope = rememberCoroutineScope()
     val copy = rememberAppOwnedCopy()
+    val trustStore = remember(app) { TrustedLanStore(app) }
+    var trust by remember { mutableStateOf(TrustedLanPolicy(true)) }
+    var trustsLoaded by remember { mutableStateOf(false) }
+    var links by remember { mutableStateOf<List<TrustedWifiLink>>(emptyList()) }
+    var locationGranted by remember { mutableStateOf(hasWifiIdentityPermission(context)) }
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        locationGranted = hasWifiIdentityPermission(context)
+    }
+    LaunchedEffect(foreground) {
+        locationGranted = hasWifiIdentityPermission(context)
+        if (foreground) {
+            trust = withContext(Dispatchers.IO) { runCatching(trustStore::policy).getOrDefault(TrustedLanPolicy(true)) }
+            trustsLoaded = true
+        }
+    }
+    DisposableEffect(foreground, locationGranted, app) {
+        val watcher = if (foreground && locationGranted) {
+            TrustedWifiWatcher(app.getSystemService(ConnectivityManager::class.java)) { found ->
+                scope.launch { links = found }
+            }.also { runCatching(it::start) }
+        } else null
+        onDispose {
+            watcher?.close()
+            links = emptyList()
+        }
+    }
+    val trustedLink = trustedShareLink(trust.wifi, links)
+    val active = foreground && enabled && connected && (!trust.restricted || trustedLink != null)
     var addresses by remember { mutableStateOf(emptyList<String>()) }
     var selectedAddress by remember { mutableStateOf<String?>(null) }
     var protocol by remember { mutableStateOf("socks5") }
@@ -79,7 +123,7 @@ internal fun LanProxySharingDialog(
     var disconnecting by remember { mutableStateOf(false) }
     var grantAddress by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(active) {
+    LaunchedEffect(active, trustedLink) {
         addresses = emptyList()
         selectedAddress = null
         devices = null
@@ -88,7 +132,7 @@ internal fun LanProxySharingDialog(
         var refreshAddresses = 0
         while (true) {
             if (refreshAddresses == 0) addresses = withContext(Dispatchers.IO) {
-                runCatching { LanProxyAddresses.current(app) }.getOrDefault(emptyList())
+                trustedLink?.addresses ?: runCatching { LanProxyAddresses.current(app) }.getOrDefault(emptyList())
             }
             refreshAddresses = (refreshAddresses + 1) % 3
             devices = try {
@@ -124,10 +168,51 @@ internal fun LanProxySharingDialog(
                         WeaveSwitch(enabled, onToggle)
                     }
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && trustsLoaded) {
+                    item {
+                        if (trust.restricted) {
+                            Text(trust.wifi?.ssid ?: copy("可信 Wi-Fi"), translate = false)
+                            if (trustedLink == null) Text("等待可信 Wi-Fi")
+                            TextButton(enabled = !enabled, onClick = {
+                                scope.launch {
+                                    try {
+                                        withContext(Dispatchers.IO) { trustStore.clear() }
+                                        trust = TrustedLanPolicy(false)
+                                        if (connected) WeaveVpnService.reload(app)
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (_: Exception) {
+                                        failed = true
+                                    }
+                                }
+                            }) { Text("移除可信 Wi-Fi") }
+                        } else {
+                            val currentWifi = links.singleOrNull()?.id
+                            TextButton(enabled = !locationGranted || currentWifi != null, onClick = {
+                                if (!locationGranted) permissions.launch(arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
+                                ))
+                                else currentWifi?.let { id ->
+                                    scope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) { trustStore.pin(id) }
+                                            trust = TrustedLanPolicy(true, id)
+                                            if (connected) WeaveVpnService.reload(app)
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (_: Exception) {
+                                            failed = true
+                                        }
+                                    }
+                                }
+                            }) { Text("仅在此 Wi-Fi 共享") }
+                        }
+                    }
+                }
                 if (enabled) {
                     item {
                         Text(if (connected) "在接收设备上测试代理连通性" else "连接 Weave 后才会监听代理端口")
-                        if (connected && addresses.isEmpty()) {
+                        if (connected && !trust.restricted && addresses.isEmpty()) {
                             Text("在手机 Wi-Fi 详情查看 IP。使用热点时，可在接收端查看网关地址。", fontSize = 12.sp)
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -143,8 +228,8 @@ internal fun LanProxySharingDialog(
                         if (active && address != null) {
                             TextButton(onClick = { grantAddress = address }) { Text("临时授权") }
                         }
-                        if (credentials == null) TextButton(onClick = onReveal) { Text("查看共享凭据") }
-                        else {
+                        if (active && credentials == null) TextButton(onClick = onReveal) { Text("查看共享凭据") }
+                        else if (active && credentials != null) {
                             Text("${copy("用户名")} · ${credentials.first}", translate = false)
                             Text("${copy("密码")} · ${credentials.second}", translate = false, fontFamily = FontFamily.Monospace)
                             if (qrPayload != null) {
@@ -203,10 +288,14 @@ internal fun LanProxySharingDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
-    grantAddress?.takeIf { enabled }?.let { host ->
-        ShareGrantDialog(address ?: host, nodes, connected = connected, onDismiss = { grantAddress = null })
+    grantAddress?.takeIf { active }?.let { host ->
+        ShareGrantDialog(address ?: host, nodes, groups, connected = connected, onDismiss = { grantAddress = null })
     }
 }
+
+private fun hasWifiIdentityPermission(context: android.content.Context): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
 internal fun lanShareUri(
     address: String,

@@ -1382,6 +1382,13 @@
 {"id":"解析路径","text":"확인 경로"}
 {"id":"检测当前解析","text":"현재 확인 테스트"}
 {"id":"临时授权","text":"임시 접근"}
+{"id":"可信 Wi-Fi","text":"신뢰하는 Wi-Fi"}
+{"id":"等待可信 Wi-Fi","text":"신뢰하는 Wi-Fi 연결 대기 중"}
+{"id":"移除可信 Wi-Fi","text":"신뢰하는 Wi-Fi 삭제"}
+{"id":"仅在此 Wi-Fi 共享","text":"이 Wi-Fi에서만 공유"}
+{"id":"检测并修复","text":"검사 및 복구"}
+{"id":"当前网络推荐","text":"현재 네트워크에 맞는 경로 추천"}
+{"id":"暂无可用链路","text":"사용할 수 있는 체인을 찾지 못했습니다"}
 {"id": "dynamic:legacy:^(.*) \\[(S0[1-6])\\]$#compose", "text": "{message} [{code}]"}
 {"id": "dynamic:legacy:^(.+) · (.+) · (.+) · DNS 旁路保护 \\+ (.+)$#1", "text": "DNS 우회 방지"}
 {"id": "dynamic:legacy:^(.+) · (.+)；解析器域名的引导查询使用明文 DNS，实际泄漏情况需独立核验$#compose", "text": "{transport} · {profile} · {explanation}"}

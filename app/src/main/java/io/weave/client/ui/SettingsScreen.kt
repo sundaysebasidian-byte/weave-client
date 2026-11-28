@@ -186,6 +186,7 @@ import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.StrategyScope
 import io.weave.client.domain.ProxyNode
+import io.weave.client.routing.CustomProxyGroup
 import io.weave.client.domain.Subscription
 import io.weave.client.transfer.QrCodeGenerator
 import io.weave.client.domain.WeaveAppearanceGroup
@@ -233,6 +234,7 @@ internal fun SettingsScreen(
     languageFollowsSystem: Boolean = false,
     lanCredentials: Pair<String, String>? = null,
     lanNodes: List<io.weave.client.domain.ProxyNode> = emptyList(),
+    lanGroups: List<CustomProxyGroup> = emptyList(),
     onSubscriptionAutoUpdateChanged: (hours: Int, unmeteredOnly: Boolean) -> Unit = { _, _ -> },
     onBypassDirectAppsChanged: (Boolean) -> Unit = {},
     onBootstrapDnsSelected: (BootstrapDns) -> Unit = {},
@@ -676,6 +678,7 @@ internal fun SettingsScreen(
             onToggle = onLanSharingChanged,
             onReveal = onRevealLanCredentials,
             nodes = lanNodes,
+            groups = lanGroups,
             onDismiss = { showLanProxy = false },
         )
     }
