@@ -434,15 +434,16 @@ internal fun SettingsScreen(
             ),
         ),
     )
+    val releasedCopy = LocalReleasedAppCopy.current
+    val stagedCopy = LocalStagedWeaveLocale.current
     val searchTerm = query.trim()
     val searching = searchTerm.isNotEmpty()
     // While searching, every group shows only its matching rows, and advanced groups open flat so
     // a match is never hidden behind a fold.
     val shown = if (searching) {
         sections.mapNotNull { section ->
-            val groupMatches = section.title.contains(searchTerm, ignoreCase = true) ||
-                localizeWeaveText(section.title, language).contains(searchTerm, ignoreCase = true)
-            (if (groupMatches) section.entries else section.entries.filter { it.matches(searchTerm, language) })
+            val groupMatches = matchesSettingsCopy(section.title, searchTerm, language, releasedCopy, stagedCopy)
+            (if (groupMatches) section.entries else section.entries.filter { it.matches(searchTerm, language, releasedCopy, stagedCopy) })
                 .takeIf { it.isNotEmpty() }
                 ?.let { section.copy(entries = it, icon = null) }
         }
@@ -763,14 +764,31 @@ internal fun SettingsScreen(
     }
 }
 
+internal fun matchesSettingsCopy(
+    source: String,
+    query: String,
+    language: WeaveLanguage,
+    released: ReleasedAppCopy?,
+    staged: StagedComposeLocale? = null,
+): Boolean {
+    if (source.contains(query, ignoreCase = true)) return true
+    if (localizeWeaveText(source, language).contains(query, ignoreCase = true)) return true
+    return (released != null || staged != null) &&
+        resolveAppOwnedCopy(source, language, staged = staged, released = released).contains(query, ignoreCase = true)
+}
+
 private sealed interface SettingEntry {
     val title: String
     val subtitle: String?
 
     /** Matches the localized words people read as well as the Chinese source, ignoring case. */
-    fun matches(query: String, language: WeaveLanguage): Boolean =
-        listOfNotNull(title, subtitle, localizeWeaveText(title, language), subtitle?.let { localizeWeaveText(it, language) })
-            .any { it.contains(query, ignoreCase = true) }
+    fun matches(
+        query: String,
+        language: WeaveLanguage,
+        released: ReleasedAppCopy?,
+        staged: StagedComposeLocale?,
+    ): Boolean = matchesSettingsCopy(title, query, language, released, staged) ||
+        (subtitle != null && matchesSettingsCopy(subtitle!!, query, language, released, staged))
 }
 
 private data class LinkEntry(
@@ -795,9 +813,13 @@ private data class ThemeEntry(
     val onSelect: (WeavePalette) -> Unit,
     val onOpen: () -> Unit,
 ) : SettingEntry {
-    override fun matches(query: String, language: WeaveLanguage): Boolean =
-        super.matches(query, language) ||
-            WeavePalette.entries.any { localizeWeaveText(it.label, language).contains(query, ignoreCase = true) }
+    override fun matches(
+        query: String,
+        language: WeaveLanguage,
+        released: ReleasedAppCopy?,
+        staged: StagedComposeLocale?,
+    ): Boolean = super.matches(query, language, released, staged) ||
+        WeavePalette.entries.any { matchesSettingsCopy(it.label, query, language, released, staged) }
 }
 
 /** A group of rows; with an [icon] it is an advanced group that folds. */
@@ -828,7 +850,7 @@ private fun ColumnScope.SettingEntries(entries: List<SettingEntry>) {
 private fun SettingsSearchField(query: String, onQueryChange: (String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val language = LocalWeaveLanguage.current
-    val placeholder = localizeWeaveText("搜索设置", language)
+    val placeholder = resolveAppOwnedCopy("搜索设置", language, staged = null, released = LocalReleasedAppCopy.current)
     var focused by remember { mutableStateOf(false) }
     val container by androidx.compose.animation.animateColorAsState(
         if (focused) scheme.surface else scheme.surfaceVariant,

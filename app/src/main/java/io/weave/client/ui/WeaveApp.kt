@@ -684,7 +684,7 @@ fun WeaveApp(
         val target = visibleDestinations.indexOf(destination)
         if (target < 0) return@LaunchedEffect
         if (pagerState.currentPage == target && pagerState.currentPageOffsetFraction == 0f) return@LaunchedEffect
-        pagerGate.busy = true
+        pagerGate.beginTabAnimation()
         try {
             val from = pagerState.currentPage
             if (kotlin.math.abs(target - from) > 1) {
@@ -692,7 +692,7 @@ fun WeaveApp(
             }
             pagerState.settleTo(target)
         } finally {
-            pagerGate.busy = false
+            pagerGate.endTabAnimation()
         }
     }
 
@@ -807,9 +807,7 @@ fun WeaveApp(
                     onScrub = { position ->
                         // The pages follow the finger directly; no animation is started per tab.
                         if (!pagerGate.scrubbing) {
-                            pagerGate.scrubRevision++
-                            pagerGate.scrubbing = true
-                            pagerGate.busy = true
+                            pagerGate.beginScrub()
                             dashboardScroll.pager = true
                             scrubScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                                 pagerState.stopScroll(androidx.compose.foundation.MutatePriority.PreventUserInput)
@@ -822,16 +820,14 @@ fun WeaveApp(
                     },
                     onScrubEnd = { position ->
                         val index = kotlin.math.round(position).toInt().coerceIn(0, visibleDestinations.lastIndex)
-                        val revision = pagerGate.scrubRevision
-                        pagerGate.scrubbing = false
+                        val revision = pagerGate.beginScrubSettle()
                         scrubScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                             var settled = false
                             try {
                                 pagerState.settleTo(index)
                                 settled = true
                             } finally {
-                                if (revision == pagerGate.scrubRevision) {
-                                    pagerGate.busy = false
+                                if (pagerGate.endScrubSettle(revision)) {
                                     dashboardScroll.pager = false
                                     if (settled) destination = visibleDestinations[index]
                                 }
@@ -932,8 +928,9 @@ fun WeaveApp(
                     onRefreshSubscription = viewModel::refreshRemoteSubscription,
                     onRetryFailed = viewModel::retryFailedRemoteSubscriptions,
                     onSubscriptionClick = { subscriptionId ->
-                        managedSubscriptionId = subscriptionId
-                        viewModel.openSubscriptionEditor(subscriptionId)
+                        if (viewModel.openSubscriptionEditor(subscriptionId)) {
+                            managedSubscriptionId = subscriptionId
+                        }
                     },
                     contentPadding = innerPadding,
                 )
@@ -1651,8 +1648,11 @@ fun WeaveApp(
                 isDefaultRoute = dashboard.defaultRouteTarget
                     ?.subscriptionId == subscriptionId,
                 onDelete = {
-                    viewModel.deleteSubscription(subscriptionId)
-                    managedSubscriptionId = null
+                    viewModel.deleteSubscription(subscriptionId) { deleted ->
+                        if (deleted && managedSubscriptionId == subscriptionId) {
+                            managedSubscriptionId = null
+                        }
+                    }
                 },
             )
         }
@@ -1688,14 +1688,14 @@ private fun DashboardEffects(
     val language by viewModel.language.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
 
+    val latestPackaged by rememberUpdatedState(LocalReleasedAppCopy.current)
     LaunchedEffect(statusMessage, language) {
         statusMessage?.let { displayed ->
-            snackbar.showSnackbar(localizeWeaveText(displayed, language))
+            snackbar.showSnackbar(resolveAppOwnedCopy(displayed, language, staged = null, released = latestPackaged))
             viewModel.dismissDisplayedMessage(displayed)
         }
     }
 
-    val latestPackaged by rememberUpdatedState(LocalReleasedAppCopy.current)
     LaunchedEffect(Unit) {
         StatusBus.messages.collect { message ->
             snackbar.showSnackbar(resolveAppOwnedCopy(message, viewModel.language.value, staged = null, released = latestPackaged))
@@ -1731,10 +1731,43 @@ private suspend fun androidx.compose.foundation.pager.PagerState.settleTo(page: 
     if (currentPage != page || currentPageOffsetFraction != 0f) scrollToPage(page)
 }
 
-private class PagerNavigationGate {
-    var busy: Boolean = false
+internal class PagerNavigationGate {
+    private var tabAnimations: Int = 0
     var scrubbing: Boolean = false
+        private set
+    private var scrubSettling: Boolean = false
     var scrubRevision: Long = 0L
+        private set
+
+    val busy: Boolean
+        get() = scrubbing || scrubSettling || tabAnimations > 0
+
+    fun beginTabAnimation() {
+        tabAnimations++
+    }
+
+    fun endTabAnimation() {
+        if (tabAnimations > 0) tabAnimations--
+    }
+
+    fun beginScrub(): Long {
+        scrubRevision++
+        scrubbing = true
+        scrubSettling = false
+        return scrubRevision
+    }
+
+    fun beginScrubSettle(): Long {
+        scrubbing = false
+        scrubSettling = true
+        return scrubRevision
+    }
+
+    fun endScrubSettle(revision: Long): Boolean {
+        if (revision != scrubRevision) return false
+        scrubSettling = false
+        return true
+    }
 }
 
 /** Dashboard polling pauses while either the Home list or the page pager is moving. */

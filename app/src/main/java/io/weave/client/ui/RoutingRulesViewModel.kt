@@ -45,6 +45,7 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
     private val mutableLocalRouteRuleState = MutableStateFlow(LocalRouteRuleState())
     val localRouteRuleState = mutableLocalRouteRuleState.asStateFlow()
     private val localRuleSnapshotOrder = LocalRuleSnapshotOrder()
+    private val localRuleMutations = Mutex()
 
     private val mutableRuleSetState = MutableStateFlow(RuleSetState())
     val ruleSetState = mutableRuleSetState.asStateFlow()
@@ -140,37 +141,69 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun addLocalRouteRule(type: LocalRuleType, value: String, action: LocalRuleAction): Boolean {
-        return runCatching {
-            val rule = LocalRouteRule(type = type, value = value, action = action)
-            val normalized = LocalRouteRuleValidator.normalize(rule)
-            val next = localRouteRuleStore.edit { it + normalized }
-            publishSavedLocalRules(next)
-            reloadIfConnected("本地路由规则已添加，正在安全更新运行配置")
-        }.onFailure { error ->
+    fun addLocalRouteRule(
+        type: LocalRuleType,
+        value: String,
+        action: LocalRuleAction,
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        val normalized = runCatching {
+            LocalRouteRuleValidator.normalize(LocalRouteRule(type = type, value = value, action = action))
+        }.getOrElse { error ->
             mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则无效") }
-        }.isSuccess
+            onComplete(false)
+            return
+        }
+        viewModelScope.launch {
+            var added = false
+            localRuleMutations.withLock {
+                withContext(Dispatchers.IO) { probeSafely { localRouteRuleStore.edit { it + normalized } } }
+                    .onSuccess { next ->
+                        added = true
+                        publishSavedLocalRules(next)
+                        reloadIfConnected("本地路由规则已添加，正在安全更新运行配置")
+                    }
+                    .onFailure { error ->
+                        mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则无效") }
+                    }
+            }
+            onComplete(added)
+        }
     }
 
     fun setLocalRouteRuleEnabled(id: String, enabled: Boolean) {
-        runCatching {
-            val next = localRouteRuleStore.edit { current ->
-                current.map { rule -> if (rule.id == id) rule.copy(enabled = enabled) else rule }
+        viewModelScope.launch {
+            localRuleMutations.withLock {
+                withContext(Dispatchers.IO) {
+                    probeSafely {
+                        localRouteRuleStore.edit { current ->
+                            current.map { rule -> if (rule.id == id) rule.copy(enabled = enabled) else rule }
+                        }
+                    }
+                }.onSuccess { next ->
+                    publishSavedLocalRules(next)
+                    reloadIfConnected("本地路由规则已更新，正在安全应用")
+                }.onFailure { error ->
+                    mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则更新失败") }
+                }
             }
-            publishSavedLocalRules(next)
-            reloadIfConnected("本地路由规则已更新，正在安全应用")
-        }.onFailure { error ->
-            mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则更新失败") }
         }
     }
 
     fun deleteLocalRouteRule(id: String) {
-        runCatching {
-            val next = localRouteRuleStore.edit { current -> current.filterNot { it.id == id } }
-            publishSavedLocalRules(next)
-            reloadIfConnected("本地路由规则已删除，正在安全应用")
-        }.onFailure { error ->
-            mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则删除失败") }
+        viewModelScope.launch {
+            localRuleMutations.withLock {
+                withContext(Dispatchers.IO) {
+                    probeSafely {
+                        localRouteRuleStore.edit { current -> current.filterNot { it.id == id } }
+                    }
+                }.onSuccess { next ->
+                    publishSavedLocalRules(next)
+                    reloadIfConnected("本地路由规则已删除，正在安全应用")
+                }.onFailure { error ->
+                    mutableLocalRouteRuleState.update { it.copy(error = error.message ?: "规则删除失败") }
+                }
+            }
         }
     }
 
@@ -267,8 +300,9 @@ class RoutingRulesViewModel(application: Application) : AndroidViewModel(applica
 
     private fun reloadIfConnected(message: String) {
         if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return
-        StatusBus.post(message)
-        WeaveVpnService.reload(getApplication())
+        runCatching { WeaveVpnService.reload(getApplication()) }
+            .onSuccess { StatusBus.post(message) }
+            .onFailure { StatusBus.post("已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。") }
     }
 
     private suspend fun <T> probeSafely(block: suspend () -> T): Result<T> = try {
