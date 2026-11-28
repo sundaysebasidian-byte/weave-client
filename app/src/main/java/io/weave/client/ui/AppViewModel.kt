@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.runtime.Immutable
+import io.weave.client.WeaveLocales
 import io.weave.client.apps.InstalledApp
 import io.weave.client.apps.InstalledAppRepository
 import io.weave.client.data.AppRouteStore
@@ -284,7 +285,10 @@ class AppViewModel internal constructor(application: Application, initialProfile
     private val mutableNetworkPreferences = MutableStateFlow(initialProfile.settings.routing.network)
     val networkPreferences = mutableNetworkPreferences.asStateFlow()
 
-    private val mutableLanguage = MutableStateFlow(initialProfile.settings.explicitLanguage ?: WeaveLanguage.fromSystem())
+    private val mutableLanguage = MutableStateFlow(
+        initialProfile.settings.explicitLanguage
+            ?: WeaveLocales.builtInSystemLanguage(WeaveLocales.systemLocales(application)),
+    )
     val language = mutableLanguage.asStateFlow()
     private val mutableLanguageFollowsSystem = MutableStateFlow(initialProfile.settings.explicitLanguage == null)
     val languageFollowsSystem = mutableLanguageFollowsSystem.asStateFlow()
@@ -895,7 +899,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     /** Null follows the device language. */
     fun setLanguage(language: WeaveLanguage?) {
-        io.weave.client.WeaveLocales.apply(getApplication(), language)
+        WeaveLocales.apply(getApplication(), language)
         updateVisibleLanguage(language)
     }
 
@@ -918,9 +922,8 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     private fun updateVisibleLanguage(language: WeaveLanguage?) {
         mutableLanguageFollowsSystem.value = language == null
-        // Resources.getSystem() ignores the per-app override that is still active until recreation.
         mutableLanguage.value = language
-            ?: WeaveLanguage.fromSystem(android.content.res.Resources.getSystem().configuration.locales[0])
+            ?: WeaveLocales.builtInSystemLanguage(WeaveLocales.systemLocales(getApplication()))
     }
 
     fun setSubscriptionAutoUpdate(hours: Int, unmeteredOnly: Boolean) = saveNetworkPreferences(

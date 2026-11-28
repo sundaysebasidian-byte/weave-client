@@ -6,8 +6,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.core.app.LocaleManagerCompat
-import androidx.core.os.LocaleListCompat
+import io.weave.client.WeaveLocales
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.data.StoredReleaseAppCopySelection
 import io.weave.client.domain.WeaveLanguage
@@ -54,10 +53,10 @@ internal class PackagedAppLocale private constructor(
 
         fun readSystemChoice(context: Context): PackagedAppLocale? =
             PackagedReleaseCopyAsset.optionalObservation {
-                val system = LocaleManagerCompat.getSystemLocales(context)
-                val tag = systemPackagedTag(system.asLocales()) ?: return@optionalObservation null
+                val system = WeaveLocales.systemLocales(context)
+                val tag = systemPackagedTag(system) ?: return@optionalObservation null
                 val candidate = verified(context, tag, followsSystem = true)
-                candidate.takeIf { LocaleManagerCompat.getSystemLocales(context) == system }
+                candidate.takeIf { WeaveLocales.systemLocales(context) == system }
             }
 
         /** Verify sealed bytes on IO; only a selected catalog needs to be decoded. */
@@ -96,8 +95,6 @@ internal class PackagedAppLocale private constructor(
             ) ?: return null
             return PackagedAppLocale(Locale.forLanguageTag(tag), seal, copy, followsSystem)
         }
-
-        private fun LocaleListCompat.asLocales(): List<Locale> = (0 until size()).mapNotNull { get(it) }
     }
 }
 

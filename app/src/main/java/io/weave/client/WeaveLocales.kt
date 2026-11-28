@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
+import androidx.core.app.LocaleManagerCompat
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.data.StoredReleaseAppCopySelection
 import io.weave.client.domain.WeaveLanguage
@@ -17,6 +18,14 @@ import java.util.Locale
  */
 object WeaveLocales {
     fun locale(language: WeaveLanguage): Locale = Locale.forLanguageTag(language.localeTag)
+
+    internal fun systemLocales(context: Context): List<Locale> {
+        val locales = LocaleManagerCompat.getSystemLocales(context)
+        return (0 until locales.size()).mapNotNull { locales[it] }
+    }
+
+    internal fun builtInSystemLanguage(locales: List<Locale>): WeaveLanguage =
+        locales.firstNotNullOfOrNull { WeaveLanguage.matchSystem(it) } ?: WeaveLanguage.ENGLISH
 
     /** Resources context for system surfaces (notifications, tiles) in the app language. */
     fun wrap(base: Context): Context {

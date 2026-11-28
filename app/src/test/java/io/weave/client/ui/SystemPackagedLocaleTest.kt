@@ -1,5 +1,7 @@
 package io.weave.client.ui
 
+import io.weave.client.WeaveLocales
+import io.weave.client.domain.WeaveLanguage
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -16,8 +18,10 @@ class SystemPackagedLocaleTest {
     @Test fun devicePriorityIncludesBuiltInLanguagesAndSkipsUnsupportedOnes() {
         val choices = listOf("pl-PL", "fr-CA", "hi-IN").map(Locale::forLanguageTag)
         assertNull(systemPackagedTag(choices))
+        assertEquals(WeaveLanguage.FRENCH, WeaveLocales.builtInSystemLanguage(choices))
         assertEquals("hi-IN", systemPackagedTag(listOf(choices[0], choices[2], choices[1])))
         assertNull(systemPackagedTag(listOf(choices[0])))
+        assertEquals(WeaveLanguage.ENGLISH, WeaveLocales.builtInSystemLanguage(listOf(choices[0])))
         assertNull(systemPackagedTag(emptyList()))
     }
 }
