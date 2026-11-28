@@ -42,6 +42,8 @@ import io.weave.client.data.ProfileStorage
 import io.weave.client.domain.NodeDisplayName
 import io.weave.client.domain.ProxyNode
 import io.weave.client.routing.NodeRef
+import io.weave.client.routing.CustomProxyGroup
+import io.weave.client.routing.CustomGroupStrategy
 import io.weave.client.transfer.QrCodeGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +53,13 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ShareGrantDialog(address: String, nodes: List<ProxyNode>, connected: Boolean, onDismiss: () -> Unit) {
+internal fun ShareGrantDialog(
+    address: String,
+    nodes: List<ProxyNode>,
+    groups: List<CustomProxyGroup>,
+    connected: Boolean,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     val app = context.applicationContext
     val store = remember(app) { LanShareGrantStore(app) }
@@ -68,6 +76,9 @@ internal fun ShareGrantDialog(address: String, nodes: List<ProxyNode>, connected
     var minutes by remember { mutableStateOf(15) }
     var rate by remember { mutableStateOf(256 * 1024) }
     var node by remember { mutableStateOf<NodeRef?>(null) }
+    var groupId by remember { mutableStateOf<String?>(null) }
+    val exitPools = remember(groups) { groups.filter { it.strategy == CustomGroupStrategy.FAILOVER } }
+    val groupNames = remember(groups) { groups.associate { it.id to it.name } }
     var query by remember { mutableStateOf("") }
     val names = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to NodeDisplayName.core(it.name) } }
     val matching = remember(nodes, query) {
@@ -139,11 +150,15 @@ internal fun ShareGrantDialog(address: String, nodes: List<ProxyNode>, connected
                             }
                         }
                         OutlinedTextField(query, { query = it.take(100) }, label = { Text("搜索节点") }, modifier = Modifier.fillMaxWidth())
-                        WeaveChoiceRow("自动选择", node == null, { node = null }, enabled = !busy)
+                        WeaveChoiceRow("自动选择", node == null && groupId == null, { node = null; groupId = null }, enabled = !busy)
+                    }
+                    items(exitPools, key = { "group.${it.id}" }) { pool ->
+                        WeaveChoiceRow(pool.name, groupId == pool.id, { groupId = pool.id; node = null },
+                            supporting = "故障切换", enabled = !busy, translateTitle = false)
                     }
                     items(matching, key = { "${it.subscriptionId}/${it.id}" }) { candidate ->
                         val reference = NodeRef(candidate.subscriptionId, candidate.id)
-                        WeaveChoiceRow(names.getValue(reference), node == reference, { node = reference },
+                        WeaveChoiceRow(names.getValue(reference), node == reference, { node = reference; groupId = null },
                             enabled = !busy, translateTitle = false)
                     }
                 } else {
@@ -164,7 +179,8 @@ internal fun ShareGrantDialog(address: String, nodes: List<ProxyNode>, connected
                     }
                     items(active, key = LanShareGrant::user) { grant ->
                         Column {
-                            Text(grant.node?.let(names::get) ?: copy("自动选择"), translate = false)
+                            Text(grant.groupId?.let { groupNames[it] ?: copy("策略组引用的节点已不存在") }
+                                ?: grant.node?.let(names::get) ?: copy("自动选择"), translate = false)
                             val remaining = (grant.expiresAtMs - now + 999) / 1_000
                             Text("$remaining s · ${Formatter.formatShortFileSize(context, grant.maxBytesPerSec.toLong())}/s",
                                 translate = false)
@@ -191,7 +207,7 @@ internal fun ShareGrantDialog(address: String, nodes: List<ProxyNode>, connected
                 change {
                     val grant = withContext(Dispatchers.IO) {
                         ProfileStorage.withCurrentEpoch(app, checkNotNull(epoch)) {
-                            store.create(node, minutes * 60_000L, rate)
+                            store.create(node, minutes * 60_000L, rate, groupId)
                         }
                     }
                     WeaveVpnService.reload(app)

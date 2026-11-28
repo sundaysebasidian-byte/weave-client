@@ -45,6 +45,7 @@ internal fun ChainDiagnostics(group: CustomProxyGroup, names: Map<NodeRef, Strin
         if (runtime.state != ConnectionState.CONNECTED) return@LaunchedEffect
         running = true
         try {
+            if (kind == CheckKind.REPAIR) CoreApi(app).repairChainIngress(MihomoChain.entryGroup(group))
             results = measureChain(app, group, names, kind)
         } finally {
             requested = null
@@ -60,6 +61,12 @@ internal fun ChainDiagnostics(group: CustomProxyGroup, names: Map<NodeRef, Strin
             enabled = !running && runtime.state == ConnectionState.CONNECTED,
             onClick = { requested = CheckKind.SINGLE },
         ) { Text("${copy("单跳检测")} · ${copy("直连")}", translate = false) }
+        if (group.entryFallbacks.isNotEmpty()) {
+            TextButton(
+                enabled = !running && runtime.state == ConnectionState.CONNECTED,
+                onClick = { requested = CheckKind.REPAIR },
+            ) { Text("检测并修复") }
+        }
         if (results.isNotEmpty()) {
             results.forEach { row ->
                 val delay = row.probe?.roundTripMs?.let { "$it ms" }
@@ -77,7 +84,7 @@ internal fun ChainDiagnostics(group: CustomProxyGroup, names: Map<NodeRef, Strin
 }
 
 private data class ChainProbeRow(val label: String, val node: String?, val probe: CoreApi.PathProbe?)
-private enum class CheckKind { CHAIN, SINGLE }
+private enum class CheckKind { CHAIN, SINGLE, REPAIR }
 
 private suspend fun measureChain(
     context: Context,
@@ -87,7 +94,7 @@ private suspend fun measureChain(
 ): List<ChainProbeRow> = coroutineScope {
     val api = CoreApi(context)
     val definitions = buildList {
-        if (kind == CheckKind.CHAIN) {
+        if (kind != CheckKind.SINGLE) {
             add(Triple("完整链路", null, CustomProxyGroupValidator.groupName(group.id)))
             group.via.forEachIndexed { index, ref ->
                 add(Triple("到此跳的链路", names[ref], MihomoChain.viaAlias(group, index)))
@@ -117,4 +124,31 @@ private suspend fun measureChain(
         }
     } else null
     tasks.awaitAll() + listOfNotNull(exit?.await())
+}
+
+
+internal data class ChainRating(val group: CustomProxyGroup, val latencyMs: Long, val spreadMs: Long)
+
+internal fun rankChainSamples(group: CustomProxyGroup, first: Long?, second: Long?): ChainRating? {
+    if (first == null || second == null || first <= 0 || second <= 0) return null
+    val smaller = minOf(first, second)
+    val spread = maxOf(first, second) - smaller
+    return ChainRating(group, smaller + spread / 2, spread)
+}
+
+/** Results belong to one VPN revision and are discarded on a physical path change. */
+internal suspend fun recommendCurrentChains(context: Context, groups: List<CustomProxyGroup>): ChainRating? = coroutineScope {
+    val api = CoreApi(context)
+    val slots = Semaphore(3)
+    groups.asSequence().filter { it.entry != null }.take(8).map { group ->
+        async {
+            slots.withPermit {
+                val alias = CustomProxyGroupValidator.groupName(group.id)
+                val first = api.probeProxy(alias)?.roundTripMs ?: return@withPermit null
+                rankChainSamples(group, first, api.probeProxy(alias)?.roundTripMs)
+            }
+        }
+    }.toList().awaitAll().filterNotNull().minWithOrNull(
+        compareBy<ChainRating> { it.latencyMs + it.spreadMs / 2 }.thenBy { it.group.id },
+    )
 }

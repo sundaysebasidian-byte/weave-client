@@ -37,6 +37,12 @@ decoded on the device, are not photographed or saved, and are not uploaded. Anal
 when the scanner closes or the app leaves the foreground. After a code is accepted, a
 subscription URL can be fetched by the normal user-initiated import workflow.
 
+When you opt in to sharing only on a trusted Wi-Fi access point, Android may ask
+for precise location permission to reveal that access point's Wi-Fi identity.
+Weave stores the selected SSID, BSSID and security type locally in encrypted
+storage for that setting. It does not obtain GPS coordinates or upload the access
+point identity. Sharing pauses when Android cannot provide the complete identity.
+
 To implement routing, the Android VPN process can access packet metadata, DNS
 requests, the local UID/package attribution of a connection, and the proxy rule
 that matched it. Weave does not upload that information to a Weave

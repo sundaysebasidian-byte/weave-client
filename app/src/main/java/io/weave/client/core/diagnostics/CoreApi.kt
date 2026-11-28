@@ -9,6 +9,7 @@ import androidx.compose.runtime.Immutable
 import java.io.IOException
 import java.io.InputStream
 import java.net.URLEncoder
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -16,8 +17,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
 
 @Immutable
@@ -73,6 +72,22 @@ internal fun connectionRuleLabel(rule: String, payload: String): String {
     }
 }
 
+internal suspend fun closeSharedConnections(ids: List<String>, close: suspend (String) -> Boolean): Boolean =
+    coroutineScope {
+        val next = AtomicInteger()
+        List(minOf(ids.size, 4)) {
+            async {
+                var successful = true
+                while (true) {
+                    val index = next.getAndIncrement()
+                    if (index >= ids.size) break
+                    if (!close(ids[index])) successful = false
+                }
+                successful
+            }
+        }.awaitAll().all { it }
+    }
+
 @Immutable
 data class CoreLogLine(val level: String, val message: String)
 
@@ -93,6 +108,18 @@ class CoreApi(private val context: Context) {
         LanShareTopology.read(JSONObject(request("GET", "/connections/share", MAX_RESPONSE_BYTES)))
     }
 
+    internal suspend fun resetAdaptiveDns() = withContext(Dispatchers.IO) {
+        closePath("/dns/weave-quality")
+    }
+
+    internal suspend fun suspendTrustedSharing(): Boolean = withContext(Dispatchers.IO) {
+        closePath("/connections/share-trusted")
+    }
+
+    internal suspend fun resumeTrustedSharing(): Boolean = withContext(Dispatchers.IO) {
+        controllerAction("POST", "/connections/share-trusted")
+    }
+
     internal suspend fun revokeSharedGrant(user: String): Boolean = withContext(Dispatchers.IO) {
         require(LanShareGrantStore.USER.matches(user))
         closePath("/connections/share/$user")
@@ -100,11 +127,7 @@ class CoreApi(private val context: Context) {
 
     internal suspend fun disconnectSharedDevice(key: SharedDeviceKey): Boolean = withContext(Dispatchers.IO) {
         val device = sharedDevices().firstOrNull { it.key == key } ?: return@withContext true
-        coroutineScope {
-            val slots = Semaphore(4)
-            device.connectionIds.map { id -> async { slots.withPermit { close(id) } } }
-                .awaitAll().all { it }
-        }
+        closeSharedConnections(device.connectionIds, ::close)
     }
 
     internal data class DnsAttempt(
@@ -157,6 +180,19 @@ class CoreApi(private val context: Context) {
         proxyMetadata("/proxies/" + encodeSegment(alias, 128))?.optString("now")?.takeIf(String::isNotBlank)
     }
 
+    internal suspend fun repairChainIngress(alias: String): Boolean = withContext(Dispatchers.IO) {
+        val path = "/group/" + encodeSegment(alias, 128)
+        val url = URLEncoder.encode("http://www.gstatic.com/generate_204", Charsets.UTF_8.name())
+        try {
+            JSONObject(request("GET", "$path/delay?url=$url&timeout=5000&expected=204", 32 * 1024, timeoutMillis = 6_000))
+                .length() > 0
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     internal suspend fun probeProviderProxy(provider: String, member: String): PathProbe? = withContext(Dispatchers.IO) {
         val path = "/providers/proxies/" + encodeSegment(provider, 128) + "/" + encodeSegment(member, 512)
         probeProxyPath(path, "$path/healthcheck")
@@ -201,8 +237,10 @@ class CoreApi(private val context: Context) {
         closePath("/connections")
     }
 
-    private suspend fun closePath(path: String): Boolean = try {
-        request("DELETE", path, 16 * 1024)
+    private suspend fun closePath(path: String): Boolean = controllerAction("DELETE", path)
+
+    private suspend fun controllerAction(method: String, path: String): Boolean = try {
+        request(method, path, 16 * 1024)
         true
     } catch (cancelled: CancellationException) {
         throw cancelled

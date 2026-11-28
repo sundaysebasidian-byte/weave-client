@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import io.weave.client.MainActivity
 import io.weave.client.R
 import io.weave.client.core.bridge.NativeBridge
+import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.core.engine.MihomoEngineAdapter
 import io.weave.client.core.engine.AssembledMihomoConfig
@@ -46,6 +47,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -77,6 +80,58 @@ class WeaveVpnService : VpnService() {
             },
         )
     }
+    private val trustedShareChanges = Mutex()
+    private val trustedLanStore by lazy { io.weave.client.data.TrustedLanStore(this) }
+    @Volatile
+    private var trustedWifiId: TrustedWifiId? = null
+    @Volatile
+    private var observedTrustedLinks: List<TrustedWifiLink> = emptyList()
+    private val trustedWifiWatcher by lazy {
+        TrustedWifiWatcher(connectivityManager) { links ->
+            val pinned = trustedWifiId
+            val before = trustedShareLink(pinned, observedTrustedLinks)
+            observedTrustedLinks = links
+            val after = trustedShareLink(pinned, links)
+            if (before != after) {
+                serviceScope.launch { applyTrustedWifiChange(before, after) }
+            }
+        }
+    }
+
+    private suspend fun applyTrustedWifiChange(before: TrustedWifiLink?, after: TrustedWifiLink?) {
+        trustedShareChanges.withLock {
+            if (shutdownRequested) return
+            val api = CoreApi(this)
+            if (before != null && !api.suspendTrustedSharing()) {
+                if (lastSuccessfulRuntime?.trustedLink != null) requestTrustedLanReload()
+            }
+            if (after == null || after != trustedShareLink(trustedWifiId, observedTrustedLinks)) return
+            val installedLink = lastSuccessfulRuntime?.trustedLink
+            val sameBindings = installedLink?.id == after.id && installedLink.addresses == after.addresses
+            if (!startInProgress && sameBindings && api.resumeTrustedSharing()) {
+                if (after != trustedShareLink(trustedWifiId, observedTrustedLinks) && !api.suspendTrustedSharing()) {
+                    requestTrustedLanReload()
+                }
+            } else {
+                requestTrustedLanReload()
+            }
+        }
+    }
+
+    private fun requestTrustedLanReload() {
+        val reload = synchronized(lifecycleLock) {
+            if (shutdownRequested) false
+            else if (startInProgress) {
+                reloadPending = true
+                false
+            } else if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
+                startInProgress = true
+                true
+            } else false
+        }
+        if (reload) serviceScope.launch { reloadRuntime() }
+    }
+
     private val uidAttributionCache = SocketUidAttributionCache()
     private val lifecycleLock = Any()
     @Volatile
@@ -300,6 +355,7 @@ class WeaveVpnService : VpnService() {
         io.weave.client.core.diagnostics.AppConnectionTrace.stop()
         shutdownRequested = true
         underlyingNetworkMonitor.stop()
+        trustedWifiWatcher.close()
         networkRecoveryJob?.cancel()
         outboundRecoveryJob?.cancel()
         serviceScope.cancel()
@@ -392,6 +448,9 @@ class WeaveVpnService : VpnService() {
             return
         }
         preferredUnderlyingNetwork = preferred
+        if (lastSuccessfulRuntime != null) {
+            serviceScope.launch { CoreApi(this@WeaveVpnService).resetAdaptiveDns() }
+        }
         if (VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED) {
             VpnRuntimeState.pathChanged(if (preferred == null) io.weave.client.domain.NetworkPathStatus.WAITING_NETWORK
                 else io.weave.client.domain.NetworkPathStatus.TUN_READY)
@@ -597,7 +656,6 @@ class WeaveVpnService : VpnService() {
         }
 
         try {
-            val sharingDisabled = previous.lanSharing && !settingsStore.networkPreferences().lanSharing
             val candidate = try {
                 prepareCurrentRuntime().also { prepared ->
                     // All providers are inline; validation does not modify the running core.
@@ -606,7 +664,11 @@ class WeaveVpnService : VpnService() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                if (sharingDisabled) {
+                if (previous.lanSharing && runCatching {
+                        !settingsStore.networkPreferences().lanSharing ||
+                            trustedLanStore.policy().let { it.restricted && trustedShareLink(it.wifi, observedTrustedLinks) != previous.trustedLink }
+                    }.getOrDefault(true)
+                ) {
                     stopAfterSharingDisabled(error)
                     return
                 }
@@ -634,7 +696,7 @@ class WeaveVpnService : VpnService() {
                 return
             }
 
-            if (previous.lanSharing && !candidate.lanSharing) {
+            if (previous.lanSharing && (!candidate.lanSharing || previous.trustedLink != candidate.trustedLink)) {
                 stopAfterSharingDisabled(candidateFailure)
                 return
             }
@@ -702,6 +764,16 @@ class WeaveVpnService : VpnService() {
     private fun prepareCurrentRuntime(): PreparedRuntime = io.weave.client.data.ProfileStorage.access(this) {
         cachedLanguage = settingsStore.language()
         val (mode, defaultTarget, networkPreferences) = settingsStore.runtimeRoutingSnapshot()
+        val trust = trustedLanStore.policy()
+        trustedWifiId = trust.wifi.takeIf { networkPreferences.lanSharing }
+        if (trustedWifiId != null) {
+            runCatching { trustedWifiWatcher.start() }
+        } else {
+            trustedWifiWatcher.close()
+            observedTrustedLinks = emptyList()
+        }
+        val trustedLink = trustedShareLink(trustedWifiId, observedTrustedLinks)
+        val sharing = networkPreferences.lanSharing && (!trust.restricted || trustedLink != null)
         val routes = if (mode == io.weave.client.domain.RoutingMode.RULE) routeStore.load() else emptyList()
         val installedApps = installedAppMappings(routes.map { it.packageName })
         val probeId = probeSubscriptionId.also { probeSubscriptionId = null }
@@ -714,8 +786,9 @@ class WeaveVpnService : VpnService() {
                 packageUids = installedApps.associate { (uid, packageName) ->
                     packageName to uid
                 },
-                networkPreferences = networkPreferences,
+                networkPreferences = networkPreferences.copy(lanSharing = sharing),
                 additionalSubscriptionIds = setOfNotNull(probeId),
+                trustedShareAddresses = if (trust.restricted) trustedLink?.addresses.orEmpty() else null,
             ),
             installedApps = installedApps,
             ipMode = networkPreferences.ipv6Mode,
@@ -732,7 +805,8 @@ class WeaveVpnService : VpnService() {
                 emptyList()
             },
             httpProxyPort = MihomoConfigAssembler.MIXED_PORT.takeIf { networkPreferences.systemHttpProxy },
-            lanSharing = networkPreferences.lanSharing,
+            lanSharing = sharing,
+            trustedLink = trustedLink,
         )
     }
 
@@ -741,6 +815,10 @@ class WeaveVpnService : VpnService() {
         alreadyValidated: Boolean = false,
         onStage: (String) -> Unit = {},
     ) {
+        val pinnedLink = prepared.trustedLink
+        check(pinnedLink == null || pinnedLink == trustedShareLink(trustedWifiId, observedTrustedLinks)) {
+            "The trusted sharing network changed before activation"
+        }
         onStage("S03")
         if (!alreadyValidated) engine.validate(prepared.assembled.yaml).getOrThrow()
         onStage("S04")
@@ -759,6 +837,9 @@ class WeaveVpnService : VpnService() {
                 onTunConsumed = { handedToCore = true },
             ).getOrThrow()
             handedToCore = true
+            if (pinnedLink != null && pinnedLink != trustedShareLink(trustedWifiId, observedTrustedLinks)) {
+                check(CoreApi(this).suspendTrustedSharing()) { "Could not revoke the trusted sharing listeners" }
+            }
             onStage("S06")
             awaitSystemVpnRoute()
         } finally {
@@ -1158,5 +1239,6 @@ class WeaveVpnService : VpnService() {
         val bypassPackages: List<String> = emptyList(),
         val httpProxyPort: Int? = null,
         val lanSharing: Boolean = false,
+        val trustedLink: TrustedWifiLink? = null,
     )
 }

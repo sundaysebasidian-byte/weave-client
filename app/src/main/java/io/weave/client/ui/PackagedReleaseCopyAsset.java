@@ -9,11 +9,11 @@ import java.util.function.Consumer;
 /** One registry and I/O boundary for app-owned, APK-local release copy only. */
 final class PackagedReleaseCopyAsset {
     enum Seal {
-        AR("ar-EG", "العربية (مصر)", 197360, "5f5341e61f32be37a579ac6c7549f1dc2ca1a5ab51b95671b6c56e85fd58a4a9"),
-        ES("es-MX", "Español (México)", 172270, "20fe3db69877bb7e79d3510c013c180e4ee34b20e95915184c9ac5ee86669571"),
-        KO("ko-KR", "한국어 (대한민국)", 180002, "8232e4dc1df379ccd9ea3d0d6c3bcfcea456b3f480c6c0eab13dbcd32a9140f5"),
-        RU("ru-RU", "Русский", 216249, "32c5e845be8f7bfac5ea970252893112909d137e40c89045e11739e399677403"),
-        HI("hi-IN", "हिन्दी", 243958, "1464f22b226298e9761dac74d1365386b4145f88bb61796c18cfcf49d85e61ac");
+        AR("ar-EG", "العربية (مصر)", 197891, "8d55ef04bea5dde052a859108a0e1b8c88fb77f46d4997bbb298e43bb19b3633"),
+        ES("es-MX", "Español (México)", 172716, "8829fdfc2ec905bfd6fe32406dbcee306dcae96d265021c88db4ef44e46ec6ac"),
+        KO("ko-KR", "한국어 (대한민국)", 180480, "d76fdc0cbb5f255480f77361ec288a99b7c3740da7e923b549c98a4a81b637a0"),
+        RU("ru-RU", "Русский", 216857, "ca502f19da6a89b7f282f7558efe7e6d78f721906a4813e5041ea420acde70a4"),
+        HI("hi-IN", "हिन्दी", 244629, "537a904f3d30015887ac4e14a507bc76626b4b4d0a8315cab5e47f2955d4b573");
 
         final String tag;
         final String label;

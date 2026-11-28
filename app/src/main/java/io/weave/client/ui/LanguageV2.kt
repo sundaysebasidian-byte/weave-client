@@ -8,6 +8,13 @@ import io.weave.client.domain.WeaveLanguage
  * the rest of the table; merged after the older supplemental entries.
  */
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
+    "可信 Wi-Fi" to SupplementalTranslation("Trusted Wi-Fi", "信任的 Wi-Fi", "信頼済み Wi-Fi", "Wi-Fi de confiance", "Vertrauenswürdiges WLAN"),
+    "等待可信 Wi-Fi" to SupplementalTranslation("Waiting for trusted Wi-Fi", "等待信任的 Wi-Fi", "信頼済み Wi-Fi に接続待ち", "En attente du Wi-Fi de confiance", "Warten auf das vertrauenswürdige WLAN"),
+    "移除可信 Wi-Fi" to SupplementalTranslation("Remove trusted Wi-Fi", "移除信任的 Wi-Fi", "信頼済み Wi-Fi を削除", "Retirer le Wi-Fi de confiance", "Vertrauenswürdiges WLAN entfernen"),
+    "仅在此 Wi-Fi 共享" to SupplementalTranslation("Share only on this Wi-Fi", "僅在此 Wi-Fi 分享", "この Wi-Fi でのみ共有", "Partager uniquement sur ce Wi-Fi", "Nur in diesem WLAN teilen"),
+    "检测并修复" to SupplementalTranslation("Check and repair", "檢查並修復", "診断して修復", "Vérifier et réparer", "Prüfen und reparieren"),
+    "当前网络推荐" to SupplementalTranslation("Recommend for this network", "目前網路推薦", "現在のネットワークのおすすめ", "Recommandation pour ce réseau", "Empfehlung für dieses Netzwerk"),
+    "暂无可用链路" to SupplementalTranslation("No usable chain found", "暫無可用鏈路", "利用できるチェーンがありません", "Aucune chaîne utilisable", "Keine nutzbare Kette gefunden"),
     "临时授权" to SupplementalTranslation("Temporary access", "臨時授權", "一時アクセス", "Accès temporaire", "Temporärer Zugriff"),
     "到此跳的链路" to SupplementalTranslation("Path to this hop", "到此跳的路徑", "このホップまでの経路", "Chemin jusqu’à ce saut", "Pfad bis zu diesem Hop"),
     "单跳检测" to SupplementalTranslation("Single-hop test", "單跳測試", "単一ホップのテスト", "Test d’un seul saut", "Einzelner Hop-Test"),

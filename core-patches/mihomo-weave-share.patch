@@ -19,21 +19,169 @@ index 11078a0..618a0e8 100644
  }
  
  func (au *inMemoryAuthenticator) Users() []string { return au.usernames }
+diff --git a/config/config.go b/config/config.go
+index 8959dda..0f9a2f9 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -155,6 +155,7 @@ type DNS struct {
+ 	Fallback              []dns.NameServer
+ 	FallbackIPFilter      []C.IpMatcher
+ 	FallbackDomainFilter  []C.DomainMatcher
++	WeaveAdaptive         bool
+ 	FallbackLazyQuery     bool
+ 	Listen                string
+ 	ListenRoutingMark     int
+@@ -229,6 +230,7 @@ type RawDNS struct {
+ 	NameServer                   []string                            `yaml:"nameserver" json:"nameserver"`
+ 	Fallback                     []string                            `yaml:"fallback" json:"fallback"`
+ 	FallbackFilter               RawFallbackFilter                   `yaml:"fallback-filter" json:"fallback-filter"`
++	WeaveAdaptive                bool                                `yaml:"weave-adaptive" json:"weave-adaptive"`
+ 	FallbackLazyQuery            bool                                `yaml:"fallback-lazy-query" json:"fallback-lazy-query"`
+ 	Listen                       string                              `yaml:"listen" json:"listen"`
+ 	ListenRoutingMark            int                                 `yaml:"listen-routing-mark" json:"listen-routing-mark"`
+@@ -1597,6 +1599,7 @@ func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS,
+ 			}
+ 		}
+ 		dnsCfg.FallbackLazyQuery = cfg.FallbackLazyQuery
++		dnsCfg.WeaveAdaptive = cfg.WeaveAdaptive
+ 	}
+ 
+ 	return dnsCfg, nil
+diff --git a/dns/resolver.go b/dns/resolver.go
+index 3f9ac40..3b93b34 100644
+--- a/dns/resolver.go
++++ b/dns/resolver.go
+@@ -37,6 +37,7 @@ type result struct {
+ }
+ 
+ type Resolver struct {
++	adaptive              *adaptiveDNS
+ 	ipv6                  bool
+ 	ipv6Timeout           time.Duration
+ 	main                  []dnsClient
+@@ -216,7 +217,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
+ 			result, cache, err = batchExchange(ctx, matched, m)
+ 			return
+ 		}
+-		result, cache, err = batchExchange(ctx, r.main, m)
++		result, cache, err = batchExchangeAdaptive(ctx, r.main, m, r.adaptive)
+ 		return
+ 	}
+ 
+@@ -309,7 +310,11 @@ func (r *Resolver) ipExchange(ctx context.Context, m *D.Msg) (msg *D.Msg, err er
+ 		return res.Msg, res.Error
+ 	}
+ 
+-	msgCh := r.asyncExchange(ctx, r.main, m)
++	msgCh := make(chan *result, 1)
++	go func() {
++		response, _, failure := batchExchangeAdaptive(ctx, r.main, m, r.adaptive)
++		msgCh <- &result{Msg: response, Error: failure}
++	}()
+ 
+ 	if r.fallback == nil { // directly return if no fallback servers are available
+ 		res := <-msgCh
+@@ -398,6 +403,7 @@ func (r *Resolver) ClearCache() {
+ 
+ func (r *Resolver) ResetConnection() {
+ 	if r != nil {
++		r.adaptive.reset()
+ 		for _, c := range r.main {
+ 			c.ResetConnection()
+ 		}
+@@ -452,6 +458,7 @@ type Config struct {
+ 	FallbackIPFilter     []C.IpMatcher
+ 	FallbackDomainFilter []C.DomainMatcher
+ 	FallbackLazyQuery    bool
++	WeaveAdaptive        bool
+ 	Policy               []Policy
+ 	ProxyServerPolicy    []Policy
+ 	CacheAlgorithm       string
+@@ -596,6 +603,20 @@ func NewResolver(config Config) (rs Resolvers) {
+ 		r.fallbackLazyQuery = config.FallbackLazyQuery
+ 	}
+ 
++	if config.WeaveAdaptive && len(config.Main) >= 3 && len(config.Main) <= 6 {
++		encrypted := true
++		for _, server := range config.Main {
++			switch server.Net {
++			case "https", "tls", "quic":
++			default:
++				encrypted = false
++			}
++		}
++		if encrypted {
++			rs.Resolver.adaptive = &adaptiveDNS{scores: make(map[string]resolverScore)}
++		}
++	}
++
+ 	return
+ }
+ 
 diff --git a/dns/util.go b/dns/util.go
-index fef9396..24ab7cb 100644
+index fef9396..531f3d7 100644
 --- a/dns/util.go
 +++ b/dns/util.go
-@@ -375,6 +375,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
+@@ -369,30 +369,83 @@ func msgToLogString(msg *D.Msg) string {
+ 	}
+ }
+ 
+-func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.Msg, cache bool, err error) {
++func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (*D.Msg, bool, error) {
++	return batchExchangeAdaptive(ctx, clients, m, nil)
++}
++
++func batchExchangeAdaptive(ctx context.Context, clients []dnsClient, m *D.Msg, quality *adaptiveDNS) (msg *D.Msg, cache bool, err error) {
+ 	cache = true
+ 	fast, ctx := picker.WithTimeout[*D.Msg](ctx, resolver.DefaultDNSTimeout)
  	defer fast.Close()
  	domain := msgToDomain(m)
  	_, qTypeStr := msgToQtype(m)
+-	for _, client := range clients {
 +	trace, _ := ctx.Value(probeTraceKey{}).(*probeTrace)
- 	for _, client := range clients {
++	ordered, primary, generation := quality.plan(clients)
++	var release chan struct{}
++	var firstFinished chan struct{}
++	if primary < len(ordered) {
++		release = make(chan struct{})
++		firstFinished = make(chan struct{}, primary)
++		go func() {
++			defer close(release)
++			timer := time.NewTimer(adaptiveHedge)
++			defer timer.Stop()
++			for i := 0; i < primary; i++ {
++				select {
++				case <-ctx.Done():
++					return
++				case <-timer.C:
++					return
++				case <-firstFinished:
++				}
++			}
++		}()
++	}
++	for i, client := range ordered {
  		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
  			msg, err = client.ExchangeContext(ctx, m)
-@@ -383,16 +384,22 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
- 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
+ 			return msg, false, err
+ 		}
+-		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
++		client := client // support the pinned Go language version's loop capture rules
++		deferred := i >= primary
  		fast.Go(func() (*D.Msg, error) {
++			if release != nil {
++				if deferred {
++					select {
++					case <-ctx.Done():
++						return nil, ctx.Err()
++					case <-release:
++						if ctx.Err() != nil {
++							return nil, ctx.Err()
++						}
++					}
++				}
++			}
++			start := time.Now()
  			log.Debugln("[DNS] resolve %s %s from %s", domain, qTypeStr, client.Address())
 -			m, err := client.ExchangeContext(ctx, m)
 +			var answer *D.Msg
@@ -43,10 +191,17 @@ index fef9396..24ab7cb 100644
 +			} else {
 +				answer, err = trace.exchange(ctx, client, m)
 +			}
++			failed := err != nil || answer == nil || answer.Rcode == D.RcodeServerFailure || answer.Rcode == D.RcodeRefused
++			quality.observe(ctx, client, time.Since(start), !failed, generation)
++			if failed && firstFinished != nil && !deferred {
++				firstFinished <- struct{}{}
++			}
  			if err != nil {
  				return nil, err
 -			} else if cache && (m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused) {
-+			} else if cache && (answer.Rcode == D.RcodeServerFailure || answer.Rcode == D.RcodeRefused) {
++			} else if answer == nil {
++				return nil, errors.New("empty DNS response")
++			} else if answer.Rcode == D.RcodeServerFailure || answer.Rcode == D.RcodeRefused {
  				// currently, cache indicates whether this msg was from a RCode client,
  				// so we would ignore RCode errors from RCode clients.
 -				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
@@ -59,12 +214,219 @@ index fef9396..24ab7cb 100644
  		})
  	}
  
+diff --git a/dns/weave_adaptive.go b/dns/weave_adaptive.go
+new file mode 100644
+index 0000000..8572310
+--- /dev/null
++++ b/dns/weave_adaptive.go
+@@ -0,0 +1,108 @@
++package dns
++
++import (
++	"context"
++	"sort"
++	"sync"
++	"time"
++)
++
++const adaptiveHedge = 40 * time.Millisecond
++const adaptiveLifetime = 90 * time.Second
++
++type resolverScore struct {
++	latency  time.Duration
++	failures int
++	last     time.Time
++}
++
++// The score belongs to a resolver instance. It stores no DNS names or answers.
++type adaptiveDNS struct {
++	mu         sync.Mutex
++	scores     map[string]resolverScore
++	queries    uint64
++	generation uint64
++}
++
++func adaptiveKey(client dnsClient) string {
++	return probeTransport(client) + "|" + client.Address()
++}
++
++func (d *adaptiveDNS) plan(clients []dnsClient) ([]dnsClient, int, uint64) {
++	if d == nil || len(clients) < 3 {
++		return clients, len(clients), 0
++	}
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	d.queries++
++	if d.queries <= 3 || d.queries%8 == 0 || len(d.scores) == 0 {
++		return clients, len(clients), d.generation
++	}
++	now := time.Now()
++	scored := make([]struct {
++		client dnsClient
++		score  time.Duration
++	}, 0, len(clients))
++	for _, c := range clients {
++		history := d.scores[adaptiveKey(c)]
++		cost := 750 * time.Millisecond
++		if now.Sub(history.last) <= adaptiveLifetime {
++			if history.latency > 0 {
++				cost = history.latency
++			}
++			cost += time.Duration(history.failures) * 500 * time.Millisecond
++		}
++		scored = append(scored, struct {
++			client dnsClient
++			score  time.Duration
++		}{c, cost})
++	}
++	sort.SliceStable(scored, func(i, j int) bool { return scored[i].score < scored[j].score })
++	ordered := make([]dnsClient, len(scored))
++	for i, entry := range scored {
++		ordered[i] = entry.client
++	}
++	return ordered, 2, d.generation
++}
++
++func (d *adaptiveDNS) observe(ctx context.Context, c dnsClient, duration time.Duration, succeeded bool, generation uint64) {
++	if d == nil || !succeeded && ctx.Err() != nil {
++		return
++	}
++	key := adaptiveKey(c)
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	if generation != d.generation {
++		return
++	}
++	s := d.scores[key]
++	now := time.Now()
++	if now.Sub(s.last) > adaptiveLifetime {
++		s = resolverScore{}
++	}
++	if succeeded {
++		if s.latency == 0 {
++			s.latency = duration
++		} else {
++			s.latency = (7*s.latency + duration) / 8
++		}
++		if s.failures > 0 {
++			s.failures--
++		}
++	} else if s.failures < 4 {
++		s.failures++
++	}
++	s.last = now
++	d.scores[key] = s
++}
++
++func (d *adaptiveDNS) reset() {
++	if d == nil {
++		return
++	}
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	d.scores = make(map[string]resolverScore)
++	d.queries = 0
++	d.generation++
++}
+diff --git a/dns/weave_adaptive_test.go b/dns/weave_adaptive_test.go
+new file mode 100644
+index 0000000..b924a1b
+--- /dev/null
++++ b/dns/weave_adaptive_test.go
+@@ -0,0 +1,87 @@
++package dns
++
++import (
++	"context"
++	"errors"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	D "github.com/miekg/dns"
++)
++
++type adaptiveFixture struct {
++	fixtureDNS
++	wait  time.Duration
++	sends *atomic.Int64
++}
++
++func (f adaptiveFixture) ExchangeContext(ctx context.Context, q *D.Msg) (*D.Msg, error) {
++	f.sends.Add(1)
++	if f.wait > 0 {
++		timer := time.NewTimer(f.wait)
++		defer timer.Stop()
++		select {
++		case <-timer.C:
++		case <-ctx.Done():
++			return nil, ctx.Err()
++		}
++	}
++	return f.fixtureDNS.ExchangeContext(ctx, q)
++}
++
++func warmAdaptiveFixtures(b testing.TB, failFirst bool) ([]dnsClient, *adaptiveDNS, *atomic.Int64) {
++	b.Helper()
++	writes := &atomic.Int64{}
++	ready := &adaptiveDNS{scores: make(map[string]resolverScore), queries: 4}
++	var clients []dnsClient
++	for i, name := range []string{"A", "B", "C", "D", "E", "F"} {
++		fixture := adaptiveFixture{fixtureDNS: fixtureDNS{address: name}, wait: time.Millisecond, sends: writes}
++		if failFirst && i < 2 {
++			fixture.fixtureDNS.error = errors.New("primary offline")
++		}
++		clients = append(clients, fixture)
++		ready.observe(context.Background(), fixture, time.Duration(i+1)*time.Millisecond, true, 0)
++	}
++	return clients, ready, writes
++}
++
++func TestWeaveAdaptivePreservesBackupWhenBothPrimariesFail(t *testing.T) {
++	clients, quality, writes := warmAdaptiveFixtures(t, true)
++	result, _, err := batchExchangeAdaptive(context.Background(), clients, weaveProbeQuestion(false), quality)
++	if result == nil || err != nil || writes.Load() < 3 {
++		t.Fatalf("No working fallback after unavailable primaries: %v sends=%d", err, writes.Load())
++	}
++}
++
++func TestWeaveAdaptiveUsesOnlyTwoOnHealthyWarmQuery(t *testing.T) {
++	clients, quality, writes := warmAdaptiveFixtures(t, false)
++	result, _, err := batchExchangeAdaptive(context.Background(), clients, weaveProbeQuestion(false), quality)
++	if result == nil || err != nil || writes.Load() != 2 {
++		t.Fatalf("Expected exactly two requests: %v sends=%d", err, writes.Load())
++	}
++	quality.reset()
++	_, _, err = batchExchangeAdaptive(context.Background(), clients, weaveProbeQuestion(false), quality)
++	if err != nil || writes.Load() != 8 {
++		t.Fatalf("Reset should relearn all six upstreams: %v sends=%d", err, writes.Load())
++	}
++}
++
++func BenchmarkWeaveAdaptiveRequests(b *testing.B) {
++	for _, name := range []string{"all", "adaptive"} {
++		b.Run(name, func(b *testing.B) {
++			clients, quality, writes := warmAdaptiveFixtures(b, false)
++			if name == "all" {
++				quality = nil
++			}
++			b.ReportAllocs()
++			b.ResetTimer()
++			for i := 0; i < b.N; i++ {
++				if result, _, err := batchExchangeAdaptive(context.Background(), clients, weaveProbeQuestion(false), quality); result == nil || err != nil {
++					b.Fatal(err)
++				}
++			}
++			b.ReportMetric(float64(writes.Load())/float64(b.N), "queries/op")
++		})
++	}
++}
 diff --git a/dns/weave_probe.go b/dns/weave_probe.go
 new file mode 100644
-index 0000000..a853e0e
+index 0000000..948e82f
 --- /dev/null
 +++ b/dns/weave_probe.go
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,153 @@
 +package dns
 +
 +import (
@@ -216,6 +578,8 @@ index 0000000..a853e0e
 +	}
 +	return elapsed
 +}
++
++func (r *Resolver) ResetAdaptiveQuality() { r.adaptive.reset() }
 diff --git a/dns/weave_probe_test.go b/dns/weave_probe_test.go
 new file mode 100644
 index 0000000..6bd09d7
@@ -359,11 +723,23 @@ index 0000000..6bd09d7
 +	}
 +	return stream.Close()
 +}
+diff --git a/hub/executor/executor.go b/hub/executor/executor.go
+index d3b5eb8..8529401 100644
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -255,6 +255,7 @@ func updateDNS(c *config.DNS, generalIPv6 bool) {
+ 		FallbackIPFilter:     c.FallbackIPFilter,
+ 		FallbackDomainFilter: c.FallbackDomainFilter,
+ 		FallbackLazyQuery:    c.FallbackLazyQuery,
++		WeaveAdaptive:        c.WeaveAdaptive,
+ 		Default:              c.DefaultNameserver,
+ 		Policy:               c.NameServerPolicy,
+ 		ProxyServer:          c.ProxyServerNameserver,
 diff --git a/hub/route/connections.go b/hub/route/connections.go
-index ddfa6c5..6330f46 100644
+index ddfa6c5..0dd927a 100644
 --- a/hub/route/connections.go
 +++ b/hub/route/connections.go
-@@ -3,9 +3,11 @@ package route
+@@ -3,9 +3,13 @@ package route
  import (
  	"bytes"
  	"encoding/json"
@@ -372,15 +748,28 @@ index ddfa6c5..6330f46 100644
  	"time"
  
 +	"github.com/metacubex/mihomo/internal/weaveshare"
++	"github.com/metacubex/mihomo/listener"
++	"github.com/metacubex/mihomo/tunnel"
  	"github.com/metacubex/mihomo/tunnel/statistic"
  
  	"github.com/metacubex/chi"
-@@ -18,9 +20,71 @@ func connectionRouter() http.Handler {
+@@ -18,9 +22,82 @@ func connectionRouter() http.Handler {
  	r.Get("/", getConnections)
  	r.Delete("/", closeAllConnections)
  	r.Delete("/{id}", closeConnection)
 +	if embedMode {
 +		r.Get("/share", getSharedConnections)
++		r.Delete("/share-trusted", func(w http.ResponseWriter, r *http.Request) {
++			listener.StopTrustedSharing()
++			render.NoContent(w, r)
++		})
++		r.Post("/share-trusted", func(w http.ResponseWriter, r *http.Request) {
++			if !listener.ResumeTrustedSharing(tunnel.Tunnel) {
++				w.WriteHeader(http.StatusConflict)
++				return
++			}
++			render.NoContent(w, r)
++		})
 +		r.Delete("/share/{user}", revokeShare)
 +	}
  	return r
@@ -448,7 +837,7 @@ index ddfa6c5..6330f46 100644
  	if !(r.Header.Get("Upgrade") == "websocket") {
  		snapshot := statistic.DefaultManager.Snapshot()
 diff --git a/hub/route/dns.go b/hub/route/dns.go
-index 5a805a1..c4ecac8 100644
+index 5a805a1..e73771c 100644
 --- a/hub/route/dns.go
 +++ b/hub/route/dns.go
 @@ -3,8 +3,13 @@ package route
@@ -465,13 +854,19 @@ index 5a805a1..c4ecac8 100644
  
  	"github.com/metacubex/chi"
  	"github.com/metacubex/chi/render"
-@@ -16,9 +21,78 @@ import (
+@@ -16,9 +21,85 @@ import (
  func dnsRouter() http.Handler {
  	r := chi.NewRouter()
  	r.Get("/query", queryDNS)
 +	if embedMode {
 +		r.Get("/weave-path", probeDNSPath)
 +		r.Get("/weave-doq", probeDoQ)
++		r.Delete("/weave-quality", func(w http.ResponseWriter, r *http.Request) {
++			if active, ok := resolver.DefaultResolver.(runtimeDNSProbe); ok {
++				active.ResetAdaptiveQuality()
++			}
++			render.NoContent(w, r)
++		})
 +	}
  	return r
  }
@@ -480,6 +875,7 @@ index 5a805a1..c4ecac8 100644
 +var dnsProbeSlots = make(chan struct{}, 4)
 +
 +type runtimeDNSProbe interface {
++	ResetAdaptiveQuality()
 +	ProbeActivePath(context.Context, bool) weavedns.ProbePath
 +	ProbeQUIC(context.Context, string, bool) weavedns.ProbePath
 +}
@@ -663,10 +1059,10 @@ index 0000000..328467c
 +}
 diff --git a/internal/weaveshare/policy.go b/internal/weaveshare/policy.go
 new file mode 100644
-index 0000000..2968678
+index 0000000..606d7ee
 --- /dev/null
 +++ b/internal/weaveshare/policy.go
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,272 @@
 +package weaveshare
 +
 +import (
@@ -839,6 +1235,18 @@ index 0000000..2968678
 +	if g == nil || len(data) == 0 {
 +		return writer.Write(data)
 +	}
++	now, err := bootMillis()
++	if err != nil || g.state.expiry <= now {
++		return 0, errors.New("sharing account expired")
++	}
++	handshake, cancel := context.WithTimeout(ctx, time.Duration(g.state.expiry-now)*time.Millisecond)
++	defer cancel()
++	defer context.AfterFunc(g.state.ctx, cancel)()
++	return g.writeUpload(handshake, writer, data)
++}
++
++// Established relays already carry the session's expiry and revocation context.
++func (g *Guard) writeUpload(ctx context.Context, writer io.Writer, data []byte) (int, error) {
 +	written := 0
 +	for len(data) > 0 {
 +		part := smaller(len(data), g.state.up.Burst())
@@ -864,13 +1272,8 @@ index 0000000..2968678
 +		if err != nil || g.state.expiry <= now {
 +			return errors.New("sharing account expired")
 +		}
-+		remaining := time.Duration(smaller(g.state.expiry-now, 60_000)) * time.Millisecond
-+		bounded, cancel := context.WithTimeout(ctx, remaining)
-+		cancelOnRevoke := context.AfterFunc(g.state.ctx, cancel)
 +		part := smaller(n, limiter.Burst())
-+		err = limiter.WaitN(bounded, part)
-+		cancelOnRevoke()
-+		cancel()
++		err = limiter.WaitN(ctx, part)
 +		if err != nil {
 +			return err
 +		}
@@ -930,7 +1333,139 @@ index 0000000..2968678
 +}
 +
 +func (c *limitedConn) Write(p []byte) (int, error) {
-+	return c.guard.WriteUpload(c.ctx, c.Conn, p)
++	return c.guard.writeUpload(c.ctx, c.Conn, p)
++}
+diff --git a/internal/weaveshare/rate_bench_test.go b/internal/weaveshare/rate_bench_test.go
+new file mode 100644
+index 0000000..3536c8a
+--- /dev/null
++++ b/internal/weaveshare/rate_bench_test.go
+@@ -0,0 +1,33 @@
++package weaveshare
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	"golang.org/x/time/rate"
++)
++
++func BenchmarkRelayRateAdmission(b *testing.B) {
++	for _, name := range []string{"per-buffer-context", "session-context"} {
++		b.Run(name, func(b *testing.B) {
++			lease, end := context.WithTimeout(context.Background(), time.Hour)
++			defer end()
++			quota := rate.NewLimiter(rate.Inf, 32768)
++			b.ReportAllocs()
++			for i := 0; i < b.N; i++ {
++				if name == "per-buffer-context" {
++					frame, cancel := context.WithTimeout(lease, time.Minute)
++					detach := context.AfterFunc(lease, cancel)
++					if err := quota.WaitN(frame, 32768); err != nil {
++						b.Fatal(err)
++					}
++					detach()
++					cancel()
++				} else if err := quota.WaitN(lease, 32768); err != nil {
++					b.Fatal(err)
++				}
++			}
++		})
++	}
++}
+diff --git a/internal/weaveshare/trusted.go b/internal/weaveshare/trusted.go
+new file mode 100644
+index 0000000..648a3dc
+--- /dev/null
++++ b/internal/weaveshare/trusted.go
+@@ -0,0 +1,48 @@
++package weaveshare
++
++import (
++	"context"
++	"io"
++	"strings"
++	"sync"
++)
++
++const trustedPrefix = "weave-share-trusted-"
++
++var trusted struct {
++	sync.Mutex
++	ctx    context.Context
++	cancel context.CancelFunc
++}
++
++func IsTrustedListener(name string) bool { return strings.HasPrefix(name, trustedPrefix) }
++
++func EnableTrusted() {
++	trusted.Lock()
++	defer trusted.Unlock()
++	if trusted.ctx == nil {
++		trusted.ctx, trusted.cancel = context.WithCancel(context.Background())
++	}
++}
++
++func DisableTrusted() {
++	trusted.Lock()
++	defer trusted.Unlock()
++	if trusted.cancel != nil {
++		trusted.cancel()
++	}
++	trusted.ctx, trusted.cancel = nil, nil
++}
++
++// AttachTrusted pins an accepted relay to the lifecycle of this trusted Wi-Fi session.
++func AttachTrusted(name string, conn io.Closer) (release func() bool, allowed bool) {
++	if !IsTrustedListener(name) {
++		return nil, true
++	}
++	trusted.Lock()
++	defer trusted.Unlock()
++	if trusted.ctx == nil {
++		return nil, false
++	}
++	return context.AfterFunc(trusted.ctx, func() { _ = conn.Close() }), true
++}
+diff --git a/internal/weaveshare/trusted_test.go b/internal/weaveshare/trusted_test.go
+new file mode 100644
+index 0000000..fdd0f78
+--- /dev/null
++++ b/internal/weaveshare/trusted_test.go
+@@ -0,0 +1,33 @@
++package weaveshare
++
++import (
++	"errors"
++	"io"
++	"net"
++	"testing"
++	"time"
++)
++
++func TestTrustedRevocationDoesNotReopenOldRelays(t *testing.T) {
++	const name = "weave-share-trusted-grants-0"
++	DisableTrusted()
++	t.Cleanup(DisableTrusted)
++	server, peer := net.Pipe()
++	defer server.Close()
++	defer peer.Close()
++	if _, allowed := AttachTrusted(name, server); allowed {
++		t.Fatal("unknown Wi-Fi must fail closed")
++	}
++	EnableTrusted()
++	release, allowed := AttachTrusted(name, server)
++	if !allowed {
++		t.Fatal("the verified session was rejected")
++	}
++	defer release()
++	DisableTrusted()
++	EnableTrusted()
++	peer.SetReadDeadline(time.Now().Add(time.Second))
++	if _, err := peer.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
++		t.Fatalf("old relay was not closed on network loss: %v", err)
++	}
 +}
 diff --git a/listener/http/proxy.go b/listener/http/proxy.go
 index 4cc03f4..354524c 100644
@@ -960,8 +1495,197 @@ index 4cc03f4..354524c 100644
  			if request.Method == http.MethodConnect {
  				// Manual writing to support CONNECT for http 1.0 (workaround for uplay client)
  				if _, err = fmt.Fprintf(conn, "HTTP/%d.%d %03d %s\r\n\r\n", request.ProtoMajor, request.ProtoMinor, http.StatusOK, "Connection established"); err != nil {
+diff --git a/listener/inbound/mixed.go b/listener/inbound/mixed.go
+index 4508774..082c692 100644
+--- a/listener/inbound/mixed.go
++++ b/listener/inbound/mixed.go
+@@ -109,6 +109,8 @@ func (m *Mixed) Close() error {
+ 			errs = append(errs, fmt.Errorf("close udp listener %s err: %w", l.Address(), err))
+ 		}
+ 	}
++	m.l = nil
++	m.lUDP = nil
+ 	if len(errs) > 0 {
+ 		return errors.Join(errs...)
+ 	}
+diff --git a/listener/listener.go b/listener/listener.go
+index 3a0a8aa..5cabfd6 100644
+--- a/listener/listener.go
++++ b/listener/listener.go
+@@ -9,6 +9,7 @@ import (
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/internal/weaveshare"
+ 	LC "github.com/metacubex/mihomo/listener/config"
+ 	"github.com/metacubex/mihomo/listener/http"
+ 	"github.com/metacubex/mihomo/listener/mixed"
+@@ -42,6 +43,7 @@ var (
+ 	tunnelTCPListeners  = map[string]*LT.Listener{}
+ 	tunnelUDPListeners  = map[string]*LT.PacketConn{}
+ 	inboundListeners    = map[string]C.InboundListener{}
++	suspendedTrusted    map[string]C.InboundListener
+ 	tunLister           *sing_tun.Listener
+ 	shadowSocksListener C.MultiAddrListener
+ 	vmessListener       *sing_vmess.Listener
+@@ -628,15 +630,25 @@ func PatchInboundListeners(newListenerMap map[string]C.InboundListener, tunnel C
+ 	inboundMux.Lock()
+ 	defer inboundMux.Unlock()
+ 
++	if dropOld {
++		suspendedTrusted = nil
++	}
++	trustedConfigured := false
+ 	for name, newListener := range newListenerMap {
++		if weaveshare.IsTrustedListener(name) {
++			weaveshare.EnableTrusted()
++			trustedConfigured = true
++		}
+ 		if oldListener, ok := inboundListeners[name]; ok {
+ 			if !oldListener.Config().Equal(newListener.Config()) {
+ 				_ = oldListener.Close()
++				delete(inboundListeners, name)
+ 			} else {
+ 				continue
+ 			}
+ 		}
+ 		if err := newListener.Listen(tunnel); err != nil {
++			_ = newListener.Close()
+ 			log.Errorln("Listener %s listen err: %s", name, err.Error())
+ 			continue
+ 		}
+@@ -644,6 +656,9 @@ func PatchInboundListeners(newListenerMap map[string]C.InboundListener, tunnel C
+ 	}
+ 
+ 	if dropOld {
++		if !trustedConfigured {
++			weaveshare.DisableTrusted()
++		}
+ 		for name, oldListener := range inboundListeners {
+ 			if _, ok := newListenerMap[name]; !ok {
+ 				_ = oldListener.Close()
+@@ -653,6 +668,50 @@ func PatchInboundListeners(newListenerMap map[string]C.InboundListener, tunnel C
+ 	}
+ }
+ 
++func StopTrustedSharing() {
++	inboundMux.Lock()
++	defer inboundMux.Unlock()
++	weaveshare.DisableTrusted()
++	for name, active := range inboundListeners {
++		if weaveshare.IsTrustedListener(name) {
++			_ = active.Close()
++			if suspendedTrusted == nil {
++				suspendedTrusted = make(map[string]C.InboundListener)
++			}
++			suspendedTrusted[name] = active
++			delete(inboundListeners, name)
++		}
++	}
++}
++
++// ResumeTrustedSharing reopens only the listeners saved by StopTrustedSharing.
++func ResumeTrustedSharing(tunnel C.Tunnel) bool {
++	inboundMux.Lock()
++	defer inboundMux.Unlock()
++	if len(suspendedTrusted) == 0 {
++		for name := range inboundListeners {
++			if weaveshare.IsTrustedListener(name) {
++				return true
++			}
++		}
++		return false
++	}
++	for _, paused := range suspendedTrusted {
++		if err := paused.Listen(tunnel); err != nil {
++			for _, instance := range suspendedTrusted {
++				_ = instance.Close()
++			}
++			return false
++		}
++	}
++	for name, instance := range suspendedTrusted {
++		inboundListeners[name] = instance
++	}
++	suspendedTrusted = nil
++	weaveshare.EnableTrusted()
++	return true
++}
++
+ // GetPorts return the ports of proxy servers
+ func GetPorts() *Ports {
+ 	ports := &Ports{}
+diff --git a/listener/weave_trusted_test.go b/listener/weave_trusted_test.go
+new file mode 100644
+index 0000000..a326608
+--- /dev/null
++++ b/listener/weave_trusted_test.go
+@@ -0,0 +1,63 @@
++package listener
++
++import (
++	"errors"
++	"testing"
++
++	C "github.com/metacubex/mihomo/constant"
++)
++
++type trustedTestListener struct {
++	C.InboundListener
++	active bool
++	busy   bool
++}
++
++func (l *trustedTestListener) Listen(C.Tunnel) error {
++	l.active = true
++	if l.busy {
++		return errors.New("fixture bind failure")
++	}
++	return nil
++}
++
++func (l *trustedTestListener) Close() error {
++	l.active = false
++	return nil
++}
++
++func TestTrustedSharingSuspendsAndRestoresOnlyItsOwnListeners(t *testing.T) {
++	inboundBefore, savedBefore := inboundListeners, suspendedTrusted
++	defer func() {
++		StopTrustedSharing()
++		inboundListeners, suspendedTrusted = inboundBefore, savedBefore
++	}()
++	one := &trustedTestListener{active: true}
++	two := &trustedTestListener{active: true}
++	unrelated := &trustedTestListener{active: true}
++	inboundListeners = map[string]C.InboundListener{
++		"weave-share-trusted-v4": one,
++		"weave-share-trusted-v6": two,
++		"private":                unrelated,
++	}
++	suspendedTrusted = make(map[string]C.InboundListener)
++
++	StopTrustedSharing()
++	if one.active || two.active || !unrelated.active {
++		t.Fatal("suspend must only close the trusted listeners")
++	}
++	two.busy = true
++	if ResumeTrustedSharing(nil) || one.active || two.active || !unrelated.active {
++		t.Fatal("any bind failure must leave the complete trusted set closed")
++	}
++	two.busy = false
++	if !ResumeTrustedSharing(nil) || !one.active || !two.active || !unrelated.active {
++		t.Fatal("the exact saved set must reopen after binding is available")
++	}
++
++	StopTrustedSharing()
++	PatchInboundListeners(nil, nil, true)
++	if ResumeTrustedSharing(nil) || one.active || two.active {
++		t.Fatal("config replacement must discard paused listeners")
++	}
++}
 diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
-index 86dbc14..927eb89 100644
+index 86dbc14..62ba001 100644
 --- a/tunnel/tunnel.go
 +++ b/tunnel/tunnel.go
 @@ -4,6 +4,7 @@ import (
@@ -972,10 +1696,17 @@ index 86dbc14..927eb89 100644
  	"net"
  	"net/netip"
  	"path/filepath"
-@@ -510,6 +511,11 @@ func handleTCPConn(connCtx C.ConnContext) {
+@@ -510,6 +511,18 @@ func handleTCPConn(connCtx C.ConnContext) {
  	}(connCtx.Conn())
  
  	metadata := connCtx.Metadata()
++	stopTrust, allowed := weaveshare.AttachTrusted(metadata.InName, connCtx.Conn())
++	if !allowed {
++		return
++	}
++	if stopTrust != nil {
++		defer stopTrust()
++	}
 +	guard, guardError := weaveshare.Begin(metadata.InUser)
 +	if guardError != nil {
 +		return
@@ -984,7 +1715,7 @@ index 86dbc14..927eb89 100644
  	if !metadata.Valid() {
  		log.Warnln("[Metadata] not valid: %#v", metadata)
  		return
-@@ -595,7 +601,7 @@ func handleTCPConn(connCtx C.ConnContext) {
+@@ -595,7 +608,7 @@ func handleTCPConn(connCtx C.ConnContext) {
  			peekMutex.Lock()
  			defer peekMutex.Unlock()
  			peekBytes, _ = conn.Peek(conn.Buffered())
@@ -993,7 +1724,7 @@ index 86dbc14..927eb89 100644
  			if err != nil {
  				return
  			}
-@@ -621,7 +627,7 @@ func handleTCPConn(connCtx C.ConnContext) {
+@@ -621,7 +634,7 @@ func handleTCPConn(connCtx C.ConnContext) {
  	peekMutex.Lock()
  	defer peekMutex.Unlock()
  	_ = conn.SetReadDeadline(time.Time{}) // reset

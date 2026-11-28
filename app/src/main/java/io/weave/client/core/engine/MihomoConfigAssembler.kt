@@ -69,6 +69,7 @@ class MihomoConfigAssembler(
         packageUids: Map<String, Int> = emptyMap(),
         networkPreferences: NetworkPreferences = NetworkPreferences(),
         additionalSubscriptionIds: Set<String> = emptySet(),
+        trustedShareAddresses: List<String>? = null,
     ): AssembledMihomoConfig = secretStore.withRuntimeSnapshot { catalog ->
         val subscriptions = catalog.records()
         val usable = subscriptions.filter { it.hasPayload }
@@ -87,7 +88,15 @@ class MihomoConfigAssembler(
             )
         }
         val byId = usable.associateBy(StoredSubscription::id)
-        val customGroups = if (mode == RoutingMode.DIRECT) emptyMap()
+        val shareAddresses = if (networkPreferences.lanSharing) {
+            (trustedShareAddresses ?: LanProxyAddresses.current(appContext)).take(8)
+        } else emptyList()
+        val openLegacyShare = networkPreferences.lanSharing && trustedShareAddresses == null
+        val restrictedShare = networkPreferences.lanSharing && trustedShareAddresses != null && shareAddresses.isNotEmpty()
+        val shareGrants = if (shareAddresses.isEmpty()) emptyList() else {
+            runCatching { LanShareGrantStore(appContext).active() }.getOrDefault(emptyList())
+        }
+        val customGroups = if (mode == RoutingMode.DIRECT && shareGrants.none { it.groupId != null }) emptyMap()
             else customGroupStore.list().associateBy(CustomProxyGroup::id)
         val nodesById = HashMap<String, Map<String, StoredNode>>()
         fun nodesOf(subscription: StoredSubscription) = nodesById.getOrPut(subscription.id) {
@@ -103,12 +112,9 @@ class MihomoConfigAssembler(
                 route.copy(target = route.target.copy(kind = RouteKind.BLOCK))
             }
         }
-        val shareAddresses = if (networkPreferences.lanSharing) LanProxyAddresses.current(appContext).take(8) else emptyList()
-        val shareGrants = if (shareAddresses.isEmpty()) emptyList() else {
-            runCatching { LanShareGrantStore(appContext).active() }.getOrDefault(emptyList())
-        }
         val shareTargets = shareGrants.associate { grant ->
-            val target = grant.node?.let { RouteTarget(RouteKind.FIXED, "", it.subscriptionId, it.nodeId) }
+            val target = grant.groupId?.let { RouteTarget(RouteKind.GROUP, "", groupId = it) }
+                ?: grant.node?.let { RouteTarget(RouteKind.FIXED, "", it.subscriptionId, it.nodeId) }
             grant.user to if (target == null) null
             else runCatching { validateTarget("", target, byId, customGroups, ::nodesOf); target }
                 .getOrElse { RouteTarget(RouteKind.BLOCK, "") }
@@ -121,7 +127,7 @@ class MihomoConfigAssembler(
             additionalSubscriptionIds = additionalSubscriptionIds,
             groupSubscriptions = customGroups.mapValues { it.value.subscriptionIds },
             strategyScope = networkPreferences.strategyScope,
-            sharedFixedTargets = shareTargets.values.filterNotNull(),
+            sharedTargets = shareTargets.values.filterNotNull(),
         )
         val activeGroups = plan.activeGroupIds.mapNotNull(customGroups::get)
         val effectiveDefaultTarget = plan.effectiveDefaultTarget
@@ -206,6 +212,7 @@ class MihomoConfigAssembler(
         val shareRules = shareTargets.mapNotNull { (user, target) ->
             when (target?.kind) {
                 RouteKind.FIXED -> "IN-USER,$user,${fixedGroup(target)}"
+                RouteKind.GROUP -> "IN-USER,$user,${CustomProxyGroupValidator.groupName(requireNotNull(target.groupId))}"
                 RouteKind.BLOCK -> "IN-USER,$user,REJECT"
                 else -> null
             }
@@ -221,10 +228,10 @@ class MihomoConfigAssembler(
             // actionable engine errors by default; the app's own diagnostics already reduce
             // failures to allowlisted categories without retaining endpoint text.
             appendLine("log-level: error")
-            if (networkPreferences.systemHttpProxy || networkPreferences.lanSharing) {
+            if (networkPreferences.systemHttpProxy || openLegacyShare) {
                 appendLine("mixed-port: $MIXED_PORT")
             }
-            if (networkPreferences.lanSharing) {
+            if (openLegacyShare) {
                 // Other devices must authenticate; loopback (this phone's own apps via the system
                 // HTTP proxy) is exempt. Credentials are random and stored encrypted.
                 val (user, password) = lanCredentials()
@@ -241,11 +248,22 @@ class MihomoConfigAssembler(
                 appendLine("allow-lan: false")
                 appendLine("bind-address: 127.0.0.1")
             }
-            if (shareGrants.isNotEmpty()) {
-                val users = shareGrants.map { mapOf("username" to it.user, "password" to it.password) }
-                val listeners = shareAddresses.distinct().mapIndexed { index, address ->
-                    mapOf("name" to "weave-share-grants-$index", "type" to "mixed", "listen" to address,
-                        "port" to LanShareGrantStore.PORT, "udp" to false, "users" to users)
+            if (restrictedShare || shareGrants.isNotEmpty()) {
+                val listeners = buildList {
+                    fun addListeners(prefix: String, port: Int, users: List<Map<String, String>>) {
+                        shareAddresses.distinct().forEachIndexed { index, address ->
+                            add(mapOf("name" to "$prefix-$index", "type" to "mixed", "listen" to address,
+                                "port" to port, "udp" to false, "users" to users))
+                        }
+                    }
+                    if (restrictedShare) {
+                        val (user, password) = lanCredentials()
+                        addListeners("weave-share-trusted", MIXED_PORT, listOf(mapOf("username" to user, "password" to password)))
+                    }
+                    if (shareGrants.isNotEmpty()) {
+                        val users = shareGrants.map { mapOf("username" to it.user, "password" to it.password) }
+                        addListeners(if (restrictedShare) "weave-share-trusted-grants" else "weave-share-grants", LanShareGrantStore.PORT, users)
+                    }
                 }
                 appendLine(ClashYamlCodec.write(mapOf("listeners" to listeners)).trimEnd())
             }
@@ -306,6 +324,9 @@ class MihomoConfigAssembler(
             }
             appendLine("  default-nameserver:")
             networkPreferences.bootstrapDns.serversFor(ipMode).forEach { appendLine("    - ${yamlString(it)}") }
+            if (networkPreferences.dnsProfile == io.weave.client.domain.DnsProfile.CUSTOM && policyServers.size in 3..6) {
+                appendLine("  weave-adaptive: true")
+            }
             appendLine("  nameserver:")
             // Keep the selected resolver first, but make the mainland-compatible encrypted
             // resolvers available to every query class (including TXT/PTR). Mihomo's separate

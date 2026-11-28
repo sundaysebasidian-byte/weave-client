@@ -17,6 +17,7 @@ internal data class LanShareGrant(
     val node: NodeRef?,
     val expiresAtMs: Long,
     val maxBytesPerSec: Int,
+    val groupId: String? = null,
 )
 
 internal class LanShareGrantStore(
@@ -33,7 +34,9 @@ internal class LanShareGrantStore(
 
     fun active(): List<LanShareGrant> = ProfileStorage.access(app) { load() }
 
-    fun create(node: NodeRef?, durationMs: Long, bytesPerSec: Int): LanShareGrant = ProfileStorage.access(app) {
+    fun create(node: NodeRef?, durationMs: Long, bytesPerSec: Int, groupId: String? = null): LanShareGrant = ProfileStorage.access(app) {
+        require(node == null || groupId == null)
+        require(groupId == null || UUID.fromString(groupId).toString() == groupId)
         require(durationMs in 1_000L..3_600_000L)
         require(bytesPerSec in 1024..20 * 1024 * 1024)
         val bootId = boot()
@@ -46,7 +49,7 @@ internal class LanShareGrantStore(
         val password = buildString {
             repeat(24) { append(ALPHABET[random.nextInt(ALPHABET.length)]) }
         }
-        LanShareGrant(user, password, node, expiry, bytesPerSec).also { save(bootId, current + it) }
+        LanShareGrant(user, password, node, expiry, bytesPerSec, groupId).also { save(bootId, current + it) }
     }
 
     fun remove(user: String): Unit = ProfileStorage.access(app) {
@@ -73,7 +76,9 @@ internal class LanShareGrantStore(
             val password = item.getString("p")
             require(password.length == 24 && password.all { it in ALPHABET })
             val node = item.optJSONObject("n")?.let { NodeRef(it.getString("s"), it.getString("i")) }
-            LanShareGrant(user, password, node, expiry, rate)
+            val group = item.opt("g") as? String
+            require(group == null || node == null && UUID.fromString(group).toString() == group)
+            LanShareGrant(user, password, node, expiry, rate, group)
         }
     }
 
@@ -81,7 +86,8 @@ internal class LanShareGrantStore(
         val payload = JSONArray().apply {
             for (grant in grants) {
                 val node = grant.node?.let { JSONObject().put("s", it.subscriptionId).put("i", it.nodeId) }
-                put(JSONObject().put("u", grant.user).put("p", grant.password).put("n", node ?: JSONObject.NULL))
+                put(JSONObject().put("u", grant.user).put("p", grant.password).put("n", node ?: JSONObject.NULL)
+                    .put("g", grant.groupId ?: JSONObject.NULL))
             }
         }
         val encrypted = secrets.encrypt(payload.toString().toByteArray(Charsets.UTF_8), AAD)

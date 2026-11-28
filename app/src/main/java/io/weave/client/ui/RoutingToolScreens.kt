@@ -64,6 +64,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.weave.client.domain.ConnectionState
+import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.NodeDisplayName
 import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
@@ -251,8 +256,27 @@ internal fun CustomGroupsScreen(
     onDelete: suspend (String, CustomProxyGroup) -> Result<Unit>,
     onDismiss: () -> Unit,
 ) {
+    val app = LocalContext.current.applicationContext
+    val runtime by VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
+    var comparing by remember(runtime.revision, groups) { mutableStateOf(false) }
+    var recommended by remember(runtime.revision, groups) { mutableStateOf<ChainRating?>(null) }
+    var evaluated by remember(runtime.revision, groups) { mutableStateOf(false) }
+    LaunchedEffect(comparing, runtime.revision, groups) {
+        if (!comparing || runtime.state != ConnectionState.CONNECTED) return@LaunchedEffect
+        recommended = recommendCurrentChains(app, groups)
+        evaluated = true
+        comparing = false
+    }
     var session by remember { mutableStateOf<GroupEditorSession?>(null) }
-    val nodeNames = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to NodeDisplayName.core(it.name) } }
+    val nodeNames = remember(nodes, groups) {
+        val visible = groups.flatMapTo(hashSetOf()) { listOfNotNull(it.entry) + it.via }
+        buildMap {
+            if (visible.isNotEmpty()) for (node in nodes) {
+                val ref = NodeRef(node.subscriptionId, node.id)
+                if (ref in visible) put(ref, NodeDisplayName.core(node.name))
+            }
+        }
+    }
     WeaveToolScreen(
         title = "Weave Chain",
         subtitle = "跨订阅组合节点；设置入口节点后成为链式代理",
@@ -278,6 +302,19 @@ internal fun CustomGroupsScreen(
                         title = "还没有自定义策略组",
                         body = "新建后可在默认出口或应用分流中选择。链式代理的路径为：本机 → 入口节点 → 成员节点 → 目标网站。",
                     )
+                }
+            }
+            if (groups.any { it.entry != null }) item {
+                TextButton(
+                    enabled = !comparing && runtime.state == ConnectionState.CONNECTED,
+                    onClick = { comparing = true },
+                ) { Text(if (comparing) "检测中…" else "当前网络推荐") }
+                val best = recommended
+                if (best != null) {
+                    val copy = rememberAppOwnedCopy()
+                    Text("${copy("当前网络推荐")} · ${best.group.name} · ${best.latencyMs} ms", translate = false)
+                } else if (evaluated) {
+                    Text("暂无可用链路")
                 }
             }
             items(groups, key = { it.id }) { group ->

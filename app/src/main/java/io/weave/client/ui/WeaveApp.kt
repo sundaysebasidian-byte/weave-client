@@ -963,6 +963,7 @@ fun WeaveApp(
                 val languageFollowsSystem by viewModel.languageFollowsSystem.collectAsStateWithLifecycle()
                 val lanCredentials by viewModel.lanCredentials.collectAsStateWithLifecycle()
                 val lanNodes by viewModel.nodes.collectAsStateWithLifecycle()
+                val lanGroups by viewModel.customGroups.collectAsStateWithLifecycle()
                 val dnsProbeState by viewModel.dnsProbeState.collectAsStateWithLifecycle()
                 SettingsScreen(
                     preferences = networkPreferences,
@@ -1000,6 +1001,7 @@ fun WeaveApp(
                     languageFollowsSystem = languageFollowsSystem,
                     lanCredentials = lanCredentials,
                     lanNodes = lanNodes,
+                    lanGroups = lanGroups,
                     onSubscriptionAutoUpdateChanged = viewModel::setSubscriptionAutoUpdate,
                     onBypassDirectAppsChanged = viewModel::setBypassDirectApps,
                     onBootstrapDnsSelected = viewModel::setBootstrapDns,

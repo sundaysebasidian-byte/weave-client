@@ -89,9 +89,10 @@ routing_classes+=,io.weave.client.ui.VpnShortcutConfirmationIntegrationTest
 routing_classes+=,io.weave.client.core.engine.MihomoProviderIntegrationTest#chainedProfileTransfersBytesThroughThreeIndependentRelays
 routing_classes+=,io.weave.client.core.engine.WeaveNetworkingIntegrationTest,io.weave.client.core.engine.ShareGrantNativeIntegrationTest
 routing_classes+=,io.weave.client.core.engine.DnsPathNativeIntegrationTest
+routing_classes+=,io.weave.client.core.vpn.TrustedLanIntegrationTest#trustedConfigBindsOnlySelectedAddressesAndKeepsSystemHttpOnLoopback
 "${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
   "$component" > "$results/routing-instrumentation.txt" 2>&1
-expected_routing_tests=26
+expected_routing_tests=27
 grep -Fx "OK ($expected_routing_tests tests)" "$results/routing-instrumentation.txt"
 awk -v expected="$expected_routing_tests" '
   /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }
