@@ -1,6 +1,7 @@
 package io.weave.client.ui.update
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageInstaller
 import android.net.Uri
@@ -44,6 +45,7 @@ internal class NextUpdateController(
     var busy by mutableStateOf(false); private set
     var staged by mutableStateOf(false); private set
     var installSessionId by mutableStateOf<Int?>(null); private set
+    var pendingConfirm by mutableStateOf<Pair<Int, Intent>?>(null); private set
     var status by mutableStateOf<String?>(null); private set
     var release by mutableStateOf<NextRelease?>(null); private set
     var notice by mutableStateOf<NextRelease?>(null); private set
@@ -151,6 +153,7 @@ internal class NextUpdateController(
             return
         }
         if (busy || !staged || installSessionId != null) return
+        pendingConfirm = null
         NextInstallResults.clear()
         runOperation {
             status = "INSTALLING"
@@ -165,6 +168,14 @@ internal class NextUpdateController(
     /** Android's answer to a committed session; a success replaces this process. */
     fun installResult(result: NextInstallResults.Result) {
         if (result.sessionId != installSessionId) return
+        if (result.status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            val confirm = result.confirmIntent
+            if (confirm != null) {
+                pendingConfirm = result.sessionId to confirm
+                return
+            }
+        }
+        pendingConfirm = null
         installSessionId = null
         if (result.status == PackageInstaller.STATUS_SUCCESS) {
             clearTemp()
@@ -173,6 +184,18 @@ internal class NextUpdateController(
             status = "CURRENT"
         } else {
             status = "INSTALL_FAILED"
+        }
+    }
+
+    /** Clears the pending installer prompt once launched, or abandons the session if launch failed. */
+    fun consumePendingConfirm(sessionId: Int, launched: Boolean) {
+        if (pendingConfirm?.first == sessionId) {
+            pendingConfirm = null
+            NextInstallResults.clear()
+        }
+        if (!launched) {
+            runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
+            installResult(NextInstallResults.Result(sessionId, PackageInstaller.STATUS_FAILURE))
         }
     }
 
@@ -210,6 +233,7 @@ internal class NextUpdateController(
 
     fun close() {
         operation?.cancel()
+        pendingConfirm = null
         clearTemp()
     }
 
