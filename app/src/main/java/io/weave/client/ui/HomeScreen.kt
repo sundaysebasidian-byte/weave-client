@@ -509,7 +509,7 @@ private fun StatusBlock(state: DashboardState, exit: DashboardState) {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = exitSummary(exit, LocalWeaveLanguage.current),
+            text = exitSummary(exit, rememberAppOwnedCopy()),
             color = muted,
             style = MaterialTheme.typography.bodyLarge.merge(TabularNumbers),
             maxLines = 1,
@@ -520,15 +520,15 @@ private fun StatusBlock(state: DashboardState, exit: DashboardState) {
 }
 
 /** The exit and the routing mode in one quiet line. */
-private fun exitSummary(state: DashboardState, language: WeaveLanguage): String {
-    val mode = localizeWeaveText(state.routingMode.label, language)
+internal fun exitSummary(state: DashboardState, copy: (String) -> String): String {
+    val mode = copy(state.routingMode.label)
     val node = state.activeNode?.takeIf { state.connectionState == ConnectionState.CONNECTED }
     val name = when (exitReadiness(state)) {
-        ExitReadiness.MISSING -> localizeWeaveText("尚未选择出口", language)
+        ExitReadiness.MISSING -> copy("尚未选择出口")
         ExitReadiness.NOT_USED -> return mode
         else -> node?.let { NodeDisplayName.core(it.name) }
-            ?: state.defaultRouteTarget?.label?.let { localizeWeaveText(it, language) }
-            ?: localizeWeaveText("自动选择", language)
+            ?: state.defaultRouteTarget?.label?.let(copy)
+            ?: copy("自动选择")
     }
     return "$name · $mode"
 }
@@ -710,7 +710,7 @@ private fun ConnectionCapsule(
 
 @Composable
 private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val language = LocalWeaveLanguage.current
+    val copy = rememberAppOwnedCopy()
     val scheme = MaterialTheme.colorScheme
     val readiness = exitReadiness(state)
     val connected = state.connectionState == ConnectionState.CONNECTED
@@ -719,23 +719,23 @@ private fun ExitSummary(state: DashboardState, onClick: () -> Unit, modifier: Mo
     val needsChoice = readiness == ExitReadiness.MISSING || readiness == ExitReadiness.INVALID
     val emptyLibrary = readiness == ExitReadiness.MISSING && state.hasUsableSubscription == false
     val title = when {
-        emptyLibrary -> localizeWeaveText("选择出口", language)
-        readiness == ExitReadiness.MISSING -> localizeWeaveText("尚未选择出口", language)
-        readiness == ExitReadiness.NOT_USED -> localizeWeaveText(RoutingMode.DIRECT.label, language)
+        emptyLibrary -> copy("选择出口")
+        readiness == ExitReadiness.MISSING -> copy("尚未选择出口")
+        readiness == ExitReadiness.NOT_USED -> copy(RoutingMode.DIRECT.label)
         node != null -> NodeDisplayName.core(node.name)
-        else -> target?.label?.let { localizeWeaveText(it, language) } ?: localizeWeaveText("自动选择", language)
+        else -> target?.label?.let(copy) ?: copy("自动选择")
     }
     val latency = node?.latencyMs?.takeIf { it in 1..10_000 }
     // Facts only: how the exit was chosen, the protocol and measured latency.
     val meta = when (readiness) {
         ExitReadiness.MISSING -> if (emptyLibrary) ""
-        else localizeWeaveText("未选择时自动使用第一个可用订阅", language)
-        ExitReadiness.INVALID -> localizeWeaveText(HeroDetail.EXIT_INVALID.source, language)
-        ExitReadiness.NOT_USED -> localizeWeaveText("直连模式下不使用出口", language)
+        else copy("未选择时自动使用第一个可用订阅")
+        ExitReadiness.INVALID -> copy(HeroDetail.EXIT_INVALID.source)
+        ExitReadiness.NOT_USED -> copy("直连模式下不使用出口")
         ExitReadiness.READY -> listOfNotNull(
             target?.let { selected ->
                 routeKindLabel(selected.kind).takeUnless { it == selected.label && node == null }
-            }?.let { localizeWeaveText(it, language) },
+            }?.let(copy),
             node?.protocol?.takeIf { it.isNotBlank() },
             latency?.let { "$it ms" },
         ).joinToString(" · ")
@@ -820,7 +820,7 @@ private fun PrimaryAction(
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
-    val language = LocalWeaveLanguage.current
+    val actionDescription = localizedContentDescription(hero.actionLabel)
     val interaction = remember { MutableInteractionSource() }
     // A quick double tap must not connect and immediately disconnect again.
     // The lock runs on the composition's clock, so it is also deterministic under test clocks.
@@ -890,7 +890,7 @@ private fun PrimaryAction(
                     }
                 },
             )
-            .semantics { contentDescription = localizeWeaveText(hero.actionLabel, language) },
+            .semantics { contentDescription = actionDescription },
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(

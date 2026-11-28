@@ -257,7 +257,7 @@ internal fun SettingsScreen(
     var showPalette by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     val packagedLanguages = LocalPackagedLanguagePicker.current
-    val copy = rememberSettingsCopy(language)
+    val copy = rememberAppOwnedCopy(language)
     var showAutomaticStrategy by remember { mutableStateOf(false) }
     var showStrategyScope by remember { mutableStateOf(false) }
     var showDnsSettings by remember { mutableStateOf(false) }
@@ -1013,7 +1013,7 @@ private fun ExpandableSettingsGroup(
     activeTitles: List<String> = emptyList(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val copy = rememberSettingsCopy(LocalWeaveLanguage.current)
+    val copy = rememberAppOwnedCopy()
     val rotation = disclosureRotation(expanded)
     val actionLabel = localizedContentDescription(if (expanded) "收起" else "展开")
     LiquidGlassPanel(
@@ -1163,15 +1163,6 @@ internal fun LinkSetting(
                 modifier = Modifier.size(18.dp).graphicsLayer { scaleX = if (rtl) -1f else 1f },
             )
         }
-    }
-}
-
-@Composable
-private fun rememberSettingsCopy(language: WeaveLanguage): (String) -> String {
-    val staged = LocalStagedWeaveLocale.current
-    val released = LocalReleasedAppCopy.current
-    return remember(language, staged, released) {
-        { text -> resolveAppOwnedCopy(text, language, staged, released) }
     }
 }
 

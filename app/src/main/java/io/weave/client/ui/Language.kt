@@ -1,5 +1,7 @@
 package io.weave.client.ui
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import io.weave.client.domain.WeaveLanguage
 import java.util.concurrent.ConcurrentHashMap
@@ -31,6 +33,15 @@ internal fun resolveAppOwnedCopy(
     if (!translate) return text
     val catalog = staged ?: released?.renderer
     return if (catalog == null) localizeWeaveText(text, language) else localizeStagedWeaveText(text, catalog)
+}
+
+@Composable
+internal fun rememberAppOwnedCopy(language: WeaveLanguage = LocalWeaveLanguage.current): (String) -> String {
+    val staged = LocalStagedWeaveLocale.current
+    val released = LocalReleasedAppCopy.current
+    return remember(language, staged, released) {
+        { text -> resolveAppOwnedCopy(text, language, staged, released) }
+    }
 }
 
 private val TRANSLATION_REGEX_CACHE = ConcurrentHashMap<String, Regex>()

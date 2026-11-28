@@ -88,7 +88,7 @@ routing_classes+=,io.weave.client.ui.LocalizedSettingsLayoutTest
 routing_classes+=,io.weave.client.ui.VpnShortcutConfirmationIntegrationTest
 "${target[@]}" shell am instrument -w -r -e isolatedRoutingTest true -e class "$routing_classes" \
   "$component" > "$results/routing-instrumentation.txt" 2>&1
-expected_routing_tests=17
+expected_routing_tests=18
 grep -Fx "OK ($expected_routing_tests tests)" "$results/routing-instrumentation.txt"
 awk -v expected="$expected_routing_tests" '
   /^INSTRUMENTATION_STATUS_CODE: 1\r?$/ { started++ }

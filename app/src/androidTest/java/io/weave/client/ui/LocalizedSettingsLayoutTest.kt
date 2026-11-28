@@ -10,12 +10,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import io.weave.client.domain.DashboardState
+import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.WeaveLanguage
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,6 +65,40 @@ class LocalizedSettingsLayoutTest {
                 assertTrue("${option.tag}: value must have its own row",
                     valueNode.fetchSemanticsNode().boundsInRoot.top >= labelNode.fetchSemanticsNode().boundsInRoot.bottom)
             }
+        }
+    }
+
+    @Test fun narrowDockAvoidsBrokenWordsAndKeepsLocalizedNavigationActions() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val locale = checkNotNull(PackagedAppLocale.readChoice(context, PackagedLocaleChoice("ru-RU", "Русский")))
+        val active = mutableStateOf(Destination.HOME)
+        val renderer = locale.copy.renderer
+        val mode = localizeStagedWeaveText(RoutingMode.RULE.label, renderer)
+        val exit = localizeStagedWeaveText("尚未选择出口", renderer)
+        val dashboard = DashboardState(routingMode = RoutingMode.RULE, hasUsableSubscription = false)
+        compose.setContent {
+            FixtureShell(language = WeaveLanguage.ENGLISH, fontScale = 2f) {
+                CompositionLocalProvider(LocalReleasedAppCopy provides locale.copy) {
+                    androidx.compose.foundation.layout.Column(Modifier.requiredWidth(320.dp)) {
+                        Text(exitSummary(dashboard, rememberAppOwnedCopy()), translate = false)
+                        WeaveNavigationDock(
+                            destinations = Destination.entries,
+                            selected = active.value,
+                            highlighted = active.value.ordinal,
+                            indicatorPosition = { active.value.ordinal.toFloat() },
+                            onSelect = { active.value = it },
+                            onScrub = {},
+                            onScrubEnd = {},
+                        )
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("$exit · $mode").assertExists()
+        for (tab in Destination.entries) {
+            val label = localizeStagedWeaveText(tab.label, renderer)
+            compose.onNodeWithText(label).assertDoesNotExist()
+            compose.onNodeWithContentDescription(label).performClick().assertIsSelected()
         }
     }
 }

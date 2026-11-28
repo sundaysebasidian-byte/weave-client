@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -133,6 +134,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -197,7 +199,7 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 
-private enum class Destination(
+internal enum class Destination(
     val item: NavigationItem,
     val icon: ImageVector,
 ) {
@@ -215,7 +217,7 @@ private enum class Destination(
 }
 
 @Composable
-private fun WeaveNavigationDock(
+internal fun WeaveNavigationDock(
     destinations: List<Destination>,
     selected: Destination,
     highlighted: Int,
@@ -223,7 +225,22 @@ private fun WeaveNavigationDock(
     onSelect: (Destination) -> Unit,
     onScrub: (Float) -> Unit,
     onScrubEnd: (Float) -> Unit,
-) {
+) = BoxWithConstraints(Modifier.fillMaxWidth()) {
+    if (destinations.isEmpty()) return@BoxWithConstraints
+    val labels = destinations.map { localizedContentDescription(it.label) }
+    val labelStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 10.sp)
+    val measurer = rememberTextMeasurer()
+    val labelWidth = (maxWidth - DockHorizontalMargin * 2 - DockPadding * 2 -
+        DockGap * (destinations.size - 1)) / destinations.size
+    val showLabels = with(androidx.compose.ui.platform.LocalDensity.current) {
+        val availablePixels = labelWidth.roundToPx()
+        remember(availablePixels, labels, measurer, labelStyle) {
+            labels.all {
+                measurer.measure(it, labelStyle.copy(fontWeight = FontWeight.SemiBold), softWrap = false, maxLines = 1)
+                    .size.width <= availablePixels
+            }
+        }
+    }
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.background.luminance() < 0.35f
     val indicatorFill = scheme.primaryContainer.copy(alpha = 0.92f)
@@ -239,7 +256,7 @@ private fun WeaveNavigationDock(
     var scrub by remember { mutableStateOf<Float?>(null) }
     LiquidGlassPanel(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = DockHorizontalMargin)
             .padding(
                 bottom = WindowInsets.navigationBars.asPaddingValues()
                     .calculateBottomPadding() + 8.dp,
@@ -386,7 +403,7 @@ private fun WeaveNavigationDock(
                 ) {
                     Icon(
                         item.icon,
-                        contentDescription = null,
+                        contentDescription = labels[index].takeUnless { showLabels },
                         tint = content,
                         modifier = Modifier
                             .size(21.dp)
@@ -396,14 +413,18 @@ private fun WeaveNavigationDock(
                                 translationY = iconLift * density
                             },
                     )
-                    Spacer(Modifier.height(1.dp))
-                    Text(
-                        item.label,
-                        color = content,
-                        fontSize = 10.sp,
-                        fontWeight = if (lit) FontWeight.SemiBold else FontWeight.Medium,
-                        textAlign = TextAlign.Center,
-                    )
+                    if (showLabels) {
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            labels[index],
+                            color = content,
+                            style = labelStyle,
+                            fontWeight = if (lit) FontWeight.SemiBold else FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            translate = false,
+                        )
+                    }
                 }
             }
         }
@@ -412,6 +433,7 @@ private fun WeaveNavigationDock(
 
 private val DockPadding = 5.dp
 private val DockGap = 3.dp
+private val DockHorizontalMargin = 18.dp
 
 /**
  * Localized text shim for the existing Compose surface. Stable UI labels are translated here;
