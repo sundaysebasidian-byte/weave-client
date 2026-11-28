@@ -101,7 +101,11 @@ class LocalizedSettingsLayoutTest {
         val summary = compose.onNodeWithText("$exit · $mode", useUnmergedTree = true)
         val summaryResults = mutableListOf<TextLayoutResult>()
         summary.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(summaryResults)) }
-        assertFalse(summaryResults.single().hasVisualOverflow)
+        val summaryLayout = summaryResults.single()
+        assertFalse(
+            "Summary overflow at ${summaryLayout.size}, width=${summaryLayout.didOverflowWidth}, height=${summaryLayout.didOverflowHeight}",
+            summaryLayout.hasVisualOverflow,
+        )
         val chooser = localizeStagedWeaveText("选择出口", renderer)
         compose.onNodeWithText(chooser).assertIsDisplayed()
         for (tab in Destination.entries) {

@@ -511,9 +511,11 @@ internal fun StatusBlock(state: DashboardState, exit: DashboardState) {
         Spacer(Modifier.height(10.dp))
         val exitLines = if (fontScale >= 1.6f) 2 else 1
         val exitStyle = MaterialTheme.typography.bodyLarge.merge(TabularNumbers)
-        // A wrapped name may use fallback glyphs with different metrics from a one-line name.
+        // Leave room for the first and last baseline padding of fallback fonts in a wrapped name.
         val exitModifier = if (exitLines == 2) {
-            Modifier.height(with(density) { exitStyle.lineHeight.toDp() * exitLines })
+            Modifier.height(with(density) {
+                exitStyle.lineHeight.toDp() * exitLines + exitStyle.fontSize.toDp() / 2
+            })
         } else {
             Modifier
         }
