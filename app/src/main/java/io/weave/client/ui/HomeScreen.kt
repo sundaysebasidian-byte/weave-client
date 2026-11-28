@@ -473,7 +473,8 @@ internal fun StatusBlock(state: DashboardState, exit: DashboardState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val critical = MaterialTheme.colorScheme.error
-    val fontScale = LocalDensity.current.fontScale
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
     // Display type is already large; past 1.3x it grows more slowly so long translations still fit.
     val headline = MaterialTheme.typography.displayMedium.let { style ->
         if (fontScale <= 1.3f) style else style.copy(
@@ -509,11 +510,18 @@ internal fun StatusBlock(state: DashboardState, exit: DashboardState) {
         )
         Spacer(Modifier.height(10.dp))
         val exitLines = if (fontScale >= 1.6f) 2 else 1
+        val exitStyle = MaterialTheme.typography.bodyLarge.merge(TabularNumbers)
+        // A wrapped name may use fallback glyphs with different metrics from a one-line name.
+        val exitModifier = if (exitLines == 2) {
+            Modifier.height(with(density) { exitStyle.lineHeight.toDp() * exitLines })
+        } else {
+            Modifier
+        }
         MaterialText(
             text = exitSummary(exit, rememberAppOwnedCopy()),
+            modifier = exitModifier,
             color = muted,
-            style = MaterialTheme.typography.bodyLarge.merge(TabularNumbers),
-            minLines = exitLines,
+            style = exitStyle,
             maxLines = exitLines,
             overflow = TextOverflow.Ellipsis,
         )
