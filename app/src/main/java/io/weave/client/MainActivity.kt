@@ -197,7 +197,9 @@ class MainActivity : ComponentActivity() {
                     PackagedAppLocale.observe(this@MainActivity) to StartupProfile.read(application)
                 }
                 val factory = viewModelFactory { initializer { AppViewModel(application, initialProfile) } }
-                ReadyProfile(ViewModelProvider(this@MainActivity, factory)[AppViewModel::class.java], releasedLocale)
+                val model = ViewModelProvider(this@MainActivity, factory)[AppViewModel::class.java]
+                model.syncObservedLanguage(initialProfile.settings.explicitLanguage)
+                ReadyProfile(model, releasedLocale)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -230,14 +232,42 @@ class MainActivity : ComponentActivity() {
 
     private fun applyPackagedLanguageTap(choice: PackagedLanguageTap): PackagedLanguageTapResult {
         if (!canHandleLanguageTap()) return PackagedLanguageTapResult.NOT_APPLIED
-        val result = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            if (choice is PackagedLanguageTap.Regional &&
-                !RuntimeSettingsStore(application).setReleaseAppCopyLanguage(choice.tag)
-            ) PackagedLanguageTapResult.NOT_APPLIED else PackagedLanguageTapResult.APPLIED
-        } else SystemPackagedLanguagePicker.apply(this, choice)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return applyLegacyPackagedLanguageTap(choice)
+        }
+        val result = SystemPackagedLanguagePicker.apply(this, choice)
         if (result != PackagedLanguageTapResult.APPLIED) return result
         return if (publishConfirmedLanguageTap(choice)) PackagedLanguageTapResult.APPLIED
         else PackagedLanguageTapResult.UNCONFIRMED
+    }
+
+    private fun applyLegacyPackagedLanguageTap(choice: PackagedLanguageTap): PackagedLanguageTapResult {
+        val ready = readyProfile ?: return PackagedLanguageTapResult.NOT_APPLIED
+        return when (choice) {
+            is PackagedLanguageTap.Regional -> {
+                if (!RuntimeSettingsStore(application).setReleaseAppCopyLanguage(choice.tag)) {
+                    PackagedLanguageTapResult.NOT_APPLIED
+                } else {
+                    readyProfile = ready.copy(locale = choice.locale)
+                    PackagedLanguageTapResult.APPLIED
+                }
+            }
+            is PackagedLanguageTap.Legacy -> {
+                // Persist before mutating visible state: on API < 33 there is no system per-app
+                // locale to reconcile, so UNCONFIRMED would trap the picker permanently.
+                val persisted = try {
+                    ready.model.persistConfirmedLanguage(choice.language)
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                if (!persisted) return PackagedLanguageTapResult.NOT_APPLIED
+                readyProfile = ready.copy(locale = null)
+                PackagedLanguageTapResult.APPLIED
+            }
+        }
     }
 
     private suspend fun reconcilePackagedLanguageTap(choice: PackagedLanguageTap): Boolean {

@@ -185,7 +185,7 @@ import java.util.Date
 @Composable
 internal fun LocalRouteRulesDialog(
     state: LocalRouteRuleState,
-    onAdd: (LocalRuleType, String, LocalRuleAction) -> Boolean,
+    onAdd: (LocalRuleType, String, LocalRuleAction, (Boolean) -> Unit) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -270,7 +270,11 @@ internal fun LocalRouteRulesDialog(
                     Button(
                         onClick = {
                             val submitted = draft
-                            if (submitted.canAdd && onAdd(type, submitted.value, action)) draft = LocalRuleValueDraft()
+                            if (submitted.canAdd) {
+                                onAdd(type, submitted.value, action) { added ->
+                                    if (added && draft.value == submitted.value) draft = LocalRuleValueDraft()
+                                }
+                            }
                         },
                         enabled = draft.canAdd,
                         modifier = Modifier.fillMaxWidth(),

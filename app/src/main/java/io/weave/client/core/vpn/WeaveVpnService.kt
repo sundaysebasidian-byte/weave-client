@@ -35,6 +35,7 @@ import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.WeaveLanguage
 import io.weave.client.ui.localizeWeaveText
 import java.net.InetSocketAddress
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,12 +78,19 @@ class WeaveVpnService : VpnService() {
         )
     }
     private val uidAttributionCache = SocketUidAttributionCache()
+    private val lifecycleLock = Any()
     @Volatile
     private var startInProgress = false
     @Volatile
     private var reloadPending = false
     @Volatile
     private var shutdownRequested = false
+    @Volatile
+    private var commandGeneration = 0L
+    @Volatile
+    private var latestStartId = -1
+    @Volatile
+    private var cachedLanguage: WeaveLanguage = WeaveLanguage.fromSystem()
     @Volatile
     private var probeSubscriptionId: String? = null
     private var networkRecoveryJob: Job? = null
@@ -115,6 +123,7 @@ class WeaveVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        cachedLanguage = WeaveLanguage.fromSystem(resources.configuration.locales[0])
         WeaveStatusWidget.observe(this)
         ContextCompat.registerReceiver(
             this,
@@ -158,11 +167,17 @@ class WeaveVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            shutdownRequested = true
+            val stopGeneration = synchronized(lifecycleLock) {
+                shutdownRequested = true
+                reloadPending = false
+                latestStartId = startId
+                ++commandGeneration
+            }
+            networkRecoveryJob?.cancel()
             outboundRecoveryJob?.cancel()
             serviceScope.launch {
                 runCatching { settingsStore.setResumableConnection(false) }
-                shutdown("已断开")
+                shutdown("已断开", stopGeneration)
             }
             return START_NOT_STICKY
         }
@@ -170,15 +185,28 @@ class WeaveVpnService : VpnService() {
         val bootResume = intent?.action == ACTION_RESUME_AFTER_BOOT
         val connected = lastSuccessfulRuntime != null &&
             VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED
-        if (reloading && (shutdownRequested || (!connected && !startInProgress))) {
+        val alreadyRunningOrDone = synchronized(lifecycleLock) {
+            if (reloading && (shutdownRequested || (!connected && !startInProgress))) {
+                return@synchronized -1
+            }
+            if (!reloading && !shutdownRequested && (connected || startInProgress)) {
+                return@synchronized 0
+            }
+            latestStartId = startId
+            if (!reloading) {
+                shutdownRequested = false
+                ++commandGeneration
+            }
+            1
+        }
+        if (alreadyRunningOrDone == -1) {
             // A settings write can finish after a disconnect. Never turn its reload into a start.
             if (!shutdownRequested) stopSelf(startId)
             return START_NOT_STICKY
         }
-        if (!reloading && !shutdownRequested && (connected || startInProgress)) return START_STICKY
+        if (alreadyRunningOrDone == 0) return START_STICKY
 
         if (!reloading) {
-            shutdownRequested = false
             outboundRecoveryJob?.cancel()
         }
         sendBroadcast(Intent(ACTION_SERVICE_STARTED).setPackage(packageName))
@@ -202,28 +230,44 @@ class WeaveVpnService : VpnService() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        if (startInProgress) {
-            if (reloading) reloadPending = true
-        } else {
-            startInProgress = true
+        val shouldLaunch = synchronized(lifecycleLock) {
+            if (startInProgress) {
+                if (reloading) reloadPending = true
+                false
+            } else {
+                startInProgress = true
+                true
+            }
+        }
+        if (shouldLaunch) {
             serviceScope.launch {
-                awaitPreviousTeardown()
-                if (reloading) {
-                    reloadRuntime()
-                } else {
-                    if (bootResume) {
-                        if (!settingsStore.canResumeAfterBoot() || prepare(this@WeaveVpnService) != null) {
-                            finishOperation()
-                            stopForeground(STOP_FOREGROUND_REMOVE)
-                            stopSelf(startId)
-                            return@launch
+                var finished = false
+                try {
+                    awaitPreviousTeardown()
+                    if (reloading) {
+                        finished = true
+                        reloadRuntime()
+                    } else {
+                        if (bootResume) {
+                            if (!settingsStore.canResumeAfterBoot() || prepare(this@WeaveVpnService) != null) {
+                                finished = true
+                                finishOperation()
+                                stopForeground(STOP_FOREGROUND_REMOVE)
+                                stopSelf(startId)
+                                return@launch
+                            }
+                            // Credential storage is already available. Give Wi-Fi/cellular time to come up.
+                            withTimeoutOrNull(20_000) {
+                                while (underlyingNetworkMonitor.currentNetworks().isEmpty()) delay(400)
+                            }
                         }
-                        // Credential storage is already available. Give Wi-Fi/cellular time to come up.
-                        withTimeoutOrNull(20_000) {
-                            while (underlyingNetworkMonitor.currentNetworks().isEmpty()) delay(400)
+                        if (!shutdownRequested) {
+                            finished = true
+                            startRuntime()
                         }
                     }
-                    if (!shutdownRequested) startRuntime()
+                } finally {
+                    if (!finished) finishOperation()
                 }
             }
         }
@@ -232,11 +276,16 @@ class WeaveVpnService : VpnService() {
 
     override fun onRevoke() {
         Log.w(LOG_TAG, "Android revoked the VpnService authorization")
-        shutdownRequested = true
+        val revokeGeneration = synchronized(lifecycleLock) {
+            shutdownRequested = true
+            reloadPending = false
+            ++commandGeneration
+        }
+        networkRecoveryJob?.cancel()
         outboundRecoveryJob?.cancel()
         serviceScope.launch {
             runCatching { settingsStore.setResumableConnection(false) }
-            shutdown("系统或其他 VPN 已接管连接；请关闭其他 VPN 或代理应用后重试")
+            shutdown("系统或其他 VPN 已接管连接；请关闭其他 VPN 或代理应用后重试", revokeGeneration)
         }
         super.onRevoke()
     }
@@ -287,18 +336,27 @@ class WeaveVpnService : VpnService() {
         networkRecoveryJob?.cancel()
         networkRecoveryJob = serviceScope.launch {
             delay(NetworkRecoveryPolicy.debounceMs)
-            if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return@launch
+            if (shutdownRequested || VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return@launch
             if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
                 scheduleOutboundRecovery()
                 return@launch
             }
-            if (startInProgress) {
+            val shouldReload = synchronized(lifecycleLock) {
+                if (startInProgress) {
+                    reloadPending = true
+                    false
+                } else {
+                    startInProgress = true
+                    true
+                }
+            }
+            if (!shouldReload) {
                 Log.i(LOG_TAG, "Network recovery queued behind an active runtime operation")
-                reloadPending = true
             } else {
                 Log.i(LOG_TAG, "Starting debounced network recovery")
-                startInProgress = true
-                reloadRuntime()
+                // Decouple execution from the debounce timer so a transient onLost cancelling
+                // networkRecoveryJob cannot cancel an in-flight reload/rollback.
+                serviceScope.launch { reloadRuntime() }
             }
         }
     }
@@ -324,7 +382,11 @@ class WeaveVpnService : VpnService() {
             }
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                 scheduleNetworkRecovery()
-            } else if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+            } else if (
+                (VpnRuntimeState.snapshot.value.state == ConnectionState.ERROR ||
+                    engine.state.value == ConnectionState.ERROR) &&
+                lastSuccessfulRuntime != null
+            ) {
                 scheduleOutboundRecovery()
             }
             return
@@ -355,7 +417,11 @@ class WeaveVpnService : VpnService() {
         // recovery path for old releases where the explicit underlying-network metadata matters.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || previous == null) {
             scheduleNetworkRecovery()
-        } else if (engine.state.value == ConnectionState.ERROR && lastSuccessfulRuntime != null) {
+        } else if (
+            (VpnRuntimeState.snapshot.value.state == ConnectionState.ERROR ||
+                engine.state.value == ConnectionState.ERROR) &&
+            lastSuccessfulRuntime != null
+        ) {
             scheduleOutboundRecovery()
         }
     }
@@ -419,35 +485,50 @@ class WeaveVpnService : VpnService() {
                     )
                     return@launch
                 }
-                if (startInProgress) {
-                    reloadPending = true
+                val acquired = synchronized(lifecycleLock) {
+                    if (startInProgress) {
+                        reloadPending = true
+                        false
+                    } else {
+                        startInProgress = true
+                        true
+                    }
+                }
+                if (!acquired) return@launch
+
+                val runtime = lastSuccessfulRuntime ?: run {
+                    finishOperation()
                     return@launch
                 }
-
-                val runtime = lastSuccessfulRuntime ?: return@launch
-                startInProgress = true
                 notifyStatus("正在恢复代理连接")
                 VpnRuntimeState.update(
                     ConnectionState.CONNECTING,
                     "正在恢复代理连接（第 ${index + 1} 次）",
                 )
-                val result = runCatching {
+                val result = try {
                     // The adapter reports late protect failures and this serialized stop gives
                     // the native core a clean boundary before the new TUN starts.
                     engine.stop()
                     uidAttributionCache.clear()
                     launchPreparedRuntime(runtime)
+                    Result.success(Unit)
+                } catch (cancelled: CancellationException) {
+                    finishOperation()
+                    throw cancelled
+                } catch (error: Throwable) {
+                    Result.failure(error)
                 }
-                startInProgress = false
-                // runCatching also catches coroutine cancellation; never turn a user
-                // disconnect/service shutdown into another recovery attempt.
-                if (!kotlin.coroutines.coroutineContext.isActive || shutdownRequested) return@launch
+                if (!kotlin.coroutines.coroutineContext.isActive || shutdownRequested) {
+                    finishOperation()
+                    return@launch
+                }
 
                 if (result.isSuccess) {
                     publishConnected(runtime, "网络已恢复，代理已重新连接")
                     finishOperation()
                     return@launch
                 }
+                synchronized(lifecycleLock) { startInProgress = false }
 
                 Log.w(
                     LOG_TAG,
@@ -476,7 +557,7 @@ class WeaveVpnService : VpnService() {
         uidAttributionCache.clear()
         // Stable stage identifiers survive R8 and never contain a server, node name or token.
         var startupStage = "S01"
-        runCatching {
+        try {
             if (recoveryVault.snapshot().safeMode) fail(RuntimeFailure.SAFE_MODE)
             if (!engine.isAvailable) fail(RuntimeFailure.CORE_UNAVAILABLE)
             startupStage = "S02"
@@ -486,7 +567,9 @@ class WeaveVpnService : VpnService() {
             runCatching { settingsStore.setResumableConnection(true) { !shutdownRequested } }
             recoveryVault.recordHealthy("${prepared.assembled.usableSubscriptions} subscriptions")
             publishConnected(prepared, "安全代理已连接")
-        }.onFailure { error ->
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
             Log.e(
                 LOG_TAG,
                 "Runtime start failed [$startupStage:${safeFailureCode(error)}] " +
@@ -500,8 +583,9 @@ class WeaveVpnService : VpnService() {
                 "${safeError(error)} [$startupStage]",
             )
             stopSelf()
+        } finally {
+            finishOperation()
         }
-        finishOperation()
     }
 
     private suspend fun reloadRuntime() {
@@ -512,71 +596,92 @@ class WeaveVpnService : VpnService() {
             return
         }
 
-        val candidate = runCatching {
-            prepareCurrentRuntime().also { prepared ->
-                // All providers are inline; validation does not modify the running core.
-                engine.validate(prepared.assembled.yaml).getOrThrow()
+        try {
+            val candidate = try {
+                prepareCurrentRuntime().also { prepared ->
+                    // All providers are inline; validation does not modify the running core.
+                    engine.validate(prepared.assembled.yaml).getOrThrow()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                recoveryVault.recordFailure("candidate_validation_failed:${safeFailureCode(error)}")
+                VpnRuntimeState.update(
+                    ConnectionState.CONNECTED,
+                    "新配置未通过校验，已继续使用原连接：${safeError(error)}",
+                )
+                return
             }
-        }.getOrElse { error ->
-            recoveryVault.recordFailure("candidate_validation_failed:${safeFailureCode(error)}")
-            VpnRuntimeState.update(
-                ConnectionState.CONNECTED,
-                "新配置未通过校验，已继续使用原连接：${safeError(error)}",
-            )
-            finishOperation()
-            return
-        }
 
-        val candidateStart = runCatching {
-            engine.stopForReconfiguration()
-            launchPreparedRuntime(candidate, alreadyValidated = true)
-        }
-        if (candidateStart.isSuccess) {
-            lastSuccessfulRuntime = candidate
-            recoveryVault.recordHealthy("${candidate.assembled.usableSubscriptions} subscriptions")
-            publishConnected(candidate, "新配置已安全生效")
-            finishOperation()
-            return
-        }
+            val candidateFailure = try {
+                engine.stopForReconfiguration()
+                launchPreparedRuntime(candidate, alreadyValidated = true)
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                error
+            }
+            if (candidateFailure == null) {
+                lastSuccessfulRuntime = candidate
+                recoveryVault.recordHealthy("${candidate.assembled.usableSubscriptions} subscriptions")
+                publishConnected(candidate, "新配置已安全生效")
+                return
+            }
 
-        val rollback = runCatching {
-            engine.stop()
-            launchPreparedRuntime(previous)
+            val rollbackSucceeded = try {
+                engine.stop()
+                launchPreparedRuntime(previous)
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                false
+            }
+            if (rollbackSucceeded) {
+                lastSuccessfulRuntime = previous
+                recoveryVault.recordFailure("candidate_start_failed;previous_runtime_restored")
+                publishConnected(
+                    previous,
+                    "新配置启动失败，已自动恢复原连接：${safeError(candidateFailure)}",
+                )
+            } else {
+                recoveryVault.recordFailure("candidate_and_rollback_failed")
+                recoveryVault.enableSafeMode("候选配置与上一份配置均无法启动")
+                VpnRuntimeState.update(
+                    ConnectionState.ERROR,
+                    "新配置与原配置均无法启动，VPN 已安全关闭",
+                )
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        } finally {
+            finishOperation()
         }
-        if (rollback.isSuccess) {
-            lastSuccessfulRuntime = previous
-            recoveryVault.recordFailure("candidate_start_failed;previous_runtime_restored")
-            publishConnected(
-                previous,
-                "新配置启动失败，已自动恢复原连接：${safeError(candidateStart.exceptionOrNull())}",
-            )
-        } else {
-            recoveryVault.recordFailure("candidate_and_rollback_failed")
-            recoveryVault.enableSafeMode("候选配置与上一份配置均无法启动")
-            VpnRuntimeState.update(
-                ConnectionState.ERROR,
-                "新配置与原配置均无法启动，VPN 已安全关闭",
-            )
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        }
-        finishOperation()
     }
 
     private fun finishOperation() {
-        if (
-            reloadPending &&
-            VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED
-        ) {
-            reloadPending = false
+        val runQueuedReload = synchronized(lifecycleLock) {
+            if (
+                !shutdownRequested &&
+                reloadPending &&
+                VpnRuntimeState.snapshot.value.state == ConnectionState.CONNECTED
+            ) {
+                reloadPending = false
+                true
+            } else {
+                reloadPending = false
+                startInProgress = false
+                false
+            }
+        }
+        if (runQueuedReload) {
             serviceScope.launch { reloadRuntime() }
-        } else {
-            reloadPending = false
-            startInProgress = false
         }
     }
 
     private fun prepareCurrentRuntime(): PreparedRuntime = io.weave.client.data.ProfileStorage.access(this) {
+        cachedLanguage = settingsStore.language()
         val (mode, defaultTarget, networkPreferences) = settingsStore.runtimeRoutingSnapshot()
         val routes = if (mode == io.weave.client.domain.RoutingMode.RULE) routeStore.load() else emptyList()
         val installedApps = installedAppMappings(routes.map { it.packageName })
@@ -631,6 +736,7 @@ class WeaveVpnService : VpnService() {
                 installedApps = prepared.installedApps,
                 ipMode = prepared.ipMode,
                 requiredNodeGroups = prepared.assembled.requiredNodeGroups,
+                onTunConsumed = { handedToCore = true },
             ).getOrThrow()
             handedToCore = true
             onStage("S06")
@@ -854,15 +960,18 @@ class WeaveVpnService : VpnService() {
         InetSocketAddress(android.net.InetAddresses.parseNumericAddress(host), portText.toInt())
     }.getOrNull()
 
-    private suspend fun shutdown(message: String) {
-        shutdownRequested = true
+    private suspend fun shutdown(message: String, generation: Long) {
         Log.i(LOG_TAG, "Shutting down runtime: $message")
         withContext(NonCancellable) {
             engine.stop()
+            val stopId = synchronized(lifecycleLock) {
+                if (commandGeneration != generation) return@withContext
+                latestStartId
+            }
             uidAttributionCache.clear()
             VpnRuntimeState.update(ConnectionState.DISCONNECTED, message)
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (stopId >= 0) stopSelf(stopId) else stopSelf()
         }
     }
 
@@ -880,7 +989,7 @@ class WeaveVpnService : VpnService() {
 
     private fun buildNotification(status: String, detail: String? = null, exit: String? = null): Notification =
         connectionNotification(
-            this, settingsStore.language(), status, detail, exit,
+            this, cachedLanguage, status, detail, exit,
             connectedSince = if (status == connectedStatus) connectedAtMillis else 0L,
         )
 

@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
@@ -107,8 +108,12 @@ class CommonEndpointProbe(
         )
     }
 
-    private fun probe(endpoint: CommonEndpoint): CommonEndpointResult = try {
-        val response = transport.get(endpoint.url, timeoutMillis)
+    private suspend fun probe(endpoint: CommonEndpoint): CommonEndpointResult = try {
+        val response = if (transport is UrlConnectionCommonEndpointTransport) {
+            transport.getCancellable(endpoint.url, timeoutMillis, currentCoroutineContext()[Job])
+        } else {
+            transport.get(endpoint.url, timeoutMillis)
+        }
         val status = response.statusCode
         val state = when {
             // A 2xx response proves that this request reached the service. A 401/403/
@@ -140,6 +145,7 @@ class CommonEndpointProbe(
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
+        currentCoroutineContext().ensureActive()
         CommonEndpointResult(
             endpoint = endpoint,
             state = CommonEndpointState.ATTENTION,
@@ -202,16 +208,24 @@ class CommonEndpointProbe(
     }
 }
 
-private class UrlConnectionCommonEndpointTransport(
+internal class UrlConnectionCommonEndpointTransport(
     private val open: (java.net.URL) -> java.net.URLConnection = java.net.URL::openConnection,
 ) : CommonEndpointHttpTransport {
-    override fun get(url: String, timeoutMillis: Int): CommonEndpointHttpResponse {
+    override fun get(url: String, timeoutMillis: Int): CommonEndpointHttpResponse =
+        getCancellable(url, timeoutMillis, job = null)
+
+    internal fun getCancellable(url: String, timeoutMillis: Int, job: Job?): CommonEndpointHttpResponse {
         val uri = URI(url)
         require(uri.scheme.equals("https", ignoreCase = true)) { "探测端点必须使用 HTTPS" }
+        if (job?.isCancelled == true) throw CancellationException("Common endpoint probe cancelled")
         val startedAtNanos = System.nanoTime()
         val connection = (open(uri.toURL()) as? HttpURLConnection)
             ?: error("无法创建 HTTPS 连接")
+        val cancelHandle = job?.invokeOnCompletion { cause ->
+            if (cause != null) runCatching { connection.disconnect() }
+        }
         return try {
+            if (job?.isCancelled == true) throw CancellationException("Common endpoint probe cancelled")
             // Do not follow redirects (especially HTTPS → HTTP). A 3xx response already proves
             // that the current route reached the service, and avoiding the second request keeps
             // the probe bounded and prevents cookies or page content from entering the flow.
@@ -234,6 +248,7 @@ private class UrlConnectionCommonEndpointTransport(
                     .coerceAtLeast(0L),
             )
         } finally {
+            cancelHandle?.dispose()
             connection.disconnect()
         }
     }

@@ -28,6 +28,15 @@ class RemoteRuleSetTest {
             "DOMAIN,example.com,DIRECT" to RuleSetBehavior.CLASSICAL, // policy smuggled into a provider entry
             "RULE-SET,other" to RuleSetBehavior.CLASSICAL,
             "DST-PORT,70000" to RuleSetBehavior.CLASSICAL,
+            "DST-PORT,8080-80" to RuleSetBehavior.CLASSICAL,
+            "IP-ASN,+15169" to RuleSetBehavior.CLASSICAL,
+            "IP-ASN,-0" to RuleSetBehavior.CLASSICAL,
+            "IP-ASN,١٥١٦٩" to RuleSetBehavior.CLASSICAL,
+            "DOMAIN-SUFFIX,.example.com" to RuleSetBehavior.CLASSICAL,
+            "DOMAIN,*.example.com" to RuleSetBehavior.CLASSICAL,
+            "IP-CIDR,2001:db8::/32" to RuleSetBehavior.CLASSICAL,
+            "IP-CIDR6,10.0.0.0/8" to RuleSetBehavior.CLASSICAL,
+            "IP-CIDR6,2001:db8::/+64" to RuleSetBehavior.CLASSICAL,
             "not a cidr" to RuleSetBehavior.IPCIDR,
             "exa mple.com" to RuleSetBehavior.DOMAIN,
             "" to RuleSetBehavior.DOMAIN,
@@ -35,6 +44,13 @@ class RemoteRuleSetTest {
             val failed = runCatching { RuleSetParser.parse(body, behavior) }.exceptionOrNull()
             assertTrue("$body should be rejected", failed is RuleSetException)
         }
+        assertEquals(
+            listOf("DST-PORT,80-443", "IP-ASN,15169", "IP-CIDR6,2001:db8::/32,no-resolve"),
+            RuleSetParser.parse(
+                "DST-PORT,80-443\nIP-ASN,15169\nIP-CIDR6,2001:db8::/32,no-resolve\n",
+                RuleSetBehavior.CLASSICAL,
+            ),
+        )
     }
 
     @Test fun `compiles inline providers and rules`() {

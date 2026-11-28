@@ -101,6 +101,13 @@ class SubscriptionUsageTest {
         assertNull(SubscriptionUsage.decode("0,0,0,${Long.MAX_VALUE}")!!.expireAtMillis)
     }
 
+    @Test fun `extreme exponents are bounded without allocating huge BigInteger powers`() {
+        val usage = SubscriptionUsage.parse(
+            "upload=1e-999999999;download=1e-2147483647;total=1e999999999;expire=0e-2147483647",
+        )
+        assertEquals(SubscriptionUsage(0L, 0L, Long.MAX_VALUE, null), usage)
+    }
+
     @Test fun `profile update interval is clamped`() {
         assertEquals(24, ProfileUpdateInterval.parse(" 24 "))
         assertNull(ProfileUpdateInterval.parse("0"))

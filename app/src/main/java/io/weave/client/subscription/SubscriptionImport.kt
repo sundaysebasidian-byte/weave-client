@@ -66,14 +66,15 @@ class SubscriptionPayloadParser {
             .map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
             .mapNotNull { value ->
-                val uri = runCatching { URI(value) }.getOrNull()
+                val (base, rawFragment) = splitUriAndFragment(value)
+                val uri = runCatching { URI(base) }.getOrNull()
                 val scheme = uri?.scheme?.lowercase() ?: return@mapNotNull null
                 if (scheme !in SUPPORTED_URI_SCHEMES) {
                     throw SubscriptionImportException("订阅包含暂不支持的节点协议，未导入任何节点")
                 }
                 protocols.add(scheme)
                 ParsedNode(
-                    name = uri.rawFragment?.takeIf { it.isNotBlank() } ?: "${scheme.uppercase()} 节点",
+                    name = rawFragment?.takeIf { it.isNotBlank() } ?: "${scheme.uppercase()} 节点",
                     protocol = scheme,
                 )
             }
@@ -171,17 +172,14 @@ class SubscriptionPayloadParser {
         }
 
         if (document.startsWith("{") && SING_BOX_MARKER.containsMatchIn(document)) {
-            val outboundArray = extractJsonArray(document, "outbounds")
+            val root = BoundedJsonReader.parseObject(document)
+            val outbounds = jsonObjectList(root, "outbounds")
                 ?: throw SubscriptionImportException("sing-box outbounds 结构无效")
-            val looksLikeSingBox = extractJsonObjects(outboundArray)
-                .firstOrNull()
-                ?.let { jsonString(it, "type") != null }
-                ?: false
+            val looksLikeSingBox = outbounds.any { jsonString(it, "type") != null }
             if (looksLikeSingBox) {
-                val protocols = JSON_TYPE.findAll(outboundArray)
-                    .map { it.groupValues[1].lowercase() }
-                    .filter { it in SUPPORTED_STRUCTURED_TYPES }
-                    .toList()
+                val protocols = outbounds.mapNotNull { outbound ->
+                    jsonString(outbound, "type")?.lowercase()?.takeIf { it in SUPPORTED_STRUCTURED_TYPES }
+                }
                 return ParsedSubscription(
                     format = SubscriptionFormat.SING_BOX_JSON,
                     nodeCount = protocols.size,
@@ -191,15 +189,9 @@ class SubscriptionPayloadParser {
                     },
                 )
             }
-        }
-
-        if (document.startsWith("{") && V2RAY_MARKER.containsMatchIn(document)) {
-            val outboundArray = extractJsonArray(document, "outbounds")
-                ?: throw SubscriptionImportException("V2Ray outbounds 结构无效")
-            val protocols = V2RAY_PROTOCOL.findAll(outboundArray)
-                .map { it.groupValues[1].lowercase() }
-                .filter { it in V2RAY_SUPPORTED_TYPES }
-                .toList()
+            val protocols = outbounds.mapNotNull { outbound ->
+                jsonString(outbound, "protocol")?.lowercase()?.takeIf { it in V2RAY_SUPPORTED_TYPES }
+            }
             return ParsedSubscription(
                 format = SubscriptionFormat.V2RAY_JSON,
                 nodeCount = protocols.size,
@@ -231,121 +223,64 @@ class SubscriptionPayloadParser {
         )
     }
 
-    private fun extractJsonArray(payload: String, key: String): String? {
-        val keyMatch = Regex(""""${Regex.escape(key)}"\s*:""").find(payload) ?: return null
-        val start = payload.indexOf('[', keyMatch.range.last + 1)
-        if (start < 0) return null
+    /** Structured JSON accessors backed by [ClashYamlCodec], keeping parsing bounded and JVM-testable. */
+    private fun jsonString(obj: Map<String, Any?>?, key: String): String? =
+        obj?.get(key) as? String
 
-        var depth = 0
-        var inString = false
-        var escaped = false
-        for (index in start until payload.length) {
-            val char = payload[index]
-            if (inString) {
-                when {
-                    escaped -> escaped = false
-                    char == '\\' -> escaped = true
-                    char == '"' -> inString = false
-                }
-                continue
-            }
-            when (char) {
-                '"' -> inString = true
-                '[' -> depth++
-                ']' -> {
-                    depth--
-                    if (depth == 0) return payload.substring(start, index + 1)
-                }
-            }
+    private fun jsonInt(obj: Map<String, Any?>?, key: String): Int? = when (val value = obj?.get(key)) {
+        is Int -> value
+        is Long -> value.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
+        is Number -> {
+            val asLong = value.toLong()
+            asLong.takeIf { value.toDouble() == asLong.toDouble() && it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
         }
-        return null
+        is String -> value.trim().toIntOrNull()
+        else -> null
     }
 
-    /** Small JSON accessors used here so subscription parsing remains JVM-testable without Android org.json. */
-    private fun jsonString(objectJson: String, key: String): String? {
-        val pattern = Regex(
-            "\\\"" + Regex.escape(key) + "\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"",
-        )
-        val value = pattern.find(objectJson)?.groupValues?.getOrNull(1) ?: return null
-        return value.replace("\\\"", "\"")
-            .replace("\\\\", "\\")
-            .replace("\\n", "\n")
-            .replace("\\r", "\r")
-            .replace("\\t", "\t")
-    }
-
-    private fun jsonInt(objectJson: String, key: String): Int? = Regex(
-        "\\\"" + Regex.escape(key) + "\\\"\\s*:\\s*(-?\\d+)",
-    ).find(objectJson)?.groupValues?.getOrNull(1)?.toIntOrNull()
-
-    private fun jsonBoolean(objectJson: String, key: String): Boolean? = Regex(
-        "\\\"" + Regex.escape(key) + "\\\"\\s*:\\s*(true|false)", RegexOption.IGNORE_CASE,
-    ).find(objectJson)?.groupValues?.getOrNull(1)?.toBoolean()
-
-    private fun extractJsonObject(payload: String, key: String): String? {
-        val keyMatch = Regex(""""${Regex.escape(key)}"\s*:\s*\{""").find(payload) ?: return null
-        val start = payload.indexOf('{', keyMatch.range.first)
-        return extractBalanced(payload, start, '{', '}')
-    }
-
-    private fun extractJsonObjects(array: String): List<String> {
-        val objects = mutableListOf<String>()
-        var depth = 0
-        var start = -1
-        var inString = false
-        var escaped = false
-        array.forEachIndexed { index, char ->
-            if (inString) {
-                when {
-                    escaped -> escaped = false
-                    char == '\\' -> escaped = true
-                    char == '"' -> inString = false
-                }
-                return@forEachIndexed
-            }
-            when (char) {
-                '"' -> inString = true
-                '{' -> {
-                    if (depth == 0) start = index
-                    depth++
-                }
-                '}' -> {
-                    if (depth > 0) depth--
-                    if (depth == 0 && start >= 0) {
-                        objects += array.substring(start, index + 1)
-                        start = -1
-                    }
-                }
-            }
+    private fun jsonBoolean(obj: Map<String, Any?>?, key: String): Boolean? = when (val value = obj?.get(key)) {
+        is Boolean -> value
+        is String -> when (value.lowercase()) {
+            "true" -> true
+            "false" -> false
+            else -> null
         }
-        return objects
+        else -> null
     }
 
-    private fun extractBalanced(payload: String, start: Int, open: Char, close: Char): String? {
-        if (start !in payload.indices || payload[start] != open) return null
-        var depth = 0
-        var inString = false
-        var escaped = false
-        for (index in start until payload.length) {
-            val char = payload[index]
-            if (inString) {
-                when {
-                    escaped -> escaped = false
-                    char == '\\' -> escaped = true
-                    char == '"' -> inString = false
-                }
-                continue
-            }
-            when (char) {
-                '"' -> inString = true
-                open -> depth++
-                close -> {
-                    depth--
-                    if (depth == 0) return payload.substring(start, index + 1)
-                }
-            }
+    @Suppress("UNCHECKED_CAST")
+    private fun jsonObject(obj: Map<String, Any?>?, key: String): Map<String, Any?>? =
+        obj?.get(key) as? Map<String, Any?>
+
+    @Suppress("UNCHECKED_CAST")
+    private fun jsonObjectList(obj: Map<String, Any?>?, key: String): List<Map<String, Any?>>? {
+        val list = obj?.get(key) as? List<*> ?: return null
+        if (list.any { it !is Map<*, *> }) return null
+        return list as List<Map<String, Any?>>
+    }
+
+    private fun splitUriAndFragment(value: String): Pair<String, String?> {
+        val hash = value.indexOf('#')
+        return if (hash < 0) value to null else value.substring(0, hash) to value.substring(hash + 1)
+    }
+
+    private fun splitHostPort(authority: String): Pair<String, Int?> {
+        val trimmed = authority.trimEnd('/')
+        val host: String
+        val portText: String
+        if (trimmed.startsWith('[')) {
+            val closing = trimmed.indexOf(']')
+            if (closing <= 1 || trimmed.getOrNull(closing + 1) != ':') return "" to null
+            host = trimmed.substring(1, closing)
+            portText = trimmed.substring(closing + 2)
+        } else {
+            val separator = trimmed.lastIndexOf(':')
+            if (separator <= 0) return "" to null
+            host = trimmed.substring(0, separator)
+            portText = trimmed.substring(separator + 1)
         }
-        return null
+        val port = portText.toIntOrNull()?.takeIf { it in 1..65535 }
+        return host to port
     }
 
     private fun decodeBase64(payload: String): String {
@@ -385,10 +320,11 @@ class SubscriptionPayloadParser {
     private fun parseUriSpec(value: String, scheme: String): ProxySpec {
         if (scheme == "vmess") return parseVmess(value)
         if (scheme == "ssr") return parseShadowsocksR(value)
-        val uri = runCatching { URI(value) }.getOrElse {
+        val (base, rawFragment) = splitUriAndFragment(value)
+        val uri = runCatching { URI(base) }.getOrElse {
             throw SubscriptionImportException("$scheme 节点地址格式无效")
         }
-        val name = decodePart(uri.rawFragment).ifBlank { "$scheme 节点" }
+        val name = decodePart(rawFragment).ifBlank { "$scheme 节点" }
         if (scheme == "ss") return parseShadowsocks(value, name)
         val host = uri.host ?: uri.rawAuthority?.substringAfterLast('@')?.substringBefore(':')
             ?.takeIf(String::isNotBlank)
@@ -466,11 +402,13 @@ class SubscriptionPayloadParser {
 
     private fun parseVmess(value: String): ProxySpec {
         val encoded = value.substringAfter("vmess://").substringBefore('#')
-        val json = runCatching {
+        val rawJson = runCatching {
             Base64.getDecoder().decode(padBase64(encoded)).toString(Charsets.UTF_8)
         }.recoverCatching {
             Base64.getUrlDecoder().decode(padBase64(encoded)).toString(Charsets.UTF_8)
         }.getOrElse { throw SubscriptionImportException("VMess 节点参数不是有效 Base64 JSON") }
+        val json = runCatching { BoundedJsonReader.parseObject(rawJson) }
+            .getOrElse { throw SubscriptionImportException("VMess 节点参数不是有效 Base64 JSON") }
         val name = decodePart(value.substringAfter('#', "")).ifBlank {
             jsonString(json, "ps").orEmpty().ifBlank { "vmess 节点" }
         }
@@ -503,19 +441,33 @@ class SubscriptionPayloadParser {
     }
 
     private fun parseShadowsocks(value: String, name: String): ProxySpec {
-        val body = value.substringAfter("ss://").substringBefore('#').substringBefore('?')
-        val decoded = runCatching {
-            Base64.getDecoder().decode(padBase64(body)).toString(Charsets.UTF_8)
-        }.recoverCatching {
-            Base64.getUrlDecoder().decode(padBase64(body)).toString(Charsets.UTF_8)
-        }.getOrNull() ?: body
-        val authority = decoded.substringAfter('@', decoded)
-        val credentials = decoded.substringBefore('@')
-        val hostPort = authority.substringBeforeLast(':') to authority.substringAfterLast(':')
-        val host = hostPort.first.takeIf(String::isNotBlank)
-            ?: throw SubscriptionImportException("$name 缺少服务器地址")
-        val port = hostPort.second.toIntOrNull()?.takeIf { it > 0 }
-            ?: throw SubscriptionImportException("$name 缺少端口")
+        val beforeFragment = value.substringAfter("ss://").substringBefore('#')
+        val rawQuery = beforeFragment.substringAfter('?', "")
+        if (queryMap(rawQuery).keys.any { it.equals("plugin", ignoreCase = true) }) {
+            throw SubscriptionImportException("暂不支持带 plugin 参数的 Shadowsocks URI，请导入 Clash YAML")
+        }
+        val body = beforeFragment.substringBefore('?')
+        val credentials: String
+        val authority: String
+        val bodyAt = body.lastIndexOf('@')
+        if (bodyAt >= 0) {
+            val rawUserInfo = body.substring(0, bodyAt)
+            authority = body.substring(bodyAt + 1)
+            credentials = if (':' in rawUserInfo) {
+                decodePart(rawUserInfo)
+            } else {
+                decodeBase64Component(rawUserInfo) ?: decodePart(rawUserInfo)
+            }
+        } else {
+            val decoded = decodeBase64Component(body) ?: body
+            val decodedAt = decoded.lastIndexOf('@')
+            if (decodedAt < 0) throw SubscriptionImportException("$name 缺少加密方式或密码")
+            credentials = decoded.substring(0, decodedAt)
+            authority = decoded.substring(decodedAt + 1)
+        }
+        val (host, port) = splitHostPort(authority)
+        if (host.isBlank()) throw SubscriptionImportException("$name 缺少服务器地址")
+        if (port == null) throw SubscriptionImportException("$name 缺少端口")
         val separator = credentials.indexOf(':')
         if (separator <= 0) throw SubscriptionImportException("$name 缺少加密方式或密码")
         if (credentials.substringAfter(':').isBlank()) throw SubscriptionImportException("$name 缺少密码")
@@ -526,6 +478,12 @@ class SubscriptionPayloadParser {
             fields["password"] = YamlScalar(credentials.substringAfter(':'))
         }
     }
+
+    private fun decodeBase64Component(encoded: String): String? = runCatching {
+        Base64.getDecoder().decode(padBase64(encoded)).toString(Charsets.UTF_8)
+    }.recoverCatching {
+        Base64.getUrlDecoder().decode(padBase64(encoded)).toString(Charsets.UTF_8)
+    }.getOrNull()
 
     private fun parseShadowsocksR(value: String): ProxySpec {
         val encoded = value.substringAfter("ssr://").substringBefore('#')
@@ -560,10 +518,11 @@ class SubscriptionPayloadParser {
     }
 
     private fun singBoxSpecs(payload: String): List<ProxySpec> {
-        val outbounds = extractJsonArray(payload, "outbounds")
+        val root = BoundedJsonReader.parseObject(payload)
+        val outbounds = jsonObjectList(root, "outbounds")
             ?: throw SubscriptionImportException("sing-box outbounds 结构无效")
         val specs = buildList {
-            extractJsonObjects(outbounds).forEachIndexed { index, outbound ->
+            outbounds.forEachIndexed { index, outbound ->
                 val type = jsonString(outbound, "type").orEmpty().lowercase()
                 val name = jsonString(outbound, "tag").orEmpty().ifBlank { "$type 节点 ${index + 1}" }
                 if (type in setOf("direct", "block", "dns", "selector", "urltest", "fallback", "group")) return@forEachIndexed
@@ -575,10 +534,11 @@ class SubscriptionPayloadParser {
     }
 
     private fun v2RaySpecs(payload: String): List<ProxySpec> {
-        val outbounds = extractJsonArray(payload, "outbounds")
+        val root = BoundedJsonReader.parseObject(payload)
+        val outbounds = jsonObjectList(root, "outbounds")
             ?: throw SubscriptionImportException("V2Ray outbounds 结构无效")
         val specs = buildList {
-            extractJsonObjects(outbounds).forEachIndexed { index, outbound ->
+            outbounds.forEachIndexed { index, outbound ->
                 val protocol = jsonString(outbound, "protocol").orEmpty().lowercase()
                 if (protocol in setOf("freedom", "blackhole", "dns", "loopback")) return@forEachIndexed
                 val name = jsonString(outbound, "tag").orEmpty().ifBlank { "$protocol 节点 ${index + 1}" }
@@ -589,28 +549,28 @@ class SubscriptionPayloadParser {
         return specs
     }
 
-    private fun parseV2RayOutbound(outbound: String, protocol: String, name: String): ProxySpec {
+    private fun parseV2RayOutbound(outbound: Map<String, Any?>, protocol: String, name: String): ProxySpec {
         val mappedType = when (protocol) {
             "shadowsocks" -> "ss"
             "socks" -> "socks5"
             "vmess", "vless", "trojan", "http" -> protocol
             else -> throw SubscriptionImportException("V2Ray $protocol 出站暂不支持安全转换")
         }
-        val settings = extractJsonObject(outbound, "settings")
+        val settings = jsonObject(outbound, "settings")
             ?: throw SubscriptionImportException("$name 缺少 V2Ray settings")
         val servers = when (protocol) {
-            "vmess", "vless" -> extractJsonArray(settings, "vnext")?.let(::extractJsonObjects)
-            "trojan", "shadowsocks", "socks", "http" -> extractJsonArray(settings, "servers")?.let(::extractJsonObjects)
+            "vmess", "vless" -> jsonObjectList(settings, "vnext")
+            "trojan", "shadowsocks", "socks", "http" -> jsonObjectList(settings, "servers")
             else -> null
         }.orEmpty()
         if (servers.size > 1) throw SubscriptionImportException("V2Ray 配置含多个服务器或用户，请分别导出节点链接")
         val serverObject = servers.singleOrNull() ?: throw SubscriptionImportException("$name 缺少服务器列表")
-        val users = extractJsonArray(serverObject, "users")?.let(::extractJsonObjects).orEmpty()
+        val users = jsonObjectList(serverObject, "users").orEmpty()
         if (users.size > 1) throw SubscriptionImportException("V2Ray 配置含多个服务器或用户，请分别导出节点链接")
-        val stream = extractJsonObject(outbound, "streamSettings")
-        val network = jsonString(stream.orEmpty(), "network")
-        val security = jsonString(stream.orEmpty(), "security")
-        val tcpHeader = extractJsonObject(stream.orEmpty(), "tcpSettings")?.let { extractJsonObject(it, "header") }
+        val stream = jsonObject(outbound, "streamSettings")
+        val network = jsonString(stream, "network")
+        val security = jsonString(stream, "security")
+        val tcpHeader = jsonObject(jsonObject(stream, "tcpSettings"), "header")
         if (network != null && network !in setOf("tcp", "ws", "grpc") ||
             security != null && security !in setOf("none", "tls", "reality") ||
             tcpHeader != null && jsonString(tcpHeader, "type") !in setOf(null, "none")) {
@@ -624,22 +584,21 @@ class SubscriptionPayloadParser {
             fields["server"] = YamlScalar(host)
             fields["port"] = YamlScalar(port.toString(), quoted = false)
             val user = users.singleOrNull()
-            val passwordUser = user
             when (mappedType) {
-            "vmess", "vless" -> {
-                    val uuid = jsonString(user.orEmpty(), "id").orEmpty()
+                "vmess", "vless" -> {
+                    val uuid = jsonString(user, "id").orEmpty()
                     if (uuid.isBlank()) throw SubscriptionImportException("$name 缺少 UUID")
                     fields["uuid"] = YamlScalar(uuid)
                     if (mappedType == "vmess") {
-                        fields["alterId"] = YamlScalar((jsonInt(user.orEmpty(), "alterId") ?: 0).toString(), quoted = false)
-                        jsonString(user.orEmpty(), "security")?.let { fields["cipher"] = YamlScalar(it) }
+                        fields["alterId"] = YamlScalar((jsonInt(user, "alterId") ?: 0).toString(), quoted = false)
+                        jsonString(user, "security")?.let { fields["cipher"] = YamlScalar(it) }
                     } else {
-                        jsonString(user.orEmpty(), "encryption")?.let { fields["encryption"] = YamlScalar(it) }
-                        jsonString(user.orEmpty(), "flow")?.let { fields["flow"] = YamlScalar(it) }
+                        jsonString(user, "encryption")?.let { fields["encryption"] = YamlScalar(it) }
+                        jsonString(user, "flow")?.let { fields["flow"] = YamlScalar(it) }
                     }
                 }
                 "trojan" -> {
-                    val password = (jsonString(serverObject, "password") ?: jsonString(passwordUser.orEmpty(), "password")).orEmpty()
+                    val password = (jsonString(serverObject, "password") ?: jsonString(user, "password")).orEmpty()
                     if (password.isBlank()) throw SubscriptionImportException("$name 缺少密码")
                     fields["password"] = YamlScalar(password)
                 }
@@ -651,45 +610,45 @@ class SubscriptionPayloadParser {
                     fields["password"] = YamlScalar(password)
                 }
                 "socks5", "http" -> {
-                    jsonString(passwordUser.orEmpty(), "user")?.let { fields["username"] = YamlScalar(it) }
-                    jsonString(passwordUser.orEmpty(), "pass")?.let { fields["password"] = YamlScalar(it) }
+                    jsonString(user, "user")?.let { fields["username"] = YamlScalar(it) }
+                    jsonString(user, "pass")?.let { fields["password"] = YamlScalar(it) }
                 }
             }
             network?.let { fields["network"] = YamlScalar(it) }
             if (security == "tls" || security == "reality") {
                 fields["tls"] = YamlScalar("true", quoted = false)
-                val tls = extractJsonObject(stream.orEmpty(), "tlsSettings")
-                jsonString(tls.orEmpty(), "serverName")?.let { fields["servername"] = YamlScalar(it) }
-                jsonString(tls.orEmpty(), "fingerprint")?.let { fields["client-fingerprint"] = YamlScalar(it) }
-                if (jsonBoolean(tls.orEmpty(), "allowInsecure") == true) {
+                val tls = jsonObject(stream, "tlsSettings")
+                jsonString(tls, "serverName")?.let { fields["servername"] = YamlScalar(it) }
+                jsonString(tls, "fingerprint")?.let { fields["client-fingerprint"] = YamlScalar(it) }
+                if (jsonBoolean(tls, "allowInsecure") == true) {
                     fields["skip-cert-verify"] = YamlScalar("true", quoted = false)
                 }
                 if (security == "reality") {
-                    val reality = extractJsonObject(stream.orEmpty(), "realitySettings")
-                    jsonString(reality.orEmpty(), "serverName")?.let { fields["servername"] = YamlScalar(it) }
-                    jsonString(reality.orEmpty(), "fingerprint")?.let { fields["client-fingerprint"] = YamlScalar(it) }
+                    val reality = jsonObject(stream, "realitySettings")
+                    jsonString(reality, "serverName")?.let { fields["servername"] = YamlScalar(it) }
+                    jsonString(reality, "fingerprint")?.let { fields["client-fingerprint"] = YamlScalar(it) }
                     val realityOpts = nested.getOrPut("reality-opts") { linkedMapOf() }
-                    jsonString(reality.orEmpty(), "publicKey")?.let { realityOpts["public-key"] = YamlScalar(it) }
-                    jsonString(reality.orEmpty(), "shortId")?.let { realityOpts["short-id"] = YamlScalar(it) }
+                    jsonString(reality, "publicKey")?.let { realityOpts["public-key"] = YamlScalar(it) }
+                    jsonString(reality, "shortId")?.let { realityOpts["short-id"] = YamlScalar(it) }
                 }
             }
             if (network == "ws") {
-                val ws = extractJsonObject(stream.orEmpty(), "wsSettings")
+                val ws = jsonObject(stream, "wsSettings")
                 val wsOpts = nested.getOrPut("ws-opts") { linkedMapOf() }
-                jsonString(ws.orEmpty(), "path")?.let { wsOpts["path"] = YamlScalar(it) }
-                extractJsonObject(ws.orEmpty(), "headers")?.let { headers ->
+                jsonString(ws, "path")?.let { wsOpts["path"] = YamlScalar(it) }
+                jsonObject(ws, "headers")?.let { headers ->
                     jsonString(headers, "Host")?.let(::yamlHostHeader)?.let { wsOpts["headers"] = YamlScalar(it, quoted = false) }
                 }
             } else if (network == "grpc") {
-                val grpc = extractJsonObject(stream.orEmpty(), "grpcSettings")
-                jsonString(grpc.orEmpty(), "serviceName")?.let {
+                val grpc = jsonObject(stream, "grpcSettings")
+                jsonString(grpc, "serviceName")?.let {
                     nested.getOrPut("grpc-opts") { linkedMapOf() }["grpc-service-name"] = YamlScalar(it)
                 }
             }
         }
     }
 
-    private fun parseSingBoxOutbound(outbound: String, type: String, name: String): ProxySpec {
+    private fun parseSingBoxOutbound(outbound: Map<String, Any?>, type: String, name: String): ProxySpec {
         val mappedType = when (type) {
             "shadowsocks" -> "ss"
             "hysteria2" -> "hysteria2"
@@ -722,12 +681,12 @@ class SubscriptionPayloadParser {
                     jsonString(outbound, "password")?.takeIf(String::isNotBlank)?.let { fields["password"] = YamlScalar(it) }
                 }
             }
-            val tls = extractJsonObject(outbound, "tls")
-            if (tls?.let { jsonBoolean(it, "enabled") } == true) {
+            val tls = jsonObject(outbound, "tls")
+            if (jsonBoolean(tls, "enabled") == true) {
                 fields["tls"] = YamlScalar("true", quoted = false)
                 jsonString(tls, "server_name")?.takeIf(String::isNotBlank)?.let { fields["servername"] = YamlScalar(it) }
                 if (jsonBoolean(tls, "insecure") == true) fields["skip-cert-verify"] = YamlScalar("true", quoted = false)
-                extractJsonObject(tls, "reality")?.let { reality ->
+                jsonObject(tls, "reality")?.let { reality ->
                     val realityOpts = nested.getOrPut("reality-opts") { linkedMapOf() }
                     jsonString(reality, "public_key")?.takeIf(String::isNotBlank)?.let {
                         realityOpts["public-key"] = YamlScalar(it)
@@ -737,19 +696,20 @@ class SubscriptionPayloadParser {
                     }
                 }
             }
-            val transport = extractJsonObject(outbound, "transport")
-            if (transport != null && jsonString(transport, "type") !in setOf("ws", "grpc")) {
+            val transport = jsonObject(outbound, "transport")
+            val transportType = jsonString(transport, "type")
+            if (transport != null && transportType !in setOf("ws", "grpc")) {
                 throw SubscriptionImportException("该 sing-box 传输方式暂不支持，请导出 Clash YAML 或节点链接")
             }
-            if (transport?.let { jsonString(it, "type") } == "ws") {
+            if (transportType == "ws") {
                 fields["network"] = YamlScalar("ws")
                 val ws = linkedMapOf<String, YamlScalar>()
                 jsonString(transport, "path")?.takeIf(String::isNotBlank)?.let { ws["path"] = YamlScalar(it) }
-                extractJsonObject(transport, "headers")?.let { headers ->
+                jsonObject(transport, "headers")?.let { headers ->
                     jsonString(headers, "Host")?.let(::yamlHostHeader)?.let { ws["headers"] = YamlScalar(it, quoted = false) }
                 }
                 if (ws.isNotEmpty()) nested["ws-opts"] = ws
-            } else if (transport?.let { jsonString(it, "type") } == "grpc") {
+            } else if (transportType == "grpc") {
                 fields["network"] = YamlScalar("grpc")
                 jsonString(transport, "service_name")?.let {
                     nested.getOrPut("grpc-opts") { linkedMapOf() }["grpc-service-name"] = YamlScalar(it)
@@ -804,15 +764,18 @@ class SubscriptionPayloadParser {
         if (value.quoted) yamlQuote(value.value) else value.value
 
     private fun yamlHostHeader(value: String): String? {
-        if (value.isBlank() || value.any { it == '\r' || it == '\n' || it == '{' || it == '}' }) return null
-        return "{Host: ${value.replace("'", "")}}"
+        if (value.isBlank() || value.any(::isUnsafeYamlHostChar)) return null
+        return "{Host: ${yamlQuote(value)}}"
     }
 
+    private fun isUnsafeYamlHostChar(char: Char): Boolean =
+        char == '\r' || char == '\n' || char == '\u0085' || char == '\u2028' || char == '\u2029' ||
+            char == '{' || char == '}'
+
     private fun yamlQuote(value: String): String {
-        val safe = value
-            .filter { it == '\t' || it >= ' ' && it != '\u007f' }
-            .replace('\r', ' ')
-            .replace('\n', ' ')
+        val safe = value.filter {
+            it == '\t' || (it >= ' ' && it != '\u007f' && it != '\u0085' && it != '\u2028' && it != '\u2029')
+        }
         return "'${safe.replace("'", "''")}'"
     }
 
@@ -840,7 +803,8 @@ class SubscriptionPayloadParser {
     }
 
     private fun proxyScheme(value: String): String? {
-        val scheme = runCatching { URI(value).scheme?.lowercase() }.getOrNull() ?: return null
+        val (base, _) = splitUriAndFragment(value)
+        val scheme = runCatching { URI(base).scheme?.lowercase() }.getOrNull() ?: return null
         return scheme.takeIf { it in SUPPORTED_URI_SCHEMES }
     }
 
@@ -871,11 +835,199 @@ class SubscriptionPayloadParser {
             "anytls",
             "openvpn",
         )
-        val CLASH_MARKER = Regex("""(?m)^[ \t]*["']?proxies["']?[ \t]*:""", RegexOption.IGNORE_CASE)
         val SING_BOX_MARKER = Regex(""""outbounds"\s*:""", RegexOption.IGNORE_CASE)
         val V2RAY_MARKER = SING_BOX_MARKER
-        val JSON_TYPE = Regex(""""type"\s*:\s*"([a-zA-Z0-9_-]+)"""")
-        val V2RAY_PROTOCOL = Regex(""""protocol"\s*:\s*"([a-zA-Z0-9_-]+)"""")
         val V2RAY_SUPPORTED_TYPES = setOf("vmess", "vless", "trojan", "shadowsocks", "socks", "http")
+    }
+}
+
+/** Strict, bounded RFC 8259 JSON parser (pure JVM, supports `\/` and `\uXXXX` escapes). */
+private class BoundedJsonReader private constructor(private val input: String) {
+    private var index = 0
+    private var remaining = MAX_NODES
+
+    private fun fail(): Nothing = throw SubscriptionImportException("JSON 配置格式无效或超过安全解析限制")
+
+    private fun skipWhitespace() {
+        while (index < input.length) {
+            when (input[index]) {
+                ' ', '\t', '\r', '\n' -> index++
+                else -> return
+            }
+        }
+    }
+
+    private fun readRootObject(): Map<String, Any?> {
+        skipWhitespace()
+        if (index >= input.length || input[index] != '{') fail()
+        val result = readObject(0)
+        skipWhitespace()
+        if (index != input.length) fail()
+        return result
+    }
+
+    private fun readValue(depth: Int): Any? {
+        if (depth > MAX_DEPTH || --remaining < 0) fail()
+        skipWhitespace()
+        if (index >= input.length) fail()
+        return when (input[index]) {
+            '{' -> readObject(depth + 1)
+            '[' -> readArray(depth + 1)
+            '"' -> readString()
+            't' -> readLiteral("true", true)
+            'f' -> readLiteral("false", false)
+            'n' -> readLiteral("null", null)
+            '-', in '0'..'9' -> readNumber()
+            else -> fail()
+        }
+    }
+
+    private fun readObject(depth: Int): Map<String, Any?> {
+        index++ // '{'
+        val result = LinkedHashMap<String, Any?>()
+        skipWhitespace()
+        if (index < input.length && input[index] == '}') {
+            index++
+            return result
+        }
+        while (true) {
+            skipWhitespace()
+            if (index >= input.length || input[index] != '"') fail()
+            val key = readString()
+            skipWhitespace()
+            if (index >= input.length || input[index] != ':') fail()
+            index++
+            result[key] = readValue(depth)
+            skipWhitespace()
+            if (index >= input.length) fail()
+            when (input[index]) {
+                ',' -> index++
+                '}' -> {
+                    index++
+                    return result
+                }
+                else -> fail()
+            }
+        }
+    }
+
+    private fun readArray(depth: Int): List<Any?> {
+        index++ // '['
+        val result = ArrayList<Any?>()
+        skipWhitespace()
+        if (index < input.length && input[index] == ']') {
+            index++
+            return result
+        }
+        while (true) {
+            result.add(readValue(depth))
+            skipWhitespace()
+            if (index >= input.length) fail()
+            when (input[index]) {
+                ',' -> index++
+                ']' -> {
+                    index++
+                    return result
+                }
+                else -> fail()
+            }
+        }
+    }
+
+    private fun readString(): String {
+        index++ // '"'
+        val out = StringBuilder()
+        while (index < input.length) {
+            val ch = input[index++]
+            when {
+                ch == '"' -> return out.toString()
+                ch == '\\' -> {
+                    if (index >= input.length) fail()
+                    when (val esc = input[index++]) {
+                        '"' -> out.append('"')
+                        '\\' -> out.append('\\')
+                        '/' -> out.append('/')
+                        'b' -> out.append('\b')
+                        'f' -> out.append('\u000C')
+                        'n' -> out.append('\n')
+                        'r' -> out.append('\r')
+                        't' -> out.append('\t')
+                        'u' -> {
+                            if (index + 4 > input.length) fail()
+                            var code = 0
+                            repeat(4) {
+                                val digit = hexValue(input[index++])
+                                if (digit < 0) fail()
+                                code = (code shl 4) or digit
+                            }
+                            out.append(code.toChar())
+                        }
+                        else -> fail()
+                    }
+                }
+                ch < ' ' -> fail()
+                else -> out.append(ch)
+            }
+        }
+        fail()
+    }
+
+    private fun readLiteral(token: String, value: Any?): Any? {
+        if (!input.regionMatches(index, token, 0, token.length)) fail()
+        index += token.length
+        return value
+    }
+
+    private fun readNumber(): Number {
+        val start = index
+        if (input[index] == '-') index++
+        if (index >= input.length) fail()
+        if (input[index] == '0') {
+            index++
+        } else if (input[index] in '1'..'9') {
+            while (index < input.length && input[index] in '0'..'9') index++
+        } else {
+            fail()
+        }
+        var floating = false
+        if (index < input.length && input[index] == '.') {
+            floating = true
+            index++
+            if (index >= input.length || input[index] !in '0'..'9') fail()
+            while (index < input.length && input[index] in '0'..'9') index++
+        }
+        if (index < input.length && (input[index] == 'e' || input[index] == 'E')) {
+            floating = true
+            index++
+            if (index < input.length && (input[index] == '+' || input[index] == '-')) index++
+            if (index >= input.length || input[index] !in '0'..'9') fail()
+            while (index < input.length && input[index] in '0'..'9') index++
+        }
+        val slice = input.substring(start, index)
+        return if (!floating) {
+            slice.toLongOrNull() ?: slice.toDoubleOrNull() ?: fail()
+        } else {
+            slice.toDoubleOrNull()?.takeIf(Double::isFinite) ?: fail()
+        }
+    }
+
+    private fun hexValue(ch: Char): Int = when (ch) {
+        in '0'..'9' -> ch - '0'
+        in 'a'..'f' -> ch - 'a' + 10
+        in 'A'..'F' -> ch - 'A' + 10
+        else -> -1
+    }
+
+    companion object {
+        private const val MAX_DEPTH = 40
+        private const val MAX_NODES = 150_000
+        private const val MAX_CHARS = 5 * 1024 * 1024
+
+        fun parseObject(input: String): Map<String, Any?> {
+            if (input.length > MAX_CHARS) {
+                throw SubscriptionImportException("JSON 配置格式无效或超过安全解析限制")
+            }
+            return BoundedJsonReader(input).readRootObject()
+        }
     }
 }

@@ -70,7 +70,7 @@ class SecondaryDialogCallbackTest {
     @Test fun visibleRuleChipsSubmitTheChosenTypeAndAction() {
         var submitted: Triple<LocalRuleType, String, LocalRuleAction>? = null
         compose.setContent { WeaveTheme {
-            LocalRouteRulesDialog(LocalRouteRuleState(), { type, value, action -> submitted = Triple(type, value, action); false }, { _, _ -> }, {}, {})
+            LocalRouteRulesDialog(LocalRouteRuleState(), { type, value, action, done -> submitted = Triple(type, value, action); done(false) }, { _, _ -> }, {}, {})
         } }
         fun scroll(text: String): SemanticsNodeInteraction {
             compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex), useUnmergedTree = true).performScrollToNode(hasText(text))

@@ -26,7 +26,9 @@ internal fun rememberAppIcon(packageName: String, size: Dp): ImageBitmap? {
     val px = with(LocalDensity.current) { size.roundToPx() }.coerceIn(1, 160)
     val key = "$packageName@$px"
     val icon by produceState(appIcons.get(key), key) {
-        if (value != null) return@produceState
+        val cached = appIcons.get(key)
+        value = cached
+        if (cached != null) return@produceState
         value = withContext(Dispatchers.IO) { renderAppIcon(context, packageName, px) }
             ?.also { appIcons.put(key, it) }
     }

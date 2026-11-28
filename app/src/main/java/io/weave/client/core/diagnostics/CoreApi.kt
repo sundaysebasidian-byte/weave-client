@@ -108,10 +108,27 @@ class CoreApi(private val context: Context) {
         withContext(Dispatchers.IO) {
             suspendCancellableCoroutine { continuation ->
                 val socket = LocalSocket()
-                continuation.invokeOnCancellation { runCatching { socket.close() } }
+                val closeLock = Any()
+                var cancelled = false
+                var connected = false
+                continuation.invokeOnCancellation {
+                    val shouldClose = synchronized(closeLock) {
+                        cancelled = true
+                        connected
+                    }
+                    if (shouldClose) closeControllerSocket(socket)
+                }
                 if (!continuation.isActive) return@suspendCancellableCoroutine
                 val result = runCatching {
                     connectControllerSocket(socket, context, 3_000)
+                    val abortAfterConnect = synchronized(closeLock) {
+                        connected = true
+                        cancelled
+                    }
+                    if (abortAfterConnect) {
+                        closeControllerSocket(socket)
+                        return@runCatching
+                    }
                     socket.outputStream.write(
                         "GET /logs?level=$level HTTP/1.0\r\nHost: localhost\r\n\r\n".toByteArray(Charsets.US_ASCII),
                     )
@@ -129,7 +146,7 @@ class CoreApi(private val context: Context) {
                         if (levelName.isNotBlank() && payload.isNotEmpty()) onLine(CoreLogLine(levelName, payload))
                     }
                 }
-                runCatching { socket.close() }
+                closeControllerSocket(socket)
                 if (continuation.isActive) {
                     continuation.resumeWith(result.map { })
                 }
@@ -140,19 +157,37 @@ class CoreApi(private val context: Context) {
     private suspend fun request(method: String, path: String, limit: Int): String =
         suspendCancellableCoroutine { continuation ->
             val socket = LocalSocket()
-            continuation.invokeOnCancellation { runCatching { socket.close() } }
+            val closeLock = Any()
+            var cancelled = false
+            var connected = false
+            continuation.invokeOnCancellation {
+                val shouldClose = synchronized(closeLock) {
+                    cancelled = true
+                    connected
+                }
+                if (shouldClose) closeControllerSocket(socket)
+            }
             if (!continuation.isActive) return@suspendCancellableCoroutine
             val result = runCatching {
-                socket.use {
+                try {
                     connectControllerSocket(socket, context, 3_000)
+                    val abortAfterConnect = synchronized(closeLock) {
+                        connected = true
+                        cancelled
+                    }
+                    if (abortAfterConnect) throw CancellationException("CoreApi request cancelled")
                     socket.outputStream.write(
                         "$method $path HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII),
                     )
                     socket.outputStream.flush()
                     readControllerResponse(socket.inputStream, limit)
+                } finally {
+                    closeControllerSocket(socket)
                 }
             }
-            continuation.resumeWith(result)
+            if (continuation.isActive) {
+                continuation.resumeWith(result)
+            }
         }
 
     companion object {
@@ -200,6 +235,13 @@ class CoreApi(private val context: Context) {
 internal fun connectControllerSocket(socket: LocalSocket, context: Context, timeoutMillis: Int) {
     socket.connect(LocalSocketAddress(PrivateCoreConnections.socketPath(context), LocalSocketAddress.Namespace.FILESYSTEM))
     socket.soTimeout = timeoutMillis
+}
+
+/** Wakes a thread blocked in AF_UNIX recvmsg on Android before releasing the fd. */
+internal fun closeControllerSocket(socket: LocalSocket) {
+    runCatching { socket.shutdownInput() }
+    runCatching { socket.shutdownOutput() }
+    runCatching { socket.close() }
 }
 
 internal fun readControllerResponse(input: InputStream, limit: Int, success: IntRange = 200..299): String {

@@ -756,20 +756,22 @@ private fun CollapsedGroup(
             ) {
                 for (index in 0 until minOf(4, routes.size)) {
                     val route = routes[index]
-                    val badge = appBadgeColors(route.tint)
-                    val icon = rememberAppIcon(route.packageName, 22.dp)
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .border(2.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (icon != null) MaterialTheme.colorScheme.surface else badge.background),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (icon != null) {
-                            Image(icon, contentDescription = null, modifier = Modifier.size(22.dp))
-                        } else {
-                            Text(RouteBadgeMonogram.first(route.monogram), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                    androidx.compose.runtime.key(route.packageName) {
+                        val badge = appBadgeColors(route.tint)
+                        val icon = rememberAppIcon(route.packageName, 22.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (icon != null) MaterialTheme.colorScheme.surface else badge.background),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (icon != null) {
+                                Image(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                            } else {
+                                Text(RouteBadgeMonogram.first(route.monogram), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badge.content, translate = false)
+                            }
                         }
                     }
                 }

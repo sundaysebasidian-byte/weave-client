@@ -25,6 +25,7 @@ interface EngineAdapter {
         installedApps: List<Pair<Int, String>>,
         ipMode: Ipv6Mode = Ipv6Mode.DUAL_STACK,
         requiredNodeGroups: Set<String> = emptySet(),
+        onTunConsumed: () -> Unit = {},
     ): Result<Unit>
 
     suspend fun reload(config: String): Result<Unit>

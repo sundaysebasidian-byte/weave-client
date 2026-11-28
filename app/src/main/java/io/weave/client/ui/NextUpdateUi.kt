@@ -83,6 +83,17 @@ internal fun NextUpdateUi(
     val context = androidx.compose.ui.platform.LocalContext.current
     val installResult by io.weave.client.ui.update.NextInstallResults.events.collectAsState()
     LaunchedEffect(installResult, controller.installSessionId) { installResult?.let(controller::installResult) }
+    val pendingConfirm = controller.pendingConfirm
+    LaunchedEffect(pendingConfirm, lifecycleState) {
+        if (pendingConfirm != null && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+            val (sessionId, confirmIntent) = pendingConfirm
+            val launchIntent = android.content.Intent(confirmIntent).apply {
+                if (context !is android.app.Activity) addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val launched = runCatching { context.startActivity(launchIntent) }.isSuccess
+            controller.consumePendingConfirm(sessionId, launched)
+        }
+    }
     // A recreated Activity may receive the permission result while the dialog is closed.
     var permissionOpen by rememberSaveable { mutableStateOf(false) }
     val allowInstalls = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
