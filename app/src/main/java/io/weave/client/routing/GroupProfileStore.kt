@@ -48,7 +48,7 @@ internal class GroupProfileStore(
             val changed = current.filterNot { it.id == id } + listOfNotNull(prepared)
             val catalog = subscriptions.loadSnapshot()
             if (prepared != null) {
-                val missing = (prepared.members + listOfNotNull(prepared.entry))
+                val missing = prepared.nodeRefs
                     .groupBy({ it.subscriptionId }, { it.nodeId })
                     .mapValues { (_, ids) -> ids.toMutableSet() }
                 val usable = catalog.first.asSequence().filter { it.hasRuntimePayload }.map { it.id }.toSet()
@@ -107,8 +107,8 @@ internal class GroupProfileStore(
         val deleted = subscriptions.deleteLocal(id)
         val current = groups.snapshot()
         val pruned = current.mapNotNull { group ->
-            // Removing a chain's entry must not quietly turn a two-hop exit into a single hop.
-            if (group.entry?.subscriptionId == id) return@mapNotNull null
+            // Do not silently bypass a configured hop or lower the chain's privacy guarantees.
+            if (group.forwardingHops.any { it.subscriptionId == id }) return@mapNotNull null
             group.copy(members = group.members.filterNot { it.subscriptionId == id }).takeIf { it.members.isNotEmpty() }
         }
         if (pruned != current) groups.save(pruned)

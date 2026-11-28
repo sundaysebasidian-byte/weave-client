@@ -18,9 +18,10 @@ import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.StrategyScope
 import io.weave.client.domain.WeavePalette
-import io.weave.client.routing.CustomGroupStrategy
 import io.weave.client.routing.CustomProxyGroup
 import io.weave.client.routing.CustomProxyGroupStore
+import io.weave.client.routing.readCustomProxyGroup
+import io.weave.client.routing.toJson
 import io.weave.client.routing.LocalRouteRule
 import io.weave.client.routing.LocalRouteRuleStore
 import io.weave.client.routing.LocalRuleAction
@@ -30,6 +31,7 @@ import io.weave.client.routing.CustomProxyGroupValidator
 import io.weave.client.routing.LocalRouteRuleValidator
 import io.weave.client.routing.RemoteRuleSet
 import io.weave.client.routing.RemoteRuleSetStore
+import io.weave.client.core.engine.MihomoFeatureCompiler
 import io.weave.client.routing.RuleSetBehavior
 import io.weave.client.routing.RuleSetParser
 import io.weave.client.policy.PolicyPack
@@ -117,7 +119,7 @@ class WeaveBackup(
                     )
                 }
             }.toString(),
-            GROUPS to JSONArray().apply { groups.snapshot().forEach { put(encodeGroup(it)) } }.toString(),
+            GROUPS to JSONArray().apply { groups.snapshot().forEach { put(it.toJson()) } }.toString(),
             POLICIES to JSONArray().apply { policies.snapshot().forEach { pack ->
                 put(JSONObject().put("payload", PolicyPackCodec.encode(pack)).put("active", pack.active))
             } }.toString(),
@@ -152,7 +154,7 @@ class WeaveBackup(
             TransferSubscription(item.getString("name"), item.getString("source"), item.getString("payload"), id)
         }
         unique(subscriptions.map { it.id })
-        val groups = array(GROUPS).map { CustomProxyGroupValidator.normalize(decodeGroup(it)) }
+        val groups = array(GROUPS).map { CustomProxyGroupValidator.normalize(readCustomProxyGroup(it)) }
         require(groups.size <= CustomProxyGroupValidator.MAX_GROUPS)
         unique(groups.map { it.id })
         val localRules = array(LOCAL_RULES).map { item ->
@@ -217,7 +219,7 @@ class WeaveBackup(
         val nodes = repository.loadNodes().mapTo(mutableSetOf()) { NodeRef(it.subscriptionId, it.id) }
         val groupIds = content.groups.mapTo(mutableSetOf()) { it.id }
         content.groups.forEach { group ->
-            require(group.members.all { it in nodes } && (group.entry == null || group.entry in nodes)) { "备份策略组引用的节点已不存在" }
+            require(group.nodeRefs.all { it in nodes }) { "备份策略组引用的节点已不存在" }
         }
         fun validate(target: RouteTarget) {
             require(when (target.kind) {
@@ -258,22 +260,6 @@ class WeaveBackup(
         tint = item.optLong("tint", 0xFFE3F0FF),
     )
 
-    private fun encodeGroup(group: CustomProxyGroup) = JSONObject()
-        .put("id", group.id).put("name", group.name).put("strategy", group.strategy.name)
-        .put("members", JSONArray().apply { group.members.forEach { put(JSONObject().put("s", it.subscriptionId).put("n", it.nodeId)) } })
-        .put("entry", group.entry?.let { JSONObject().put("s", it.subscriptionId).put("n", it.nodeId) } ?: JSONObject.NULL)
-
-    private fun decodeGroup(item: JSONObject): CustomProxyGroup {
-        val members = item.getJSONArray("members")
-        return CustomProxyGroup(
-            id = item.getString("id"),
-            name = item.getString("name"),
-            strategy = CustomGroupStrategy.valueOf(item.getString("strategy")),
-            members = (0 until members.length()).map { members.getJSONObject(it).let { m -> NodeRef(m.getString("s"), m.getString("n")) } },
-            entry = item.optJSONObject("entry")?.let { NodeRef(it.getString("s"), it.getString("n")) },
-        )
-    }
-
     private fun encodeSettings(): JSONObject {
         val prefs = settings.networkPreferencesForBackup()
         return JSONObject()
@@ -285,6 +271,7 @@ class WeaveBackup(
             .put("dnsProfile", prefs.dnsProfile.name)
             .put("dnsRoutingMode", prefs.dnsRoutingMode.name)
             .put("customDns", prefs.customDnsEndpoint)
+            .put("fakeIp", prefs.fakeIp)
             .put("ipv6Mode", prefs.ipv6Mode.name)
             .put("blockUdpStun", prefs.blockUdpStun)
             .put("domesticDirect", prefs.domesticDirect)
@@ -305,8 +292,9 @@ class WeaveBackup(
         }
         value("automaticStrategy", AutomaticStrategy.entries.toTypedArray())?.let(settings::setAutomaticStrategy)
         value("strategyScope", StrategyScope.entries.toTypedArray())?.let(settings::setStrategyScope)
-        value("dnsTransport", DnsTransport.entries.toTypedArray())?.let(settings::setDnsTransport)
+        value("dnsTransport", DnsTransport.presets.toTypedArray())?.let(settings::setDnsTransport)
         if (json.has("customDns")) settings.setCustomDnsEndpoint(json.getString("customDns"))
+        if (json.has("fakeIp")) settings.setFakeIp(json.getBoolean("fakeIp"))
         value("dnsProfile", DnsProfile.entries.toTypedArray())?.let(settings::setDnsProfile)
         value("dnsRoutingMode", DnsRoutingMode.entries.toTypedArray())?.let(settings::setDnsRoutingMode)
         value("ipv6Mode", Ipv6Mode.entries.toTypedArray())?.let(settings::setIpv6Mode)
@@ -329,20 +317,24 @@ class WeaveBackup(
         enum("routingMode", RoutingMode.entries)
         enum("automaticStrategy", AutomaticStrategy.entries)
         enum("strategyScope", StrategyScope.entries)
-        enum("dnsTransport", DnsTransport.entries)
+        enum("dnsTransport", DnsTransport.presets)
         enum("dnsProfile", DnsProfile.entries)
         enum("dnsRoutingMode", DnsRoutingMode.entries)
         enum("ipv6Mode", Ipv6Mode.entries)
         enum("palette", WeavePalette.entries)
         enum("bootstrapDns", BootstrapDns.entries)
-        for (key in listOf("blockUdpStun", "domesticDirect", "autoUpdateUnmetered", "bypassDirectApps")) {
+        for (key in listOf("blockUdpStun", "domesticDirect", "autoUpdateUnmetered", "bypassDirectApps", "fakeIp")) {
             if (json.has(key)) boolean(json, key)
         }
         if (json.has("autoUpdateHours")) {
             val hours = json.get("autoUpdateHours")
             require(hours is Int && settings.supportsAutoUpdateHours(hours)) { "备份更新周期无效" }
         }
-        if (json.has("customDns")) require(json.get("customDns") is String)
+        if (json.has("customDns")) {
+            val custom = json.get("customDns")
+            require(custom is String)
+            if (custom.isNotBlank()) MihomoFeatureCompiler.customDnsEndpoints(custom)
+        }
         if (json.has("defaultTarget") && !json.isNull("defaultTarget")) {
             require(decodeTarget(json.getJSONObject("defaultTarget")).kind != RouteKind.BLOCK) { "默认出口不能阻止所有联网" }
         }
@@ -371,7 +363,7 @@ class WeaveBackup(
         val UUID_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
         val PACKAGE_NAME = Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")
         val SETTINGS_KEYS = setOf("routingMode", "defaultTarget", "automaticStrategy", "strategyScope", "dnsTransport", "dnsProfile",
-            "dnsRoutingMode", "customDns", "ipv6Mode", "blockUdpStun", "domesticDirect", "palette", "autoUpdateHours",
+            "dnsRoutingMode", "customDns", "fakeIp", "ipv6Mode", "blockUdpStun", "domesticDirect", "palette", "autoUpdateHours",
             "autoUpdateUnmetered", "bypassDirectApps", "bootstrapDns", "favorites")
     }
 }

@@ -31,9 +31,7 @@ internal fun liveGroupNames(
         .mapTo(hashSetOf()) { io.weave.client.routing.NodeRef(it.subscriptionId, it.id) }
     return buildMap(groups.size) {
         for (group in groups) {
-            val membersLive = group.members.isNotEmpty() && group.members.all { it in liveNodes }
-            val entryLive = group.entry == null || group.entry in liveNodes
-            if (membersLive && entryLive) put(group.id, group.name)
+            if (group.members.isNotEmpty() && group.nodeRefs.all { it in liveNodes }) put(group.id, group.name)
         }
     }
 }

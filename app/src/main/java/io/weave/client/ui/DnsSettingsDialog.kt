@@ -161,6 +161,7 @@ import io.weave.client.domain.DistributionProfile
 import io.weave.client.domain.DnsProfile
 import io.weave.client.domain.DnsRoutingMode
 import io.weave.client.domain.DnsTransport
+import io.weave.client.core.engine.MihomoFeatureCompiler
 import io.weave.client.domain.Ipv6Mode
 import io.weave.client.domain.NetworkPreferences
 import io.weave.client.domain.NavigationItem
@@ -194,6 +195,7 @@ internal fun DnsSettingsDialog(
     onCustomEndpointSaved: (String, (String?) -> Unit) -> Unit,
     onTransportSelected: (DnsTransport) -> Unit,
     onProbeProviders: () -> Unit,
+    onFakeIpChanged: (Boolean) -> Unit = {},
 ) {
     var editingCustom by remember { mutableStateOf(false) }
     var choosingTransport by remember { mutableStateOf(false) }
@@ -239,7 +241,7 @@ internal fun DnsSettingsDialog(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    DnsTransport.entries.forEach { transport ->
+                    DnsTransport.presets.forEach { transport ->
                         WeaveChoiceRow(
                             title = transport.label,
                             supporting = transport.description,
@@ -269,7 +271,7 @@ internal fun DnsSettingsDialog(
                 }
                 editingCustom -> Column {
                     Text(
-                        "仅支持加密地址：HTTPS DoH 或 TLS DoT。不会接受 udp://、tcp:// 或明文 IP DNS。",
+                        "每行一个加密 DNS 地址，最多 6 个。支持 DoH、DoT 和 DoQ。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
@@ -278,13 +280,14 @@ internal fun DnsSettingsDialog(
                     OutlinedTextField(
                         value = endpoint,
                         onValueChange = {
-                            endpoint = it
+                            endpoint = it.take(MihomoFeatureCompiler.MAX_CUSTOM_DNS_INPUT)
                             error = null
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("DoH / DoT 地址") },
+                        label = { Text("DoH / DoT / DoQ", translate = false) },
                         placeholder = { Text("https://dns.example/dns-query") },
-                        singleLine = true,
+                        minLines = 2,
+                        maxLines = 6,
                         enabled = !saving,
                         isError = error != null,
                         supportingText = error?.let { message -> { Text(message) } },
@@ -295,6 +298,16 @@ internal fun DnsSettingsDialog(
                         .heightIn(max = 520.dp)
                         .verticalScroll(rememberScrollState()),
                 ) {
+                    DnsRuntimePath(preferences)
+                    WeaveDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Fake-IP", modifier = Modifier.weight(1f), translate = false)
+                        WeaveSwitch(
+                            checked = preferences.usesFakeIp,
+                            enabled = preferences.ipv6Mode.ipv4Enabled,
+                            onCheckedChange = onFakeIpChanged,
+                        )
+                    }
                     DnsProfile.entries.forEach { profile ->
                         WeaveChoiceRow(
                             title = profile.label,
@@ -322,7 +335,7 @@ internal fun DnsSettingsDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("解析协议", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "当前：${preferences.effectiveDnsTransport.label}",
+                                "当前：${preferences.dnsTransportLabel}",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                             )
@@ -454,11 +467,17 @@ private fun DnsProbePanel(
                         result?.let {
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (it.available) "${it.latencyMs ?: "—"} ms" else "不可达",
+                                when {
+                                    it.available -> "${it.latencyMs ?: "—"} ms"
+                                    !it.measured -> "尚未检测"
+                                    else -> "不可达"
+                                },
                                 color = if (it.available) {
                                     MaterialTheme.colorScheme.primary
-                                } else {
+                                } else if (it.measured) {
                                     MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                                 fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.bodyMedium.merge(TabularNumbers),

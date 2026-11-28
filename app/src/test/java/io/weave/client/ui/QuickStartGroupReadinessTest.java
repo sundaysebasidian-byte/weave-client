@@ -20,7 +20,7 @@ public class QuickStartGroupReadinessTest {
             active.add(node(i % 2 == 0 ? "replaced" : "another", "current-" + i));
         }
         CountingNodes nodes = new CountingNodes(active);
-        assertFalse(QuickStartGroupReadiness.hasUsableTargets(nodes, members, null));
+        assertFalse(QuickStartGroupReadiness.hasUsableTargets(nodes, members, List.of()));
         assertEquals(active.size(), nodes.visits);
     }
 
@@ -32,23 +32,23 @@ public class QuickStartGroupReadinessTest {
         ProxyNode liveMember = node("source-a", "member");
         ProxyNode liveEntry = node("source-b", "entry");
 
-        assertTrue(QuickStartGroupReadiness.hasUsableTargets(List.of(liveEntry, liveMember), members, entry));
-        assertTrue(QuickStartGroupReadiness.hasUsableTargets(List.of(liveMember, liveEntry), members, entry));
-        assertTrue(QuickStartGroupReadiness.hasUsableTargets(List.of(liveMember), members, null));
-        assertFalse(QuickStartGroupReadiness.hasUsableTargets(List.of(liveMember), members, entry));
-        assertFalse(QuickStartGroupReadiness.hasUsableTargets(List.of(liveEntry), members, entry));
+        assertTrue(QuickStartGroupReadiness.hasUsableTargets(List.of(liveEntry, liveMember), members, List.of(entry)));
+        assertTrue(QuickStartGroupReadiness.hasUsableTargets(List.of(liveMember, liveEntry), members, List.of(entry)));
+        assertTrue(QuickStartGroupReadiness.hasUsableTargets(List.of(liveMember), members, List.of()));
+        assertFalse(QuickStartGroupReadiness.hasUsableTargets(List.of(liveMember), members, List.of(entry)));
+        assertFalse(QuickStartGroupReadiness.hasUsableTargets(List.of(liveEntry), members, List.of(entry)));
         assertFalse(QuickStartGroupReadiness.hasUsableTargets(
-                List.of(liveEntry, node("Source-a", "member"), node("source-a", "Member")), members, entry));
+                List.of(liveEntry, node("Source-a", "member"), node("source-a", "Member")), members, List.of(entry)));
         assertFalse(QuickStartGroupReadiness.hasUsableTargets(
-                List.of(liveMember, node("source-a", "entry"), node("source-b", "Entry")), members, entry));
+                List.of(liveMember, node("source-a", "entry"), node("source-b", "Entry")), members, List.of(entry)));
     }
 
     @Test
     public void noMembersOrNoActiveNodesCannotMakeTheGroupReady() {
         NodeRef ref = new NodeRef("source-a", "member");
-        assertFalse(QuickStartGroupReadiness.hasUsableTargets(List.of(), List.of(ref), null));
+        assertFalse(QuickStartGroupReadiness.hasUsableTargets(List.of(), List.of(ref), List.of()));
         CountingNodes nodes = new CountingNodes(List.of(node("source-a", "member")));
-        assertFalse(QuickStartGroupReadiness.hasUsableTargets(nodes, List.of(), ref));
+        assertFalse(QuickStartGroupReadiness.hasUsableTargets(nodes, List.of(), List.of(ref)));
         assertEquals(0, nodes.visits);
     }
 

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -45,12 +48,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +69,7 @@ import io.weave.client.domain.ProxyNode
 import io.weave.client.domain.Subscription
 import io.weave.client.routing.CustomGroupStrategy
 import io.weave.client.routing.CustomProxyGroup
+import io.weave.client.routing.CustomProxyGroupValidator
 import io.weave.client.routing.LocalRuleAction
 import io.weave.client.routing.NodeRef
 import io.weave.client.routing.RemoteRuleSet
@@ -230,6 +237,8 @@ private fun RuleSetEditorDialog(
 
 // Custom groups and chains -----------------------------------------------------------------------
 
+private enum class HopPicker { ENTRY, BACKUP, VIA }
+
 private data class GroupEditorSession(val epoch: String, val initial: CustomProxyGroup?)
 
 @Composable
@@ -245,7 +254,7 @@ internal fun CustomGroupsScreen(
     var session by remember { mutableStateOf<GroupEditorSession?>(null) }
     val nodeNames = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to NodeDisplayName.core(it.name) } }
     WeaveToolScreen(
-        title = "自定义策略组",
+        title = "Weave Chain",
         subtitle = "跨订阅组合节点；设置入口节点后成为链式代理",
         onDismiss = onDismiss,
         actions = {
@@ -288,7 +297,7 @@ internal fun CustomGroupsScreen(
                         group.entry?.let { entry ->
                             val label = resolveAppOwnedCopy("入口", language, staged = null, released = packaged)
                             Text(
-                                "$label · ${nodeNames[entry] ?: "?"}",
+                                "$label · " + (listOf(entry) + group.via).joinToString(" → ") { nodeNames[it] ?: "?" },
                                 color = MaterialTheme.colorScheme.secondary,
                                 fontSize = 12.sp,
                                 translate = false,
@@ -327,7 +336,11 @@ private fun CustomGroupEditor(
     var entry by remember { mutableStateOf(initial?.entry) }
     var chained by remember { mutableStateOf(initial?.entry != null) }
     var query by remember { mutableStateOf("") }
-    var pickingEntry by remember { mutableStateOf(false) }
+    var pickingHop by remember { mutableStateOf<HopPicker?>(null) }
+    var via by remember { mutableStateOf(initial?.via.orEmpty()) }
+    var fallbackEntries by remember { mutableStateOf(initial?.entryFallbacks.orEmpty()) }
+    val namesByRef = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to NodeDisplayName.core(it.name) } }
+    val forwarding = listOfNotNull(entry) + fallbackEntries + via
     var confirmingDelete by remember { mutableStateOf(false) }
     var saveRejection by remember(initial?.id) { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -358,7 +371,9 @@ private fun CustomGroupEditor(
                 modifier = Modifier.testTag("save-custom-group"),
                 onClick = {
                     val draft = (initial ?: CustomProxyGroup(name = name, members = members.toList()))
-                        .copy(name = name, strategy = strategy, members = members.toList(), entry = entry.takeIf { chained })
+                        .copy(name = name, strategy = strategy, members = members.toList(), entry = entry.takeIf { chained },
+                            via = if (chained) via else emptyList(),
+                            entryFallbacks = if (chained) fallbackEntries else emptyList())
                     submit { onSave(draft) }
                 },
             ) { Text("保存") }
@@ -394,32 +409,53 @@ private fun CustomGroupEditor(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("链式代理", fontWeight = FontWeight.SemiBold)
+                                Text("Weave Chain", fontWeight = FontWeight.SemiBold, translate = false)
                                 Text("先连接入口节点，再由成员节点访问目标；延迟会叠加", fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
                             WeaveSwitch(checked = chained, onCheckedChange = { enabled ->
-                                members = customGroupDraftMembers(members, entry, enabled)
+                                if (enabled) members = members - forwarding.toSet()
                                 chained = enabled
                             })
                         }
                         if (chained) {
-                            OutlinedButton(onClick = { pickingEntry = true }, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = { pickingHop = HopPicker.ENTRY }, modifier = Modifier.fillMaxWidth()) {
                                 val language = LocalWeaveLanguage.current
                                 val packaged = LocalReleasedAppCopy.current
                                 Text(
-                                    entry?.let { ref -> nodes.firstOrNull { it.subscriptionId == ref.subscriptionId && it.id == ref.nodeId } }
-                                        ?.let { NodeDisplayName.core(it.name) }
+                                    entry?.let(namesByRef::get)
                                         ?: resolveAppOwnedCopy("选择入口节点", language, staged = null, released = packaged),
                                     translate = false,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
+                            if (entry != null) {
+                                ChainHopRows(via, namesByRef, onReorder = { ref, step ->
+                                    via = moveChainHop(via, ref, step)
+                                }, onRemove = { via = via - it })
+                                if (via.size < CustomProxyGroupValidator.MAX_VIA) {
+                                    TextButton(onClick = { pickingHop = HopPicker.VIA }) { Text("添加中转节点") }
+                                }
+                                if (fallbackEntries.isNotEmpty()) {
+                                    Text("备用入口", fontWeight = FontWeight.SemiBold)
+                                    ChainHopRows(fallbackEntries, namesByRef, onReorder = { ref, step ->
+                                        fallbackEntries = moveChainHop(fallbackEntries, ref, step)
+                                    }, onRemove = { fallbackEntries = fallbackEntries - it })
+                                }
+                                if (fallbackEntries.size < CustomProxyGroupValidator.MAX_ENTRY_FALLBACKS) {
+                                    TextButton(onClick = { pickingHop = HopPicker.BACKUP }) { Text("添加备用入口") }
+                                }
+                            }
                         }
                     }
                 }
+            }
+            if (initial?.entry != null && chained && initial.entry == entry &&
+                initial.via == via && initial.entryFallbacks == fallbackEntries && initial.members.toSet() == members
+            ) {
+                item { ChainDiagnostics(initial, namesByRef) }
             }
             item {
                 OutlinedTextField(value = query, onValueChange = { query = it.take(100) }, label = { Text("搜索节点") },
@@ -429,15 +465,15 @@ private fun CustomGroupEditor(
                 item(key = "header.$subscriptionId") { TargetSectionLabel(subscriptionNames[subscriptionId] ?: "") }
                 items(subscriptionNodes, key = { "${it.subscriptionId}/${it.id}" }) { node ->
                     val ref = NodeRef(node.subscriptionId, node.id)
-                    val isEntry = chained && entry == ref
+                    val reserved = chained && ref in forwarding
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = !isEntry) { members = if (ref in members) members - ref else members + ref }
+                            .clickable(enabled = !reserved) { members = if (ref in members) members - ref else members + ref }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Checkbox(checked = ref in members, onCheckedChange = null, enabled = !isEntry)
+                        Checkbox(checked = ref in members, onCheckedChange = null, enabled = !reserved)
                         Spacer(Modifier.width(8.dp))
                         Text(NodeDisplayName.core(node.name), translate = false, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f))
@@ -460,15 +496,20 @@ private fun CustomGroupEditor(
             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("取消") } },
         )
     }
-    if (pickingEntry) {
+    pickingHop?.let { role ->
         var entryQuery by remember { mutableStateOf("") }
-        val entryCandidates = remember(nodes, entryQuery) {
+        val entryCandidates = remember(nodes, entryQuery, forwarding, role) {
             val needle = entryQuery.trim()
-            nodes.filter { needle.isEmpty() || it.name.contains(needle, true) }
+            val reserved = if (role == HopPicker.ENTRY) forwarding - entry else forwarding
+            nodes.filter { NodeRef(it.subscriptionId, it.id) !in reserved && (needle.isEmpty() || it.name.contains(needle, true)) }
         }
         WeaveDialog(
-            onDismissRequest = { pickingEntry = false },
-            title = { Text("选择入口节点", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { pickingHop = null },
+            title = { Text(when (role) {
+                HopPicker.ENTRY -> "选择入口节点"
+                HopPicker.VIA -> "添加中转节点"
+                HopPicker.BACKUP -> "添加备用入口"
+            }, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = entryQuery, onValueChange = { entryQuery = it.take(100) },
@@ -478,13 +519,17 @@ private fun CustomGroupEditor(
                             val ref = NodeRef(node.subscriptionId, node.id)
                             Row(
                                 Modifier.fillMaxWidth().clickable {
-                                    entry = ref
-                                    members = customGroupDraftMembers(members, ref, chained = true)
-                                    pickingEntry = false
+                                    when (role) {
+                                        HopPicker.ENTRY -> entry = ref
+                                        HopPicker.VIA -> via = via + ref
+                                        HopPicker.BACKUP -> fallbackEntries = fallbackEntries + ref
+                                    }
+                                    members = members - ref
+                                    pickingHop = null
                                 }.padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                RadioButton(selected = entry == ref, onClick = null)
+                                RadioButton(selected = role == HopPicker.ENTRY && entry == ref, onClick = null)
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(NodeDisplayName.core(node.name), translate = false, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -496,9 +541,59 @@ private fun CustomGroupEditor(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { pickingEntry = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = { pickingHop = null }) { Text("取消") } },
         )
     }
+}
+
+@Composable
+private fun ChainHopRows(
+    hops: List<NodeRef>,
+    names: Map<NodeRef, String>,
+    onReorder: (NodeRef, Int) -> Unit,
+    onRemove: (NodeRef) -> Unit,
+) {
+    val move by rememberUpdatedState(onReorder)
+    hops.forEachIndexed { index, ref ->
+        key(ref) {
+            Row(
+                Modifier.fillMaxWidth().pointerInput(ref) {
+                    var drag = 0f
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { drag = 0f },
+                        onDrag = { change, delta ->
+                            change.consume()
+                            drag += delta.y
+                            if (kotlin.math.abs(drag) >= size.height.toFloat()) {
+                                move(ref, if (drag > 0) 1 else -1)
+                                drag = 0f
+                            }
+                        },
+                    )
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(names[ref].orEmpty().ifBlank { "—" }, modifier = Modifier.weight(1f), translate = false)
+                IconButton(onClick = { onReorder(ref, -1) }, enabled = index > 0) {
+                    Icon(Icons.Rounded.KeyboardArrowUp, localizedContentDescription("上移"))
+                }
+                IconButton(onClick = { onReorder(ref, 1) }, enabled = index < hops.lastIndex) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, localizedContentDescription("下移"))
+                }
+                IconButton(onClick = { onRemove(ref) }) {
+                    Icon(Icons.Rounded.DeleteOutline, localizedContentDescription("删除"))
+                }
+            }
+        }
+    }
+}
+
+internal fun moveChainHop(hops: List<NodeRef>, ref: NodeRef, step: Int): List<NodeRef> {
+    val source = hops.indexOf(ref)
+    if (source < 0 || step !in setOf(-1, 1)) return hops
+    val target = source + step
+    if (target !in hops.indices) return hops
+    return hops.toMutableList().apply { add(target, removeAt(source)) }
 }
 
 // Backup ------------------------------------------------------------------------------------------

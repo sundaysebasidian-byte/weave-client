@@ -261,8 +261,7 @@ internal fun scheduledRefreshPins(
     appTargets.forEach(::addFixed)
     defaultTarget?.let(::addFixed)
     for (group in groups) {
-        group.members.forEach(::addRef)
-        group.entry?.let(::addRef)
+        group.nodeRefs.forEach(::addRef)
     }
     return pins
 }

@@ -107,6 +107,7 @@ class RuntimeSettingsStore(context: Context) {
             // offline. Users who need one resolver for every domain can still choose "统一解析".
             dnsRoutingMode = enumPreference(preferences, KEY_DNS_ROUTING_MODE, DnsRoutingMode.SMART),
             customDnsEndpoint = readCustomDnsEndpoint(preferences, strictSecrets),
+            fakeIp = preferences.getBoolean(KEY_DNS_FAKE_IP, true),
             ipv6Mode = enumPreference(preferences, KEY_IPV6_MODE, Ipv6Mode.DUAL_STACK),
             blockUdpStun = preferences.getBoolean(KEY_BLOCK_UDP_STUN, false),
             domesticDirect = preferences.getBoolean(KEY_DOMESTIC_DIRECT, true),
@@ -258,7 +259,12 @@ class RuntimeSettingsStore(context: Context) {
     }
 
     fun setDnsTransport(transport: DnsTransport) {
+        require(transport in DnsTransport.presets)
         preferences.edit(commit = true) { putString(KEY_DNS_TRANSPORT, transport.name) }
+    }
+
+    fun setFakeIp(enabled: Boolean) {
+        preferences.edit(commit = true) { putBoolean(KEY_DNS_FAKE_IP, enabled) }
     }
 
     fun setDnsProfile(profile: DnsProfile) {
@@ -402,6 +408,7 @@ class RuntimeSettingsStore(context: Context) {
         const val KEY_STRATEGY_SCOPE = "strategy_scope"
         const val KEY_DNS_TRANSPORT = "dns_transport"
         const val KEY_DNS_PROFILE = "dns_profile"
+        const val KEY_DNS_FAKE_IP = "dns_fake_ip"
         const val KEY_DNS_ROUTING_MODE = "dns_routing_mode"
         const val KEY_CUSTOM_DNS_ENDPOINT = "custom_dns_endpoint"
         const val KEY_CUSTOM_DNS_ENDPOINT_ENCRYPTED = "custom_dns_endpoint_encrypted"

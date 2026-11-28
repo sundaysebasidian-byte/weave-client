@@ -56,3 +56,19 @@
 {"id":"DNS 应答已验证","en":"DNS response verified"}
 {"id":"DNS 未返回有效地址","en":"DNS returned no valid address"}
 {"id":"没有可检测的网络","en":"No network is available for testing"}
+{"id":"到此跳的链路","en":"Path to this hop"}
+{"id":"单跳检测","en":"Single-hop test"}
+{"id":"备用入口","en":"Backup entry"}
+{"id":"完整链路","en":"Full chain"}
+{"id":"暂无连接","en":"No active connections"}
+{"id":"检测代理链","en":"Test proxy chain"}
+{"id":"正在应用解析策略","en":"Applying resolver policy"}
+{"id":"每行一个加密 DNS 地址，最多 6 个。支持 DoH、DoT 和 DoQ。","en":"Enter up to six encrypted DNS addresses, one per line. DoH, DoT and DoQ are supported."}
+{"id":"添加中转节点","en":"Add an intermediate hop"}
+{"id":"添加备用入口","en":"Add a backup entry"}
+{"id":"等待连接数据","en":"Waiting for connection data"}
+{"id":"通过 QUIC 加密解析","en":"Encrypted resolution over QUIC"}
+{"id":"链路中不能重复使用节点","en":"A node can appear only once in a chain"}
+{"id":"链路节点数量超出限制","en":"The chain has too many nodes"}
+{"id":"解析路径","en":"Resolution path"}
+{"id":"检测当前解析","en":"Test active resolution"}

@@ -38,50 +38,42 @@ object MihomoRuntimePlanner {
         val usableIds = usableSubscriptionIds.toSet()
         val fallsBackToAutomatic = mode != RoutingMode.DIRECT &&
             (effectiveDefaultTarget == null || effectiveDefaultTarget.kind == RouteKind.BLOCK)
-        val usesCrossSubscriptionGroup = strategyScope == StrategyScope.CROSS_SUBSCRIPTION &&
-            (fallsBackToAutomatic || effectiveDefaultTarget?.kind == RouteKind.AUTO ||
-                effectiveRoutes.any { it.target.kind == RouteKind.AUTO })
-        val groupIds = buildSet {
-            effectiveRoutes.mapNotNullTo(this) { route ->
-                if (route.target.kind == RouteKind.GROUP) route.target.groupId else null
+        val groupIds = linkedSetOf<String>()
+        val subscriptionIds = linkedSetOf<String>()
+        val automaticIds = linkedSetOf<String>()
+        var automaticTarget = false
+        fun visit(target: RouteTarget) {
+            when (target.kind) {
+                RouteKind.AUTO -> {
+                    automaticTarget = true
+                    target.subscriptionId?.let {
+                        subscriptionIds.add(it)
+                        automaticIds.add(it)
+                    }
+                }
+                RouteKind.FIXED -> target.subscriptionId?.let(subscriptionIds::add)
+                RouteKind.GROUP -> target.groupId?.takeIf(groupSubscriptions::containsKey)?.let(groupIds::add)
+                RouteKind.DIRECT, RouteKind.BLOCK -> Unit
             }
-            effectiveDefaultTarget?.takeIf { it.kind == RouteKind.GROUP }?.groupId?.let(::add)
-            retainAll(groupSubscriptions.keys)
         }
+        effectiveRoutes.forEach { visit(it.target) }
+        effectiveDefaultTarget?.let(::visit)
+        val usesCrossSubscriptionGroup = strategyScope == StrategyScope.CROSS_SUBSCRIPTION &&
+            (fallsBackToAutomatic || automaticTarget)
         val activeIds = buildSet {
             groupIds.forEach { addAll(groupSubscriptions.getValue(it)) }
-            effectiveRoutes.mapNotNullTo(this) { route ->
-                route.target.subscriptionId.takeIf {
-                    route.target.kind == RouteKind.AUTO || route.target.kind == RouteKind.FIXED
-                }
-            }
-            effectiveDefaultTarget?.subscriptionId
-                ?.takeIf {
-                    effectiveDefaultTarget.kind == RouteKind.AUTO ||
-                        effectiveDefaultTarget.kind == RouteKind.FIXED
-                }
-                ?.let(::add)
+            addAll(subscriptionIds)
             if (usesCrossSubscriptionGroup) addAll(usableIds)
             addAll(additionalSubscriptionIds)
             retainAll(usableIds)
-            if (isEmpty() && fallsBackToAutomatic) {
-                usableSubscriptionIds.firstOrNull()?.let(::add)
-            }
+            if (isEmpty() && fallsBackToAutomatic) usableSubscriptionIds.firstOrNull()?.let(::add)
         }
-        val automaticIds = if (usesCrossSubscriptionGroup) emptySet() else buildSet {
-            effectiveRoutes.mapNotNullTo(this) { route ->
-                if (route.target.kind == RouteKind.AUTO) route.target.subscriptionId else null
-            }
-            effectiveDefaultTarget
-                ?.takeIf { it.kind == RouteKind.AUTO }
-                ?.subscriptionId
-                ?.let(::add)
-            retainAll(activeIds)
-            if (
-                isEmpty() &&
-                fallsBackToAutomatic
-            ) {
-                usableSubscriptionIds.firstOrNull { it in activeIds }?.let(::add)
+        if (usesCrossSubscriptionGroup) {
+            automaticIds.clear()
+        } else {
+            automaticIds.retainAll(activeIds)
+            if (automaticIds.isEmpty() && fallsBackToAutomatic) {
+                usableSubscriptionIds.firstOrNull { it in activeIds }?.let(automaticIds::add)
             }
         }
         return MihomoRuntimePlan(

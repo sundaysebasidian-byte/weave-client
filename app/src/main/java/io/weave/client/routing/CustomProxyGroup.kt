@@ -22,7 +22,7 @@ data class NodeRef(val subscriptionId: String, val nodeId: String)
 
 /**
  * A user-defined exit made of nodes from any subscriptions. With [entry] set, every member is
- * dialed through that node first (a two-hop chain: device → entry → member → destination).
+ * dialed through an available entry and every intermediate hop in order.
  */
 @Immutable
 data class CustomProxyGroup(
@@ -31,14 +31,22 @@ data class CustomProxyGroup(
     val strategy: CustomGroupStrategy = CustomGroupStrategy.LOWEST_LATENCY,
     val members: List<NodeRef>,
     val entry: NodeRef? = null,
+    val via: List<NodeRef> = emptyList(),
+    val entryFallbacks: List<NodeRef> = emptyList(),
 ) {
+    val entryCandidates: List<NodeRef> get() = listOfNotNull(entry) + entryFallbacks
+    val forwardingHops: List<NodeRef> get() = entryCandidates + via
+    val nodeRefs: List<NodeRef> get() = forwardingHops + members
+
     val subscriptionIds: Set<String>
-        get() = members.mapTo(linkedSetOf()) { it.subscriptionId }.apply { entry?.let { add(it.subscriptionId) } }
+        get() = nodeRefs.mapTo(linkedSetOf(), NodeRef::subscriptionId)
 }
 
 object CustomProxyGroupValidator {
     const val MAX_GROUPS = 32
     const val MAX_MEMBERS = 128
+    const val MAX_VIA = 4
+    const val MAX_ENTRY_FALLBACKS = 3
     private val UUID_REGEX = Regex("[0-9a-fA-F-]{36}")
 
     fun normalize(group: CustomProxyGroup): CustomProxyGroup {
@@ -51,6 +59,14 @@ object CustomProxyGroupValidator {
         require(members.isNotEmpty()) { "请至少选择一个节点" }
         require(members.size <= MAX_MEMBERS) { "每个策略组最多 $MAX_MEMBERS 个节点" }
         require(group.entry == null || group.entry !in members) { "入口节点不能同时作为出口成员" }
+        require(group.entry != null || group.via.isEmpty() && group.entryFallbacks.isEmpty()) {
+            "选择入口节点"
+        }
+        require(group.via.size <= MAX_VIA && group.entryFallbacks.size <= MAX_ENTRY_FALLBACKS) {
+            "策略组引用的节点已不存在"
+        }
+        require(group.forwardingHops.distinct().size == group.forwardingHops.size &&
+            group.forwardingHops.none { it in members }) { "链路中不能重复使用节点" }
         return group.copy(name = name, members = members)
     }
 
@@ -69,7 +85,7 @@ class CustomProxyGroupStore(
         if (!file.exists()) return@access emptyList()
         val array = JSONArray(secretBox.decrypt(file.readText(), AAD).toString(Charsets.UTF_8))
         require(array.length() <= CustomProxyGroupValidator.MAX_GROUPS)
-        (0 until array.length()).map { CustomProxyGroupValidator.normalize(decode(array.getJSONObject(it))) }.also {
+        (0 until array.length()).map { CustomProxyGroupValidator.normalize(readCustomProxyGroup(array.getJSONObject(it))) }.also {
             require(it.map { group -> group.id }.toSet().size == it.size)
         }
     }
@@ -84,7 +100,7 @@ class CustomProxyGroupStore(
         }
         val normalized = groups.map(CustomProxyGroupValidator::normalize)
         require(normalized.map { it.id }.distinct().size == normalized.size) { "策略组 ID 重复" }
-        val array = JSONArray().apply { normalized.forEach { put(encode(it)) } }
+        val array = JSONArray().apply { normalized.forEach { put(it.toJson()) } }
         val pending = File(file.parentFile, "${file.name}.pending")
         pending.writeText(secretBox.encrypt(array.toString().toByteArray(Charsets.UTF_8), AAD))
         runCatching {
@@ -96,30 +112,41 @@ class CustomProxyGroupStore(
         }
     }
 
-    private fun encode(group: CustomProxyGroup) = JSONObject()
-        .put("id", group.id)
-        .put("name", group.name)
-        .put("strategy", group.strategy.name)
-        .put("members", JSONArray().apply { group.members.forEach { put(ref(it)) } })
-        .put("entry", group.entry?.let(::ref) ?: JSONObject.NULL)
-
-    private fun decode(item: JSONObject): CustomProxyGroup {
-        val members = item.getJSONArray("members")
-        return CustomProxyGroup(
-            id = item.getString("id"),
-            name = item.getString("name"),
-            strategy = CustomGroupStrategy.valueOf(item.getString("strategy")),
-            members = (0 until members.length()).map { nodeRef(members.getJSONObject(it)) },
-            entry = item.optJSONObject("entry")?.let(::nodeRef),
-        )
-    }
-
-    private fun ref(value: NodeRef) = JSONObject().put("s", value.subscriptionId).put("n", value.nodeId)
-
-    private fun nodeRef(item: JSONObject) = NodeRef(item.getString("s"), item.getString("n"))
-
     private companion object {
         const val FILE_NAME = "custom-proxy-groups.enc"
         val AAD = "weave.custom-proxy-groups.v1".toByteArray(Charsets.UTF_8)
     }
 }
+
+internal fun CustomProxyGroup.toJson(): JSONObject = JSONObject()
+    .put("id", id)
+    .put("name", name)
+    .put("strategy", strategy.name)
+    .put("members", refsJson(members))
+    .put("entry", entry?.let(::refJson) ?: JSONObject.NULL)
+    .apply {
+        if (via.isNotEmpty()) put("via", refsJson(via))
+        if (entryFallbacks.isNotEmpty()) put("entryFallbacks", refsJson(entryFallbacks))
+    }
+
+internal fun readCustomProxyGroup(item: JSONObject): CustomProxyGroup {
+    fun refs(key: String, cap: Int): List<NodeRef> {
+        if (key != "members" && !item.has(key)) return emptyList()
+        val array = item.getJSONArray(key)
+        require(array.length() <= cap) { "链路节点数量超出限制" }
+        return List(array.length()) { readNodeRef(array.getJSONObject(it)) }
+    }
+    return CustomProxyGroup(
+        id = item.getString("id"),
+        name = item.getString("name"),
+        strategy = CustomGroupStrategy.valueOf(item.getString("strategy")),
+        members = refs("members", CustomProxyGroupValidator.MAX_MEMBERS),
+        entry = if (item.isNull("entry")) null else readNodeRef(item.getJSONObject("entry")),
+        via = refs("via", CustomProxyGroupValidator.MAX_VIA),
+        entryFallbacks = refs("entryFallbacks", CustomProxyGroupValidator.MAX_ENTRY_FALLBACKS),
+    )
+}
+
+private fun refsJson(refs: List<NodeRef>): JSONArray = JSONArray().apply { refs.forEach { put(refJson(it)) } }
+private fun refJson(ref: NodeRef): JSONObject = JSONObject().put("s", ref.subscriptionId).put("n", ref.nodeId)
+private fun readNodeRef(item: JSONObject): NodeRef = NodeRef(item.getString("s"), item.getString("n"))

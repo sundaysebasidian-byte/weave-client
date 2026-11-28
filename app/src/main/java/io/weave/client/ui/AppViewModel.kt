@@ -778,9 +778,9 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     fun setCustomDnsEndpoint(endpoint: String, onComplete: (String?) -> Unit) {
         val normalized = runCatching {
-            io.weave.client.core.engine.MihomoFeatureCompiler.validateCustomDnsEndpoint(endpoint)
+            io.weave.client.core.engine.MihomoFeatureCompiler.customDnsEndpoints(endpoint).joinToString("\n")
         }.getOrElse {
-            onComplete("地址无效：请使用 https:// 或 tls://，并填写主机名")
+            onComplete(it.message ?: "自定义 DNS 地址格式无效")
             return
         }
         saveNetworkPreferences(
@@ -790,6 +790,10 @@ class AppViewModel internal constructor(application: Application, initialProfile
             onComplete,
         )
     }
+
+    fun setFakeIp(enabled: Boolean) = saveNetworkPreferences(
+        "正在应用解析策略", { it.copy(fakeIp = enabled) }, { settingsStore.setFakeIp(enabled) },
+    )
 
     fun setIpv6Mode(mode: Ipv6Mode) = saveNetworkPreferences(
         "正在安全应用 IP 协议设置", { it.copy(ipv6Mode = mode) },

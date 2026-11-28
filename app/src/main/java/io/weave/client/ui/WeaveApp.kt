@@ -978,6 +978,7 @@ fun WeaveApp(
                     onDnsProfileSelected = viewModel::setDnsProfile,
                     onDnsRoutingModeSelected = viewModel::setDnsRoutingMode,
                     onCustomDnsEndpointSaved = viewModel::setCustomDnsEndpoint,
+                    onFakeIpChanged = viewModel::setFakeIp,
                     onProbeDnsProviders = viewModel::probeDnsProviders,
                     onIpv6ModeSelected = viewModel::setIpv6Mode,
                     onBlockUdpStunChanged = viewModel::setBlockUdpStun,

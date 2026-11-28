@@ -53,6 +53,18 @@ enum class DnsTransport(
 ) {
     DOH("DoH", "通过 HTTPS 加密解析，兼容性更好"),
     DOT("DoT", "通过 TLS 加密解析，协议边界更清晰"),
+    DOQ("DoQ", "通过 QUIC 加密解析"),
+    ;
+
+    companion object {
+        val presets = listOf(DOH, DOT)
+
+        fun forEndpoint(value: String): DnsTransport = when (value.substringBefore("://")) {
+            "tls" -> DOT
+            "quic" -> DOQ
+            else -> DOH
+        }
+    }
 }
 
 enum class DnsProfile(
@@ -191,11 +203,20 @@ data class NetworkPreferences(
     val lanSharing: Boolean = false,
     /** Best effort after device unlock, when Android's own Always-on setting is unavailable. */
     val reconnectAfterBoot: Boolean = false,
+    val fakeIp: Boolean = true,
 ) {
+    val usesFakeIp: Boolean get() = fakeIp && ipv6Mode.ipv4Enabled
+
     val effectiveDnsTransport: DnsTransport
         get() = if (dnsProfile == DnsProfile.CUSTOM && customDnsEndpoint.isNotBlank()) {
-            if (customDnsEndpoint.trimStart().startsWith("tls://")) DnsTransport.DOT else DnsTransport.DOH
+            DnsTransport.forEndpoint(customDnsEndpoint.trimStart().lineSequence().first())
         } else dnsTransport
+
+    val dnsTransportLabel: String
+        get() = if (dnsProfile == DnsProfile.CUSTOM && customDnsEndpoint.isNotBlank()) {
+            customDnsEndpoint.lineSequence().filter(String::isNotBlank).map { DnsTransport.forEndpoint(it.trim()) }
+                .distinct().joinToString(" / ") { it.label }
+        } else dnsTransport.label
 }
 
 /** Resolvers used only to resolve the encrypted DNS hostnames themselves. */

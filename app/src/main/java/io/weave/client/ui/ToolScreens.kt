@@ -85,7 +85,6 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -96,7 +95,6 @@ import io.weave.client.core.diagnostics.CoreConnection
 import io.weave.client.core.diagnostics.CoreConnectionsSnapshot
 import io.weave.client.core.diagnostics.CoreLogLine
 import io.weave.client.core.diagnostics.LogRedactor
-import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
 import io.weave.client.domain.TrafficFormat
@@ -229,76 +227,6 @@ internal fun SubscriptionAutoUpdateDialog(
         },
         confirmButton = { TextButton(onClick = { onSave(selectedHours, unmetered) }) { Text("保存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-}
-
-@Composable
-internal fun LanProxySharingDialog(
-    enabled: Boolean,
-    credentials: Pair<String, String>?,
-    onToggle: (Boolean) -> Unit,
-    onReveal: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val app = LocalContext.current.applicationContext
-    val runtime by VpnRuntimeState.snapshot.collectAsStateWithLifecycle()
-    var addresses by remember { mutableStateOf<List<String>>(emptyList()) }
-    var refresh by remember { mutableIntStateOf(0) }
-    LaunchedEffect(enabled, runtime.revision, refresh) {
-        if (enabled) addresses = withContext(Dispatchers.IO) {
-            runCatching { io.weave.client.core.vpn.LanProxyAddresses.current(app) }.getOrDefault(emptyList())
-        }
-    }
-    WeaveDialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
-        title = { Text("局域网代理共享", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "让同一 Wi-Fi 或热点下的设备用这台手机的默认出口。接收端可选择 HTTP 或 SOCKS5，并填写这台手机的地址、端口和凭据。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("开启共享", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    WeaveSwitch(checked = enabled, onCheckedChange = onToggle)
-                }
-                if (enabled) {
-                    Text(if (runtime.state == ConnectionState.CONNECTED) "在接收设备上测试代理连通性" else "连接 Weave 后才会监听代理端口")
-                    LiquidGlassPanel(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("手机地址", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (addresses.isEmpty()) {
-                                Text("在手机 Wi-Fi 详情查看 IP。使用热点时，可在接收端查看网关地址。", fontSize = 12.sp)
-                            }
-                            for (address in addresses) {
-                                Text(address, fontFamily = FontFamily.Monospace, translate = false)
-                            }
-                            Text("端口", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${MihomoConfigAssembler.MIXED_PORT}", fontFamily = FontFamily.Monospace, translate = false)
-                            if (credentials != null) {
-                                Text("用户名", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(credentials.first, fontFamily = FontFamily.Monospace, translate = false)
-                                Text("密码", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(credentials.second, fontFamily = FontFamily.Monospace, translate = false)
-                            }
-                        }
-                    }
-                    Row {
-                        TextButton(onClick = { refresh++ }) { Text("刷新地址") }
-                        if (credentials == null) TextButton(onClick = onReveal) { Text("查看共享凭据") }
-                    }
-                    Text(
-                        "在可信局域网使用。代理认证没有加密局域网链路。用完请关闭共享。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
 }
 

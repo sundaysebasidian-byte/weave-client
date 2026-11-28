@@ -8,6 +8,22 @@ import io.weave.client.domain.WeaveLanguage
  * the rest of the table; merged after the older supplemental entries.
  */
 internal val V2_TRANSLATIONS: Map<String, SupplementalTranslation> = mapOf(
+    "到此跳的链路" to SupplementalTranslation("Path to this hop", "到此跳的路徑", "このホップまでの経路", "Chemin jusqu’à ce saut", "Pfad bis zu diesem Hop"),
+    "单跳检测" to SupplementalTranslation("Single-hop test", "單跳測試", "単一ホップのテスト", "Test d’un seul saut", "Einzelner Hop-Test"),
+    "备用入口" to SupplementalTranslation("Backup entry", "備用入口", "予備の入口", "Entrée de secours", "Reserve-Einstieg"),
+    "完整链路" to SupplementalTranslation("Full chain", "完整鏈路", "チェーン全体", "Chaîne complète", "Gesamte Kette"),
+    "暂无连接" to SupplementalTranslation("No active connections", "目前沒有連線", "接続はありません", "Aucune connexion active", "Keine aktiven Verbindungen"),
+    "检测代理链" to SupplementalTranslation("Test proxy chain", "測試代理鏈", "プロキシチェーンをテスト", "Tester la chaîne de proxys", "Proxy-Kette testen"),
+    "正在应用解析策略" to SupplementalTranslation("Applying resolver policy", "正在套用解析策略", "名前解決ポリシーを適用中", "Application de la stratégie de résolution", "Auflösungsrichtlinie wird angewendet"),
+    "每行一个加密 DNS 地址，最多 6 个。支持 DoH、DoT 和 DoQ。" to SupplementalTranslation("Enter up to six encrypted DNS addresses, one per line. DoH, DoT and DoQ are supported.", "每行一個加密 DNS 位址，最多 6 個。支援 DoH、DoT 和 DoQ。", "暗号化 DNS のアドレスを 1 行に 1 つ、最大 6 つ入力します。DoH、DoT、DoQ に対応します。", "Saisissez jusqu’à six adresses DNS chiffrées, une par ligne. DoH, DoT et DoQ sont pris en charge.", "Bis zu sechs verschlüsselte DNS-Adressen eingeben, eine pro Zeile. DoH, DoT und DoQ werden unterstützt."),
+    "添加中转节点" to SupplementalTranslation("Add an intermediate hop", "新增中繼節點", "中継ノードを追加", "Ajouter un relais", "Zwischenknoten hinzufügen"),
+    "添加备用入口" to SupplementalTranslation("Add a backup entry", "新增備用入口", "予備の入口を追加", "Ajouter une entrée de secours", "Reserve-Einstieg hinzufügen"),
+    "等待连接数据" to SupplementalTranslation("Waiting for connection data", "等待連線資料", "接続データを待機中", "En attente des données de connexion", "Warte auf Verbindungsdaten"),
+    "通过 QUIC 加密解析" to SupplementalTranslation("Encrypted resolution over QUIC", "透過 QUIC 加密解析", "QUIC による暗号化名前解決", "Résolution chiffrée via QUIC", "Verschlüsselte Auflösung per QUIC"),
+    "链路中不能重复使用节点" to SupplementalTranslation("A node can appear only once in a chain", "同一節點在鏈路中只能出現一次", "チェーンでは同じノードを一度だけ使用できます", "Un nœud ne peut apparaître qu’une fois dans la chaîne", "Ein Knoten darf in einer Kette nur einmal vorkommen"),
+    "链路节点数量超出限制" to SupplementalTranslation("The chain has too many nodes", "鏈路節點過多", "チェーンのノード数が上限を超えています", "La chaîne contient trop de nœuds", "Die Kette enthält zu viele Knoten"),
+    "解析路径" to SupplementalTranslation("Resolution path", "解析路徑", "名前解決経路", "Chemin de résolution", "Auflösungspfad"),
+    "检测当前解析" to SupplementalTranslation("Test active resolution", "測試目前解析", "現在の名前解決をテスト", "Tester la résolution active", "Aktive Auflösung testen"),
     "仅 IPv6" to SupplementalTranslation("IPv6 only", "僅 IPv6", "IPv6 のみ", "IPv6 uniquement", "Nur IPv6"),
     "仅接管 IPv6，阻止应用 IPv4 流量并停用应用绕过" to SupplementalTranslation("Route IPv6, block app IPv4 traffic, and disable app bypass", "僅接管 IPv6，阻擋應用程式的 IPv4 流量並停用應用程式略過", "IPv6 を処理し、アプリの IPv4 通信と VPN の迂回を遮断します", "Achemine IPv6, bloque le trafic IPv4 des applications et désactive le contournement", "Leitet IPv6 weiter, sperrt IPv4-Verkehr von Apps und deaktiviert App-Ausnahmen"),
     "IPv4 旁路" to SupplementalTranslation("IPv4 bypass", "IPv4 旁路", "IPv4 の迂回", "Contournement IPv4", "IPv4-Umgehung"),

@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.MainActivity
+import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.engine.MihomoConfigAssembler
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.domain.ConnectionState
@@ -13,6 +14,8 @@ import io.weave.client.domain.RoutingMode
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.Socket
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -51,6 +54,7 @@ class LanProxyDeviceTest {
                     assertEquals(403, request(address, fixture, "$user:incorrect").first)
                     assertEquals(200 to "weave-fixture", request(address, fixture, "$user:$password"))
                     assertEquals(200 to "weave-fixture", request("127.0.0.1", fixture, credential = null))
+                    verifySocksAndDisconnect(address, fixture, user, password, CoreApi(target))
                 } finally {
                     scenario.onActivity { WeaveVpnService.stop(it) }
                     withTimeout(20_000) { VpnRuntimeState.snapshot.first { it.state == ConnectionState.DISCONNECTED } }
@@ -60,6 +64,45 @@ class LanProxyDeviceTest {
             profile.setLanSharing(previous.lanSharing)
             profile.setIpv6Mode(previous.ipv6Mode)
             profile.setRoutingMode(mode)
+        }
+    }
+
+    private suspend fun verifySocksAndDisconnect(
+        address: String,
+        port: Int,
+        user: String,
+        password: String,
+        api: CoreApi,
+    ) = withContext(Dispatchers.IO) {
+        Socket(Proxy.NO_PROXY).use { socket ->
+            socket.soTimeout = 3_000
+            socket.connect(InetSocketAddress(address, MihomoConfigAssembler.MIXED_PORT), 3_000)
+            val output = DataOutputStream(socket.getOutputStream())
+            val input = DataInputStream(socket.getInputStream())
+            output.write(byteArrayOf(5, 1, 2))
+            assertEquals(0x0502, input.readUnsignedShort())
+            output.writeByte(1)
+            output.writeByte(user.length)
+            output.writeBytes(user)
+            output.writeByte(password.length)
+            output.writeBytes(password)
+            assertEquals(0x0100, input.readUnsignedShort())
+            output.write(byteArrayOf(5, 1, 0, 1, 10, 0, 2, 2))
+            output.writeShort(port)
+            assertEquals(0x0500, input.readUnsignedShort())
+            assertEquals(0, input.readUnsignedByte())
+            val addressSize = when (val type = input.readUnsignedByte()) {
+                1 -> 4
+                4 -> 16
+                3 -> input.readUnsignedByte()
+                else -> error("Unexpected SOCKS5 address type $type")
+            }
+            input.readFully(ByteArray(addressSize + 2))
+            assertEquals("weave-fixture", input.bufferedReader().readLine())
+            val before = api.sharedDevices().single { it.address == address }
+            assertTrue(before.downloaded > 0)
+            assertTrue(api.disconnectSharedDevice(address))
+            assertTrue(api.sharedDevices().none { it.address == address })
         }
     }
 

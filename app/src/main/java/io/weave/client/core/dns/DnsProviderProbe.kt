@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.ConcurrentHashMap
 
 data class DnsProbeResult(
@@ -29,6 +31,7 @@ data class DnsProbeResult(
     val latencyMs: Int?,
     val available: Boolean,
     val detail: String,
+    val measured: Boolean = true,
 )
 
 /**
@@ -50,6 +53,7 @@ internal class DnsProviderProbe(
         private val preferences: NetworkPreferences,
     ) {
         private val shared = ConcurrentHashMap<String, Deferred<EndpointSample>>()
+        private val slots = Semaphore(4)
 
         suspend fun probe(profile: DnsProfile): DnsProbeResult {
             val chosen = if (profile == preferences.dnsProfile) preferences else preferences.copy(dnsProfile = profile)
@@ -57,7 +61,9 @@ internal class DnsProviderProbe(
             require(endpoints.isNotEmpty()) { "没有可检测的 DNS 端点" }
             val samples = endpoints.map { endpoint ->
                 shared.computeIfAbsent(endpoint) {
-                    scope.async(Dispatchers.IO) { probeEndpoint(network, endpoint, ipv6 = !preferences.ipv6Mode.ipv4Enabled) }
+                    scope.async(Dispatchers.IO) {
+                        slots.withPermit { probeEndpoint(network, endpoint, ipv6 = !preferences.ipv6Mode.ipv4Enabled) }
+                    }
                 }
             }.awaitAll()
             var fastest: EndpointSample? = null
@@ -67,21 +73,28 @@ internal class DnsProviderProbe(
                 availableCount++
                 if (fastest == null || delay < checkNotNull(fastest.latencyMs)) fastest = sample
             }
-            val best = fastest ?: samples.first()
+            val best = fastest ?: samples.firstOrNull(EndpointSample::attempted) ?: samples.first()
+            val attempted = samples.count(EndpointSample::attempted)
             return DnsProbeResult(
                 profile = profile,
-                transport = chosen.effectiveDnsTransport,
+                transport = DnsTransport.forEndpoint(best.endpoint),
                 endpoint = best.endpoint,
                 latencyMs = fastest?.latencyMs,
                 available = fastest != null,
-                detail = if (availableCount > 0 && endpoints.size > 1) {
-                    "$availableCount/${endpoints.size} 个上游可达"
+                detail = if (attempted == 0) {
+                    "检测当前解析"
+                } else if (availableCount > 0 && attempted > 1) {
+                    "$availableCount/$attempted 个上游可达"
                 } else best.detail,
+                measured = attempted > 0,
             )
         }
     }
 
     private fun probeEndpoint(network: DiagnosticNetwork?, endpoint: String, ipv6: Boolean): EndpointSample {
+        if (DnsTransport.forEndpoint(endpoint) == DnsTransport.DOQ) {
+            return EndpointSample(endpoint, null, "DoQ", attempted = false)
+        }
         if (network == null) return EndpointSample(endpoint, null, "没有可检测的网络")
         val started = SystemClock.elapsedRealtime()
         return runCatching {
@@ -177,6 +190,7 @@ internal class DnsProviderProbe(
         val endpoint: String,
         val latencyMs: Int?,
         val detail: String,
+        val attempted: Boolean = true,
     )
 
     private companion object {

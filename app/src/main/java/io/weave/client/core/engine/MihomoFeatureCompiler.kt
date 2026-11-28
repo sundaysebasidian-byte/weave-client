@@ -167,58 +167,40 @@ object MihomoFeatureCompiler {
         )
     }
 
-    fun encryptedNameServers(transport: DnsTransport): List<String> = when (transport) {
-        DnsTransport.DOH -> listOf(
-            "https://dns.alidns.com/dns-query",
-            "https://doh.pub/dns-query",
-        )
-        DnsTransport.DOT -> listOf(
-            "tls://dns.alidns.com",
-            "tls://dot.pub",
-        )
-    }
+    fun encryptedNameServers(transport: DnsTransport): List<String> =
+        listOf("dns.alidns.com" to "dns.alidns.com", "doh.pub" to "dot.pub").map { (https, tls) ->
+            presetResolver(transport, https, tls)
+        }
 
     fun encryptedNameServers(preferences: NetworkPreferences): List<String> = when (preferences.dnsProfile) {
         DnsProfile.PRIVACY -> encryptedNameServers(preferences.dnsTransport)
-        DnsProfile.ALI_DNS -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://dns.alidns.com/dns-query")
-            DnsTransport.DOT -> listOf("tls://dns.alidns.com")
+        DnsProfile.CUSTOM -> customDnsEndpoints(preferences.customDnsEndpoint)
+        else -> {
+            val (https, tls) = presetHosts.getValue(preferences.dnsProfile)
+            listOf(presetResolver(preferences.dnsTransport, https, tls))
         }
-        DnsProfile.TENCENT_DNS -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://doh.pub/dns-query")
-            DnsTransport.DOT -> listOf("tls://dot.pub")
-        }
-        DnsProfile.CLOUDFLARE_DNS -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://cloudflare-dns.com/dns-query")
-            DnsTransport.DOT -> listOf("tls://cloudflare-dns.com")
-        }
-        DnsProfile.GOOGLE_DNS -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://dns.google/dns-query")
-            DnsTransport.DOT -> listOf("tls://dns.google")
-        }
-        DnsProfile.QUAD9_DNS -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://dns.quad9.net/dns-query")
-            DnsTransport.DOT -> listOf("tls://dns.quad9.net")
-        }
-        DnsProfile.MULLVAD_DNS -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://dns.mullvad.net/dns-query")
-            DnsTransport.DOT -> listOf("tls://dns.mullvad.net")
-        }
-        DnsProfile.AD_BLOCK -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://dns.adguard-dns.com/dns-query")
-            DnsTransport.DOT -> listOf("tls://dns.adguard-dns.com")
-        }
-        DnsProfile.FAMILY -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf("https://family.adguard-dns.com/dns-query")
-            DnsTransport.DOT -> listOf("tls://family.adguard-dns.com")
-        }
-        DnsProfile.CUSTOM -> listOf(validateCustomDnsEndpoint(preferences.customDnsEndpoint))
+    }
+
+    private val presetHosts = mapOf(
+        DnsProfile.ALI_DNS to ("dns.alidns.com" to "dns.alidns.com"),
+        DnsProfile.TENCENT_DNS to ("doh.pub" to "dot.pub"),
+        DnsProfile.CLOUDFLARE_DNS to ("cloudflare-dns.com" to "cloudflare-dns.com"),
+        DnsProfile.GOOGLE_DNS to ("dns.google" to "dns.google"),
+        DnsProfile.QUAD9_DNS to ("dns.quad9.net" to "dns.quad9.net"),
+        DnsProfile.MULLVAD_DNS to ("dns.mullvad.net" to "dns.mullvad.net"),
+        DnsProfile.AD_BLOCK to ("dns.adguard-dns.com" to "dns.adguard-dns.com"),
+        DnsProfile.FAMILY to ("family.adguard-dns.com" to "family.adguard-dns.com"),
+    )
+
+    private fun presetResolver(transport: DnsTransport, https: String, tls: String): String = when (transport) {
+        DnsTransport.DOH -> "https://$https/dns-query"
+        DnsTransport.DOT -> "tls://$tls"
+        DnsTransport.DOQ -> error("Preset DNS configuration requires DoH or DoT")
     }
 
     /**
-     * Overseas encrypted resolvers are intentionally tried first, but their public endpoints can
-     * be unreachable on mainland networks. Keep encrypted domestic fallbacks for that failure
-     * mode; the local ad/family reject rules still apply when a fallback resolver answers.
+     * Overseas encrypted resolvers may be unreachable on some networks. Keep encrypted domestic
+     * fallback available for presets, while custom configurations use only their explicit upstreams.
      */
     fun dnsCompatibilityFallbacks(preferences: NetworkPreferences): List<String> = when (
         preferences.dnsProfile
@@ -229,16 +211,7 @@ object MihomoFeatureCompiler {
         DnsProfile.GOOGLE_DNS,
         DnsProfile.QUAD9_DNS,
         DnsProfile.MULLVAD_DNS,
-        -> when (preferences.dnsTransport) {
-            DnsTransport.DOH -> listOf(
-                "https://doh.pub/dns-query",
-                "https://dns.alidns.com/dns-query",
-            )
-            DnsTransport.DOT -> listOf(
-                "tls://dot.pub",
-                "tls://dns.alidns.com",
-            )
-        }
+        -> encryptedNameServers(preferences.dnsTransport).asReversed()
         else -> emptyList()
     }
 
@@ -317,6 +290,17 @@ object MihomoFeatureCompiler {
         }
     }
 
+    const val MAX_CUSTOM_DNS_INPUT = 2048
+    private const val MAX_CUSTOM_DNS_SERVERS = 6
+
+    fun customDnsEndpoints(input: String): List<String> {
+        require(input.length <= MAX_CUSTOM_DNS_INPUT) { "自定义 DNS 地址格式无效" }
+        val endpoints = input.lineSequence().filter { it.isNotBlank() }.take(MAX_CUSTOM_DNS_SERVERS + 1).toList()
+        require(endpoints.isNotEmpty()) { "自定义 DNS 地址不能为空" }
+        require(endpoints.size <= MAX_CUSTOM_DNS_SERVERS) { "自定义 DNS 地址格式无效" }
+        return endpoints.map(::validateCustomDnsEndpoint).distinct()
+    }
+
     /** Only encrypted DNS endpoints are accepted; plaintext UDP/TCP resolvers are rejected. */
     fun validateCustomDnsEndpoint(endpoint: String): String {
         val value = endpoint.trim()
@@ -324,13 +308,13 @@ object MihomoFeatureCompiler {
         require(value.none(Char::isWhitespace)) { "自定义 DNS 地址不能包含空格" }
         val uri = runCatching { URI(value) }.getOrNull()
             ?: throw IllegalArgumentException("自定义 DNS 地址格式无效")
-        require(uri.scheme == "https" || uri.scheme == "tls") {
-            "自定义 DNS 仅支持 HTTPS DoH 或 TLS DoT"
+        require(uri.scheme in setOf("https", "tls", "quic")) {
+            "自定义 DNS 地址格式无效"
         }
         require(uri.rawUserInfo == null) { "自定义 DNS 不允许携带用户名或密码" }
         require(!uri.host.isNullOrBlank()) { "自定义 DNS 缺少主机名" }
         require(uri.port == -1 || uri.port in 1..65535) { "自定义 DNS 端口无效" }
-        require(uri.scheme != "tls" || uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
+        require(uri.scheme == "https" || uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
             "自定义 DNS 地址格式无效"
         }
         require(uri.query == null && uri.fragment == null) {

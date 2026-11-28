@@ -9,11 +9,15 @@ import io.weave.client.core.bridge.NativeBridge
 import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
 import io.weave.client.subscription.ClashProviderResolver
+import io.weave.client.subscription.ClashYamlCodec
 import io.weave.client.subscription.SubscriptionFetchResult
 import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.RoutingMode
 import io.weave.client.domain.NetworkPreferences
+import io.weave.client.routing.CustomProxyGroup
+import io.weave.client.routing.CustomProxyGroupStore
+import io.weave.client.routing.NodeRef
 import java.io.File
 import java.nio.file.Files
 import java.net.URI
@@ -39,7 +43,7 @@ class MihomoProviderIntegrationTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test fun savedSubscriptionReachesAutomaticAndFixedGroupsAfterValidation() = runBlocking {
-        val root = Files.createTempDirectory(context.cacheDir.toPath(), "pipeline-test-").toFile()
+        val root = Files.createTempDirectory(context.cacheDir.toPath(), "p").toFile()
         val prefsPrefix = root.name + "."
         val isolated = object : ContextWrapper(context) {
             override fun getApplicationContext(): Context = this
@@ -69,10 +73,16 @@ class MihomoProviderIntegrationTest {
             targets.forEach { target ->
                 val compiled = assembler.assemble(emptyList(), RoutingMode.GLOBAL, target)
                 assertTrue(compiled.yaml.contains("type: inline"))
+                val provider = (ClashYamlCodec.read(compiled.yaml)["proxy-providers"] as Map<*, *>)
+                    .values.single() as Map<*, *>
+                val payload = provider["payload"] as List<*>
+                assertEquals(if (target.kind == RouteKind.AUTO) record.nodes.size else 1, payload.size)
                 engine.validate(compiled.yaml).getOrThrow()
                 // No dependence on a second cleartext provider file, including after cache cleanup.
                 File(isolated.cacheDir, "mihomo-runtime/providers").deleteRecursively()
-                NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
+                NativeProfileFile(isolated.cacheDir).withProfile(compiled.yaml) {
+                    NativeBridge.loadConfiguration(it).getOrThrow()
+                }
                 // Exercise the bundled native HTTP/1.0 Unix controller, not a JSON mock.
                 val socketPath = io.weave.client.core.diagnostics.PrivateCoreConnections.socketPath(isolated)
                 assertEquals(448, android.system.Os.stat(File(socketPath).parent).st_mode and 511)
@@ -181,7 +191,9 @@ class MihomoProviderIntegrationTest {
                     // The production profile already pins bind-address to loopback.
                     val config = compiled.yaml + "\nmixed-port: $inboundPort\n"
                     engine.validate(config).getOrThrow()
-                    NativeBridge.loadConfiguration(File(isolated.cacheDir, "mihomo-runtime").absolutePath).getOrThrow()
+                    NativeProfileFile(isolated.cacheDir).withProfile(config) {
+                        NativeBridge.loadConfiguration(it).getOrThrow()
+                    }
                     Socket("127.0.0.1", inboundPort).use { client ->
                         client.soTimeout = 5000
                         val out = client.getOutputStream()
@@ -206,6 +218,119 @@ class MihomoProviderIntegrationTest {
             store.list().forEach { store.delete(it.id) }
             root.deleteRecursively()
         }
+    }
+
+    @Test fun chainedProfileTransfersBytesThroughThreeIndependentRelays() = runBlocking {
+        val root = Files.createTempDirectory(context.cacheDir.toPath(), "h").toFile()
+        val isolated = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getNoBackupFilesDir(): File = File(root, "no-backup").apply { mkdirs() }
+            override fun getApplicationInfo() = android.content.pm.ApplicationInfo(context.applicationInfo).apply { dataDir = root.absolutePath }
+            override fun getSharedPreferences(name: String, mode: Int) = context.getSharedPreferences(root.name + name, mode)
+        }
+        val executor = Executors.newFixedThreadPool(16)
+        val loopback = InetAddress.getByName("127.0.0.1")
+        val servers = List(3) { ServerSocket(0, 8, loopback) }
+        val requests = List(3) { java.util.concurrent.ConcurrentLinkedQueue<String>() }
+        val acceptors = servers.mapIndexed { index, server ->
+            executor.submit {
+                while (!server.isClosed) {
+                    val client = try { server.accept() } catch (_: java.net.SocketException) { break }
+                    executor.submit handler@{
+                        client.use {
+                            it.soTimeout = 8_000
+                            val input = it.getInputStream().buffered()
+                            val request = readConnectLine(input)
+                            while (readConnectLine(input).isNotEmpty()) { }
+                            val output = it.getOutputStream()
+                            val nextServer = servers.getOrNull(index + 1)
+                            val expected = nextServer?.let { next -> "127.0.0.1:${next.localPort}" } ?: "fixture.invalid:443"
+                            // Native health checks also dial these servers. They must never
+                            // consume the fixture connection or contact a remote endpoint.
+                            if (!request.startsWith("CONNECT $expected ")) {
+                                output.write("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n".toByteArray())
+                                return@handler
+                            }
+                            requests[index].add(request)
+                            output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
+                            output.flush()
+                            if (nextServer == null) {
+                                assertEquals("through-all-three", readConnectLine(input))
+                                output.write("weave-chain-ok\n".toByteArray())
+                                output.flush()
+                            } else {
+                                Socket(loopback, nextServer.localPort).use { next ->
+                                    next.soTimeout = 8_000
+                                    val upstream = executor.submit {
+                                        input.copyTo(next.getOutputStream())
+                                        next.shutdownOutput()
+                                    }
+                                    next.getInputStream().copyTo(output)
+                                    output.flush()
+                                    it.shutdownOutput()
+                                    upstream.get(8, TimeUnit.SECONDS)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val store = SubscriptionSecretStore(isolated)
+        val engine = MihomoEngineAdapter(isolated)
+        try {
+            val parser = SubscriptionPayloadParser()
+            val refs = servers.mapIndexed { index, server ->
+                val payload = "proxies: [{name: relay-$index, type: http, server: 127.0.0.1, port: ${server.localPort}}]"
+                val saved = store.save("fixture-$index", "inline://chain-$index", payload, parser.parse(payload))
+                NodeRef(saved.id, saved.nodes.single().id)
+            }
+            val group = CustomProxyGroup(name = "Three relays", entry = refs[0], via = listOf(refs[1]), members = listOf(refs[2]))
+            CustomProxyGroupStore(isolated).save(listOf(group))
+            val target = RouteTarget(RouteKind.GROUP, group.name, groupId = group.id)
+            val compiled = MihomoConfigAssembler(isolated, secretStore = store).assemble(emptyList(), RoutingMode.GLOBAL, target)
+            assertEquals(3, compiled.usableSubscriptions)
+            val port = ServerSocket(0, 1, loopback).use { it.localPort }
+            val config = compiled.yaml + "\nmixed-port: $port\n"
+            engine.validate(config).getOrThrow()
+            NativeProfileFile(isolated.cacheDir).withProfile(config) {
+                NativeBridge.loadConfiguration(it).getOrThrow()
+            }
+            Socket(loopback, port).use { socket ->
+                socket.soTimeout = 8_000
+                val inStream = socket.getInputStream().buffered()
+                val out = socket.getOutputStream()
+                out.write("CONNECT fixture.invalid:443 HTTP/1.1\r\nHost: fixture.invalid:443\r\n\r\n".toByteArray())
+                out.flush()
+                assertTrue(readConnectLine(inStream).contains("200"))
+                while (readConnectLine(inStream).isNotEmpty()) { }
+                out.write("through-all-three\n".toByteArray())
+                out.flush()
+                assertEquals("weave-chain-ok", readConnectLine(inStream))
+            }
+            assertTrue(requests[0].any { ":${servers[1].localPort}" in it })
+            assertTrue(requests[1].any { ":${servers[2].localPort}" in it })
+            assertTrue(requests[2].any { " fixture.invalid:443 " in it })
+        } finally {
+            if (NativeBridge.isInitialized) NativeBridge.reset()
+            servers.forEach(ServerSocket::close)
+            acceptors.forEach { it.get(5, TimeUnit.SECONDS) }
+            executor.shutdownNow()
+            store.list().forEach { store.delete(it.id) }
+            root.deleteRecursively()
+        }
+    }
+
+    private fun readConnectLine(input: java.io.InputStream): String {
+        val line = StringBuilder()
+        repeat(8 * 1024) {
+            val byte = input.read()
+            check(byte >= 0) { "Unexpected EOF in fixture handshake" }
+            if (byte == '\n'.code) return line.toString().trimEnd('\r')
+            line.append(byte.toChar())
+        }
+        error("Fixture handshake line exceeds limit")
     }
 
     @Test fun normalizedProvidersReachTheNativeSelector() = runBlocking {

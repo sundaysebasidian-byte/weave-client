@@ -3,13 +3,20 @@ package io.weave.client.core.diagnostics
 import android.content.Context
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
+import android.os.SystemClock
 import androidx.compose.runtime.Immutable
 import java.io.IOException
 import java.io.InputStream
+import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
 
 @Immutable
@@ -79,6 +86,46 @@ class CoreApi(private val context: Context) {
         if (!latestFirst) return@withContext snapshot
         val ordered = snapshot.connections.latestFirst()
         if (ordered === snapshot.connections) snapshot else snapshot.copy(connections = ordered)
+    }
+
+    internal suspend fun sharedDevices(): List<SharedDevice> = withContext(Dispatchers.IO) {
+        LanShareTopology.read(JSONObject(request("GET", "/connections", MAX_RESPONSE_BYTES)))
+    }
+
+    internal suspend fun disconnectSharedDevice(address: String): Boolean = withContext(Dispatchers.IO) {
+        val device = sharedDevices().firstOrNull { it.address == address } ?: return@withContext true
+        coroutineScope {
+            val slots = Semaphore(4)
+            device.connectionIds.map { id -> async { slots.withPermit { close(id) } } }
+                .awaitAll().all { it }
+        }
+    }
+
+    internal data class PathProbe(val roundTripMs: Long?, val udpAdvertised: Boolean?)
+
+    internal suspend fun probeProxy(alias: String): PathProbe? = withContext(Dispatchers.IO) {
+        require(alias.length in 1..128 && alias.none(Char::isISOControl))
+        val proxy = "/proxies/" + URLEncoder.encode(alias, Charsets.UTF_8.name())
+        val metadata = try {
+            JSONObject(request("GET", proxy, 256 * 1024))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return@withContext null
+        }
+        val start = SystemClock.elapsedRealtime()
+        val delay = try {
+            val url = URLEncoder.encode("https://www.gstatic.com/generate_204", Charsets.UTF_8.name())
+            val reply = JSONObject(
+                request("GET", "$proxy/delay?url=$url&timeout=5000&expected=204", 32 * 1024, timeoutMillis = 6_000),
+            )
+            (SystemClock.elapsedRealtime() - start).coerceAtLeast(1).takeIf { reply.optInt("delay") > 0 }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        PathProbe(delay, metadata.opt("udp") as? Boolean)
     }
 
     suspend fun close(id: String): Boolean = withContext(Dispatchers.IO) {
@@ -154,7 +201,7 @@ class CoreApi(private val context: Context) {
         }
     }
 
-    private suspend fun request(method: String, path: String, limit: Int): String =
+    private suspend fun request(method: String, path: String, limit: Int, timeoutMillis: Int = 3_000): String =
         suspendCancellableCoroutine { continuation ->
             val socket = LocalSocket()
             val closeLock = Any()
@@ -170,7 +217,7 @@ class CoreApi(private val context: Context) {
             if (!continuation.isActive) return@suspendCancellableCoroutine
             val result = runCatching {
                 try {
-                    connectControllerSocket(socket, context, 3_000)
+                    connectControllerSocket(socket, context, timeoutMillis)
                     val abortAfterConnect = synchronized(closeLock) {
                         connected = true
                         cancelled
@@ -193,7 +240,7 @@ class CoreApi(private val context: Context) {
     companion object {
         private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
         private const val MAX_LOG_LINE = 8 * 1024
-        private val ID = Regex("[A-Za-z0-9-]{1,64}")
+        internal val ID = Regex("[A-Za-z0-9-]{1,64}")
         val LEVELS = listOf("debug", "info", "warning", "error")
 
         internal fun parseConnections(json: JSONObject): CoreConnectionsSnapshot {

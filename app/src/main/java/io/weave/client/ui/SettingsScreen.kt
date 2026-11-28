@@ -244,6 +244,7 @@ internal fun SettingsScreen(
     onOpenLogs: () -> Unit = {},
     onOpenRuleSets: () -> Unit = {},
     onOpenCustomGroups: () -> Unit = {},
+    onFakeIpChanged: (Boolean) -> Unit = {},
     onOpenBackup: () -> Unit = {},
     onOpenLanTransfer: () -> Unit = {},
     notificationsEnabled: Boolean = true,
@@ -380,7 +381,7 @@ internal fun SettingsScreen(
                 ),
                 LinkEntry(
                     Icons.Rounded.Wifi,
-                    "局域网代理共享",
+                    "Weave Share",
                     if (preferences.lanSharing) "已开启" else "未开启",
                 ) { showLanProxy = true },
             ),
@@ -705,6 +706,7 @@ internal fun SettingsScreen(
             onCustomEndpointSaved = onCustomDnsEndpointSaved,
             onTransportSelected = onDnsTransportSelected,
             onProbeProviders = onProbeDnsProviders,
+            onFakeIpChanged = onFakeIpChanged,
         )
     }
     if (showIpv6Mode) {
