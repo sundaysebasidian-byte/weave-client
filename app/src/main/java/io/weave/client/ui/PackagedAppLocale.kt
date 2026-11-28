@@ -6,16 +6,19 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.core.app.LocaleManagerCompat
+import androidx.core.os.LocaleListCompat
 import io.weave.client.data.RuntimeSettingsStore
 import io.weave.client.data.StoredReleaseAppCopySelection
 import io.weave.client.domain.WeaveLanguage
 import java.util.Locale
 
-/** One verified release copy/resource context for the activity's explicit Android locale. */
+/** Verified release copy and matching resource context for the active language. */
 internal class PackagedAppLocale private constructor(
     private val locale: Locale,
     private val seal: PackagedReleaseCopyAsset.Seal,
     val copy: ReleasedAppCopy,
+    val followsSystem: Boolean,
 ) {
     val tag: String get() = seal.tag
     val nativeLabel: String get() = seal.label
@@ -33,20 +36,29 @@ internal class PackagedAppLocale private constructor(
 
         private fun readObservedLocale(context: Context): PackagedAppLocale? {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                val selected = RuntimeSettingsStore(context).releaseAppCopySelection()
-                    as? StoredReleaseAppCopySelection.Selected ?: return null
-                return verified(context, Locale.forLanguageTag(selected.canonicalTag))
+                val store = RuntimeSettingsStore(context)
+                return when (val selected = store.releaseAppCopySelection()) {
+                    is StoredReleaseAppCopySelection.Selected -> verified(context, selected.canonicalTag)
+                    StoredReleaseAppCopySelection.Unsupported -> null
+                    StoredReleaseAppCopySelection.Absent ->
+                        if (store.explicitLanguage() == null) readSystemChoice(context) else null
+                }
             }
             val manager = context.getSystemService(LocaleManager::class.java) ?: return null
             val explicit = manager.applicationLocales
-            if (explicit.isEmpty) return null
-            val locale = explicit[0]
-            val candidate = verified(context, locale) ?: return null
+            val candidate = if (explicit.isEmpty) readSystemChoice(context)
+            else verified(context, explicit[0].toLanguageTag())
             // Do not publish a catalog loaded for a choice that changed while storage was read.
-            val current = manager.applicationLocales
-            if (current.isEmpty || current[0] != locale) return null
-            return candidate
+            return candidate.takeIf { manager.applicationLocales == explicit }
         }
+
+        fun readSystemChoice(context: Context): PackagedAppLocale? =
+            PackagedReleaseCopyAsset.optionalObservation {
+                val system = LocaleManagerCompat.getSystemLocales(context)
+                val tag = systemPackagedTag(system.asLocales()) ?: return@optionalObservation null
+                val candidate = verified(context, tag, followsSystem = true)
+                candidate.takeIf { LocaleManagerCompat.getSystemLocales(context) == system }
+            }
 
         /** Verify sealed bytes on IO; only a selected catalog needs to be decoded. */
         fun availableChoices(context: Context, active: PackagedAppLocale?): List<PackagedLocaleChoice> =
@@ -69,19 +81,33 @@ internal class PackagedAppLocale private constructor(
             }.orEmpty()
 
         fun readChoice(context: Context, choice: PackagedLocaleChoice): PackagedAppLocale? =
-            verified(context, Locale.forLanguageTag(choice.tag))
+            verified(context, choice.tag)
 
-        private fun verified(context: Context, locale: Locale): PackagedAppLocale? {
-            val tag = locale.toLanguageTag()
+        private fun verified(
+            context: Context,
+            tag: String,
+            followsSystem: Boolean = false,
+        ): PackagedAppLocale? {
             val seal = PackagedReleaseCopyAsset.sealFor(tag) ?: return null
             val copy = PackagedReleaseCopyAsset.readIfPackaged(
                 tag,
                 { path -> context.assets.open(path) },
                 { key, input -> ReleasedAppCopy.load(key, input) },
             ) ?: return null
-            return PackagedAppLocale(locale, seal, copy)
+            return PackagedAppLocale(Locale.forLanguageTag(tag), seal, copy, followsSystem)
         }
+
+        private fun LocaleListCompat.asLocales(): List<Locale> = (0 until size()).mapNotNull { get(it) }
     }
+}
+
+internal fun systemPackagedTag(locales: List<Locale>): String? {
+    for (locale in locales) {
+        if (WeaveLanguage.matchSystem(locale) != null) return null
+        val seal = PackagedReleaseCopyAsset.Seal.values().firstOrNull { it.tag.substringBefore('-') == locale.language }
+        if (seal != null) return seal.tag
+    }
+    return null
 }
 
 internal data class PackagedLocaleChoice(val tag: String, val nativeLabel: String)
@@ -93,7 +119,10 @@ internal sealed interface PackagedLanguageTap {
         override val tag: String get() = locale.tag
     }
 
-    data class Legacy(val language: WeaveLanguage?) : PackagedLanguageTap {
+    data class Legacy(
+        val language: WeaveLanguage?,
+        val followedLocale: PackagedAppLocale? = null,
+    ) : PackagedLanguageTap {
         override val tag: String get() = language?.localeTag.orEmpty()
     }
 }
@@ -129,11 +158,14 @@ internal object SystemPackagedLanguagePicker {
 }
 
 internal class PackagedLanguagePicker(
-    val selected: PackagedAppLocale?,
+    val active: PackagedAppLocale?,
     val loadChoices: suspend () -> List<PackagedLocaleChoice>,
     val loadChoice: suspend (PackagedLocaleChoice) -> PackagedAppLocale?,
+    val loadSystemChoice: suspend () -> PackagedAppLocale?,
     val applyTap: (PackagedLanguageTap) -> PackagedLanguageTapResult,
     val reconcile: suspend (PackagedLanguageTap) -> Boolean,
-)
+) {
+    val selected: PackagedAppLocale? get() = active?.takeUnless { it.followsSystem }
+}
 
 internal val LocalPackagedLanguagePicker = staticCompositionLocalOf<PackagedLanguagePicker?> { null }

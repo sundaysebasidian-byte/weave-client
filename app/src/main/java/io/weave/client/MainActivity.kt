@@ -143,9 +143,10 @@ class MainActivity : ComponentActivity() {
             }
             val languagePicker = remember(ready.locale) {
                 PackagedLanguagePicker(
-                    selected = ready.locale,
+                    active = ready.locale,
                     loadChoices = { loadPackagedLanguageChoices(ready.locale) },
                     loadChoice = { choice -> readPackagedLanguageChoice(choice, ready.locale) },
+                    loadSystemChoice = { withContext(Dispatchers.IO) { PackagedAppLocale.readSystemChoice(this@MainActivity) } },
                     applyTap = ::applyPackagedLanguageTap,
                     reconcile = ::reconcilePackagedLanguageTap,
                 )
@@ -223,7 +224,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun readPackagedLanguageChoice(
         choice: PackagedLocaleChoice,
         active: PackagedAppLocale?,
-    ): PackagedAppLocale? = if (active?.tag == choice.tag) active else withContext(Dispatchers.IO) {
+    ): PackagedAppLocale? = if (active?.tag == choice.tag && !active.followsSystem) active else withContext(Dispatchers.IO) {
         PackagedAppLocale.readChoice(this@MainActivity, choice)
     }
 
@@ -264,7 +265,7 @@ class MainActivity : ComponentActivity() {
                     false
                 }
                 if (!persisted) return PackagedLanguageTapResult.NOT_APPLIED
-                readyProfile = ready.copy(locale = null)
+                readyProfile = ready.copy(locale = choice.followedLocale)
                 PackagedLanguageTapResult.APPLIED
             }
         }
@@ -283,7 +284,7 @@ class MainActivity : ComponentActivity() {
             is PackagedLanguageTap.Legacy -> {
                 // Android already confirmed this choice. Do not keep rendering a stale
                 // packaged locale if the later legacy-store write is interrupted.
-                readyProfile = ready.copy(locale = null)
+                readyProfile = ready.copy(locale = choice.followedLocale)
                 try {
                     ready.model.recordConfirmedLanguage(choice.language)
                 } catch (cancelled: CancellationException) {

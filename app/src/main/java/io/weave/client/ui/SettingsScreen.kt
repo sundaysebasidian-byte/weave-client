@@ -140,10 +140,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
@@ -257,6 +257,7 @@ internal fun SettingsScreen(
     var showPalette by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     val packagedLanguages = LocalPackagedLanguagePicker.current
+    val copy = rememberSettingsCopy(language)
     var showAutomaticStrategy by remember { mutableStateOf(false) }
     var showStrategyScope by remember { mutableStateOf(false) }
     var showDnsSettings by remember { mutableStateOf(false) }
@@ -286,7 +287,7 @@ internal fun SettingsScreen(
                 ThemeEntry(
                     title = "外观",
                     subtitle = listOf(preferences.weavePalette.group.label, preferences.weavePalette.label)
-                        .joinToString(" · ") { localizeWeaveText(it, language) },
+                        .joinToString(" · ", transform = copy),
                     selected = preferences.weavePalette,
                     onSelect = onPaletteSelected,
                     onOpen = { showPalette = true },
@@ -294,10 +295,9 @@ internal fun SettingsScreen(
                 LinkEntry(
                     Icons.Rounded.Language,
                     "语言",
-                    packagedLanguages?.selected?.nativeLabel ?: if (languageFollowsSystem) {
-                        localizeWeaveText("跟随系统", language) + " · " + language.nativeLabel
-                    } else {
-                        language.nativeLabel
+                    when (val active = packagedLanguages?.active) {
+                        null -> if (languageFollowsSystem) "${copy("跟随系统")} · ${language.nativeLabel}" else language.nativeLabel
+                        else -> if (active.followsSystem) "${copy("跟随系统")} · ${active.nativeLabel}" else active.nativeLabel
                     },
                 ) { showLanguage = true },
                 ToggleEntry(
@@ -344,7 +344,7 @@ internal fun SettingsScreen(
                     "自动更新订阅",
                     when (preferences.subscriptionAutoUpdateHours) {
                         0 -> "未开启"
-                        else -> localizeWeaveText("每 ${preferences.subscriptionAutoUpdateHours} 小时", language)
+                        else -> "每 ${preferences.subscriptionAutoUpdateHours} 小时"
                     },
                 ) { showAutoUpdate = true },
                 LinkEntry(Icons.Rounded.Lock, "备份与恢复", null, onOpenBackup),
@@ -366,7 +366,7 @@ internal fun SettingsScreen(
             onExpandedChange = { connectionAdvancedExpanded = it },
             entries = listOf(
                 LinkEntry(Icons.Rounded.SwapVert, "策略组范围", preferences.strategyScope.label) { showStrategyScope = true },
-                LinkEntry(Icons.Rounded.Dns, "引导 DNS", localizeWeaveText(preferences.bootstrapDns.label, language)) {
+                LinkEntry(Icons.Rounded.Dns, "引导 DNS", preferences.bootstrapDns.label) {
                     showBootstrapDns = true
                 },
                 ToggleEntry(
@@ -578,14 +578,14 @@ internal fun SettingsScreen(
                 PackagedLanguageTapResult.UNCONFIRMED -> pending = tap
             }
         }
-        fun submitRegional(option: PackagedLocaleChoice) {
+        fun loadAndSubmit(load: suspend () -> PackagedLanguageTap?) {
             if (!showLanguage || pending != null || loadingChoice || picker == null) return
             loadingChoice = true
             failed = false
             choiceScope.launch {
                 try {
-                    val chosen = picker.loadChoice(option)
-                    if (chosen != null) submit(PackagedLanguageTap.Regional(chosen)) else failed = true
+                    val tap = load()
+                    if (tap != null) submit(tap) else failed = true
                 } finally {
                     loadingChoice = false
                 }
@@ -605,9 +605,11 @@ internal fun SettingsScreen(
             description = { it?.description ?: "使用手机的系统语言；也可在系统“应用语言”中单独设置" },
             onDismiss = { showLanguage = false },
             onSelect = {
-                if (picker?.selected == null) {
+                if (picker == null || (it != null && picker.active == null)) {
                     onLanguageSelected(it)
                     showLanguage = false
+                } else if (it == null) {
+                    loadAndSubmit { PackagedLanguageTap.Legacy(null, picker.loadSystemChoice()) }
                 } else {
                     submit(PackagedLanguageTap.Legacy(it))
                 }
@@ -625,7 +627,7 @@ internal fun SettingsScreen(
                         selected = option.tag == picker?.selected?.tag,
                         enabled = pending == null && !loadingChoice,
                         modifier = Modifier.padding(vertical = 1.dp),
-                        onClick = { submitRegional(option) },
+                        onClick = { loadAndSubmit { picker?.loadChoice(option)?.let { PackagedLanguageTap.Regional(it) } } },
                     )
                 }
                 when {
@@ -655,7 +657,7 @@ internal fun SettingsScreen(
             description = {
                 val explanation = if (it.encrypted) "加密，仅解析 DoH/DoT 服务器域名"
                     else "明文，仅解析 DoH/DoT 服务器域名"
-                it.serversFor(preferences.ipv6Mode).joinToString(" · ") + " · " + localizeWeaveText(explanation, language)
+                it.serversFor(preferences.ipv6Mode).joinToString(" · ") + " · " + copy(explanation)
             },
             onDismiss = { showBootstrapDns = false },
             onSelect = {
@@ -1011,7 +1013,7 @@ private fun ExpandableSettingsGroup(
     activeTitles: List<String> = emptyList(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val language = LocalWeaveLanguage.current
+    val copy = rememberSettingsCopy(LocalWeaveLanguage.current)
     val rotation = disclosureRotation(expanded)
     val actionLabel = localizedContentDescription(if (expanded) "收起" else "展开")
     LiquidGlassPanel(
@@ -1039,8 +1041,7 @@ private fun ExpandableSettingsGroup(
                     Text(title, fontWeight = FontWeight.SemiBold)
                     if (activeTitles.isNotEmpty()) {
                         Text(
-                            text = localizeWeaveText("已开启", language) + " · " +
-                                activeTitles.joinToString(" · ") { localizeWeaveText(it, language) },
+                            text = copy("已开启") + " · " + activeTitles.joinToString(" · ", transform = copy),
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
@@ -1086,7 +1087,7 @@ private fun SettingRowIcon(icon: ImageVector) {
 }
 
 @Composable
-private fun LinkSetting(
+internal fun LinkSetting(
     icon: ImageVector,
     title: String,
     subtitle: String?,
@@ -1119,8 +1120,6 @@ private fun LinkSetting(
         if (subtitle == null) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         } else {
-            // The label keeps the width it needs (up to most of the row); the value takes what is
-            // left and ends in an ellipsis, so a long value never breaks the label mid-word.
             androidx.compose.ui.layout.Layout(
                 modifier = Modifier.weight(1f),
                 content = {
@@ -1129,37 +1128,50 @@ private fun LinkSetting(
                         subtitle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.End,
                     )
                 },
             ) { measurables, constraints ->
                 val width = constraints.maxWidth
-                val gap = 12.dp.roundToPx()
-                val titleNeed = minOf(measurables[0].maxIntrinsicWidth(constraints.maxHeight), (width * 0.64f).toInt())
-                val value = measurables[1].measure(
-                    androidx.compose.ui.unit.Constraints(maxWidth = (width - titleNeed - gap).coerceAtLeast(0)),
-                )
-                val label = measurables[0].measure(
-                    androidx.compose.ui.unit.Constraints(maxWidth = (width - value.width - gap).coerceAtLeast(0)),
-                )
-                val height = maxOf(label.height, value.height)
-                layout(width, height) {
-                    label.placeRelative(0, (height - label.height) / 2)
-                    value.placeRelative(width - value.width, (height - value.height) / 2)
+                val labelWidth = measurables[0].maxIntrinsicWidth(constraints.maxHeight)
+                val valueWidth = measurables[1].maxIntrinsicWidth(constraints.maxHeight)
+                val inline = labelWidth <= width - valueWidth - 12.dp.roundToPx()
+                val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                val label = measurables[0].measure(loose)
+                val value = measurables[1].measure(loose)
+                if (inline) {
+                    val height = maxOf(label.height, value.height)
+                    layout(width, height) {
+                        label.placeRelative(0, (height - label.height) / 2)
+                        value.placeRelative(width - value.width, (height - value.height) / 2)
+                    }
+                } else {
+                    val spacing = 3.dp.roundToPx()
+                    layout(width, label.height + spacing + value.height) {
+                        label.placeRelative(0, 0)
+                        value.placeRelative(0, label.height + spacing)
+                    }
                 }
             }
         }
         if (onClick != null) {
+            val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
             Spacer(Modifier.width(4.dp))
             Icon(
                 Icons.Rounded.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(18.dp).graphicsLayer { scaleX = if (rtl) -1f else 1f },
             )
         }
+    }
+}
+
+@Composable
+private fun rememberSettingsCopy(language: WeaveLanguage): (String) -> String {
+    val staged = LocalStagedWeaveLocale.current
+    val released = LocalReleasedAppCopy.current
+    return remember(language, staged, released) {
+        { text -> resolveAppOwnedCopy(text, language, staged, released) }
     }
 }
 

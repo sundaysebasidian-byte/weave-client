@@ -402,6 +402,7 @@ private fun WeaveNavigationDock(
                         color = content,
                         fontSize = 10.sp,
                         fontWeight = if (lit) FontWeight.SemiBold else FontWeight.Medium,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
