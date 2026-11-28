@@ -186,7 +186,9 @@ class WeaveBackup(
     internal suspend fun prepareRestore(entries: Map<String, String>): RestorePlan = withContext(Dispatchers.IO) {
         val content = decode(entries)
         val fingerprint = ProfileStorage.fingerprint(context)
-        val transfer = content.subscriptions.takeIf { it.isNotEmpty() }?.let { repository.prepareTransfer(it, preserveIds = true) }
+        val transfer = content.subscriptions.takeIf { it.isNotEmpty() }?.let {
+            repository.prepareTransfer(it, preserveIds = true, offline = true)
+        }
         currentCoroutineContext().ensureActive()
         RestorePlan(content, fingerprint, transfer)
     }

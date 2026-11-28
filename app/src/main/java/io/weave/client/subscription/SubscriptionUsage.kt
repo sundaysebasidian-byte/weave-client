@@ -64,6 +64,12 @@ data class SubscriptionUsage(
             }
             val decimal = value.toBigDecimalOrNull() ?: return null
             if (decimal.signum() < 0) return null
+            if (decimal.signum() == 0) return 0L
+            // Bound order of magnitude in O(1) before compareTo/toLong(): ART's BigDecimal.toLong()
+            // materializes 10^scale for large negative exponents instead of short-circuiting.
+            val integerDigits = decimal.precision().toLong() - decimal.scale().toLong()
+            if (integerDigits <= 0L) return 0L
+            if (integerDigits > 19L) return Long.MAX_VALUE
             return if (decimal > BigDecimal.valueOf(Long.MAX_VALUE)) Long.MAX_VALUE else decimal.toLong()
         }
 

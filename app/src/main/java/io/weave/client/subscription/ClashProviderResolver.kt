@@ -41,7 +41,6 @@ internal class ClashProviderResolver(
         requireImport(providers.size <= MAX_PROVIDERS, "订阅引用的节点集合过多")
         val output = ClashYamlCodec.nodes(root).toMutableList()
         val rootCount = output.size
-        var providerCount = 0
         val downloaded = mutableMapOf<URI, List<Map<String, Any?>>>()
         var remainingBytes = MAX_TOTAL_BYTES - (utf8SizeUpTo(document, MAX_TOTAL_BYTES)
             ?: throw SubscriptionImportException("节点集合总大小超过限制"))
@@ -85,7 +84,6 @@ internal class ClashProviderResolver(
                 else -> throw SubscriptionImportException("仅支持 HTTPS 或内嵌节点集合，请导入完整节点文件")
             }
             val overrides = provider["override"] as? Map<*, *> ?: emptyMap<Any, Any>()
-            providerCount += nodes.size
             requireImport(overrides.keys.all { it in ALLOWED_OVERRIDES }, "节点集合包含暂不支持的覆盖字段，请导入完整节点文件")
             val namePrefix = overrides["additional-prefix"]?.toString().orEmpty()
             val nameSuffix = overrides["additional-suffix"]?.toString().orEmpty()
@@ -107,7 +105,14 @@ internal class ClashProviderResolver(
         requireImport(output.isNotEmpty(), "订阅中没有可用节点")
         // Same child URL may be used by several identical provider declarations. Deduplicate
         // exact objects only; preserve distinct nodes instead of merging by display name.
-        return Resolution(ClashYamlCodec.write(mapOf("proxies" to output.distinct())), rootCount, providerCount, providers.size)
+        val uniqueRoot = output.take(rootCount).distinct()
+        val uniqueAll = output.distinct()
+        return Resolution(
+            ClashYamlCodec.write(mapOf("proxies" to uniqueAll)),
+            uniqueRoot.size,
+            uniqueAll.size - uniqueRoot.size,
+            providers.size,
+        )
     }
 
     private fun requireImport(value: Boolean, message: String) {

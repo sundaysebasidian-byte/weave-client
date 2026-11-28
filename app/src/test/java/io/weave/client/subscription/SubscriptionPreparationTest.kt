@@ -78,6 +78,24 @@ class SubscriptionPreparationTest {
         assertEquals((1..65).map { "node-$it" }, result.second.nodes.map { it.name })
     }
 
+    @Test fun `deduplicated providers and root duplicates keep preparation counts consistent`() = runBlocking<Unit> {
+        val pipeline = SubscriptionPreparation(ClashProviderResolver(fetch = {
+            SubscriptionFetchResult(body(1..3), URI(it), null)
+        }), parser)
+        val yaml = """
+            proxies:
+              - {"name":"node-1","type":"http","server":"example.test","port":443,"password":"fixture","tls":true}
+            proxy-providers:
+              first: &shared
+                type: http
+                url: https://example.test/nodes
+              repeated: *shared
+        """.trimIndent()
+        val prepared = pipeline.prepare(yaml, "https://example.test/main")
+        assertEquals(3, prepared.second.nodeCount)
+        assertEquals(SubscriptionImportCounts(1, 2, 2, 3), prepared.counts)
+    }
+
     @Test fun `CMFA request identifies Meta flavor matching the pinned core version`() {
         val lock = sequenceOf(java.io.File("../core-lock.properties"), java.io.File("core-lock.properties")).first { it.isFile }
         val version = java.util.Properties().apply { lock.inputStream().use { load(it) } }.getProperty("cmfa.version")
