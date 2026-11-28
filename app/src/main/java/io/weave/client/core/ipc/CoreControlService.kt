@@ -36,7 +36,7 @@ class CoreControlService : Service() {
     override fun onCreate() {
         super.onCreate()
         messenger = Messenger(Handler(Looper.getMainLooper()) { message -> handle(message); true })
-        scope.launch {
+        scope.launch(Dispatchers.Main.immediate) {
             VpnRuntimeState.snapshot.collect { broadcastState() }
         }
     }

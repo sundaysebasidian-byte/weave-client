@@ -1,5 +1,6 @@
 #include <android/log.h>
 #include <jni.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,11 +51,41 @@ extern int (*open_content_func)(const char *url, char *error, int error_length);
 extern void (*release_object_func)(void *object);
 
 static JavaVM *java_vm;
+static pthread_key_t detach_key;
+static int detach_key_ready = 0;
+
+static jclass string_class_ref = NULL;
+static jmethodID string_utf8_ctor = NULL;
+static jstring utf8_charset_ref = NULL;
+
+static jclass tun_callback_class_ref = NULL;
+static jmethodID mark_socket_mid = NULL;
+static jmethodID query_socket_uid_mid = NULL;
+
+static jclass completion_class_ref = NULL;
+static jmethodID complete_mid = NULL;
+
+static void detach_thread_on_exit(void *value) {
+    (void) value;
+    if (java_vm != NULL) {
+        (*java_vm)->DetachCurrentThread(java_vm);
+    }
+}
 
 static JNIEnv *attach_thread(int *must_detach) {
     JNIEnv *env = NULL;
     *must_detach = 0;
     if ((*java_vm)->GetEnv(java_vm, (void **) &env, JNI_VERSION_1_6) == JNI_OK) {
+        return env;
+    }
+    if (detach_key_ready) {
+        if ((*java_vm)->AttachCurrentThreadAsDaemon(java_vm, &env, NULL) != JNI_OK) {
+            return NULL;
+        }
+        if (pthread_setspecific(detach_key, (void *) 1) == 0) {
+            return env;
+        }
+        *must_detach = 1;
         return env;
     }
     if ((*java_vm)->AttachCurrentThread(java_vm, &env, NULL) != JNI_OK) {
@@ -88,29 +119,66 @@ static jstring new_utf8_string(JNIEnv *env, const char *value) {
         return NULL;
     }
     jbyteArray bytes = (*env)->NewByteArray(env, (jsize) length);
-    if (bytes == NULL) {
+    if (bytes == NULL || (*env)->ExceptionCheck(env)) {
+        clear_pending_exception(env);
+        if (bytes != NULL) {
+            (*env)->DeleteLocalRef(env, bytes);
+        }
         return NULL;
     }
     (*env)->SetByteArrayRegion(env, bytes, 0, (jsize) length, (const jbyte *) value);
-    jclass string_class = (*env)->FindClass(env, "java/lang/String");
-    jmethodID constructor = string_class == NULL
-        ? NULL
-        : (*env)->GetMethodID(
+    if ((*env)->ExceptionCheck(env)) {
+        clear_pending_exception(env);
+        (*env)->DeleteLocalRef(env, bytes);
+        return NULL;
+    }
+    if (string_class_ref != NULL && string_utf8_ctor != NULL && utf8_charset_ref != NULL) {
+        jstring result = (jstring) (*env)->NewObject(
             env,
-            string_class,
-            "<init>",
-            "([BLjava/lang/String;)V"
+            string_class_ref,
+            string_utf8_ctor,
+            bytes,
+            utf8_charset_ref
         );
-    jstring charset = (*env)->NewStringUTF(env, "UTF-8");
-    jstring result = constructor == NULL || charset == NULL
+        if ((*env)->ExceptionCheck(env)) {
+            clear_pending_exception(env);
+            if (result != NULL) {
+                (*env)->DeleteLocalRef(env, result);
+            }
+            result = NULL;
+        }
+        (*env)->DeleteLocalRef(env, bytes);
+        return result;
+    }
+    jclass string_class = (*env)->FindClass(env, "java/lang/String");
+    if (string_class == NULL || (*env)->ExceptionCheck(env)) {
+        clear_pending_exception(env);
+        (*env)->DeleteLocalRef(env, bytes);
+        return NULL;
+    }
+    jmethodID constructor = (*env)->GetMethodID(
+        env,
+        string_class,
+        "<init>",
+        "([BLjava/lang/String;)V"
+    );
+    jstring charset = constructor == NULL || (*env)->ExceptionCheck(env)
+        ? NULL
+        : (*env)->NewStringUTF(env, "UTF-8");
+    jstring result = constructor == NULL || charset == NULL || (*env)->ExceptionCheck(env)
         ? NULL
         : (jstring) (*env)->NewObject(env, string_class, constructor, bytes, charset);
+    if ((*env)->ExceptionCheck(env)) {
+        clear_pending_exception(env);
+        if (result != NULL) {
+            (*env)->DeleteLocalRef(env, result);
+        }
+        result = NULL;
+    }
     if (charset != NULL) {
         (*env)->DeleteLocalRef(env, charset);
     }
-    if (string_class != NULL) {
-        (*env)->DeleteLocalRef(env, string_class);
-    }
+    (*env)->DeleteLocalRef(env, string_class);
     (*env)->DeleteLocalRef(env, bytes);
     return result;
 }
@@ -138,7 +206,9 @@ static void weave_mark_socket(void *callback, int fd) {
     int must_detach = 0;
     JNIEnv *env = attach_thread(&must_detach);
     if (env != NULL && callback != NULL) {
-        jmethodID method = find_callback_method(env, callback, "markSocket", "(I)V");
+        jmethodID method = mark_socket_mid != NULL
+            ? mark_socket_mid
+            : find_callback_method(env, callback, "markSocket", "(I)V");
         if (method != NULL) {
             (*env)->CallVoidMethod(env, (jobject) callback, method, (jint) fd);
             clear_pending_exception(env);
@@ -157,16 +227,20 @@ static int weave_query_socket_uid(
     int must_detach = 0;
     JNIEnv *env = attach_thread(&must_detach);
     if (env != NULL && callback != NULL) {
-        jmethodID method = find_callback_method(
-            env,
-            callback,
-            "querySocketUid",
-            "(ILjava/lang/String;Ljava/lang/String;)I"
-        );
+        jmethodID method = query_socket_uid_mid != NULL
+            ? query_socket_uid_mid
+            : find_callback_method(
+                env,
+                callback,
+                "querySocketUid",
+                "(ILjava/lang/String;Ljava/lang/String;)I"
+            );
         if (method != NULL) {
             jstring java_source = source == NULL ? NULL : (*env)->NewStringUTF(env, source);
-            jstring java_target = target == NULL ? NULL : (*env)->NewStringUTF(env, target);
-            if (java_source != NULL && java_target != NULL) {
+            jstring java_target = (target == NULL || (*env)->ExceptionCheck(env))
+                ? NULL
+                : (*env)->NewStringUTF(env, target);
+            if (java_source != NULL && java_target != NULL && !(*env)->ExceptionCheck(env)) {
                 result = (*env)->CallIntMethod(
                     env,
                     (jobject) callback,
@@ -193,12 +267,14 @@ static void weave_complete(void *callback, const char *error) {
     int must_detach = 0;
     JNIEnv *env = attach_thread(&must_detach);
     if (env != NULL && callback != NULL) {
-        jmethodID method = find_callback_method(
-            env,
-            callback,
-            "complete",
-            "(Ljava/lang/String;)V"
-        );
+        jmethodID method = complete_mid != NULL
+            ? complete_mid
+            : find_callback_method(
+                env,
+                callback,
+                "complete",
+                "(Ljava/lang/String;)V"
+            );
         if (method != NULL) {
             jstring java_error = new_utf8_string(env, error);
             (*env)->CallVoidMethod(env, (jobject) callback, method, java_error);
@@ -251,6 +327,61 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
         return JNI_ERR;
     }
     java_vm = vm;
+    if (pthread_key_create(&detach_key, detach_thread_on_exit) == 0) {
+        detach_key_ready = 1;
+    }
+
+    jclass local_string = (*env)->FindClass(env, "java/lang/String");
+    if (local_string != NULL) {
+        string_class_ref = (jclass) (*env)->NewGlobalRef(env, local_string);
+        (*env)->DeleteLocalRef(env, local_string);
+        if (string_class_ref != NULL) {
+            string_utf8_ctor = (*env)->GetMethodID(
+                env,
+                string_class_ref,
+                "<init>",
+                "([BLjava/lang/String;)V"
+            );
+        }
+    }
+    jstring local_utf8 = (*env)->NewStringUTF(env, "UTF-8");
+    if (local_utf8 != NULL) {
+        utf8_charset_ref = (jstring) (*env)->NewGlobalRef(env, local_utf8);
+        (*env)->DeleteLocalRef(env, local_utf8);
+    }
+    clear_pending_exception(env);
+
+    jclass local_tun_cb = (*env)->FindClass(env, "io/weave/client/core/bridge/NativeTunCallback");
+    if (local_tun_cb != NULL) {
+        tun_callback_class_ref = (jclass) (*env)->NewGlobalRef(env, local_tun_cb);
+        (*env)->DeleteLocalRef(env, local_tun_cb);
+        if (tun_callback_class_ref != NULL) {
+            mark_socket_mid = (*env)->GetMethodID(env, tun_callback_class_ref, "markSocket", "(I)V");
+            query_socket_uid_mid = (*env)->GetMethodID(
+                env,
+                tun_callback_class_ref,
+                "querySocketUid",
+                "(ILjava/lang/String;Ljava/lang/String;)I"
+            );
+        }
+    }
+    clear_pending_exception(env);
+
+    jclass local_completion = (*env)->FindClass(env, "io/weave/client/core/bridge/NativeCompletion");
+    if (local_completion != NULL) {
+        completion_class_ref = (jclass) (*env)->NewGlobalRef(env, local_completion);
+        (*env)->DeleteLocalRef(env, local_completion);
+        if (completion_class_ref != NULL) {
+            complete_mid = (*env)->GetMethodID(
+                env,
+                completion_class_ref,
+                "complete",
+                "(Ljava/lang/String;)V"
+            );
+        }
+    }
+    clear_pending_exception(env);
+
     mark_socket_func = &weave_mark_socket;
     query_socket_uid_func = &weave_query_socket_uid;
     complete_func = &weave_complete;

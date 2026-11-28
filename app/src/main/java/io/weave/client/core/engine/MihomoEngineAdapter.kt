@@ -12,12 +12,16 @@ import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
@@ -131,7 +135,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         if (!isAvailable) {
             return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
         }
-        runCatching {
+        try {
             NativeBridge.initialize(appContext).getOrThrow()
             profileFile.withProfile(config) { directory ->
                 withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
@@ -139,6 +143,12 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
                 }
             }
             validatedConfig = config
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            Result.failure(cancelled)
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
     }
 
@@ -150,99 +160,116 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         installedApps: List<Pair<Int, String>>,
         ipMode: io.weave.client.domain.Ipv6Mode,
         requiredNodeGroups: Set<String>,
-    ): Result<Unit> = lifecycleMutex.withLock {
-        if (!isAvailable) {
-            mutableState.value = ConnectionState.ERROR
-            return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
-        }
-        val validated = validatedConfig
-        validatedConfig = null
-        if (config != validated) {
-            mutableState.value = ConnectionState.ERROR
-            return@withLock Result.failure(
-                IllegalStateException("配置在校验后发生变化，已拒绝建立 TUN"),
-            )
-        }
-
-        mutableState.value = ConnectionState.CONNECTING
-        var nativeStartAttempted = false
-        runCatching {
-            // Other adapter instances share this directory. Check the actual file under the
-            // lifecycle lock, not only the caller's copy of the configuration.
-            profileFile.withProfile(config) { directory ->
-                withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
-                    NativeBridge.loadConfiguration(directory).getOrThrow()
-                }
+        onTunConsumed: () -> Unit,
+    ): Result<Unit> {
+        ACTIVE_HEALTH_CHECK.getAndSet(null)?.cancel()
+        return lifecycleMutex.withLock {
+            if (!isAvailable) {
+                mutableState.value = ConnectionState.ERROR
+                return@withLock Result.failure(RuntimeFailureException(RuntimeFailure.CORE_UNAVAILABLE, CORE_UNAVAILABLE))
             }
-            // Inline providers are validated and loaded synchronously by the pinned core.
-            // Never present COMPATIBLE (a synthetic DIRECT fallback) as a connected proxy.
-            ensureRequiredNodeGroups(requiredNodeGroups)
-            val protectFailed = AtomicBoolean(false)
-            val routedUids = installedApps.mapTo(mutableSetOf(), Pair<Int, String>::first)
-            ATTRIBUTION_QUERIES.set(0)
-            ATTRIBUTION_MATCHES.set(0)
-            NativeBridge.notifyInstalledAppsChanged(
-                installedApps
-                    .distinct()
-                    .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second })
-                    .joinToString(",") { "${it.first}:${it.second}" },
-            )
-            nativeStartAttempted = true
-            val addresses = MihomoTunDefaults.addresses(ipMode)
-            val result = NativeBridge.startTun(
-                fd = tunFd,
-                // Match CMFA's Android default. The system stack avoids the extra userspace
-                // translation layer on Android and follows the platform's socket lifecycle
-                // during Wi-Fi/cellular handover.
-                stack = MihomoTunDefaults.STACK,
-                gateway = addresses.joinToString(",") { "${it.gateway}/${it.prefix}" },
-                portal = addresses.joinToString(",") { it.dns },
-                // CMFA enables DNS hijacking for any resolver destination. Restricting this to
-                // only the virtual Android DNS address lets raw/private DNS packets hit Weave's
-                // port-53 reject rules instead of reaching Mihomo's resolver.
-                dns = addresses.joinToString(",") { it.defaultRoute },
-                callback = object : NativeTunCallback {
-                    override fun markSocket(fd: Int) {
-                        if (!protectSocket(fd) && protectFailed.compareAndSet(false, true)) {
-                            Log.e(LOG_TAG, "VpnService.protect rejected outbound fd=$fd")
-                            // Do not call nativeStopTun from this callback. The CMFA core can
-                            // invoke markSocket on one of its own worker threads while
-                            // nativeStartTun is still unwinding; stopping the process-global core
-                            // re-entrantly races its TUN teardown and is a common SIGSEGV source.
-                            // The serialized adapter path below (or the service recovery loop for
-                            // a late callback) performs the stop after the native call boundary.
-                            mutableState.value = ConnectionState.ERROR
-                        }
-                    }
+            val validated = validatedConfig
+            validatedConfig = null
+            if (config != validated) {
+                mutableState.value = ConnectionState.ERROR
+                return@withLock Result.failure(
+                    IllegalStateException("配置在校验后发生变化，已拒绝建立 TUN"),
+                )
+            }
 
-                    override fun querySocketUid(
-                        protocol: Int,
-                        source: String,
-                        target: String,
-                    ): Int {
-                        ATTRIBUTION_QUERIES.incrementAndGet()
-                        return querySocketUid(protocol, source, target).also { uid ->
-                            if (uid in routedUids) {
-                                ATTRIBUTION_MATCHES.incrementAndGet()
+            mutableState.value = ConnectionState.CONNECTING
+            var nativeStartAttempted = false
+            try {
+                // Other adapter instances share this directory. Check the actual file under the
+                // lifecycle lock, not only the caller's copy of the configuration.
+                profileFile.withProfile(config) { directory ->
+                    withTimeout(CONFIG_OPERATION_TIMEOUT_MS) {
+                        NativeBridge.loadConfiguration(directory).getOrThrow()
+                    }
+                }
+                // Inline providers are validated and loaded synchronously by the pinned core.
+                // Never present COMPATIBLE (a synthetic DIRECT fallback) as a connected proxy.
+                ensureRequiredNodeGroups(requiredNodeGroups)
+                val protectFailed = AtomicBoolean(false)
+                val routedUids = installedApps.mapTo(mutableSetOf(), Pair<Int, String>::first)
+                ATTRIBUTION_QUERIES.set(0)
+                ATTRIBUTION_MATCHES.set(0)
+                NativeBridge.notifyInstalledAppsChanged(
+                    installedApps
+                        .distinct()
+                        .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second })
+                        .joinToString(",") { "${it.first}:${it.second}" },
+                )
+                nativeStartAttempted = true
+                val addresses = MihomoTunDefaults.addresses(ipMode)
+                val result = NativeBridge.startTun(
+                    fd = tunFd,
+                    // Match CMFA's Android default. The system stack avoids the extra userspace
+                    // translation layer on Android and follows the platform's socket lifecycle
+                    // during Wi-Fi/cellular handover.
+                    stack = MihomoTunDefaults.STACK,
+                    gateway = addresses.joinToString(",") { "${it.gateway}/${it.prefix}" },
+                    portal = addresses.joinToString(",") { it.dns },
+                    // CMFA enables DNS hijacking for any resolver destination. Restricting this to
+                    // only the virtual Android DNS address lets raw/private DNS packets hit Weave's
+                    // port-53 reject rules instead of reaching Mihomo's resolver.
+                    dns = addresses.joinToString(",") { it.defaultRoute },
+                    callback = object : NativeTunCallback {
+                        override fun markSocket(fd: Int) {
+                            if (!protectSocket(fd) && protectFailed.compareAndSet(false, true)) {
+                                Log.e(LOG_TAG, "VpnService.protect rejected outbound fd=$fd")
+                                // Do not call nativeStopTun from this callback. The CMFA core can
+                                // invoke markSocket on one of its own worker threads while
+                                // nativeStartTun is still unwinding; stopping the process-global core
+                                // re-entrantly races its TUN teardown and is a common SIGSEGV source.
+                                // The serialized adapter path below (or the service recovery loop for
+                                // a late callback) performs the stop after the native call boundary.
+                                mutableState.value = ConnectionState.ERROR
                             }
                         }
-                    }
-                },
-            )
-            check(result == 0) { "Mihomo TUN 启动失败，错误码 $result" }
-            if (protectFailed.get()) {
-                // The single onFailure rollback below owns teardown.
-                error("系统拒绝保护 Mihomo 出站 socket")
+
+                        override fun querySocketUid(
+                            protocol: Int,
+                            source: String,
+                            target: String,
+                        ): Int {
+                            ATTRIBUTION_QUERIES.incrementAndGet()
+                            return querySocketUid(protocol, source, target).also { uid ->
+                                if (uid in routedUids) {
+                                    ATTRIBUTION_MATCHES.incrementAndGet()
+                                }
+                            }
+                        }
+                    },
+                )
+                if (result == 0) {
+                    // Go's NativeTun now owns the detached TUN fd and closes it in stopTun().
+                    onTunConsumed()
+                }
+                check(result == 0) { "Mihomo TUN 启动失败，错误码 $result" }
+                if (protectFailed.get()) {
+                    // The single rollback below owns teardown.
+                    error("系统拒绝保护 Mihomo 出站 socket")
+                }
+                mutableState.value = ConnectionState.CONNECTED
+                Result.success(Unit)
+            } catch (cancelled: CancellationException) {
+                if (nativeStartAttempted) {
+                    runCatching { NativeBridge.stopTun() }
+                }
+                if (!currentCoroutineContext().isActive) throw cancelled
+                mutableState.value = ConnectionState.ERROR
+                Result.failure(cancelled)
+            } catch (error: Throwable) {
+                // A failed native start can leave worker state or DNS caches behind even though the
+                // Kotlin call returned an error. Stop only after entering startTun; validation/load
+                // failures must not tear down a healthy runtime owned by another operation.
+                if (nativeStartAttempted) {
+                    runCatching { NativeBridge.stopTun() }
+                }
+                mutableState.value = ConnectionState.ERROR
+                Result.failure(error)
             }
-            mutableState.value = ConnectionState.CONNECTED
-        }.onFailure {
-            // A failed native start can leave worker state or DNS caches behind even though the
-            // Kotlin call returned an error. Stop only after entering startTun; validation/load
-            // failures must not tear down a healthy runtime owned by another operation.
-            if (nativeStartAttempted) {
-                runCatching { NativeBridge.stopTun() }
-            }
-            mutableState.value = ConnectionState.ERROR
         }
     }
 
@@ -423,32 +450,42 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
 
     suspend fun healthCheckSubscription(
         subscriptionId: String,
-    ): Result<List<NodeHealthSnapshot>> = lifecycleMutex.withLock {
-        runCatching {
+    ): Result<List<NodeHealthSnapshot>> {
+        val job = currentCoroutineContext()[Job]
+        ACTIVE_HEALTH_CHECK.set(job)
+        return try {
             val group = automaticGroup(subscriptionId)
-            check(NativeBridge.queryGroup(group) != null) {
-                "该订阅未被当前运行配置加载，请先把它设为默认出口或应用出口"
-            }
             val rounds = buildList {
                 repeat(HEALTH_ROUNDS) { round ->
-                    runCatching {
+                    val roundResult = lifecycleMutex.withLock {
+                        check(NativeBridge.queryGroup(group) != null) {
+                            "该订阅未被当前运行配置加载，请先把它设为默认出口或应用出口"
+                        }
                         withTimeout(HEALTH_OPERATION_TIMEOUT_MS) {
                             NativeBridge.healthCheck(group).getOrThrow()
                         }
                         checkNotNull(awaitSettledSubscriptionHealthUnlocked(subscriptionId)) {
                             "测速完成后无法读取节点状态"
                         }
-                    }.getOrThrow().also { add(it) }
+                    }
+                    add(roundResult)
                     if (round < HEALTH_ROUNDS - 1) {
-                        // Give the core a short breather so consecutive HTTP probes do not
-                        // contend with each other on mobile radios.
+                        // Release lifecycleMutex between rounds so disconnect/reload can run
+                        // immediately instead of waiting behind multi-round backoff.
                         delay(HEALTH_ROUND_GAP_MS)
                     }
                 }
             }
             // A controller/readback failure is not evidence of network loss. Do not silently
             // discard that round and present a shorter, deceptively healthy sample series.
-            NodeHealthAggregator.aggregate(rounds)
+            Result.success(NodeHealthAggregator.aggregate(rounds))
+        } catch (cancelled: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancelled
+            Result.failure(cancelled)
+        } catch (error: Throwable) {
+            Result.failure(error)
+        } finally {
+            ACTIVE_HEALTH_CHECK.compareAndSet(job, null)
         }
     }
 
@@ -474,19 +511,23 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
     /** Candidate configuration was validated immediately before stopping the previous tunnel. */
     internal suspend fun stopForReconfiguration() = stopNative(preserveValidation = true)
 
-    private suspend fun stopNative(preserveValidation: Boolean) = lifecycleMutex.withLock {
-        if (NativeBridge.isLoaded) {
-            runCatching { NativeBridge.stopTun() }
-            // DNS and fake-IP caches live in the process-wide Mihomo core. Clear them between
-            // candidate profiles so switching to a filtering resolver cannot retain mappings
-            // created by the previous DNS profile.
-            runCatching { NativeBridge.reset() }
+    private suspend fun stopNative(preserveValidation: Boolean) {
+        // Preempt any in-flight multi-round health check so disconnect/onRevoke/onDestroy
+        // cannot starve behind up to 25 s of probing and exceed TEARDOWN_TIMEOUT_MS.
+        ACTIVE_HEALTH_CHECK.getAndSet(null)?.cancel()
+        lifecycleMutex.withLock {
+            if (NativeBridge.isLoaded) {
+                runCatching { NativeBridge.stopTun() }
+                // DNS and fake-IP caches live in the process-wide Mihomo core. Clear them between
+                // candidate profiles so switching to a filtering resolver cannot retain mappings
+                // created by the previous DNS profile.
+                runCatching { NativeBridge.reset() }
+            }
+            if (!preserveValidation) validatedConfig = null
+            mutableState.value = ConnectionState.DISCONNECTED
+            runCatching { profileFile.cleanStale() }
+                .onFailure { Log.w(LOG_TAG, "Unable to remove legacy or incomplete runtime profiles") }
         }
-        if (!preserveValidation) validatedConfig = null
-        mutableState.value = ConnectionState.DISCONNECTED
-        runCatching { profileFile.cleanStale() }
-            .onFailure { Log.w(LOG_TAG, "Unable to remove legacy or incomplete runtime profiles") }
-        Unit
     }
 
     private companion object {
@@ -503,6 +544,7 @@ class MihomoEngineAdapter(context: Context) : EngineAdapter {
         val ATTRIBUTION_QUERIES = AtomicLong()
         val ATTRIBUTION_MATCHES = AtomicLong()
         val CORE_LIFECYCLE_MUTEX = Mutex()
+        val ACTIVE_HEALTH_CHECK = AtomicReference<Job?>(null)
         val LIVE_EXIT_CACHE = LiveExitCache<LiveExit>(SystemClock::elapsedRealtime, maxAgeMs = 2_500)
 
 

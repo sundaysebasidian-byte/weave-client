@@ -38,6 +38,7 @@ object CoreClient {
 
     private data class Messengers(val service: Messenger, val reply: Messenger)
     private val binding = CoreReplyBinding<Messengers>()
+    private val stateMirror = MonotonicStateMirror()
     private val pending = ConcurrentHashMap<Int, CompletableDeferred<Bundle>>()
     private val nextRequestId = AtomicInteger(1)
     private val connected = MutableStateFlow(false)
@@ -126,6 +127,7 @@ object CoreClient {
 
     private fun resetMirror() {
         binding.clear()
+        stateMirror.reset()
         connected.value = false
         lockdownEnabled = null
         failPending()
@@ -221,9 +223,11 @@ object CoreClient {
         when (message.what) {
             CoreIpc.MSG_STATE -> {
                 val data = message.data
+                val decoded = CoreIpc.decodeState(data)
+                if (!stateMirror.accept(decoded.revision)) return
                 lockdownEnabled = data.lockdown()
                 // The first state after (re)binding replays what :vpn already had.
-                VpnRuntimeState.mirror(CoreIpc.decodeState(data).copy(replayed = !connected.value))
+                VpnRuntimeState.mirror(decoded.copy(replayed = !connected.value))
                 connected.value = true
             }
             CoreIpc.MSG_REPLY -> pending.remove(message.arg1)?.complete(Bundle(message.data))
@@ -235,5 +239,21 @@ object CoreClient {
         pending.forEach { (requestId, response) ->
             if (pending.remove(requestId, response)) response.complete(failed)
         }
+    }
+}
+
+/** Rejects stale out-of-order MSG_STATE revisions within one binding while preserving same-revision reachability updates. */
+internal class MonotonicStateMirror {
+    private var lastRevision: Long? = null
+
+    fun accept(revision: Long): Boolean {
+        val previous = lastRevision
+        if (previous != null && revision < previous) return false
+        lastRevision = revision
+        return true
+    }
+
+    fun reset() {
+        lastRevision = null
     }
 }
