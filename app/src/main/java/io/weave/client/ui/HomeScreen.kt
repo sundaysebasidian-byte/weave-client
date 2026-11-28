@@ -665,7 +665,7 @@ internal fun LiveMetrics(
  * state; only its glyph and colour change.
  */
 @Composable
-private fun ConnectionCapsule(
+internal fun ConnectionCapsule(
     state: DashboardState,
     exit: DashboardState,
     onConnect: () -> Unit,
@@ -676,7 +676,15 @@ private fun ConnectionCapsule(
 ) {
     val scheme = MaterialTheme.colorScheme
     val fontScale = LocalDensity.current.fontScale
-    val shape = RoundedCornerShape(50)
+    val stacked = fontScale >= 1.6f
+    val shape = if (stacked) RoundedCornerShape(WeaveUiTokens.panelRadius) else RoundedCornerShape(50)
+    val modeAction: @Composable () -> Unit = { ModeChip(selected = state.routingMode, onModeSelected = onModeSelected) }
+    val primaryAction: @Composable () -> Unit = {
+        PrimaryAction(
+            heroModel(state), onConnect, onChooseExit, onImport,
+            connected = state.connectionState == ConnectionState.CONNECTED,
+        )
+    }
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -687,23 +695,32 @@ private fun ConnectionCapsule(
         shadowElevation = 10.dp,
         border = androidx.compose.foundation.BorderStroke(0.5.dp, scheme.outlineVariant),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ExitSummary(exit, onClick = onChooseExit, modifier = Modifier.weight(1f))
-            ModeChip(selected = state.routingMode, onModeSelected = onModeSelected)
-            Box(
-                Modifier
-                    .padding(start = 6.dp, end = 4.dp)
-                    .width(0.5.dp)
-                    .height(28.dp)
-                    .background(scheme.outlineVariant),
-            )
-            PrimaryAction(
-                heroModel(state), onConnect, onChooseExit, onImport,
-                connected = state.connectionState == ConnectionState.CONNECTED,
-            )
+        val padding = Modifier.padding(8.dp)
+        if (stacked) {
+            Column(padding, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ExitSummary(exit, onClick = onChooseExit, modifier = Modifier.fillMaxWidth())
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    modeAction()
+                    primaryAction()
+                }
+            }
+        } else {
+            Row(padding, verticalAlignment = Alignment.CenterVertically) {
+                ExitSummary(exit, onClick = onChooseExit, modifier = Modifier.weight(1f))
+                modeAction()
+                Box(
+                    Modifier
+                        .padding(start = 6.dp, end = 4.dp)
+                        .width(0.5.dp)
+                        .height(28.dp)
+                        .background(scheme.outlineVariant),
+                )
+                primaryAction()
+            }
         }
     }
 }

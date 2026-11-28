@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -81,6 +82,7 @@ class LocalizedSettingsLayoutTest {
                 CompositionLocalProvider(LocalReleasedAppCopy provides locale.copy) {
                     androidx.compose.foundation.layout.Column(Modifier.requiredWidth(320.dp)) {
                         Text(exitSummary(dashboard, rememberAppOwnedCopy()), translate = false)
+                        ConnectionCapsule(dashboard, dashboard, {}, {}, {}, {})
                         WeaveNavigationDock(
                             destinations = Destination.entries,
                             selected = active.value,
@@ -95,6 +97,8 @@ class LocalizedSettingsLayoutTest {
             }
         }
         compose.onNodeWithText("$exit · $mode").assertExists()
+        val chooser = localizeStagedWeaveText("选择出口", renderer)
+        compose.onNodeWithText(chooser).assertIsDisplayed()
         for (tab in Destination.entries) {
             val label = localizeStagedWeaveText(tab.label, renderer)
             compose.onNodeWithText(label).assertDoesNotExist()
