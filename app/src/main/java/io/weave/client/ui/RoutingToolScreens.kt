@@ -339,7 +339,7 @@ private fun CustomGroupEditor(
     var pickingHop by remember { mutableStateOf<HopPicker?>(null) }
     var via by remember { mutableStateOf(initial?.via.orEmpty()) }
     var fallbackEntries by remember { mutableStateOf(initial?.entryFallbacks.orEmpty()) }
-    val namesByRef = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to NodeDisplayName.core(it.name) } }
+    val namesByRef = remember(nodes) { nodes.associate { NodeRef(it.subscriptionId, it.id) to it.name } }
     val forwarding = listOfNotNull(entry) + fallbackEntries + via
     var confirmingDelete by remember { mutableStateOf(false) }
     var saveRejection by remember(initial?.id) { mutableStateOf<String?>(null) }
@@ -424,7 +424,7 @@ private fun CustomGroupEditor(
                                 val language = LocalWeaveLanguage.current
                                 val packaged = LocalReleasedAppCopy.current
                                 Text(
-                                    entry?.let(namesByRef::get)
+                                    entry?.let(namesByRef::get)?.let(NodeDisplayName::core)
                                         ?: resolveAppOwnedCopy("选择入口节点", language, staged = null, released = packaged),
                                     translate = false,
                                     maxLines = 1,
@@ -573,7 +573,7 @@ private fun ChainHopRows(
                 },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(names[ref].orEmpty().ifBlank { "—" }, modifier = Modifier.weight(1f), translate = false)
+                Text(names[ref]?.let(NodeDisplayName::core).orEmpty().ifBlank { "—" }, modifier = Modifier.weight(1f), translate = false)
                 IconButton(onClick = { onReorder(ref, -1) }, enabled = index > 0) {
                     Icon(Icons.Rounded.KeyboardArrowUp, localizedContentDescription("上移"))
                 }

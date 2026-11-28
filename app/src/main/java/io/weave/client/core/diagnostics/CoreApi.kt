@@ -107,23 +107,81 @@ class CoreApi(private val context: Context) {
         }
     }
 
+    internal data class DnsAttempt(
+        val endpoint: String,
+        val transport: String,
+        val elapsedMs: Long?,
+        val outcome: String,
+        val selected: Boolean,
+    )
+
+    internal data class DnsPath(
+        val elapsedMs: Long,
+        val answered: Boolean,
+        val attempts: List<DnsAttempt>,
+    )
+
+    internal suspend fun probeActiveDns(ipv6Only: Boolean): DnsPath = withContext(Dispatchers.IO) {
+        val result = JSONObject(request("GET", "/dns/weave-path?ipv6=$ipv6Only", 32 * 1024, timeoutMillis = 5_000))
+        val rows = result.optJSONArray("attempts")
+        val attempts = (0 until minOf(16, rows?.length() ?: 0)).mapNotNull { index ->
+            val row = rows?.optJSONObject(index) ?: return@mapNotNull null
+            DnsAttempt(
+                endpoint = row.optString("endpoint").take(240),
+                transport = row.optString("transport").take(12),
+                elapsedMs = row.optLong("elapsedMs").takeIf { it > 0 },
+                outcome = row.optString("outcome"),
+                selected = row.optBoolean("selected"),
+            )
+        }
+        DnsPath(result.getLong("elapsedMs"), result.getBoolean("answered"), attempts)
+    }
+
+    internal suspend fun probeDoQ(endpoint: String, ipv6Only: Boolean): Long? = withContext(Dispatchers.IO) {
+        require(endpoint.length in 1..1024)
+        val encoded = URLEncoder.encode(endpoint, Charsets.UTF_8.name())
+        val result = JSONObject(request(
+            "GET", "/dns/weave-doq?ipv6=$ipv6Only&endpoint=$encoded", 4 * 1024, timeoutMillis = 5_000,
+        ))
+        result.getLong("elapsedMs").takeIf { result.getBoolean("answered") }
+    }
+
     internal data class PathProbe(val roundTripMs: Long?, val udpAdvertised: Boolean?)
 
     internal suspend fun probeProxy(alias: String): PathProbe? = withContext(Dispatchers.IO) {
-        require(alias.length in 1..128 && alias.none(Char::isISOControl))
-        val proxy = "/proxies/" + URLEncoder.encode(alias, Charsets.UTF_8.name())
-        val metadata = try {
-            JSONObject(request("GET", proxy, 256 * 1024))
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            return@withContext null
-        }
+        val path = "/proxies/" + encodeSegment(alias, 128)
+        probeProxyPath(path, "$path/delay")
+    }
+
+    internal suspend fun activeProxyMember(alias: String): String? = withContext(Dispatchers.IO) {
+        proxyMetadata("/proxies/" + encodeSegment(alias, 128))?.optString("now")?.takeIf(String::isNotBlank)
+    }
+
+    internal suspend fun probeProviderProxy(provider: String, member: String): PathProbe? = withContext(Dispatchers.IO) {
+        val path = "/providers/proxies/" + encodeSegment(provider, 128) + "/" + encodeSegment(member, 512)
+        probeProxyPath(path, "$path/healthcheck")
+    }
+
+    private fun encodeSegment(value: String, limit: Int): String {
+        require(value.length in 1..limit && value.none(Char::isISOControl))
+        return URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
+    }
+
+    private suspend fun proxyMetadata(path: String): JSONObject? = try {
+        JSONObject(request("GET", path, 256 * 1024))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
+    private suspend fun probeProxyPath(proxy: String, check: String): PathProbe? {
+        val metadata = proxyMetadata(proxy) ?: return null
         val start = SystemClock.elapsedRealtime()
         val delay = try {
             val url = URLEncoder.encode("https://www.gstatic.com/generate_204", Charsets.UTF_8.name())
             val reply = JSONObject(
-                request("GET", "$proxy/delay?url=$url&timeout=5000&expected=204", 32 * 1024, timeoutMillis = 6_000),
+                request("GET", "$check?url=$url&timeout=5000&expected=204", 32 * 1024, timeoutMillis = 6_000),
             )
             (SystemClock.elapsedRealtime() - start).coerceAtLeast(1).takeIf { reply.optInt("delay") > 0 }
         } catch (cancelled: CancellationException) {
@@ -131,7 +189,7 @@ class CoreApi(private val context: Context) {
         } catch (_: Exception) {
             null
         }
-        PathProbe(delay, metadata.opt("udp") as? Boolean)
+        return PathProbe(delay, metadata.opt("udp") as? Boolean)
     }
 
     suspend fun close(id: String): Boolean = withContext(Dispatchers.IO) {

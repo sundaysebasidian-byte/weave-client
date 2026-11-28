@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.weave.client.core.bridge.NativeBridge
+import io.weave.client.core.diagnostics.CoreApi
+import io.weave.client.routing.CustomProxyGroupValidator
 import io.weave.client.subscription.SubscriptionPayloadParser
 import io.weave.client.subscription.SubscriptionSecretStore
 import io.weave.client.subscription.ClashProviderResolver
@@ -244,6 +246,14 @@ class MihomoProviderIntegrationTest {
                             val request = readConnectLine(input)
                             while (readConnectLine(input).isNotEmpty()) { }
                             val output = it.getOutputStream()
+                            if (request.startsWith("CONNECT health.fixture.invalid:80 ")) {
+                                output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
+                                output.flush()
+                                while (readConnectLine(input).isNotEmpty()) { }
+                                output.write("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".toByteArray())
+                                output.flush()
+                                return@handler
+                            }
                             val nextServer = servers.getOrNull(index + 1)
                             val expected = nextServer?.let { next -> "127.0.0.1:${next.localPort}" } ?: "fixture.invalid:443"
                             // Native health checks also dial these servers. They must never
@@ -281,22 +291,38 @@ class MihomoProviderIntegrationTest {
         val engine = MihomoEngineAdapter(isolated)
         try {
             val parser = SubscriptionPayloadParser()
+            val exitName = "relay exit/3+"
             val refs = servers.mapIndexed { index, server ->
-                val payload = "proxies: [{name: relay-$index, type: http, server: 127.0.0.1, port: ${server.localPort}}]"
+                val name = if (index == servers.lastIndex) exitName else "relay-$index"
+                val payload = "proxies: [{name: '$name', type: http, server: 127.0.0.1, port: ${server.localPort}}]"
                 val saved = store.save("fixture-$index", "inline://chain-$index", payload, parser.parse(payload))
                 NodeRef(saved.id, saved.nodes.single().id)
             }
-            val group = CustomProxyGroup(name = "Three relays", entry = refs[0], via = listOf(refs[1]), members = listOf(refs[2]))
+            val unavailablePort = ServerSocket(0, 1, loopback).use { it.localPort }
+            val unavailableYaml = "proxies: [{name: offline-entry, type: http, server: 127.0.0.1, port: $unavailablePort}]"
+            val unavailable = store.save("offline", "inline://chain-offline", unavailableYaml, parser.parse(unavailableYaml))
+            val group = CustomProxyGroup(
+                name = "Three relays",
+                entry = NodeRef(unavailable.id, unavailable.nodes.single().id),
+                entryFallbacks = listOf(refs[0]),
+                via = listOf(refs[1]),
+                members = listOf(refs[2]),
+            )
             CustomProxyGroupStore(isolated).save(listOf(group))
             val target = RouteTarget(RouteKind.GROUP, group.name, groupId = group.id)
             val compiled = MihomoConfigAssembler(isolated, secretStore = store).assemble(emptyList(), RoutingMode.GLOBAL, target)
-            assertEquals(3, compiled.usableSubscriptions)
+            assertEquals(4, compiled.usableSubscriptions)
             val port = ServerSocket(0, 1, loopback).use { it.localPort }
-            val config = compiled.yaml + "\nmixed-port: $port\n"
+            val config = compiled.yaml.replace("http://www.gstatic.com/generate_204", "http://health.fixture.invalid/generate_204") +
+                "\nmixed-port: $port\n"
             engine.validate(config).getOrThrow()
             NativeProfileFile(isolated.cacheDir).withProfile(config) {
                 NativeBridge.loadConfiguration(it).getOrThrow()
             }
+            val api = CoreApi(isolated)
+            val entries = MihomoChain.entryGroup(group)
+            withTimeout(10_000) { NativeBridge.healthCheck(entries).getOrThrow() }
+            assertEquals(MihomoChain.entryAlias(group, 1), api.activeProxyMember(entries))
             Socket(loopback, port).use { socket ->
                 socket.soTimeout = 8_000
                 val inStream = socket.getInputStream().buffered()
@@ -312,6 +338,13 @@ class MihomoProviderIntegrationTest {
             assertTrue(requests[0].any { ":${servers[1].localPort}" in it })
             assertTrue(requests[1].any { ":${servers[2].localPort}" in it })
             assertTrue(requests[2].any { " fixture.invalid:443 " in it })
+            val exit = refs.last()
+            val nativeName = mihomoNodePrefix(exit.subscriptionId) + exitName
+            assertEquals("chain:${group.id}:$nativeName", api.activeProxyMember(CustomProxyGroupValidator.groupName(group.id)))
+            // The synthetic relay rejects the public health-check destination. Metadata must still resolve.
+            val directProbe = checkNotNull(api.probeProviderProxy(mihomoProviderName(exit.subscriptionId), nativeName))
+            assertEquals(false, directProbe.udpAdvertised)
+            assertEquals(null, directProbe.roundTripMs)
         } finally {
             if (NativeBridge.isInitialized) NativeBridge.reset()
             servers.forEach(ServerSocket::close)

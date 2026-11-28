@@ -2,6 +2,7 @@ package io.weave.client.core.dns
 
 import android.content.Context
 import android.os.SystemClock
+import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.diagnostics.DiagnosticNetwork
 import java.io.DataOutputStream
 import io.weave.client.core.engine.MihomoFeatureCompiler
@@ -48,6 +49,7 @@ internal class DnsProviderProbe(
     private val timeoutMs: Int = DEFAULT_TIMEOUT_MS,
 ) {
     private val application = context.applicationContext
+    private val core = CoreApi(application)
 
     fun session(scope: CoroutineScope, preferences: NetworkPreferences): Session =
         Session(scope, DiagnosticNetwork.capturePhysical(application), preferences)
@@ -93,24 +95,26 @@ internal class DnsProviderProbe(
     }
 
     private suspend fun measureEndpoint(network: DiagnosticNetwork?, endpoint: String, ipv6: Boolean): EndpointObservation {
-        if (network == null || DnsTransport.forEndpoint(endpoint) == DnsTransport.DOQ) {
-            val sample = probeEndpoint(network, endpoint, ipv6)
-            return EndpointObservation(endpoint, sample.detail, DnsProbeQuality.from(emptyList()))
-        }
-        var last: EndpointSample? = null
-        val latencies = List(SAMPLES_PER_ENDPOINT) {
+        val samples = List(SAMPLES_PER_ENDPOINT) {
             currentCoroutineContext().ensureActive()
-            probeEndpoint(network, endpoint, ipv6).also { last = it }.latencyMs
+            probeEndpoint(network, endpoint, ipv6)
         }
-        val quality = DnsProbeQuality.from(latencies)
-        return EndpointObservation(endpoint, if (quality.answered > 0) "DNS 应答已验证" else checkNotNull(last).detail, quality)
+        val quality = DnsProbeQuality.from(samples.filter(EndpointSample::measured).map(EndpointSample::latencyMs))
+        return EndpointObservation(endpoint, if (quality.answered > 0) "DNS 应答已验证" else samples.last().detail, quality)
     }
 
-    private fun probeEndpoint(network: DiagnosticNetwork?, endpoint: String, ipv6: Boolean): EndpointSample {
+    private suspend fun probeEndpoint(network: DiagnosticNetwork?, endpoint: String, ipv6: Boolean): EndpointSample {
         if (DnsTransport.forEndpoint(endpoint) == DnsTransport.DOQ) {
-            return EndpointSample(endpoint, null, "检测当前解析")
+            return try {
+                val latency = core.probeDoQ(endpoint, ipv6)?.toInt()
+                EndpointSample(latency, if (latency != null) "DNS 应答已验证" else "DNS 未返回有效地址")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                EndpointSample(null, "尚未检测", measured = false)
+            }
         }
-        if (network == null) return EndpointSample(endpoint, null, "没有可检测的网络")
+        if (network == null) return EndpointSample(null, "没有可检测的网络", measured = false)
         val started = SystemClock.elapsedRealtime()
         return runCatching {
             val uri = URI(endpoint)
@@ -158,13 +162,11 @@ internal class DnsProviderProbe(
                 else -> error("不支持的 DNS 协议")
             }
             EndpointSample(
-                endpoint,
                 if (answered) (SystemClock.elapsedRealtime() - started).coerceAtLeast(1).toInt() else null,
                 if (answered) "DNS 应答已验证" else "DNS 未返回有效地址",
             )
         }.getOrElse { error ->
             EndpointSample(
-                endpoint = endpoint,
                 latencyMs = null,
                 detail = error.safeDnsProbeMessage(),
             )
@@ -202,9 +204,9 @@ internal class DnsProviderProbe(
     }
 
     private data class EndpointSample(
-        val endpoint: String,
         val latencyMs: Int?,
         val detail: String,
+        val measured: Boolean = true,
     )
 
     private data class EndpointObservation(val endpoint: String, val detail: String, val quality: DnsProbeQuality)

@@ -1,23 +1,8 @@
-diff --git a/core/src/main/golang/native/delegate/init.go b/core/src/main/golang/native/delegate/init.go
---- a/core/src/main/golang/native/delegate/init.go
-+++ b/core/src/main/golang/native/delegate/init.go
-@@ -40,6 +40,12 @@ func Init(home, versionName, gitVersion string, platformVersion int) {
- 		}
- 
- 		uid := app.QuerySocketUid(metadata.RawSrcAddr, metadata.RawDstAddr)
-+		if uid > 0 {
-+			// Mihomo's UID rule reads Metadata.Uid. CMFA previously resolved the Android
-+			// owner only for the package-name lookup, which made UID rules miss UDP/QUIC
-+			// flows even when ConnectivityManager returned the correct application UID.
-+			metadata.Uid = uint32(uid)
-+		}
- 		pkg := app.QueryAppByUid(uid)
- 
- 		log.Debugln("[PKG] %s --> %s by %d[%s]", metadata.SourceAddress(), metadata.RemoteAddress(), uid, pkg)
 diff --git a/core/src/main/golang/native/config.go b/core/src/main/golang/native/config.go
+index 43e099b..c291484 100644
 --- a/core/src/main/golang/native/config.go
 +++ b/core/src/main/golang/native/config.go
-@@ -51,6 +51,21 @@ func load(completable unsafe.Pointer, path C.c_string) {
+@@ -49,6 +49,21 @@ func load(completable unsafe.Pointer, path C.c_string) {
  	}(C.GoString(path))
  }
  
@@ -39,13 +24,77 @@ diff --git a/core/src/main/golang/native/config.go b/core/src/main/golang/native
  //export readOverride
  func readOverride(slot C.int) *C.char {
  	return C.CString(config.ReadOverride(config.OverrideSlot(slot)))
+diff --git a/core/src/main/golang/native/config/load.go b/core/src/main/golang/native/config/load.go
+index c6d1987..6887439 100644
+--- a/core/src/main/golang/native/config/load.go
++++ b/core/src/main/golang/native/config/load.go
+@@ -4,31 +4,14 @@ import (
+ 	"os"
+ 	P "path"
+ 	"runtime"
+-	"strings"
+ 
+ 	"cfa/native/app"
+ 
+-	"github.com/metacubex/mihomo/common/yaml"
+ 	"github.com/metacubex/mihomo/config"
+ 	"github.com/metacubex/mihomo/hub"
+ 	"github.com/metacubex/mihomo/log"
+ )
+ 
+-func logDns(cfg *config.RawConfig) {
+-	bytes, err := yaml.Marshal(&cfg.DNS)
+-	if err != nil {
+-		log.Warnln("Marshal dns: %s", err.Error())
+-
+-		return
+-	}
+-
+-	log.Infoln("dns:")
+-
+-	for _, line := range strings.Split(string(bytes), "\n") {
+-		log.Infoln("  %s", line)
+-	}
+-}
+-
+ func UnmarshalAndPatch(profilePath string) (*config.RawConfig, error) {
+ 	configPath := P.Join(profilePath, "config.yaml")
+ 
+@@ -66,8 +49,6 @@ func Load(path string) error {
+ 		return err
+ 	}
+ 
+-	logDns(rawCfg)
+-
+ 	cfg, err := Parse(rawCfg)
+ 	if err != nil {
+ 		log.Errorln("Load %s: %s", path, err.Error())
+diff --git a/core/src/main/golang/native/delegate/init.go b/core/src/main/golang/native/delegate/init.go
+index 9b57bc2..0e143ce 100644
+--- a/core/src/main/golang/native/delegate/init.go
++++ b/core/src/main/golang/native/delegate/init.go
+@@ -40,6 +40,12 @@ func Init(home, versionName, gitVersion string, platformVersion int) {
+ 		}
+ 
+ 		uid := app.QuerySocketUid(metadata.RawSrcAddr, metadata.RawDstAddr)
++		if uid > 0 {
++			// Mihomo's UID rule reads Metadata.Uid. CMFA previously resolved the Android
++			// owner only for the package-name lookup, which made UID rules miss UDP/QUIC
++			// flows even when ConnectivityManager returned the correct application UID.
++			metadata.Uid = uint32(uid)
++		}
+ 		pkg := app.QueryAppByUid(uid)
+ 
+ 		log.Debugln("[PKG] %s --> %s by %d[%s]", metadata.SourceAddress(), metadata.RemoteAddress(), uid, pkg)
 diff --git a/core/src/main/golang/native/tunnel.go b/core/src/main/golang/native/tunnel.go
+index 3e48863..5a99068 100644
 --- a/core/src/main/golang/native/tunnel.go
 +++ b/core/src/main/golang/native/tunnel.go
-@@ -71,5 +71,6 @@ func healthCheck(completable unsafe.Pointer, name C.c_string) {
+@@ -71,6 +71,7 @@ func healthCheck(completable unsafe.Pointer, name C.c_string) {
  		tunnel.HealthCheck(name)
  
  		C.complete(completable, nil)
 +		C.release_object(completable)
  	}(C.GoString(name))
  }
+ 

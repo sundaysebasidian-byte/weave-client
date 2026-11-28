@@ -18,8 +18,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.weave.client.core.diagnostics.CoreApi
 import io.weave.client.core.engine.MihomoChain
+import io.weave.client.core.engine.mihomoNodePrefix
+import io.weave.client.core.engine.mihomoProviderName
 import io.weave.client.core.vpn.VpnRuntimeState
 import io.weave.client.domain.ConnectionState
+import io.weave.client.domain.NodeDisplayName
 import io.weave.client.routing.CustomProxyGroup
 import io.weave.client.routing.CustomProxyGroupValidator
 import io.weave.client.routing.NodeRef
@@ -63,7 +66,7 @@ internal fun ChainDiagnostics(group: CustomProxyGroup, names: Map<NodeRef, Strin
                     ?: copy(if (row.probe == null) "未被当前运行配置加载" else "连接未建立")
                 val udp = if (row.probe?.udpAdvertised == true) "UDP ✓" else if (row.probe?.udpAdvertised == false) "UDP ×" else "UDP —"
                 Text(
-                    "${copy(row.label)}${row.node?.let { " · $it" }.orEmpty()} · $delay · $udp",
+                    "${copy(row.label)}${row.node?.let { " · ${NodeDisplayName.core(it)}" }.orEmpty()} · $delay · $udp",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     translate = false,
@@ -99,7 +102,19 @@ private suspend fun measureChain(
         }
     }
     val slots = Semaphore(3)
-    definitions.map { (label, node, alias) ->
+    val tasks = definitions.map { (label, node, alias) ->
         async { slots.withPermit { ChainProbeRow(label, node, api.probeProxy(alias)) } }
-    }.awaitAll()
+    }
+    val exit = if (kind == CheckKind.SINGLE) async {
+        val active = api.activeProxyMember(CustomProxyGroupValidator.groupName(group.id))
+        val member = group.members.firstNotNullOfOrNull { reference ->
+            val rawName = names[reference] ?: return@firstNotNullOfOrNull null
+            val alias = mihomoNodePrefix(reference.subscriptionId) + rawName
+            if ("chain:${group.id}:$alias" == active) Triple(reference.subscriptionId, rawName, alias) else null
+        }
+        member?.let { (subscriptionId, rawName, alias) ->
+            slots.withPermit { ChainProbeRow("出口", rawName, api.probeProviderProxy(mihomoProviderName(subscriptionId), alias)) }
+        }
+    } else null
+    tasks.awaitAll() + listOfNotNull(exit?.await())
 }

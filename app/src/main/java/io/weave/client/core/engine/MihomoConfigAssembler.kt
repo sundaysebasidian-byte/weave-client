@@ -29,6 +29,11 @@ import io.weave.client.routing.RemoteRuleSetStore
 import io.weave.client.routing.RuleSetCompiler
 import io.weave.client.routing.LocalRuleCompiler
 
+internal fun mihomoProviderName(subscriptionId: String) =
+    "provider_${subscriptionId.filter(Char::isLetterOrDigit)}"
+
+internal fun mihomoNodePrefix(subscriptionId: String) = "weave:${subscriptionId.take(8)}:"
+
 data class AssembledMihomoConfig(
     val yaml: String,
     val usableSubscriptions: Int,
@@ -152,10 +157,10 @@ class MihomoConfigAssembler(
         val chainSources = HashMap<String, Map<String, Map<String, Any?>>>()
         val providerDefinitions = linkedMapOf<String, Any?>()
         activeSubscriptions.forEach { subscription ->
-            providerDefinitions[providerName(subscription)] = mapOf(
+            providerDefinitions[mihomoProviderName(subscription.id)] = mapOf(
                 "type" to "inline",
                 "payload" to nodesBySubscription.getValue(subscription.id),
-                "override" to mapOf("additional-prefix" to nodePrefix(subscription)),
+                "override" to mapOf("additional-prefix" to mihomoNodePrefix(subscription.id)),
             )
         }
         fun sourceOf(ref: NodeRef): Map<String, Any?> {
@@ -177,7 +182,7 @@ class MihomoConfigAssembler(
             val members = group.members.map { ref ->
                 val subscription = byId.getValue(ref.subscriptionId)
                 val node = nodesOf(subscription).getValue(ref.nodeId)
-                (sourceOf(ref) - "dialer-proxy") + ("name" to nodePrefix(subscription) + node.name)
+                (sourceOf(ref) - "dialer-proxy") + ("name" to mihomoNodePrefix(subscription.id) + node.name)
             }
             providerDefinitions[chainProviderName(group)] = mapOf(
                 "type" to "inline",
@@ -369,7 +374,7 @@ class MihomoConfigAssembler(
                 appendLine("  - name: ${yamlString(autoGroup(subscription.id))}")
                 appendLine("    type: ${automaticGroupConfig.type}")
                 appendLine("    use:")
-                appendLine("      - ${yamlString(providerName(subscription))}")
+                appendLine("      - ${yamlString(mihomoProviderName(subscription.id))}")
                 // Use the same lightweight HTTP connectivity probe as CMFA. The probe itself is
                 // sent through the selected proxy; HTTPS here adds a second TLS/DNS failure mode
                 // on mainland/mobile networks and can evict an otherwise healthy node.
@@ -395,7 +400,7 @@ class MihomoConfigAssembler(
                 appendLine("    type: ${automaticGroupConfig.type}")
                 appendLine("    use:")
                 activeSubscriptions.forEach { subscription ->
-                    appendLine("      - ${yamlString(providerName(subscription))}")
+                    appendLine("      - ${yamlString(mihomoProviderName(subscription.id))}")
                 }
                 appendLine("    url: $HEALTH_CHECK_URL")
                 appendLine("    interval: ${automaticGroupConfig.intervalSeconds}")
@@ -413,9 +418,9 @@ class MihomoConfigAssembler(
                     appendLine("  - name: ${yamlString(fixedGroup(target))}")
                     appendLine("    type: select")
                     appendLine("    use:")
-                    appendLine("      - ${yamlString(providerName(subscription))}")
+                    appendLine("      - ${yamlString(mihomoProviderName(subscription.id))}")
                     appendLine(
-                        "    filter: ${yamlString(exactRegex(nodePrefix(subscription) + node.name))}",
+                        "    filter: ${yamlString(exactRegex(mihomoNodePrefix(subscription.id) + node.name))}",
                     )
                 }
             activeGroups.forEach { group ->
@@ -448,11 +453,11 @@ class MihomoConfigAssembler(
                     appendLine("      - ${yamlString(chainProviderName(group))}")
                 } else {
                     group.members.map { it.subscriptionId }.distinct().forEach { id ->
-                        appendLine("      - ${yamlString(providerName(byId.getValue(id)))}")
+                        appendLine("      - ${yamlString(mihomoProviderName(id))}")
                     }
                     val names = group.members.map { ref ->
                         val subscription = byId.getValue(ref.subscriptionId)
-                        exactBody(nodePrefix(subscription) + nodesOf(subscription).getValue(ref.nodeId).name)
+                        exactBody(mihomoNodePrefix(subscription.id) + nodesOf(subscription).getValue(ref.nodeId).name)
                     }
                     appendLine("    filter: ${yamlString("^(?:" + names.joinToString("|") + ")$")}")
                 }
@@ -566,12 +571,6 @@ class MihomoConfigAssembler(
             }
         }
     }
-
-    private fun providerName(subscription: StoredSubscription) =
-        "provider_${subscription.id.filter(Char::isLetterOrDigit)}"
-
-    private fun nodePrefix(subscription: StoredSubscription) =
-        "weave:${subscription.id.take(8)}:"
 
     private fun autoGroup(subscriptionId: String) = "sub.$subscriptionId.auto"
 

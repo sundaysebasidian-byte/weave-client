@@ -8,7 +8,7 @@ Weave 0.3 已携带由锁定源码本地复现的原生内核；`core-lock.prope
 | CMFA | `82b73a4bca24f1606e4b443bc9574cf1758c9693` |
 | CMFA 版本 | `2.11.32` |
 | Weave CMFA 补丁 | `core-patches/cmfa-weave-runtime.patch` |
-| 补丁 SHA-256 | `8ac691f191bfa3d1368a231fbcbc6cf8e6d0d953f23a0786cc53bab956906590` |
+| 补丁 SHA-256 | 见 `core-lock.properties` |
 | Android Weave Share 补丁 | `core-patches/mihomo-weave-share.patch`，SHA-256 见 `core-lock.properties` |
 | Mihomo submodule | `e26714a181ac0e2fa803453c0a8e9a9ce94e31cb` |
 | Mihomo commit archive SHA-256 | `a75220bf11ab56ef0d304c14c4d4c407edffe700761cdcc5b06105dfd8305168` |
@@ -20,9 +20,9 @@ Weave 0.3 已携带由锁定源码本地复现的原生内核；`core-lock.prope
 | macOS arm64 Mihomo SHA-256 | `0cf93bb94fdb322e91120b8c6b67e35997a0962ba7cea7fe1f988a1c7060ee1a` |
 
 这些值来自 2026-07-29 对 CMFA 上游源码、submodule tree 和构建插件字节码的核对。Weave
-补丁包含三个窄改动：把 Android 已查询到的连接所有者 UID 写入 Mihomo `Metadata.Uid`；
+补丁包括：把 Android 已查询到的连接所有者 UID 写入 Mihomo `Metadata.Uid`；
 导出只解析、不应用配置的 `validateConfiguration`；在手动健康检查完成后释放跨语言回调
-对象。Android Mihomo 补丁为临时共享账户实现原生连接到期、撤销和双向限速。
+对象；停止把运行时 DNS 配置逐行写入系统日志。Android Mihomo 补丁实现临时共享账户的原生限速与撤销，以及内核 DNS 测试解析路径。
 构建脚本校验两个补丁的 SHA-256 并确认均已应用。Go
 依赖先由 `go.sum` 与 Go checksum database 校验，再以 `GOPROXY=off` 编译。当前桥接层由
 Weave 自行维护，只开放配置解析/加载、TUN、socket protect、UID 查询、运行组/健康检查和

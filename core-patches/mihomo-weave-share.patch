@@ -19,6 +19,346 @@ index 11078a0..618a0e8 100644
  }
  
  func (au *inMemoryAuthenticator) Users() []string { return au.usernames }
+diff --git a/dns/util.go b/dns/util.go
+index fef9396..24ab7cb 100644
+--- a/dns/util.go
++++ b/dns/util.go
+@@ -375,6 +375,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
+ 	defer fast.Close()
+ 	domain := msgToDomain(m)
+ 	_, qTypeStr := msgToQtype(m)
++	trace, _ := ctx.Value(probeTraceKey{}).(*probeTrace)
+ 	for _, client := range clients {
+ 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
+ 			msg, err = client.ExchangeContext(ctx, m)
+@@ -383,16 +384,22 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
+ 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
+ 		fast.Go(func() (*D.Msg, error) {
+ 			log.Debugln("[DNS] resolve %s %s from %s", domain, qTypeStr, client.Address())
+-			m, err := client.ExchangeContext(ctx, m)
++			var answer *D.Msg
++			var err error
++			if trace == nil {
++				answer, err = client.ExchangeContext(ctx, m)
++			} else {
++				answer, err = trace.exchange(ctx, client, m)
++			}
+ 			if err != nil {
+ 				return nil, err
+-			} else if cache && (m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused) {
++			} else if cache && (answer.Rcode == D.RcodeServerFailure || answer.Rcode == D.RcodeRefused) {
+ 				// currently, cache indicates whether this msg was from a RCode client,
+ 				// so we would ignore RCode errors from RCode clients.
+-				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
++				return nil, errors.New("server failure: " + D.RcodeToString[answer.Rcode])
+ 			}
+-			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(m), client.Address())
+-			return m, nil
++			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(answer), client.Address())
++			return answer, nil
+ 		})
+ 	}
+ 
+diff --git a/dns/weave_probe.go b/dns/weave_probe.go
+new file mode 100644
+index 0000000..a853e0e
+--- /dev/null
++++ b/dns/weave_probe.go
+@@ -0,0 +1,151 @@
++package dns
++
++import (
++	"context"
++	"strings"
++	"sync"
++	"time"
++
++	D "github.com/miekg/dns"
++)
++
++type probeTraceKey struct{}
++
++type ProbeAttempt struct {
++	Endpoint  string `json:"endpoint"`
++	Transport string `json:"transport"`
++	Elapsed   int64  `json:"elapsedMs,omitempty"`
++	Outcome   string `json:"outcome"`
++	Selected  bool   `json:"selected,omitempty"`
++}
++
++type ProbePath struct {
++	Elapsed  int64          `json:"elapsedMs"`
++	Answered bool           `json:"answered"`
++	Selected string         `json:"selected,omitempty"`
++	Attempts []ProbeAttempt `json:"attempts"`
++}
++
++type probeAttemptState struct {
++	ProbeAttempt
++	answer *D.Msg
++}
++
++type probeTrace struct {
++	sync.Mutex
++	attempts []*probeAttemptState
++}
++
++func probeTransport(server dnsClient) string {
++	switch typed := server.(type) {
++	case *dnsOverQUIC:
++		return "DoQ"
++	case *dnsOverTLS:
++		return "DoT"
++	case *dnsOverHTTPS:
++		return "DoH"
++	case *client:
++		return typed.schema
++	case *systemClient:
++		return "System"
++	case *dhcpClient:
++		return "DHCP"
++	case clientWithDisableTypes:
++		return probeTransport(typed.dnsClient)
++	case clientWithEdns0Subnet:
++		return probeTransport(typed.dnsClient)
++	default:
++		return ""
++	}
++}
++
++func (t *probeTrace) exchange(ctx context.Context, client dnsClient, m *D.Msg) (*D.Msg, error) {
++	attempt := &probeAttemptState{ProbeAttempt: ProbeAttempt{Endpoint: client.Address(), Transport: probeTransport(client), Outcome: "pending"}}
++	t.Lock()
++	if len(t.attempts) < 16 {
++		t.attempts = append(t.attempts, attempt)
++	}
++	t.Unlock()
++	start := time.Now()
++	answer, err := client.ExchangeContext(ctx, m)
++	t.Lock()
++	attempt.Elapsed = maxProbeMillis(start)
++	attempt.Outcome = "no-address"
++	switch {
++	case err != nil:
++		attempt.Outcome = "failed"
++	case probeAnswered(answer, m):
++		attempt.Outcome = "answered"
++	}
++	attempt.answer = answer
++	t.Unlock()
++	return answer, err
++}
++
++// ProbeActivePath bypasses cache and singleflight so every reported upstream belongs to
++// this explicit query. The existing resolver policy, fallback and racing code choose the result.
++func (r *Resolver) ProbeActivePath(ctx context.Context, ipv6 bool) ProbePath {
++	trace := &probeTrace{}
++	start := time.Now()
++	q := weaveProbeQuestion(ipv6)
++	answer, err := r.ipExchange(context.WithValue(ctx, probeTraceKey{}, trace), q)
++	result := ProbePath{Elapsed: maxProbeMillis(start), Answered: err == nil && probeAnswered(answer, q)}
++	trace.Lock()
++	defer trace.Unlock()
++	result.Attempts = make([]ProbeAttempt, 0, len(trace.attempts))
++	for _, attempt := range trace.attempts {
++		row := attempt.ProbeAttempt
++		if answer != nil && attempt.answer == answer {
++			row.Selected = true
++			result.Selected = row.Endpoint
++		}
++		result.Attempts = append(result.Attempts, row)
++	}
++	return result
++}
++
++// ProbeQUIC sends the same known question over a fresh authenticated DoQ connection.
++func (r *Resolver) ProbeQUIC(ctx context.Context, address string, ipv6 bool) ProbePath {
++	start := time.Now()
++	client := newDoQ(address, r.defaultResolver, nil, nil, "")
++	defer client.Close()
++	q := weaveProbeQuestion(ipv6)
++	answer, err := client.ExchangeContext(ctx, q)
++	return ProbePath{Elapsed: maxProbeMillis(start), Answered: err == nil && probeAnswered(answer, q)}
++}
++
++func weaveProbeQuestion(ipv6 bool) *D.Msg {
++	queryType := D.TypeA
++	if ipv6 {
++		queryType = D.TypeAAAA
++	}
++	return new(D.Msg).SetQuestion("example.com.", queryType)
++}
++
++func probeAnswered(answer, question *D.Msg) bool {
++	if answer == nil || !answer.Response || answer.Truncated || answer.Id != question.Id ||
++		answer.Rcode != D.RcodeSuccess || len(answer.Question) != 1 || answer.Question[0] != question.Question[0] {
++		return false
++	}
++	for _, rr := range answer.Answer {
++		header := rr.Header()
++		if header.Class != D.ClassINET || !strings.EqualFold(header.Name, question.Question[0].Name) {
++			continue
++		}
++		switch record := rr.(type) {
++		case *D.A:
++			return question.Question[0].Qtype == D.TypeA && record.A.To4() != nil
++		case *D.AAAA:
++			return question.Question[0].Qtype == D.TypeAAAA && record.AAAA.To16() != nil && record.AAAA.To4() == nil
++		}
++	}
++	return false
++}
++
++func maxProbeMillis(start time.Time) int64 {
++	elapsed := time.Since(start).Milliseconds()
++	if elapsed < 1 {
++		return 1
++	}
++	return elapsed
++}
+diff --git a/dns/weave_probe_test.go b/dns/weave_probe_test.go
+new file mode 100644
+index 0000000..6bd09d7
+--- /dev/null
++++ b/dns/weave_probe_test.go
+@@ -0,0 +1,137 @@
++package dns
++
++import (
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/x509"
++	"encoding/binary"
++	"errors"
++	"io"
++	"math/big"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/component/ca"
++
++	"github.com/metacubex/quic-go"
++	"github.com/metacubex/tls"
++	D "github.com/miekg/dns"
++)
++
++type fixtureDNS struct {
++	address string
++	error   error
++}
++
++func (f fixtureDNS) Address() string  { return f.address }
++func (f fixtureDNS) ResetConnection() {}
++func (f fixtureDNS) ExchangeContext(_ context.Context, question *D.Msg) (*D.Msg, error) {
++	if f.error != nil {
++		return nil, f.error
++	}
++	reply := new(D.Msg).SetReply(question)
++	reply.Answer = []D.RR{&D.A{
++		Hdr: D.RR_Header{Name: question.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
++		A:   net.IPv4(192, 0, 2, 3),
++	}}
++	return reply, nil
++}
++
++func TestWeaveProbePathReportsActualFallback(t *testing.T) {
++	r := &Resolver{
++		main:              []dnsClient{fixtureDNS{address: "primary", error: errors.New("primary offline")}},
++		fallback:          []dnsClient{fixtureDNS{address: "fallback"}},
++		fallbackLazyQuery: true,
++	}
++	got := r.ProbeActivePath(context.Background(), false)
++	if !got.Answered || got.Selected != "fallback" || len(got.Attempts) != 2 ||
++		got.Attempts[0].Outcome != "failed" || got.Attempts[1].Outcome != "answered" {
++		t.Fatalf("wrong fallback path: %#v", got)
++	}
++}
++
++func TestWeaveProbeDoQUsesAuthenticatedExchange(t *testing.T) {
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	local := net.IPv4(127, 0, 0, 1)
++	cert := &x509.Certificate{
++		SerialNumber: big.NewInt(1), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
++		BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
++		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IPAddresses: []net.IP{local},
++	}
++	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := ca.AddCertificate(string(der)); err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(ca.ResetCertificate)
++	listener, err := quic.ListenAddr("127.0.0.1:0", &tls.Config{
++		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
++		NextProtos:   []string{NextProtoDQ},
++	}, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer listener.Close()
++
++	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
++	defer cancel()
++	finished := make(chan error, 1)
++	go func() {
++		conn, err := listener.Accept(ctx)
++		if err != nil {
++			finished <- err
++			return
++		}
++		stream, err := conn.AcceptStream(ctx)
++		if err == nil {
++			err = sendDoQResponse(stream)
++		}
++		finished <- err
++	}()
++	got := (&Resolver{}).ProbeQUIC(ctx, listener.Addr().String(), false)
++	if !got.Answered || got.Elapsed < 1 {
++		t.Fatalf("real DoQ query did not return valid data: %#v", got)
++	}
++	if err := <-finished; err != nil {
++		t.Fatal(err)
++	}
++}
++
++func sendDoQResponse(stream *quic.Stream) error {
++	var size [2]byte
++	if _, err := io.ReadFull(stream, size[:]); err != nil {
++		return err
++	}
++	frame := make([]byte, binary.BigEndian.Uint16(size[:]))
++	if _, err := io.ReadFull(stream, frame); err != nil {
++		return err
++	}
++	var question D.Msg
++	if err := question.Unpack(frame); err != nil {
++		return err
++	}
++	if question.Id != 0 || len(question.Question) != 1 || question.Question[0].Name != "example.com." {
++		return errors.New("unexpected DoQ test question")
++	}
++	reply, err := (fixtureDNS{}).ExchangeContext(context.Background(), &question)
++	if err != nil {
++		return err
++	}
++	answer, err := reply.Pack()
++	if err != nil {
++		return err
++	}
++	binary.BigEndian.PutUint16(size[:], uint16(len(answer)))
++	if _, err := stream.Write(append(size[:], answer...)); err != nil {
++		return err
++	}
++	return stream.Close()
++}
 diff --git a/hub/route/connections.go b/hub/route/connections.go
 index ddfa6c5..6330f46 100644
 --- a/hub/route/connections.go
@@ -107,6 +447,103 @@ index ddfa6c5..6330f46 100644
  func getConnections(w http.ResponseWriter, r *http.Request) {
  	if !(r.Header.Get("Upgrade") == "websocket") {
  		snapshot := statistic.DefaultManager.Snapshot()
+diff --git a/hub/route/dns.go b/hub/route/dns.go
+index 5a805a1..c4ecac8 100644
+--- a/hub/route/dns.go
++++ b/hub/route/dns.go
+@@ -3,8 +3,13 @@ package route
+ import (
+ 	"context"
+ 	"math"
++	"net"
++	"net/url"
++	"strconv"
++	"time"
+ 
+ 	"github.com/metacubex/mihomo/component/resolver"
++	weavedns "github.com/metacubex/mihomo/dns"
+ 
+ 	"github.com/metacubex/chi"
+ 	"github.com/metacubex/chi/render"
+@@ -16,9 +21,78 @@ import (
+ func dnsRouter() http.Handler {
+ 	r := chi.NewRouter()
+ 	r.Get("/query", queryDNS)
++	if embedMode {
++		r.Get("/weave-path", probeDNSPath)
++		r.Get("/weave-doq", probeDoQ)
++	}
+ 	return r
+ }
+ 
++// Concurrent probes are bounded independently of general resolver traffic.
++var dnsProbeSlots = make(chan struct{}, 4)
++
++type runtimeDNSProbe interface {
++	ProbeActivePath(context.Context, bool) weavedns.ProbePath
++	ProbeQUIC(context.Context, string, bool) weavedns.ProbePath
++}
++
++func runDNSProbe(w http.ResponseWriter, r *http.Request, query func(context.Context, runtimeDNSProbe) weavedns.ProbePath) {
++	active, ok := resolver.DefaultResolver.(runtimeDNSProbe)
++	if !ok || active == nil {
++		render.Status(r, http.StatusServiceUnavailable)
++		render.JSON(w, r, newError("DNS section is disabled"))
++		return
++	}
++	select {
++	case dnsProbeSlots <- struct{}{}:
++		defer func() { <-dnsProbeSlots }()
++	default:
++		render.Status(r, http.StatusTooManyRequests)
++		render.JSON(w, r, newError("DNS probe limit"))
++		return
++	}
++	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
++	defer cancel()
++	render.JSON(w, r, query(ctx, active))
++}
++
++func probeDNSPath(w http.ResponseWriter, r *http.Request) {
++	runDNSProbe(w, r, func(ctx context.Context, active runtimeDNSProbe) weavedns.ProbePath {
++		return active.ProbeActivePath(ctx, r.URL.Query().Get("ipv6") == "true")
++	})
++}
++
++func probeDoQ(w http.ResponseWriter, r *http.Request) {
++	address, ok := parseDoQProbe(r.URL.Query().Get("endpoint"))
++	if !ok {
++		render.Status(r, http.StatusBadRequest)
++		render.JSON(w, r, ErrBadRequest)
++		return
++	}
++	runDNSProbe(w, r, func(ctx context.Context, active runtimeDNSProbe) weavedns.ProbePath {
++		return active.ProbeQUIC(ctx, address, r.URL.Query().Get("ipv6") == "true")
++	})
++}
++
++func parseDoQProbe(endpoint string) (string, bool) {
++	if len(endpoint) > 1024 {
++		return "", false
++	}
++	u, err := url.Parse(endpoint)
++	if err != nil || u.Scheme != "quic" || len(u.Hostname()) == 0 || u.User != nil ||
++		u.Opaque != "" || u.Fragment != "" || u.RawQuery != "" || u.ForceQuery || u.Path != "" {
++		return "", false
++	}
++	port := u.Port()
++	if port == "" {
++		port = "853"
++	}
++	if n, err := strconv.ParseUint(port, 10, 16); err != nil || n == 0 {
++		return "", false
++	}
++	return net.JoinHostPort(u.Hostname(), port), true
++}
++
+ func queryDNS(w http.ResponseWriter, r *http.Request) {
+ 	if resolver.DefaultResolver == nil {
+ 		render.Status(r, http.StatusInternalServerError)
 diff --git a/hub/route/share_connections_test.go b/hub/route/share_connections_test.go
 new file mode 100644
 index 0000000..e0a944d
