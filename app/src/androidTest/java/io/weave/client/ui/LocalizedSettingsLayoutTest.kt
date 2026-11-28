@@ -1,6 +1,7 @@
 package io.weave.client.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Language
@@ -12,7 +13,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -80,8 +82,8 @@ class LocalizedSettingsLayoutTest {
         compose.setContent {
             FixtureShell(language = WeaveLanguage.ENGLISH, fontScale = 2f) {
                 CompositionLocalProvider(LocalReleasedAppCopy provides locale.copy) {
-                    androidx.compose.foundation.layout.Column(Modifier.requiredWidth(320.dp)) {
-                        Text(exitSummary(dashboard, rememberAppOwnedCopy()), translate = false)
+                    Column(Modifier.requiredWidth(320.dp)) {
+                        StatusBlock(dashboard, dashboard)
                         ConnectionCapsule(dashboard, dashboard, {}, {}, {}, {})
                         WeaveNavigationDock(
                             destinations = Destination.entries,
@@ -96,13 +98,18 @@ class LocalizedSettingsLayoutTest {
                 }
             }
         }
-        compose.onNodeWithText("$exit · $mode").assertExists()
+        val summary = compose.onNodeWithText("$exit · $mode", useUnmergedTree = true)
+        val summaryResults = mutableListOf<TextLayoutResult>()
+        summary.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(summaryResults)) }
+        assertFalse(summaryResults.single().hasVisualOverflow)
         val chooser = localizeStagedWeaveText("选择出口", renderer)
         compose.onNodeWithText(chooser).assertIsDisplayed()
         for (tab in Destination.entries) {
             val label = localizeStagedWeaveText(tab.label, renderer)
             compose.onNodeWithText(label).assertDoesNotExist()
-            compose.onNodeWithContentDescription(label).performClick().assertIsSelected()
+            compose.onNode(hasTestTag("navigation-tab-${tab.name}") and hasContentDescription(label))
+                .performClick()
+                .assertIsSelected()
         }
     }
 }

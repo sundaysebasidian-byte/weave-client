@@ -12,8 +12,8 @@ final class PackagedReleaseCopyAsset {
         AR("ar-EG", "العربية (مصر)", 195955, "90bd8ad69c11060d6e716b2bf46c19cae6420b195a49901a52cc0bba1f30d76a"),
         ES("es-MX", "Español (México)", 171065, "9bfd284fe8f547e0851d2b5fd7dc0b18bd6198cc19ad85260c41b44126126615"),
         KO("ko-KR", "한국어 (대한민국)", 178793, "ebe901d1532dcc6ad1354de137e0e616f2018bf6f27624764bf73a79b51a72c0"),
-        RU("ru-RU", "Русский", 218006, "d9753863847058289294031fdb96e34152b50774621983b73f8274e0815ee2df"),
-        HI("hi-IN", "हिन्दी", 249500, "cf8fd6b2604cf0f8dda3c95134c6cf05c509f2d6b20e6321be410cf1b61f6fac");
+        RU("ru-RU", "Русский", 214666, "5810997e99f239380e8f7e199927541360895f858f04b2ad16f07861932920e8"),
+        HI("hi-IN", "हिन्दी", 242144, "47e4e029a8931183438ce6bb649892bd8071111b3eafb56993708ebb55c60347");
 
         final String tag;
         final String label;

@@ -49,6 +49,10 @@ class ComposeLocaleGateTest(unittest.TestCase):
         for expected in ["copied English", "duplicate", "missing protected tokens VPN"]:
             self.assertTrue(any(expected in error for error in errors), errors)
 
+    def test_translation_drafts_cannot_ship_separated_by_pipes(self):
+        self.write("ru", {"id": "连接 VPN", "text": "Подключить VPN|Подключить VPN"})
+        self.assertEqual(checker.run(self.root)[0], ["ru: 连接 VPN: unexpected pipe separator"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,8 @@ def run(root, release=False):
                 errors.append(f"{what}: untranslated")
             if Counter(SLOTS.findall(english)) != Counter(SLOTS.findall(text)):
                 errors.append(f"{what}: placeholders mismatch")
+            if "|" in text and "|" not in english and "|" not in key:
+                errors.append(f"{what}: unexpected pipe separator")
             lang_text = TECHNICAL.sub(" ", SLOTS.sub(" ", text))
             invariant = english in INVARIANTS or original.get("kind") in {"composition", "separator"} or key in UNCHANGED.get(locale, ())
             if not invariant and (not script.search(lang_text) or text == english):

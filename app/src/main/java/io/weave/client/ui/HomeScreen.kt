@@ -460,15 +460,15 @@ private fun HomeHeader(onMoreClick: () -> Unit) {
  * The status block: one eyebrow with the state's mark, the headline and the exit in use.
  *
  * Its size must not depend on the connection state. The eyebrow and headline measure every
- * possible string and take the largest (see [StableTextSlot]); the exit line is always exactly
- * one line. What remains is a function of language, width and font scale only. Failure guidance
- * and recovery live in [ConnectionIssueNotice], below the metrics.
+ * possible string and take the largest (see [StableTextSlot]); the exit summary reserves a
+ * second line at larger font scales. Its height depends only on language, width and font scale.
+ * Failure guidance and recovery live in [ConnectionIssueNotice], below the metrics.
  *
  * The mark beside the eyebrow is the only element that can read as proof, so it becomes a check
  * solely for an exit the app has verified; see [HeroGlyph].
  */
 @Composable
-private fun StatusBlock(state: DashboardState, exit: DashboardState) {
+internal fun StatusBlock(state: DashboardState, exit: DashboardState) {
     val hero = heroModel(state)
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -508,19 +508,20 @@ private fun StatusBlock(state: DashboardState, exit: DashboardState) {
             maxLines = 2,
         )
         Spacer(Modifier.height(10.dp))
-        Text(
+        val exitLines = if (fontScale >= 1.6f) 2 else 1
+        MaterialText(
             text = exitSummary(exit, rememberAppOwnedCopy()),
             color = muted,
             style = MaterialTheme.typography.bodyLarge.merge(TabularNumbers),
-            maxLines = 1,
+            minLines = exitLines,
+            maxLines = exitLines,
             overflow = TextOverflow.Ellipsis,
-            translate = false,
         )
     }
 }
 
-/** The exit and the routing mode in one quiet line. */
-internal fun exitSummary(state: DashboardState, copy: (String) -> String): String {
+/** The exit and the routing mode in one summary. */
+private fun exitSummary(state: DashboardState, copy: (String) -> String): String {
     val mode = copy(state.routingMode.label)
     val node = state.activeNode?.takeIf { state.connectionState == ConnectionState.CONNECTED }
     val name = when (exitReadiness(state)) {
