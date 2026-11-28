@@ -2,6 +2,7 @@ package io.weave.client.core.diagnostics
 
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertThrows
@@ -123,5 +124,33 @@ class CommonEndpointProbeTest {
             CommonEndpointProbe(CommonEndpointHttpTransport { _, _ -> throw java.net.UnknownHostException("private-secret.example") }).run()
         }
         assertTrue(report.results.all { it.failure == EndpointFailure.DNS && !it.detail.contains("private-secret") })
+    }
+
+    @Test fun `cancelling common endpoint probe disconnects in flight connection`() = runBlocking {
+        val disconnected = java.util.concurrent.atomic.AtomicBoolean(false)
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val transport = UrlConnectionCommonEndpointTransport { url ->
+            object : java.net.HttpURLConnection(url) {
+                override fun connect() {}
+                override fun disconnect() {
+                    disconnected.set(true)
+                    gate.countDown()
+                }
+                override fun usingProxy(): Boolean = false
+                override fun getResponseCode(): Int {
+                    entered.complete(Unit)
+                    gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                    throw java.io.IOException("disconnected")
+                }
+            }
+        }
+        val job = launch(kotlinx.coroutines.Dispatchers.IO) {
+            CommonEndpointProbe(transport, timeoutMillis = 5_000).run()
+        }
+        entered.await()
+        job.cancel()
+        job.join()
+        assertTrue(disconnected.get())
     }
 }

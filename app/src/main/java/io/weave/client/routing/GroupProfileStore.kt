@@ -10,6 +10,7 @@ import io.weave.client.domain.RouteKind
 import io.weave.client.domain.RouteReferenceSanitizer
 import io.weave.client.domain.RouteTarget
 import io.weave.client.domain.hasLiveSubscriptionExit
+import io.weave.client.domain.liveGroupNames
 import io.weave.client.domain.Subscription
 import io.weave.client.domain.SubscriptionDeletionReconciler
 import io.weave.client.subscription.SubscriptionRepository
@@ -68,8 +69,9 @@ internal class GroupProfileStore(
             val current = readLocked(selectedRoutes = saved)
             val next = edit(current)
             if (next == current.routes) return@withCurrentEpoch null
+            val liveGroups = liveGroupNames(current.groups, current.subscriptions, current.nodes)
             val checked = RouteReferenceSanitizer.routes(
-                next, current.subscriptions, current.nodes, current.groups.associate { it.id to it.name },
+                next, current.subscriptions, current.nodes, liveGroups,
             )
             if (checked != saved) routes.save(checked)
             current.copy(routes = checked)
@@ -78,13 +80,14 @@ internal class GroupProfileStore(
     fun changeDefault(epoch: String, target: RouteTarget): Snapshot =
         ProfileStorage.withCurrentEpoch(context, epoch) {
             val current = readLocked()
-            require(target.hasLiveSubscriptionExit(current.subscriptions, current.nodes) &&
-                (target.kind != RouteKind.GROUP || current.groups.any { it.id == target.groupId })
+            val liveGroups = liveGroupNames(current.groups, current.subscriptions, current.nodes)
+            require(target.hasLiveSubscriptionExit(current.subscriptions, current.nodes, current.groups) &&
+                (target.kind != RouteKind.GROUP || target.groupId in liveGroups)
             ) {
                 "本机配置已变化，请关闭后重新编辑"
             }
             val presented = RouteReferenceSanitizer.defaultTarget(
-                target, current.subscriptions, current.nodes, current.groups.associate { it.id to it.name },
+                target, current.subscriptions, current.nodes, liveGroups,
             )
             val committed = current.copy(defaultTarget = presented)
             settings.setDefaultRouteTarget(target)
@@ -126,7 +129,7 @@ internal class GroupProfileStore(
         catalog: Pair<List<Subscription>, List<ProxyNode>> = subscriptions.loadSnapshot(),
     ): Snapshot {
         val (subscribers, nodes) = catalog
-        val names = savedGroups.associate { it.id to it.name }
+        val names = liveGroupNames(savedGroups, subscribers, nodes)
         return Snapshot(
             ProfileStorage.restoreEpoch(context), savedGroups, subscribers, nodes,
             RouteReferenceSanitizer.routes(selectedRoutes, subscribers, nodes, names),

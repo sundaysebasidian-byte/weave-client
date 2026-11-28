@@ -479,4 +479,90 @@ class SubscriptionPayloadParserTest {
         assertEquals(setOf("socks5", "ssr"), parsed.protocols)
         assertTrue(normalized.contains("password: 'secret'"))
     }
+
+    @Test
+    fun `quotes websocket host headers to block yaml key injection and comment truncation`() {
+        val vless = "vless://00000000-0000-0000-0000-000000000002@vless.example:443" +
+            "?security=tls&type=ws&path=%2Fws&host=cdn.example.com%2C%20X-Injected%3A%20evil#hk-ws"
+        val singBox = """
+            {
+              "outbounds": [
+                {
+                  "transport": {"headers": {"Host": "cdn.example.com # comment"}, "path": "\/ws", "type": "ws"},
+                  "server": "edge.example",
+                  "server_port": 443,
+                  "tag": "\u9999\u6e2f",
+                  "type": "vless",
+                  "uuid": "00000000-0000-0000-0000-000000000001"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val vlessNodes = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(vless)))
+        val vlessHeaders = (vlessNodes.single()["ws-opts"] as Map<*, *>)["headers"] as Map<*, *>
+        assertEquals(setOf("Host"), vlessHeaders.keys)
+        assertEquals("cdn.example.com, X-Injected: evil", vlessHeaders["Host"])
+
+        val sbParsed = parser.parse(singBox)
+        assertEquals(SubscriptionFormat.SING_BOX_JSON, sbParsed.format)
+        assertEquals(1, sbParsed.nodeCount)
+        val sbNodes = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(singBox, sbParsed)))
+        assertEquals("香港", sbNodes.single()["name"])
+        val sbWs = sbNodes.single()["ws-opts"] as Map<*, *>
+        assertEquals("/ws", sbWs["path"])
+        val sbHeaders = sbWs["headers"] as Map<*, *>
+        assertEquals(setOf("Host"), sbHeaders.keys)
+        assertEquals("cdn.example.com # comment", sbHeaders["Host"])
+    }
+
+    @Test
+    fun `json parser preserves escaped backslashes without double unescaping`() {
+        val raw = """
+            {
+              "outbounds": [
+                {"type":"trojan","tag":"escaped","server":"edge.example","server_port":443,"password":"a\\nb"}
+              ]
+            }
+        """.trimIndent()
+        val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(raw)))
+        assertEquals("a\\nb", nodes.single()["password"])
+    }
+
+    @Test
+    fun `parses sip002 shadowsocks uris, legacy at-in-password, spaced fragments and string vmess ports`() {
+        val sip002User = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("aes-256-gcm:secret".toByteArray())
+        val legacyFull = Base64.getEncoder()
+            .encodeToString("chacha20-ietf-poly1305:p@ss:word@legacy.example:8443".toByteArray())
+        val vmessJson = """{"ps":"vmess-str","add":"vmess.example","port":"443","id":"00000000-0000-0000-0000-000000000001","aid":"0"}"""
+        val vmess = "vmess://" + Base64.getEncoder().encodeToString(vmessJson.toByteArray())
+        val raw = listOf(
+            "ss://$sip002User@sip002.example:8388/#[HK] Hong Kong | 01",
+            "ss://$sip002User@[2001:db8::1]:8388#v6-ss",
+            "ss://$legacyFull#legacy-at",
+            "vless://00000000-0000-0000-0000-000000000002@vless.example:443?security=tls#[SG] Edge | 02",
+            vmess,
+        ).joinToString("\n")
+
+        val parsed = parser.parse(raw)
+        assertEquals(SubscriptionFormat.URI_LIST, parsed.format)
+        assertEquals(5, parsed.nodeCount)
+        val nodes = ClashYamlCodec.nodes(ClashYamlCodec.read(parser.normalizeForMihomo(raw, parsed)))
+        assertEquals(5, nodes.size)
+        assertEquals("[HK] Hong Kong | 01", nodes[0]["name"])
+        assertEquals("aes-256-gcm", nodes[0]["cipher"])
+        assertEquals("secret", nodes[0]["password"])
+        assertEquals("sip002.example", nodes[0]["server"])
+        assertEquals(8388, nodes[0]["port"])
+        assertEquals("2001:db8::1", nodes[1]["server"])
+        assertEquals("p@ss:word", nodes[2]["password"])
+        assertEquals("legacy.example", nodes[2]["server"])
+        assertEquals("[SG] Edge | 02", nodes[3]["name"])
+        assertEquals(443, nodes[4]["port"])
+
+        assertThrows(SubscriptionImportException::class.java) {
+            parser.normalizeForMihomo("ss://$sip002User@sip002.example:8388/?plugin=obfs-local#plugin-ss")
+        }
+    }
 }

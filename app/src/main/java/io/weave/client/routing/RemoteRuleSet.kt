@@ -55,11 +55,13 @@ object RuleSetParser {
     private const val MAX_ENTRY_LENGTH = 300
 
     private val DOMAIN = Regex("""(?i)(?:\+\.|\*\.|\.)?(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)*[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?""")
+    private val CLASSICAL_DOMAIN = Regex("""(?i)(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)*[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?""")
     private val CLASSICAL_TYPES = setOf(
         "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6", "DST-PORT",
         "PROCESS-NAME", "GEOSITE", "GEOIP", "IP-ASN",
     )
-    private val PORT = Regex("""\d{1,5}(?:-\d{1,5})?""")
+    private val PORT = Regex("""[0-9]{1,5}(?:-[0-9]{1,5})?""")
+    private val ASCII_ASN = Regex("""(?:0|[1-9][0-9]{0,9})""")
     private val TOKEN = Regex("""[A-Za-z0-9_.@!+-]{1,128}""")
 
     fun parse(body: String, behavior: RuleSetBehavior): List<String> {
@@ -102,14 +104,24 @@ object RuleSetParser {
             throw invalid()
         }
         val valid = when (type) {
-            "DOMAIN", "DOMAIN-SUFFIX" -> DOMAIN.matches(value.removePrefix("."))
-            "IP-CIDR", "IP-CIDR6" -> validCidr(value)
-            "DST-PORT" -> PORT.matches(value) && value.split('-').all { (it.toIntOrNull() ?: -1) in 0..65535 }
-            "IP-ASN" -> value.toLongOrNull()?.let { it in 0..4_294_967_295 } == true
+            "DOMAIN", "DOMAIN-SUFFIX" -> CLASSICAL_DOMAIN.matches(value)
+            "IP-CIDR" -> LocalRouteRuleValidator.parseIpv4Cidr(value) != null
+            "IP-CIDR6" -> LocalRouteRuleValidator.parseIpv6Cidr(value) != null
+            "DST-PORT" -> validPort(value)
+            "IP-ASN" -> ASCII_ASN.matches(value) && value.toLongOrNull()?.let { it in 0..4_294_967_295 } == true
             else -> TOKEN.matches(value)
         }
         if (!valid) throw invalid()
         return listOfNotNull(type, value, option).joinToString(",")
+    }
+
+    private fun validPort(value: String): Boolean {
+        if (!PORT.matches(value)) return false
+        val dash = value.indexOf('-')
+        if (dash < 0) return value.toIntOrNull()?.let { it in 0..65535 } == true
+        val start = value.substring(0, dash).toIntOrNull() ?: return false
+        val end = value.substring(dash + 1).toIntOrNull() ?: return false
+        return start in 0..65535 && end in 0..65535 && start <= end
     }
 
     private fun validCidr(value: String): Boolean =

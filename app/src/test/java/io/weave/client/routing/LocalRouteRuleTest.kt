@@ -13,10 +13,34 @@ class LocalRouteRuleTest {
             attempted = true
             throw java.net.UnknownHostException("fixture")
         }
-        for (host in listOf("deadbeef", "FACE", "2001db8", "1.2.3.4")) {
-            org.junit.Assert.assertNull(LocalRouteRuleValidator.parseIpv6Address(host, lookup))
+        for (host in listOf(
+            "deadbeef", "FACE", "2001db8", "1.2.3.4",
+            "a:b", "1:2:3", "dead:beef:12345", "fe80::1::2",
+            ":::", "2001:::1", ":1::2", "1::2:", "[2001:db8::1]", "fe80::1%1",
+            "1:2:3:4:5:6:7::8", "::ffff:192.0.2.128:1",
+        )) {
+            org.junit.Assert.assertNull("expected null for $host", LocalRouteRuleValidator.parseIpv6Address(host, lookup))
         }
         org.junit.Assert.assertFalse(attempted)
+    }
+
+    @Test
+    fun `ipv6 parser accepts rfc 4291 literals and cidr rejects non-canonical prefixes`() {
+        assertEquals(16, LocalRouteRuleValidator.parseIpv6Address("::")?.size)
+        assertEquals(16, LocalRouteRuleValidator.parseIpv6Address("::1")?.size)
+        assertEquals(16, LocalRouteRuleValidator.parseIpv6Address("2001:db8::")?.size)
+        val mapped = LocalRouteRuleValidator.parseIpv6Address("::ffff:192.0.2.128")!!
+        assertEquals(0xff.toByte(), mapped[10])
+        assertEquals(0xff.toByte(), mapped[11])
+        assertEquals(192.toByte(), mapped[12])
+        assertEquals(128.toByte(), mapped[15])
+
+        for (bad in listOf(
+            "2001:db8::/+64", "2001:db8::/-0", "2001:db8::/064", "2001:db8::/٦٤",
+            "[2001:db8::1]/64", "fe80::1%1/64", "2001:db8::/32/64",
+        )) {
+            assertNull("expected null CIDR for $bad", LocalRouteRuleValidator.parseIpv6Cidr(bad))
+        }
     }
 
     @Test

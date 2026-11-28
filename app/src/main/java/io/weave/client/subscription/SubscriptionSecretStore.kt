@@ -205,20 +205,33 @@ class SubscriptionSecretStore(
 
     /** Staged generations remain unreachable until a single complete index commit succeeds. */
     private fun commitBatch(entries: List<SaveEntry>, coroutine: CoroutineContext): List<StoredSubscription> {
-        val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
-        val existing = list().associateBy { it.id }
-        check(existing.keys == ids) { "订阅索引无法完整读取，已停止同步" }
-        val editor = preferences.edit()
+        coroutine.ensureActive()
+        val snapshot = preferences
+        val ids = snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
+        val existingMeta = readRecords(snapshot, includeNodes = false).associateBy { it.id }
+        check(existingMeta.keys == ids) { "订阅索引无法完整读取，已停止同步" }
+        // Persist an empty index before staging the very first payload file so a crash or Error
+        // before commit does not trip the missing-index guard on the next launch.
+        val index = File(appContext.applicationInfo.dataDir, "shared_prefs/$PREFERENCES_NAME.xml")
+        if (ids.isEmpty() && !index.exists() && !File(index.path + ".bak").exists()) {
+            check(snapshot.edit().putStringSet(KEY_IDS, emptySet()).commit()) {
+                "Unable to initialize encrypted subscription index"
+            }
+        }
+        val editor = snapshot.edit()
         val staged = mutableListOf<StagedSave>()
         try {
             entries.forEach { entry ->
                 coroutine.ensureActive()
-                staged += stageSave(editor, entry, existing[entry.id])
+                val old = existingMeta[entry.id]?.let { meta ->
+                    meta.copy(nodes = readNodeMetadata(entry.id, snapshot))
+                }
+                staged += stageSave(editor, snapshot, entry, old)
                 ids += entry.id
             }
             coroutine.ensureActive()
             check(editor.putStringSet(KEY_IDS, ids).commit()) { "Unable to persist encrypted subscription batch" }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             // A failed platform commit may have an uncertain outcome. Only remove candidates
             // proven unreachable by a fresh index; retain everything if that read also fails.
             val referenced = try { referencedPayloadNames() } catch (_: Exception) { null }
@@ -229,7 +242,12 @@ class SubscriptionSecretStore(
         return staged.map { it.record }
     }
 
-    private fun stageSave(editor: SharedPreferences.Editor, entry: SaveEntry, old: StoredSubscription?): StagedSave {
+    private fun stageSave(
+        editor: SharedPreferences.Editor,
+        snapshot: SharedPreferences,
+        entry: SaveEntry,
+        old: StoredSubscription?,
+    ): StagedSave {
         val name = normalizeName(entry.name)
         val encryptedSource = secretBox.encrypt(entry.source.toByteArray(Charsets.UTF_8), entry.id.toByteArray(Charsets.UTF_8))
         val encryptedPayload = secretBox.encrypt(entry.payload.toByteArray(Charsets.UTF_8), "${entry.id}:payload".toByteArray(Charsets.UTF_8))
@@ -247,7 +265,7 @@ class SubscriptionSecretStore(
         }
         val encryptedNodes = encryptNodeMetadata(entry.id, nodes)
         val generation = UUID.randomUUID().toString().replace("-", "")
-        val previousPayload = payloadFile(entry.id).takeIf(File::isFile)
+        val previousPayload = payloadFile(entry.id, snapshot).takeIf(File::isFile)
         val payload = writePayloadCandidate(entry.id, generation, encryptedPayload)
         val updated = System.currentTimeMillis()
         editor.putString(key(entry.id, "name"), name)
@@ -386,11 +404,12 @@ class SubscriptionSecretStore(
     @SuppressLint("UseKtx") // commit() is required here because rename must report persistence failure.
     fun rename(id: String, name: String, coroutine: CoroutineContext = EmptyCoroutineContext): StoredSubscription {
         locked {
-            val record = get(id) ?: throw NoSuchElementException("订阅不存在")
+            val snapshot = preferences
+            val record = readIndexedRecord(id, snapshot) ?: throw NoSuchElementException("订阅不存在")
             val normalizedName = normalizeName(name)
             coroutine.ensureActive()
             check(
-                preferences.edit()
+                snapshot.edit()
                     .putString(key(id, "name"), normalizedName)
                     .commit(),
             ) { "Unable to rename encrypted subscription" }
@@ -400,12 +419,13 @@ class SubscriptionSecretStore(
 
     fun delete(id: String): StoredSubscription {
         locked {
-            val record = get(id) ?: throw NoSuchElementException("订阅不存在")
-            val payload = payloadFile(id)
+            val snapshot = preferences
+            val record = readIndexedRecord(id, snapshot) ?: throw NoSuchElementException("订阅不存在")
+            val payload = payloadFile(id, snapshot)
 
-            val ids = preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
+            val ids = snapshot.getStringSet(KEY_IDS, emptySet()).orEmpty().toMutableSet()
             ids.remove(id)
-            val editor = preferences.edit().putStringSet(KEY_IDS, ids)
+            val editor = snapshot.edit().putStringSet(KEY_IDS, ids)
             STORED_FIELDS.forEach { field -> editor.remove(key(id, field)) }
             check(editor.commit()) { "Unable to delete encrypted subscription metadata" }
             // Readers hold the same lock. Until the index commits, the old payload stays readable.

@@ -1,10 +1,14 @@
 package io.weave.client.core.ipquality
 
 import io.weave.client.domain.Ipv6Mode
+import io.weave.client.routing.LocalRouteRuleValidator
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.SocketTimeoutException
 import java.net.URI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -157,12 +161,12 @@ class IpQualityProbe(
         )
     }
 
-    private fun probe(
+    private suspend fun probe(
         label: String,
         endpoint: String,
         parser: (String) -> Any?,
     ): ProbeResult = try {
-        val response = transport.get(endpoint, timeoutMillis)
+        val response = getCancellable(endpoint, timeoutMillis)
         require(response.statusCode in 200..299) { "HTTP ${response.statusCode}" }
         val value = parser(response.body)
             ?: throw IllegalArgumentException("响应内容不完整")
@@ -170,6 +174,7 @@ class IpQualityProbe(
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
+        currentCoroutineContext().ensureActive()
         ProbeResult(label, value = null, completed = false, error = error.safeMessage())
     }
 
@@ -197,9 +202,9 @@ class IpQualityProbe(
         )
     }
 
-    private fun probeLatency(provider: String, endpoint: String): IpQualityLatency = try {
+    private suspend fun probeLatency(provider: String, endpoint: String): IpQualityLatency = try {
         // Two concurrent series, each bounded to three short probes; no background polling.
-        val response = transport.get(endpoint, minOf(timeoutMillis, 1500))
+        val response = getCancellable(endpoint, minOf(timeoutMillis, 1500))
         require(response.statusCode == 204 && response.body.isEmpty()) { "HTTP 204 expected" }
         require(response.elapsedMillis in 0L..Int.MAX_VALUE.toLong())
         val latency = response.elapsedMillis.toInt()
@@ -207,8 +212,16 @@ class IpQualityProbe(
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
+        currentCoroutineContext().ensureActive()
         IpQualityLatency(provider, null, IpQualityState.ATTENTION, "端点不可达：${error.safeMessage()}")
     }
+
+    private suspend fun getCancellable(url: String, timeoutMillis: Int): IpQualityHttpResponse =
+        if (transport is UrlConnectionIpQualityTransport) {
+            transport.getCancellable(url, timeoutMillis, currentCoroutineContext()[Job])
+        } else {
+            transport.get(url, timeoutMillis)
+        }
 
     private fun buildChecks(
         results: List<ProbeResult>,
@@ -225,7 +238,12 @@ class IpQualityProbe(
             IpQualityCheck(
                 id = "ipv4",
                 title = "IPv4 出口",
-                state = if (ipv4 != null) IpQualityState.VERIFIED else IpQualityState.ATTENTION,
+                state = when {
+                    ipv4 != null && ipv6Mode == Ipv6Mode.IPV6_ONLY -> IpQualityState.ATTENTION
+                    ipv4 != null -> IpQualityState.VERIFIED
+                    ipv6Mode == Ipv6Mode.IPV6_ONLY && ipv4Probe?.completed == false -> IpQualityState.UNKNOWN
+                    else -> IpQualityState.ATTENTION
+                },
                 detail = ipv4 ?: "未取得 IPv4 公网地址 · ${ipv4Probe?.error ?: "未完成"}",
             ),
         )
@@ -325,6 +343,7 @@ class IpQualityProbe(
             country = primary.country ?: trace.country,
             region = primary.region ?: trace.region,
             city = primary.city ?: trace.city,
+            vpn = if (primary.vpn == true || trace.vpn == true) true else primary.vpn,
             edgeLocation = trace.edgeLocation ?: primary.edgeLocation,
         )
     }
@@ -347,16 +366,26 @@ class IpQualityProbe(
     }
 }
 
-private class UrlConnectionIpQualityTransport(
+internal class UrlConnectionIpQualityTransport(
     private val open: (java.net.URL) -> java.net.URLConnection = java.net.URL::openConnection,
+    private val nanoTime: () -> Long = System::nanoTime,
 ) : IpQualityHttpTransport {
-    override fun get(url: String, timeoutMillis: Int): IpQualityHttpResponse {
+    override fun get(url: String, timeoutMillis: Int): IpQualityHttpResponse =
+        getCancellable(url, timeoutMillis, job = null)
+
+    internal fun getCancellable(url: String, timeoutMillis: Int, job: Job?): IpQualityHttpResponse {
         val uri = URI(url)
         require(uri.scheme.equals("https", ignoreCase = true)) { "探测端点必须使用 HTTPS" }
-        val started = System.nanoTime()
+        if (job?.isCancelled == true) throw CancellationException("IP quality probe cancelled")
+        val started = nanoTime()
+        val deadlineNanos = started + timeoutMillis.toLong().coerceAtLeast(1L) * 2_000_000L
         val connection = (open(uri.toURL()) as? HttpURLConnection)
             ?: error("无法创建 HTTPS 连接")
+        val cancelHandle = job?.invokeOnCompletion { cause ->
+            if (cause != null) runCatching { connection.disconnect() }
+        }
         return try {
+            if (job?.isCancelled == true) throw CancellationException("IP quality probe cancelled")
             connection.instanceFollowRedirects = false
             connection.connectTimeout = timeoutMillis
             connection.readTimeout = timeoutMillis
@@ -368,14 +397,15 @@ private class UrlConnectionIpQualityTransport(
             connection.setRequestProperty("User-Agent", "Weave-IP-Quality/0.3")
             val status = connection.responseCode
             val body = if (status in 200..299 && status != 204) {
-                connection.inputStream.use(::readBounded).toString(Charsets.UTF_8)
+                connection.inputStream.use { readBounded(it, deadlineNanos, job) }.toString(Charsets.UTF_8)
             } else ""
             IpQualityHttpResponse(
                 statusCode = status,
                 body = body,
-                elapsedMillis = (System.nanoTime() - started) / 1_000_000L,
+                elapsedMillis = ((nanoTime() - started) / 1_000_000L).coerceAtLeast(0L),
             )
         } finally {
+            cancelHandle?.dispose()
             connection.disconnect()
         }
     }
@@ -384,16 +414,19 @@ private class UrlConnectionIpQualityTransport(
         const val MAX_BODY_BYTES = 128 * 1024
     }
 
-    private fun readBounded(input: java.io.InputStream): ByteArray {
+    private fun readBounded(input: java.io.InputStream, deadlineNanos: Long, job: Job?): ByteArray {
         val output = java.io.ByteArrayOutputStream(8 * 1024)
         val buffer = ByteArray(8 * 1024)
         var total = 0
         while (true) {
+            if (job?.isCancelled == true) throw CancellationException("IP quality probe cancelled")
+            if (nanoTime() >= deadlineNanos) throw SocketTimeoutException("probe overall deadline exceeded")
             val count = input.read(buffer)
             if (count < 0) break
             total += count
             require(total <= MAX_BODY_BYTES) { "探测响应过大" }
             output.write(buffer, 0, count)
+            if (nanoTime() >= deadlineNanos) throw SocketTimeoutException("probe overall deadline exceeded")
         }
         return output.toByteArray()
     }
@@ -483,9 +516,10 @@ object IpAddressValidator {
                         require(it == "0" || !it.startsWith('0'))
                         it.toInt().also { octet -> require(octet in 0..255) }.toByte()
                     }
-                    java.net.InetAddress.getByAddress(octets.toByteArray())
+                    InetAddress.getByAddress(octets.toByteArray())
                 }
-                ':' in value && value.matches(IPV6_LITERAL) -> java.net.InetAddress.getByName(value)
+                ':' in value -> LocalRouteRuleValidator.parseIpv6Address(value)?.let(InetAddress::getByAddress)
+                    ?: return null
                 else -> return null
             }
         }.getOrNull() ?: return null
@@ -522,7 +556,6 @@ object IpAddressValidator {
     }
 
     private val IPV4 = Regex("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")
-    private val IPV6_LITERAL = Regex("(?i)[0-9a-f:]+")
 }
 
 enum class IpFamily {

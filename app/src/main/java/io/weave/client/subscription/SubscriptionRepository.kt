@@ -276,14 +276,24 @@ class SubscriptionRepository(
     internal fun exportAllForBackup(): List<TransferSubscription> =
         store.exportAllForBackup()
 
-    internal suspend fun prepareTransfer(items: List<TransferSubscription>, preserveIds: Boolean = false): PreparedTransfer {
+    internal suspend fun prepareTransfer(
+        items: List<TransferSubscription>,
+        preserveIds: Boolean = false,
+        offline: Boolean = false,
+    ): PreparedTransfer {
         val snapshot = store.captureTransfer(items, preserveIds)
         val validated = items.mapIndexed { i, item ->
-            val prepared = prepareRuntimePayload(item.payload, item.source)
+            val prepared = if (offline) {
+                preparation.prepareOffline(item.payload)
+            } else {
+                prepareRuntimePayload(item.payload, item.source)
+            }
             if (prepared.second.nodeCount == 0) throw SubscriptionImportException("订阅中没有可用节点")
-            snapshot.previous[i]?.let { existing ->
-                val audit = SubscriptionGuard.audit(existing.record, prepared.second, existing.source, item.source)
-                if (audit.blocked) throw SubscriptionGuardException(audit)
+            if (!offline) {
+                snapshot.previous[i]?.let { existing ->
+                    val audit = SubscriptionGuard.audit(existing.record, prepared.second, existing.source, item.source)
+                    if (audit.blocked) throw SubscriptionGuardException(audit)
+                }
             }
             NewSubscriptionBatchEntry(item.name, item.source, prepared.first, prepared.second, prepared.counts)
         }

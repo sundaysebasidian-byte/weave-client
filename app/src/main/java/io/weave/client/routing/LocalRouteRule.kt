@@ -94,9 +94,11 @@ object LocalRouteRuleValidator {
     }
 
     // Accept only portable dotted decimal, without signs, Unicode digits or octal ambiguity.
-    internal fun parseIpv4Address(text: String, end: Int): Int? {
+    internal fun parseIpv4Address(text: String, end: Int): Int? = parseIpv4Address(text, 0, end)
+
+    private fun parseIpv4Address(text: String, startOffset: Int, end: Int): Int? {
         var address = 0
-        var start = 0
+        var start = startOffset
         repeat(4) { index ->
             var next = start
             while (next < end && text[next] != '.') next++
@@ -121,10 +123,9 @@ object LocalRouteRuleValidator {
     }
 
     internal fun parseIpv6Cidr(value: String): Ipv6Cidr? {
-        val slash = value.lastIndexOf('/')
-        if (slash <= 0 || slash == value.lastIndex) return null
-        val prefix = value.substring(slash + 1).toIntOrNull() ?: return null
-        if (prefix !in 0..128) return null
+        val slash = value.indexOf('/')
+        if (slash <= 0 || slash == value.lastIndex || value.indexOf('/', slash + 1) >= 0) return null
+        val prefix = decimal(value, slash + 1, value.length, 128) ?: return null
         val bytes = parseIpv6Address(value.substring(0, slash)) ?: return null
         val mask = ByteArray(16) { index ->
             val remaining = prefix - index * 8
@@ -138,10 +139,87 @@ object LocalRouteRuleValidator {
         return Ipv6Cidr(bytes, mask)
     }
 
-    internal fun parseIpv6Address(literal: String, lookup: (String) -> InetAddress = InetAddress::getByName): ByteArray? {
-        // A hex-looking hostname without a colon would otherwise reach the system DNS resolver.
-        if (':' !in literal || literal.any { it.isLetter() && it.lowercaseChar() !in 'a'..'f' }) return null
-        return runCatching { lookup(literal).address }.getOrNull()?.takeIf { it.size == 16 }
+    /** Pure RFC 4291 numeric IPv6 literal parser; never falls back to system DNS. */
+    internal fun parseIpv6Address(
+        literal: String,
+        @Suppress("UNUSED_PARAMETER") lookup: (String) -> InetAddress = InetAddress::getByName,
+    ): ByteArray? {
+        if (literal.length < 2 || literal.length > 45 || ':' !in literal) return null
+        val doubleColon = literal.indexOf("::")
+        if (doubleColon >= 0 && literal.indexOf("::", doubleColon + 2) >= 0) return null
+        val bytes = ByteArray(16)
+        if (doubleColon < 0) {
+            val count = parseIpv6Groups(literal, 0, literal.length, bytes, allowIpv4Tail = true)
+            return if (count == 8) bytes else null
+        }
+        val leftCount = if (doubleColon == 0) {
+            0
+        } else {
+            parseIpv6Groups(literal, 0, doubleColon, bytes, allowIpv4Tail = false)
+        }
+        if (leftCount < 0) return null
+        val rightStart = doubleColon + 2
+        val rightBytes = ByteArray(16)
+        val rightCount = if (rightStart == literal.length) {
+            0
+        } else {
+            parseIpv6Groups(literal, rightStart, literal.length, rightBytes, allowIpv4Tail = true)
+        }
+        if (rightCount < 0 || leftCount + rightCount >= 8) return null
+        System.arraycopy(rightBytes, 0, bytes, (8 - rightCount) * 2, rightCount * 2)
+        return bytes
+    }
+
+    private fun parseIpv6Groups(
+        text: String,
+        start: Int,
+        end: Int,
+        out: ByteArray,
+        allowIpv4Tail: Boolean,
+    ): Int {
+        if (start >= end || text[start] == ':' || text[end - 1] == ':') return -1
+        var groups = 0
+        var tokenStart = start
+        while (tokenStart < end) {
+            var tokenEnd = tokenStart
+            var hasDot = false
+            while (tokenEnd < end && text[tokenEnd] != ':') {
+                if (text[tokenEnd] == '.') hasDot = true
+                tokenEnd++
+            }
+            if (tokenEnd == tokenStart) return -1
+            if (hasDot) {
+                if (!allowIpv4Tail || tokenEnd != end || groups > 6) return -1
+                val ipv4 = parseIpv4Address(text, tokenStart, tokenEnd) ?: return -1
+                val byteIndex = groups * 2
+                out[byteIndex] = (ipv4 ushr 24).toByte()
+                out[byteIndex + 1] = (ipv4 ushr 16).toByte()
+                out[byteIndex + 2] = (ipv4 ushr 8).toByte()
+                out[byteIndex + 3] = ipv4.toByte()
+                groups += 2
+                return groups
+            }
+            if (groups >= 8 || tokenEnd - tokenStart > 4) return -1
+            var value = 0
+            for (index in tokenStart until tokenEnd) {
+                val digit = hexDigit(text[index])
+                if (digit < 0) return -1
+                value = (value shl 4) or digit
+            }
+            val byteIndex = groups * 2
+            out[byteIndex] = (value ushr 8).toByte()
+            out[byteIndex + 1] = (value and 0xff).toByte()
+            groups++
+            tokenStart = tokenEnd + 1
+        }
+        return groups
+    }
+
+    private fun hexDigit(ch: Char): Int = when (ch) {
+        in '0'..'9' -> ch - '0'
+        in 'a'..'f' -> ch - 'a' + 10
+        in 'A'..'F' -> ch - 'A' + 10
+        else -> -1
     }
 
     private val UUID_REGEX = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}")

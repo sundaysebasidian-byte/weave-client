@@ -672,16 +672,28 @@ class AppViewModel internal constructor(application: Application, initialProfile
     }
 
     fun clearRecoverySafeMode() {
-        WeaveVpnService.clearRecoverySafeMode(getApplication())
-        mutableRecoveryState.value = recoveryVault.snapshot()
-        mutableDashboard.update { it.copy(statusMessage = "安全模式已解除，可以重新连接") }
+        recoveryRead?.cancel()
+        recoveryRead = viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                probeSafely {
+                    WeaveVpnService.clearRecoverySafeMode(getApplication())
+                    recoveryVault.snapshot()
+                }
+            }.onSuccess { snapshot ->
+                mutableRecoveryState.value = snapshot
+                mutableDashboard.update { it.copy(statusMessage = "安全模式已解除，可以重新连接") }
+            }.onFailure {
+                mutableDashboard.update { it.copy(statusMessage = "分流设置未能保存") }
+            }
+        }
     }
 
     fun setRouteTarget(epoch: String, packageName: String, target: RouteTarget, onComplete: (Result<Unit>) -> Unit) =
         changeAppRoutes(epoch, "正在安全应用新的应用分流", onComplete) { profile ->
             if (profile.routes.none { it.packageName == packageName } ||
-                !target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes) ||
-                (target.kind == RouteKind.GROUP && profile.groups.none { it.id == target.groupId })
+                !target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes, profile.groups) ||
+                (target.kind == RouteKind.GROUP &&
+                    target.groupId !in io.weave.client.domain.liveGroupNames(profile.groups, profile.subscriptions, profile.nodes))
             ) throw StaleProfileEditor()
             profile.routes.map { if (it.packageName == packageName) it.copy(target = target) else it }
         }
@@ -893,6 +905,17 @@ class AppViewModel internal constructor(application: Application, initialProfile
         if (language == null) settingsStore.setFollowSystemLanguage() else settingsStore.setLanguage(language)
     }
 
+    /** Persists an explicit pre-API-33 language choice before updating in-memory UI state. */
+    internal fun persistConfirmedLanguage(language: WeaveLanguage?) {
+        if (language == null) settingsStore.setFollowSystemLanguage() else settingsStore.setLanguage(language)
+        updateVisibleLanguage(language)
+    }
+
+    /** Refreshes a retained ViewModel when MainActivity recreates after a system locale change. */
+    internal fun syncObservedLanguage(explicitLanguage: WeaveLanguage?) {
+        updateVisibleLanguage(explicitLanguage)
+    }
+
     private fun updateVisibleLanguage(language: WeaveLanguage?) {
         mutableLanguageFollowsSystem.value = language == null
         // Resources.getSystem() ignores the per-app override that is still active until recreation.
@@ -969,8 +992,9 @@ class AppViewModel internal constructor(application: Application, initialProfile
     fun addAppRoute(epoch: String, app: InstalledApp, target: RouteTarget, onComplete: (Result<Unit>) -> Unit) {
         changeAppRoutes(epoch, "正在安全应用新的应用分流", onComplete) { profile ->
             if (profile.routes.any { it.packageName == app.packageName } ||
-                !target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes) ||
-                (target.kind == RouteKind.GROUP && profile.groups.none { it.id == target.groupId })
+                !target.hasLiveSubscriptionExit(profile.subscriptions, profile.nodes, profile.groups) ||
+                (target.kind == RouteKind.GROUP &&
+                    target.groupId !in io.weave.client.domain.liveGroupNames(profile.groups, profile.subscriptions, profile.nodes))
             ) throw StaleProfileEditor()
             profile.routes + AppRoute(
                 packageName = app.packageName,
@@ -1091,6 +1115,9 @@ class AppViewModel internal constructor(application: Application, initialProfile
                 save = save,
                 onSaved = { subscriptions ->
                     mutableSubscriptions.update { (it + subscriptions).distinctBy(Subscription::id) }
+                    mutableDashboard.update {
+                        it.copy(hasUsableSubscription = mutableSubscriptions.value.any { row -> row.hasRuntimePayload })
+                    }
                 },
                 readNodes = { saved ->
                     val ids = if (subscriptionsLoaded) saved.mapTo(linkedSetOf(), Subscription::id) else null
@@ -1134,7 +1161,8 @@ class AppViewModel internal constructor(application: Application, initialProfile
         }
     }
 
-    fun openSubscriptionEditor(subscriptionId: String) {
+    fun openSubscriptionEditor(subscriptionId: String): Boolean {
+        if (mutableEditorState.value.running) return false
         discardUpdatePreview()
         val read = ++subscriptionEditorRead
         val epoch = profileEpoch
@@ -1156,6 +1184,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
             }
         }
         refreshSubscriptionHealth(subscriptionId)
+        return true
     }
 
     fun closeSubscriptionEditor() {
@@ -1221,14 +1250,18 @@ class AppViewModel internal constructor(application: Application, initialProfile
                 // Keep the last successful measurements visible when a later manual run
                 // fails (for example during a transient captive portal or weak signal).
                 val needsProbeLoad = error.message?.contains("未被当前运行配置加载") == true
-                if (needsProbeLoad) {
-                    WeaveVpnService.reload(getApplication(), probeSubscriptionId = subscriptionId)
+                val reloadDispatched = if (needsProbeLoad) {
+                    runCatching {
+                        WeaveVpnService.reload(getApplication(), probeSubscriptionId = subscriptionId)
+                    }.isSuccess
+                } else {
+                    false
                 }
                 mutableSubscriptionHealth.update { previous ->
                     previous.copy(
                         subscriptionId = subscriptionId,
                         running = false,
-                        error = if (needsProbeLoad) {
+                        error = if (needsProbeLoad && reloadDispatched) {
                             "正在载入该订阅，运行配置更新后请再次测速"
                         } else {
                             error.message ?: "节点检测失败，已保留上次结果"
@@ -1321,7 +1354,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
         }
     }
 
-    fun deleteSubscription(subscriptionId: String) {
+    fun deleteSubscription(subscriptionId: String, onComplete: (Boolean) -> Unit = {}) {
         val current = mutableEditorState.value
         if (current.running || current.subscriptionId != subscriptionId) return
         val active = current.copy(running = true, error = null)
@@ -1329,11 +1362,13 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
         val epoch = subscriptionEditorEpoch
         viewModelScope.launch {
+            var deletedOk = false
             profileOwner.withLock {
                 val removal = withContext(Dispatchers.IO) {
                     probeSafely { groupProfile.deleteSubscription(checkNotNull(epoch) { "订阅仍在读取" }, subscriptionId) }
                 }
                 removal.onSuccess { (deleted, persisted) ->
+                    deletedOk = true
                     healthCache.remove(subscriptionId)
                     publishGroupProfile(persisted)
                     mutableDashboard.update { it.copy(statusMessage = "已删除订阅「${deleted.name}」") }
@@ -1349,10 +1384,17 @@ class AppViewModel internal constructor(application: Application, initialProfile
                         // the candidate has no proxy. Deleting the final proxy is different: its
                         // credentials must stop being used immediately and may not remain as an
                         // invisible in-memory fallback.
-                        mutableDashboard.update {
-                            it.copy(statusMessage = "最后一个代理已删除，连接已安全关闭")
-                        }
-                        WeaveVpnService.stop(getApplication())
+                        runCatching { WeaveVpnService.stop(getApplication()) }
+                            .onSuccess {
+                                mutableDashboard.update {
+                                    it.copy(statusMessage = "最后一个代理已删除，连接已安全关闭")
+                                }
+                            }
+                            .onFailure {
+                                mutableDashboard.update {
+                                    it.copy(statusMessage = "已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。")
+                                }
+                            }
                     } else {
                         reloadIfConnected("订阅已删除，正在安全更新运行配置")
                     }
@@ -1364,6 +1406,7 @@ class AppViewModel internal constructor(application: Application, initialProfile
                     }
                 }
             }
+            onComplete(deletedOk)
         }
     }
 
@@ -1873,8 +1916,13 @@ class AppViewModel internal constructor(application: Application, initialProfile
 
     private fun reloadIfConnected(message: String) {
         if (VpnRuntimeState.snapshot.value.state != ConnectionState.CONNECTED) return
-        mutableDashboard.update { it.copy(statusMessage = message) }
-        WeaveVpnService.reload(getApplication())
+        runCatching { WeaveVpnService.reload(getApplication()) }
+            .onSuccess {
+                mutableDashboard.update { it.copy(statusMessage = message) }
+            }
+            .onFailure {
+                mutableDashboard.update { it.copy(statusMessage = "已保存，但未能发起 VPN 配置重载。请重新连接以应用更改。") }
+            }
     }
 
 
